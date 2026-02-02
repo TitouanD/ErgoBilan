@@ -2,8 +2,12 @@
 import React, { useState } from 'react';
 import { Patient } from '../../types';
 import { calculateAge } from '../../utils';
-import { User, Lock, AlertTriangle } from 'lucide-react';
+import { User, Lock, AlertTriangle, Database, CheckCircle2 } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
+import { useAuth } from '../../contexts/AuthContext';
+import { useAssessment } from '../../contexts/AssessmentContext';
+import { MOCK_SESSION_DATA } from '../../data/mockSession';
+import { Logger } from '../../utils/logger';
 
 interface Props {
   data: Patient;
@@ -12,6 +16,9 @@ interface Props {
 }
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
+  const { userProfile } = useAuth();
+  const { loadFromDraft } = useAssessment();
+  const [dataLoaded, setDataLoaded] = useState(false);
   
   // Fonction de wrapper pour updateData qui gère aussi l'âge auto
   const handleDataChange = (partialData: Partial<Patient>) => {
@@ -26,17 +33,52 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
       updateData({ interviewNotes: e.target.value });
   };
 
+  const handleFakeData = (e: React.MouseEvent) => {
+      // Prévention des comportements par défaut et propagation
+      e.preventDefault();
+      e.stopPropagation();
+      
+      console.log("👉 ADMIN: Clic sur FAKE DATA détecté.");
+      
+      if (window.confirm("⚠️ ACTION ADMIN \n\nVous allez remplacer toutes les données du dossier par le profil de test 'Mayrick'. \nConfirmer ?")) {
+          try {
+              console.log("👉 ADMIN: Injection en cours...", MOCK_SESSION_DATA);
+              loadFromDraft(MOCK_SESSION_DATA);
+              setDataLoaded(true);
+              // Feedback visuel temporaire
+              setTimeout(() => setDataLoaded(false), 2000);
+          } catch (e) {
+              console.error("Erreur injection:", e);
+              alert("Erreur technique lors de l'injection des données.");
+          }
+      }
+  };
+
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
       
       {/* Header Praticien */}
-      <div className="mb-10 border-b border-stone-200 pb-6 flex justify-between items-end">
+      <div className="mb-10 border-b border-stone-200 pb-6 flex justify-between items-end relative z-10">
         <div>
             <h2 className="text-3xl font-serif font-bold text-stone-900">Dossier Patient</h2>
             <p className="text-stone-500 font-medium mt-2">Revue des données transmises et complétion.</p>
         </div>
-        <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-emerald-100">
-            <User size={14} /> Mode Praticien
+        <div className="flex gap-3 items-center">
+            {/* BOUTON ADMIN FAKE DATA (Visible seulement si Admin) */}
+            {userProfile.isAdmin && (
+                <button 
+                    type="button"
+                    onClick={handleFakeData}
+                    className={`relative z-50 cursor-pointer px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border transition-all active:scale-95 ${dataLoaded ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200'}`}
+                >
+                    {dataLoaded ? <CheckCircle2 size={14}/> : <Database size={14} />} 
+                    {dataLoaded ? 'Données Injectées' : 'FAKE DATA (Mayrick)'}
+                </button>
+            )}
+            
+            <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-emerald-100">
+                <User size={14} /> Mode Praticien
+            </div>
         </div>
       </div>
 
