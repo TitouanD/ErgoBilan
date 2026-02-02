@@ -165,20 +165,20 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-[#3D405B]/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[200] bg-[#3D405B]/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="bg-stone-50 p-8 border-b border-stone-100">
                     <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-6">
                         {isProfileCompletion ? "Finalisation du Profil" : "Création de compte"}
                     </h2>
                     
-                    <div className="flex justify-between items-center relative">
+                    <div className="flex justify-between items-center relative px-4">
                         <div className="absolute top-1/2 left-0 w-full h-1 bg-stone-200 -z-0"></div>
-                        <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 1 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>1</div>
+                        <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shadow-sm ${step >= 1 ? 'bg-[#E07A5F] text-white shadow-orange-200' : 'bg-stone-200 text-stone-400'}`}>1</div>
                         {!isProfileCompletion && (
-                            <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 2 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>2</div>
+                            <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shadow-sm ${step >= 2 ? 'bg-[#E07A5F] text-white shadow-orange-200' : 'bg-stone-200 text-stone-400'}`}>2</div>
                         )}
-                        <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 3 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>
+                        <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shadow-sm ${step >= 3 ? 'bg-[#E07A5F] text-white shadow-orange-200' : 'bg-stone-200 text-stone-400'}`}>
                             {isProfileCompletion ? '2' : '3'}
                         </div>
                     </div>
@@ -186,7 +186,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
                 <div className="flex-1 overflow-y-auto p-8">
                     {step === 1 && (
-                        <form onSubmit={handleStep1Submit} className="space-y-5 animate-in slide-in-from-right duration-300">
+                        <form onSubmit={handleStep1Submit} className="space-y-6 animate-in slide-in-from-right duration-300">
                             {isProfileCompletion && (
                                 <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-4 rounded-r-lg">
                                     <p className="text-xs text-amber-700 font-bold">
@@ -197,19 +197,19 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                             
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Prénom</label>
-                                    <input required name="firstName" value={formData.firstName} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-bold text-[#3D405B]" placeholder="Jean" />
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Prénom</label>
+                                    <input required name="firstName" value={formData.firstName} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="Jean" />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Nom</label>
-                                    <input required name="lastName" value={formData.lastName} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-bold text-[#3D405B]" placeholder="Dupont" />
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Nom</label>
+                                    <input required name="lastName" value={formData.lastName} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="Dupont" />
                                 </div>
                             </div>
                             
                             <div>
-                                <label className="text-xs font-bold text-stone-400 uppercase ml-1">Email Pro</label>
+                                <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Email Pro</label>
                                 <div className="relative">
-                                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18} />
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
                                     <input 
                                         required 
                                         type="email" 
@@ -217,7 +217,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                         value={formData.email} 
                                         onChange={handleChange} 
                                         disabled={isProfileCompletion} 
-                                        className={`w-full pl-10 p-3 rounded-xl border outline-none font-medium text-[#3D405B] ${isProfileCompletion ? 'bg-stone-100 border-stone-200 text-stone-500 cursor-not-allowed' : 'bg-stone-50 border-stone-200 focus:border-[#E07A5F]'}`} 
+                                        className={`w-full pl-12 p-4 rounded-2xl border outline-none font-bold text-[#3D405B] transition-all ${isProfileCompletion ? 'bg-stone-100 border-stone-200 text-stone-500 cursor-not-allowed' : 'bg-stone-50 border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10'}`} 
                                         placeholder="jean.dupont@ergo.com" 
                                     />
                                 </div>
@@ -225,33 +225,33 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Téléphone Pro</label>
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Téléphone Pro</label>
                                     <div className="relative">
-                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18} />
-                                        <input name="phone" value={formData.phone} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="06..." />
+                                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
+                                        <input name="phone" value={formData.phone} onChange={handleChange} className="w-full pl-12 p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="06..." />
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">SIRET (Optionnel)</label>
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">SIRET (Optionnel)</label>
                                     <div className="relative">
-                                        <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18} />
-                                        <input name="siret" value={formData.siret} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="123 456 789..." />
+                                        <Building className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
+                                        <input name="siret" value={formData.siret} onChange={handleChange} className="w-full pl-12 p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="123 456 789..." />
                                     </div>
                                 </div>
                             </div>
                             
                             <div>
-                                <label className="text-xs font-bold text-stone-400 uppercase ml-1">Adresse Cabinet</label>
+                                <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Adresse Cabinet</label>
                                 <div className="relative">
-                                    <MapPin className="absolute left-3 top-3 text-stone-300" size={18} />
-                                    <input name="address" value={formData.address} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="10 Rue de la Santé, 75000 Paris" />
+                                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
+                                    <input name="address" value={formData.address} onChange={handleChange} className="w-full pl-12 p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="10 Rue de la Santé, 75000 Paris" />
                                 </div>
                             </div>
 
                             <div className="flex justify-between items-center pt-4">
-                                <button type="button" onClick={onCancel} className="text-stone-400 font-bold hover:text-stone-600 text-sm">Annuler</button>
-                                <button type="submit" className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2">
-                                    Suivant <ArrowRight size={18}/>
+                                <button type="button" onClick={onCancel} className="text-stone-400 font-bold hover:text-stone-600 text-sm px-4">Annuler</button>
+                                <button type="submit" className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] transition-all flex items-center gap-2">
+                                    Suivant <ArrowRight size={20}/>
                                 </button>
                             </div>
                         </form>
@@ -261,53 +261,53 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                         <form onSubmit={handleStep2Submit} className="space-y-6 animate-in slide-in-from-right duration-300">
                             <div className="space-y-4">
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Mot de passe</label>
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Mot de passe</label>
                                     <div className="relative">
-                                        <input required type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-bold text-[#3D405B]" placeholder="••••••••" />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-[#E07A5F]">
-                                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        <input required type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="••••••••" />
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-[#E07A5F]">
+                                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                         </button>
                                     </div>
-                                    <p className="text-[10px] text-stone-400 ml-1 mt-1">Minimum 6 caractères.</p>
+                                    <p className="text-[10px] text-stone-400 ml-2 mt-1">Minimum 6 caractères.</p>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Confirmer Mot de passe</label>
-                                    <input required type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-bold text-[#3D405B]" placeholder="••••••••" />
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-2 tracking-wider">Confirmer Mot de passe</label>
+                                    <input required type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 outline-none font-bold text-[#3D405B] transition-all" placeholder="••••••••" />
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center pt-4">
-                                <button type="button" onClick={() => setStep(1)} className="text-stone-400 font-bold hover:text-stone-600 text-sm">Retour</button>
-                                <button type="submit" className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2">Suivant <ArrowRight size={18}/></button>
+                            <div className="flex justify-between items-center pt-8">
+                                <button type="button" onClick={() => setStep(1)} className="text-stone-400 font-bold hover:text-stone-600 text-sm px-4">Retour</button>
+                                <button type="submit" className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] transition-all flex items-center gap-2">Suivant <ArrowRight size={20}/></button>
                             </div>
                         </form>
                     )}
 
                     {step === 3 && (
-                        <form onSubmit={handleFinalSubmit} className="space-y-6 animate-in slide-in-from-right duration-300">
-                            <div className="bg-[#F9F9F9] p-6 rounded-2xl border border-stone-200 text-center">
+                        <form onSubmit={handleFinalSubmit} className="space-y-8 animate-in slide-in-from-right duration-300">
+                            <div className="bg-[#F9F9F9] p-8 rounded-2xl border border-stone-200 text-center">
                                 <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-stone-100">
                                     <ShieldCheck size={32} className="text-[#E07A5F]" />
                                 </div>
                                 <h3 className="font-bold text-[#3D405B] text-lg mb-2">Code PIN de Déchiffrement</h3>
-                                <p className="text-sm text-stone-500 leading-relaxed mb-4">
+                                <p className="text-sm text-stone-500 leading-relaxed mb-4 max-w-xs mx-auto">
                                     Définissez un code PIN à 6 chiffres. Ce code servira de clé unique pour lire vos dossiers.
                                 </p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-6">
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1 block text-center mb-2">Code PIN</label>
-                                    <input required type="password" inputMode="numeric" maxLength={6} name="pin" value={formData.pin} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-xl border-2 border-stone-200 outline-none focus:border-[#E07A5F] font-mono text-2xl text-center tracking-[0.5em] text-[#3D405B]" placeholder="••••••" />
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-1 block text-center mb-2 tracking-wider">Code PIN</label>
+                                    <input required type="password" inputMode="numeric" maxLength={6} name="pin" value={formData.pin} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border-2 border-stone-200 outline-none focus:border-[#E07A5F] font-mono text-2xl text-center tracking-[0.5em] text-[#3D405B] focus:bg-white transition-all" placeholder="••••••" />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1 block text-center mb-2">Confirmer PIN</label>
-                                    <input required type="password" inputMode="numeric" maxLength={6} name="confirmPin" value={formData.confirmPin} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-xl border-2 border-stone-200 outline-none focus:border-[#E07A5F] font-mono text-2xl text-center tracking-[0.5em] text-[#3D405B]" placeholder="••••••" />
+                                    <label className="text-[10px] font-bold text-stone-400 uppercase ml-1 block text-center mb-2 tracking-wider">Confirmer PIN</label>
+                                    <input required type="password" inputMode="numeric" maxLength={6} name="confirmPin" value={formData.confirmPin} onChange={handleChange} className="w-full p-4 bg-stone-50 rounded-2xl border-2 border-stone-200 outline-none focus:border-[#E07A5F] font-mono text-2xl text-center tracking-[0.5em] text-[#3D405B] focus:bg-white transition-all" placeholder="••••••" />
                                 </div>
                             </div>
 
-                            <div className="flex justify-between items-center pt-8">
-                                <button type="button" onClick={() => setStep(isProfileCompletion ? 1 : 2)} className="text-stone-400 font-bold hover:text-stone-600 text-sm">Retour</button>
-                                <button type="submit" disabled={isSubmitting} className="bg-[#E07A5F] text-white px-10 py-4 rounded-xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50">
+                            <div className="flex justify-between items-center pt-4">
+                                <button type="button" onClick={() => setStep(isProfileCompletion ? 1 : 2)} className="text-stone-400 font-bold hover:text-stone-600 text-sm px-4">Retour</button>
+                                <button type="submit" disabled={isSubmitting} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50">
                                     {isSubmitting ? "Création..." : "Terminer et Accéder"} <Check size={20} strokeWidth={3}/>
                                 </button>
                             </div>

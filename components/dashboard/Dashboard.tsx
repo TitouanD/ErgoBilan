@@ -14,8 +14,10 @@ interface Props {
   onProcessPending?: (q: PendingQuestionnaire) => void;
   processingQueueId?: string | null;
   onContribute?: () => void; 
-  availableDraft?: any | null; // NOUVEAU
-  onResumeDraft?: () => void; // NOUVEAU
+  
+  // Modification : On passe maintenant une Map d'index (ID Patient -> Date Update)
+  draftsIndex?: Record<string, string>; 
+  onResumeDraft?: (patientId: string) => void; // Modification : Accepte l'ID
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -63,7 +65,7 @@ const ReferralCard = () => {
     );
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, availableDraft, onResumeDraft }) => {
+export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('active');
@@ -110,7 +112,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
             {/* 2. Actions */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-10">
                 <div className="relative w-full md:max-w-md">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                    <Search className="absolute left-4 top-1/2 -translate-x-1/2 text-stone-400" size={20} />
                     <input 
                         type="text"
                         value={searchQuery}
@@ -193,7 +195,9 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
 
                 {/* VUE ACTIVE */}
                 {activeTab === 'active' && filteredFiles.map((file) => {
-                    const hasDraft = availableDraft && availableDraft.patient?.id === file.id;
+                    // Check dans l'index si un brouillon existe pour ce patient
+                    const draftDate = draftsIndex[file.id];
+                    const hasDraft = !!draftDate;
                     
                     return (
                         <div key={file.id} onClick={() => onOpenPatient(file.id)} className="group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden">
@@ -222,7 +226,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                             {hasDraft ? (
                                 <div className="mt-4">
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); onResumeDraft && onResumeDraft(); }}
+                                        onClick={(e) => { e.stopPropagation(); onResumeDraft && onResumeDraft(file.id); }}
                                         className="w-full py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold uppercase tracking-wide hover:bg-amber-100 transition-colors flex items-center justify-center gap-2"
                                     >
                                         <Edit3 size={14} /> Reprendre brouillon

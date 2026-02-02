@@ -21,32 +21,35 @@ export const StorageService = {
     },
 
     /**
-     * GESTION DU BROUILLON (WIZARD)
+     * GESTION DES BROUILLONS (MULTI-DRAFTS)
      */
     saveDraft: async (draftData: any, key: CryptoKey): Promise<void> => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
+        const patientId = draftData?.patient?.id || null;
+        
+        // Chiffrement
         const enc = await encryptBlob(draftData, key);
         
-        const { data: existing } = await supabase
-            .from('drafts')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
+        // Logique : On cherche s'il existe déjà un brouillon pour CE patient (ou un brouillon orphelin si pas d'ID)
+        let query = supabase.from('drafts').select('id').eq('user_id', user.id);
+        
+        if (patientId) {
+            query = query.eq('patient_id', patientId);
+        } else {
+            query = query.is('patient_id', null);
+        }
 
-        const patientId = draftData?.patient?.id || null;
+        const { data: existing } = await query.maybeSingle();
 
         const payload: any = {
             user_id: user.id,
             updated_at: new Date().toISOString(),
             iv: enc.iv,
-            encrypted_data: enc.content
+            encrypted_data: enc.content,
+            patient_id: patientId // Peut être null pour un nouveau bilan non sauvegardé
         };
-        
-        if (patientId) {
-             payload.patient_id = patientId;
-        }
 
         if (existing) {
             await supabase.from('drafts').update(payload).eq('id', existing.id);
@@ -55,15 +58,45 @@ export const StorageService = {
         }
     },
 
-    getDraft: async (key: CryptoKey): Promise<any | null> => {
+    // Charge uniquement les métadonnées (ID patient + Date) pour afficher les badges dans le Dashboard
+    getDraftsMetadata: async (): Promise<Record<string, string>> => {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
+        if (!user) return {};
 
         const { data, error } = await supabase
             .from('drafts')
-            .select('*')
-            .eq('user_id', user.id)
-            .maybeSingle();
+            .select('patient_id, updated_at')
+            .eq('user_id', user.id);
+
+        if (error || !data) return {};
+
+        // Retourne une map : { 'uuid-patient': '2023-10-27T...' }
+        const map: Record<string, string> = {};
+        data.forEach((row: any) => {
+            if (row.patient_id) {
+                map[row.patient_id] = row.updated_at;
+            }
+        });
+        return map;
+    },
+
+    // Charge un brouillon spécifique
+    getDraft: async (key: CryptoKey, patientId?: string): Promise<any | null> => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+
+        let query = supabase.from('drafts').select('*').eq('user_id', user.id);
+        
+        if (patientId) {
+            query = query.eq('patient_id', patientId);
+        } else {
+            // Si pas de patientId, on cherche le dernier brouillon orphelin (création)
+            // ou le dernier tout court si on veut reprendre le travail générique
+            query = query.is('patient_id', null); 
+        }
+
+        // On prend le plus récent correspondant aux critères
+        const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
 
         if (error || !data) return null;
 
@@ -75,10 +108,29 @@ export const StorageService = {
         }
     },
 
-    clearDraft: async (): Promise<void> => {
+    // Supprime le brouillon associé à un patient (ou le brouillon orphelin)
+    deleteDraft: async (patientId?: string): Promise<void> => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        await supabase.from('drafts').delete().eq('user_id', user.id);
+
+        let query = supabase.from('drafts').delete().eq('user_id', user.id);
+        
+        if (patientId) {
+            query = query.eq('patient_id', patientId);
+        } else {
+            query = query.is('patient_id', null);
+        }
+        
+        await query;
+    },
+
+    /**
+     * @deprecated Utiliser deleteDraft(patientId) à la place
+     */
+    clearDraft: async (): Promise<void> => {
+        // Fallback pour compatibilité, supprime tout ou juste les orphelins ?
+        // Pour sécurité, on ne fait rien ici pour éviter de supprimer les mauvais drafts.
+        // La logique doit être déplacée dans deleteDraft.
     },
 
     /**
@@ -139,14 +191,10 @@ export const StorageService = {
         }
     },
 
-    /**
-     * OPTIMISATION PERF: Charge uniquement la liste des patients (sans les gros blobs reports/sessions)
-     */
     loadPatientList: async (key: CryptoKey): Promise<PatientFile[]> => {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) return [];
 
-        // On ne sélectionne QUE la table patients
         const { data: patients, error } = await supabase
             .from('patients')
             .select('*')
@@ -162,9 +210,6 @@ export const StorageService = {
         for (const row of patients) {
             try {
                 const patientData = await decryptBlob(row.iv, row.encrypted_identity, key) as Patient;
-                
-                // On renvoie une structure "légère" (tableaux vides pour reports/sessions)
-                // Ils seront chargés à la demande via loadPatientDetails
                 files.push({
                     id: row.id,
                     patient: patientData,
@@ -182,9 +227,6 @@ export const StorageService = {
         );
     },
 
-    /**
-     * OPTIMISATION PERF: Charge les détails complets pour UN patient spécifique
-     */
     loadPatientDetails: async (patientId: string, key: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[] }> => {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) throw new Error("Non connecté");

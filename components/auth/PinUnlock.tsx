@@ -18,7 +18,6 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
 
     useEffect(() => {
         // Auto-focus robuste au montage
-        // On utilise un timeout pour garantir que le DOM est prêt et la transition finie
         const timer = setTimeout(() => {
             if (inputRef.current) inputRef.current.focus();
         }, 100);
@@ -39,8 +38,6 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
         setIsVerifying(true);
         setError(false);
 
-        // La vérification est async (PBKDF2 prend du temps pour sécurité)
-        // On laisse un petit délai UI pour que l'utilisateur voit le dernier point se remplir
         setTimeout(async () => {
             const key = await verifyPin(pin, practitioner.encryptionSalt, practitioner.encryptionValidator);
             
@@ -50,7 +47,6 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                 setError(true);
                 setPin('');
                 setIsVerifying(false);
-                // Refocus après erreur
                 if (inputRef.current) inputRef.current.focus();
             }
         }, 300);
@@ -59,7 +55,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
     return (
         <div 
             className="min-h-screen bg-[#3D405B] flex flex-col items-center justify-center p-6 relative overflow-hidden"
-            onClick={() => inputRef.current?.focus()} // Clic n'importe où redonne le focus
+            onClick={() => inputRef.current?.focus()} 
         >
             {/* Background Abstract */}
             <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#E07A5F]/10 rounded-full blur-[100px]"></div>
@@ -85,15 +81,14 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                     {[0, 1, 2, 3, 4, 5].map((idx) => (
                         <div 
                             key={idx}
-                            className={`w-4 h-4 rounded-full transition-all duration-300 ${
+                            className={`w-4 h-4 rounded-full transition-all duration-300 border border-white/20 ${
                                 pin.length > idx 
-                                    ? 'bg-[#E07A5F] scale-110 shadow-[0_0_10px_rgba(224,122,95,0.8)]' 
-                                    : 'bg-white/20'
-                            } ${error ? 'bg-rose-500 animate-shake' : ''}`}
+                                    ? 'bg-[#E07A5F] scale-125 shadow-[0_0_15px_rgba(224,122,95,0.6)] border-[#E07A5F]' 
+                                    : 'bg-white/10'
+                            } ${error ? 'bg-rose-500 animate-shake shadow-none border-rose-500' : ''}`}
                         ></div>
                     ))}
                     
-                    {/* Input invisible pour capturer la saisie (meilleur pour mobile/accessibilité) */}
                     <input 
                         ref={inputRef}
                         type="password" 
@@ -107,7 +102,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                 </div>
 
                 {error && (
-                    <p className="text-rose-400 text-xs font-bold animate-pulse mb-6 flex items-center justify-center gap-2">
+                    <p className="text-rose-400 text-xs font-bold animate-pulse mb-6 flex items-center justify-center gap-2 bg-rose-500/10 py-2 rounded-lg border border-rose-500/20">
                         <AlertTriangle size={14}/> Code PIN incorrect
                     </p>
                 )}
@@ -121,7 +116,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
             </div>
             
             <div className="absolute bottom-8 text-white/20 text-[10px] uppercase tracking-widest font-bold">
-                Chiffrement End-to-End Sécurisé
+                Chiffrement End-to-End Sécurisé • AutoBilan 1.2
             </div>
         </div>
     );

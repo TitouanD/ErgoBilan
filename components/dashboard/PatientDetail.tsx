@@ -12,8 +12,8 @@ interface Props {
   onNewBilan: (type: 'initial' | 'reevaluation') => void;
   onQuickEntry: () => void;
   onOpenReport: (reportId: string) => void;
-  draftAvailable?: boolean; // NOUVEAU
-  onResumeDraft?: () => void; // NOUVEAU
+  draftAvailable?: boolean;
+  onResumeDraft?: () => void;
 }
 
 // Fonction utilitaire pour retrouver la définition d'un sous-test n'importe où dans le catalogue
