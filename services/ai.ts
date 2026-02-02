@@ -5,21 +5,23 @@ import { cleanAndParseJson } from '../utils/aiHelpers';
 import { Patient } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
 
-// --- CONFIGURATION EXPERTE ---
+// --- CONFIGURATION EXPERTE V2 ---
 
 // 1. Le "Cerveau" Clinique (Persona & Règles)
-const SYSTEM_INSTRUCTION = `Tu es un Ergothérapeute Expert en pédiatrie (Modèle PPH/MOH). Ton rôle est de rédiger des bilans cliniques de haute qualité pour des dossiers médicaux (MDPH) ou scolaires.
+const SYSTEM_INSTRUCTION = `Tu es un Ergothérapeute Expert en pédiatrie (Modèle PPH/MOH). Ton rôle est de rédiger des bilans cliniques de haute précision.
 
 TES RÈGLES D'OR (Non négociables) :
-1. **Vocabulaire Expert** : Utilise impérativement des termes comme 'restriction de participation', 'coût cognitif', 'efficience', 'ressources attentionnelles', 'compétences préservées', 'impact fonctionnel'.
-2. **Ton Clinique** : Sois objectif, précis et bienveillant. Utilise le conditionnel pour les hypothèses. Pas de jargon inutile, mais une terminologie précise.
-3. **Structure** :
-   - Ne fais JAMAIS de listes à puces pour le 'Profil Occupationnel' ou la 'Synthèse Diagnostique'. Rédige des paragraphes fluides et liés.
-   - Les listes à puces sont réservées uniquement aux 'Recommandations' et 'Objectifs'.
-4. **Causalité (CRITIQUE)** : Ne répète pas bêtement les scores bruts. Utilise-les comme PREUVES pour justifier tes observations cliniques.
-   - *Mauvais* : "Score MABC = 5. L'écriture est sale."
-   - *Bon* : "L'écriture présente un coût moteur important, objectivé par une note standard chutée (NS=5) en dextérité manuelle, entraînant une fatigabilité rapide."
-5. **Format** : Tu dois toujours répondre en JSON valide strict.`;
+1. **Vocabulaire Expert** : Utilise 'restriction de participation', 'coût cognitif', 'efficience', 'ressources attentionnelles', 'compétences préservées', 'impact fonctionnel', 'hypersensibilité'.
+2. **Discernement Thérapeutique (CRITIQUE)** : Ne prescris pas de rééducation systématiquement. 
+   - Si les scores sont dans la norme basse (-1 ET) ou si les difficultés sont fonctionnellement compensées, oriente vers des 'Adaptations' ou une 'Guidance' plutôt qu'un suivi.
+   - Ne pathologise pas tout : valorise les stratégies de compensation de l'enfant.
+3. **Nuance Comportementale** : Distingue le trouble instrumental (l'enfant ne *sait pas* faire) du trouble exécutif/comportemental (l'enfant *va trop vite*, est impulsif ou inattentif). Note si l'échec est dû à la "Performance" plutôt qu'à la "Compétence".
+4. **Causalité** : Utilise les scores comme PREUVES (ex: "L'écriture est lente, *objectivé par un score de -2ET au BHK*").
+5. **Mise en page** : 
+   - Aère le texte (double saut de ligne entre paragraphes).
+   - Utilise des tirets simples "-" pour les listes.
+   - Pas de listes à puces dans les paragraphes narratifs.
+6. **Format** : Réponds toujours en JSON valide strict.`;
 
 // 2. Sécurité des Données
 const SECURITY_INSTRUCTION = `RÈGLE DE SÉCURITÉ : Tu ne dois JAMAIS modifier, supprimer ou inventer les placeholders anonymisés (ex: {{PATIENT_PRENOM}}, {{ECOLE}}). Ils doivent rester intacts dans le texte généré.`;
@@ -46,11 +48,10 @@ export const AIService = {
 
         // 2. Appel IA
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); 
-        // Utilisation du modèle Pro pour une meilleure capacité de raisonnement clinique complexe
         const model = 'gemini-3-flash-preview'; 
 
         try {
-            // --- ÉTAPE 1 : CONTEXTUALISATION & PROFIL (Partie Narrative) ---
+            // --- ÉTAPE 1 : CONTEXTUALISATION & PROFIL ---
             const promptBio = `
 ${SECURITY_INSTRUCTION}
 
@@ -62,15 +63,15 @@ ${payload.safeQuestionnaire}
 TÂCHE : Rédige les 3 sections suivantes au format JSON :
 
 1. "mandat_referencement" : Une phrase simple et formelle.
-   - Structure imposée : "{{PATIENT_PRENOM}} est reçu(e) en consultation d’ergothérapie à la demande du Dr {{MEDECIN}} (ou de la famille/école) afin d’évaluer [Insérer ici le motif principal reformulé cliniquement]."
+   - Structure imposée : "{{PATIENT_PRENOM}} est reçu(e) en consultation d’ergothérapie à la demande de {{MEDECIN}} (ou famille) afin d’évaluer [Insérer ici le motif principal reformulé cliniquement]."
 
 2. "mandat_evaluation" : Un paragraphe décrivant la plainte principale et son impact scolaire/quotidien.
-   - Style : Commence par "A ce jour, {{PATIENT_PRENOM}} rencontre des difficultés dans son environnement...". Décris la gêne fonctionnelle (illisibilité, lenteur, douleur, agitation).
+   - Style : Décris la gêne fonctionnelle (illisibilité, lenteur, douleur, agitation) et le contexte scolaire.
 
 3. "profil_occupationnel" : Une synthèse complète de la vie de l'enfant (Hors résultats des tests).
    - Structure : Rédige 3 ou 4 paragraphes thématiques fluides.
-   - Thèmes : Historique médical/développemental, Autonomie (repas, habillage, sommeil), Vie scolaire (classe, AESH, comportement), Loisirs/Intérêts.
-   - Important : Mentionne toujours les points forts ou "compétences préservées".
+   - Thèmes : Développement, Autonomie (repas, habillage, sommeil), Vie scolaire (classe, AESH, comportement), Loisirs/Intérêts.
+   - Important : Mentionne toujours les points forts ou "compétences préservées" et les intérêts de l'enfant.
 `;
             
             const bioResponse = await ai.models.generateContent({ 
@@ -83,7 +84,7 @@ TÂCHE : Rédige les 3 sections suivantes au format JSON :
             });
             const jsonBio = cleanAndParseJson(bioResponse.text);
 
-            // --- ÉTAPE 2 : DIAGNOSTIC & PRÉCONISATIONS (Partie Analytique) ---
+            // --- ÉTAPE 2 : DIAGNOSTIC & PRÉCONISATIONS ---
             const promptDiag = `
 ${SECURITY_INSTRUCTION}
 
@@ -96,23 +97,23 @@ RÉSULTATS DES TESTS (Preuves chiffrées - Step 2) :
 ${payload.scoresRaw}
 
 TÂCHE : Agis comme un expert clinique. Croise les observations et les scores pour rédiger le diagnostic.
-Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN) :
+Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, aéré) :
 
 1. "synthese_diagnostic" : L'analyse clinique finale.
-   - Structure impérative en 3 axes (adaptés selon les troubles détectés) :
-     a) **Sur le plan Moteur & Praxique** : (Coordination, tonus, motricité fine/globale).
-     b) **Sur le plan Visuo-Spatial & Perceptif** : (Organisation spatiale, stratégies visuelles).
-     c) **Sur le plan Graphomoteur & Exécutif** : (Qualité d'écriture, vitesse, posture, attention, fonctions exécutives).
-   - CRUCIAL : Pour chaque axe, fais le lien Causal. "L'observation X (confirmée par le score Y au test Z) entraine la difficulté W".
+   - **Analyse Sensorielle (Si pertinent)** : Si des données sensorielles (Dunn 2, hypersensibilité, recherche, évitement, bruit) sont présentes, rédige un paragraphe dédié analysant l'impact sur la vie quotidienne et la régulation émotionnelle.
+   - **Analyse Instrumentale vs Exécutive** : Analyse si les échecs sont dus à un déficit de capacité (moteur/visuel) ou à des facteurs comportementaux (précipitation, impulsivité, attention).
+   - **Axes classiques** : Moteur/Praxique, Visuo-Spatial, Graphomoteur. Fais le lien Causal (Score -> Gêne).
    - Conclus sur le coût cognitif global et la fatigabilité.
 
-2. "recommandations" : Liste des adaptations scolaires concrètes et réalisables.
-   - Format : Liste à puces Markdown.
-   - Exemples : Tiers-temps, ordinateur, photocopies, limitation de la copie, supports aérés, outils spécifiques.
+2. "recommandations" : Liste des adaptations scolaires et à la maison.
+   - Format : Liste à puces avec tirets "-".
+   - Inclus des conseils sensoriels si nécessaire (casque, pauses, refuges).
+   - Exemples : Tiers-temps, ordinateur, photocopies, limitation de la copie.
 
 3. "objectifs_generaux" :
-   - Commence par une phrase positive sur le potentiel et la motivation de l'enfant.
-   - Liste 3-4 objectifs de suivi ergonomiques précis (ex: "Améliorer la qualité du tracé", "Automatiser la frappe au clavier", "Soutenir l'attention visuelle").
+   - **DECISION THÉRAPEUTIQUE** : Analyse la sévérité globale.
+     - CAS A (Trouble avéré, impact fort) : "Un accompagnement en ergothérapie est préconisé." -> Liste 3-4 objectifs SMART (ex: "Améliorer la qualité du tracé", "Automatiser la frappe").
+     - CAS B (Fragilités, compensé, ou léger) : "Un accompagnement régulier n'est pas indiqué ce jour. La mise en place d'adaptations est recommandée." -> Liste les points de vigilance ou propose une guidance ponctuelle.
 `;
             
             const diagResponse = await ai.models.generateContent({ 
