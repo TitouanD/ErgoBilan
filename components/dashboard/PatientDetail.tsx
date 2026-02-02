@@ -1,12 +1,12 @@
-
 import React, { useState } from 'react';
 import { PatientFile, TestSession, Patient, ScoreResult } from '../../types';
 import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
 import { CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, XAxis, YAxis } from 'recharts';
-import { TEST_CATALOG } from '../../data/testCatalog';
+import { CategoryDef } from '../../data/testCatalog';
 import { SubtestRowCheck } from '../assessment/Step2Tests';
 import { StorageService } from '../../services/storage';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   file: PatientFile;
@@ -19,8 +19,8 @@ interface Props {
 }
 
 // Fonction utilitaire pour retrouver la définition d'un sous-test n'importe où dans le catalogue
-const findSubtestDefInCatalog = (subId: string) => {
-    for (const cat of TEST_CATALOG) {
+const findSubtestDefInCatalog = (subId: string, catalog: CategoryDef[]) => {
+    for (const cat of catalog) {
         for (const test of cat.tests) {
             const sub = test.subtests.find(s => s.id === subId);
             if (sub) return { test, sub };
@@ -30,9 +30,10 @@ const findSubtestDefInCatalog = (subId: string) => {
 };
 
 const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ session, patient }) => {
+    const { catalog } = useCatalog();
     const [isOpen, setIsOpen] = useState(false);
     
-    const knownTestDef = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === session.testId);
+    const knownTestDef = catalog.flatMap(c => c.tests).find(t => t.id === session.testId);
 
     const itemsToRender = knownTestDef 
         ? knownTestDef.subtests.map(st => ({ 
@@ -42,7 +43,7 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
           }))
         : Object.entries(session.results).map(([subId, res]) => ({ 
             key: subId, 
-            def: findSubtestDefInCatalog(subId), 
+            def: findSubtestDefInCatalog(subId, catalog), 
             res: res as ScoreResult 
           }));
 

@@ -1,10 +1,9 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
 import { GaussianChart } from '../shared/GaussianChart';
-import { TEST_CATALOG } from '../../data/testCatalog';
 import { SCALES } from '../../utils/scoring';
 import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, Hash, Globe } from 'lucide-react';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   patient: Patient;
@@ -50,6 +49,7 @@ const CaptionEditor: React.FC<{
 };
 
 export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding }) => {
+  const { catalog } = useCatalog();
   const getSection = (id: string) => sections.find(s => s.id === id);
 
   // STYLE DYNAMIQUE (BRANDING)
@@ -421,7 +421,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
             <div className="space-y-12">
                 {Object.entries(tests).map(([testId, subtests]) => {
-                    const def = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === testId);
+                    const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                     if (!def) return null;
 
                     const validSubtests = Object.entries(subtests).filter(([, val]) => val.status === 'validated');

@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
+import { CatalogProvider } from './contexts/CatalogContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
@@ -22,9 +22,8 @@ import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
 import { anonymizeData } from './utils/anonymizer';
-import { seedDatabaseFromCatalog } from './services/seedCatalog';
-import { PatientFile, Contribution, TestSession, PendingQuestionnaire } from './types';
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Save, Loader2, Link as LinkIcon, Copy, X, User, Lock } from 'lucide-react';
+import { PatientFile, PendingQuestionnaire } from './types';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2 } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData } from './utils/crypto';
 import { Logger } from './utils/logger';
 
@@ -66,7 +65,6 @@ const AppRouter = () => {
                 setMode('portal');
                 return;
             }
-            await seedDatabaseFromCatalog();
         };
         init();
     }, []);
@@ -495,9 +493,11 @@ const AppRouter = () => {
 export default function App() {
     return (
         <AuthProvider>
-            <AssessmentProvider>
-                <AppRouter />
-            </AssessmentProvider>
+            <CatalogProvider>
+                <AssessmentProvider>
+                    <AppRouter />
+                </AssessmentProvider>
+            </CatalogProvider>
         </AuthProvider>
     );
 }

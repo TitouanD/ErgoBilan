@@ -1,12 +1,11 @@
-
 import React, { useState } from 'react';
 import { TestData, ScoreResult, UserProfile, Patient } from '../../types';
-import { TEST_CATALOG, SubtestDef } from '../../data/testCatalog';
+import { SubtestDef } from '../../data/testCatalog';
 import { SCALES, calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
-import { createAnonymousPayload, apiContributeAnonymousData } from '../../utils/dualStream';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { GaussianChart } from '../shared/GaussianChart';
 import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus } from 'lucide-react';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   patient: Patient; 
@@ -27,8 +26,9 @@ export const TestCatalogModal: React.FC<{
     onAddTests: (testIds: string[]) => void;
     onContribute?: () => void;
 }> = ({ isOpen, onClose, existingTests, onAddTests, onContribute }) => {
+    const { catalog } = useCatalog();
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [activeCategory, setActiveCategory] = useState(TEST_CATALOG[0].id);
+    const [activeCategory, setActiveCategory] = useState(catalog[0]?.id || '');
     const [searchQuery, setSearchQuery] = useState('');
 
     if (!isOpen) return null;
@@ -67,7 +67,7 @@ export const TestCatalogModal: React.FC<{
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
-                        {TEST_CATALOG.map(cat => (
+                        {catalog.map(cat => (
                             <button
                                 key={cat.id}
                                 onClick={() => setActiveCategory(cat.id)}
@@ -108,7 +108,7 @@ export const TestCatalogModal: React.FC<{
                      </div>
 
                      <div className="flex-1 overflow-y-auto grid grid-cols-1 gap-4 pb-20">
-                        {TEST_CATALOG.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).map(test => {
+                        {catalog.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).map(test => {
                              const isAlreadyAdded = !!existingTests[test.id];
                              const isSelected = selectedIds.includes(test.id);
                              
@@ -143,7 +143,7 @@ export const TestCatalogModal: React.FC<{
                              )
                         })}
                         {/* Empty State Search */}
-                        {TEST_CATALOG.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                        {catalog.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
                              <div className="text-center py-10">
                                  <p className="text-stone-400 text-sm">Aucun résultat.</p>
                              </div>
@@ -290,9 +290,6 @@ export const SubtestRowCheck: React.FC<{
         setShowConfirmModal(false);
         if (!isExpanded && onToggleExpand) onToggleExpand();
         else if (!isExpanded) setLocalExpanded(true);
-
-        const payload = createAnonymousPayload(patient, testId, subtest.id, result);
-        if (payload) apiContributeAnonymousData(payload);
     };
 
     const handleConfirmFirstTime = () => {
@@ -584,6 +581,7 @@ export const SubtestRowCheck: React.FC<{
 };
 
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
+  const { catalog } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
   const [triggerErrorPulse, setTriggerErrorPulse] = useState(false);
@@ -592,7 +590,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
     const newTests = { ...tests };
     testIds.forEach(testId => {
         if (!newTests[testId]) {
-            const def = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === testId);
+            const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
             if (def) {
                 const newTestEntry: Record<string, ScoreResult> = {};
                 def.subtests.forEach(st => {
@@ -668,7 +666,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
             </div>
         ) : (
             activeTestsList.map(testId => {
-                const def = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === testId);
+                const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                 if (!def) return null;
 
                 return (

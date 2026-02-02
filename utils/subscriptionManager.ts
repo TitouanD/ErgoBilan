@@ -1,1 +1,0 @@
-// Fichier supprimé. Logique migrée dans services/subscription.ts

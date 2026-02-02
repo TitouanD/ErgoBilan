@@ -1,9 +1,8 @@
-
 import React, { useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
-import { TEST_CATALOG } from '../../data/testCatalog';
 import { ScoreResult, TestSession, Patient } from '../../types';
 import { SubtestRowCheck, TestCatalogModal } from '../assessment/Step2Tests';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   onClose: () => void;
@@ -12,8 +11,11 @@ interface Props {
 }
 
 export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) => {
+  const { catalog } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
-  const [selectedTests, setSelectedTests] = useState(TEST_CATALOG[0].tests.slice(0, 1)); // Default with one test
+  // On prend le premier test du premier catalogue s'il existe, sinon vide
+  const initialTests = catalog.length > 0 && catalog[0].tests.length > 0 ? [catalog[0].tests[0]] : [];
+  const [selectedTests, setSelectedTests] = useState(initialTests);
   
   const [allResults, setAllResults] = useState<Record<string, Record<string, ScoreResult>>>({});
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
       const newTests = [...selectedTests];
       testIds.forEach(id => {
           if (!newTests.find(t => t.id === id)) {
-              const def = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === id);
+              const def = catalog.flatMap(c => c.tests).find(t => t.id === id);
               if (def) newTests.push(def);
           }
       });
