@@ -1,0 +1,5 @@
+{
+  "name": "AUTOBILANERGO",
+  "description": "Application d'automatisation de rédaction de bilans d'ergothérapie pédiatrique avec assistance IA et visualisation de données.",
+  "requestFramePermissions": []
+}
