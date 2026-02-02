@@ -19,6 +19,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
   const { userProfile } = useAuth();
   const { loadFromDraft } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [formKey, setFormKey] = useState(0); // Clé pour forcer le remount du formulaire
   
   // Fonction de wrapper pour updateData qui gère aussi l'âge auto
   const handleDataChange = (partialData: Partial<Patient>) => {
@@ -34,23 +35,26 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
   };
 
   const handleFakeData = (e: React.MouseEvent) => {
-      // Prévention des comportements par défaut et propagation
       e.preventDefault();
       e.stopPropagation();
       
-      console.log("👉 ADMIN: Clic sur FAKE DATA détecté.");
+      console.log("👉 ADMIN: Clic sur FAKE DATA -> Lancement Injection");
       
-      if (window.confirm("⚠️ ACTION ADMIN \n\nVous allez remplacer toutes les données du dossier par le profil de test 'Mayrick'. \nConfirmer ?")) {
-          try {
-              console.log("👉 ADMIN: Injection en cours...", MOCK_SESSION_DATA);
-              loadFromDraft(MOCK_SESSION_DATA);
-              setDataLoaded(true);
-              // Feedback visuel temporaire
-              setTimeout(() => setDataLoaded(false), 2000);
-          } catch (e) {
-              console.error("Erreur injection:", e);
-              alert("Erreur technique lors de l'injection des données.");
-          }
+      try {
+          // On passe une copie fraîche des données pour être sûr que React détecte le changement
+          const freshData = JSON.parse(JSON.stringify(MOCK_SESSION_DATA));
+          
+          console.log("👉 ADMIN: Données prêtes, appel du Context...", freshData.patient.lastName);
+          loadFromDraft(freshData);
+          
+          // Feedback visuel
+          setDataLoaded(true);
+          setFormKey(prev => prev + 1); // Force le re-render du formulaire
+          
+          setTimeout(() => setDataLoaded(false), 2000);
+      } catch (err) {
+          console.error("ERREUR INJECTION:", err);
+          alert("Erreur lors de l'injection des données test.");
       }
   };
 
@@ -69,7 +73,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
                 <button 
                     type="button"
                     onClick={handleFakeData}
-                    className={`relative z-50 cursor-pointer px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border transition-all active:scale-95 ${dataLoaded ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200'}`}
+                    className={`relative z-50 cursor-pointer px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border transition-all active:scale-95 shadow-md ${dataLoaded ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200'}`}
                 >
                     {dataLoaded ? <CheckCircle2 size={14}/> : <Database size={14} />} 
                     {dataLoaded ? 'Données Injectées' : 'FAKE DATA (Mayrick)'}
@@ -100,7 +104,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
       </div>
 
       {/* Le Questionnaire Universel en mode Praticien */}
+      {/* key={formKey} force le composant à se recréer quand on injecte les données */}
       <SharedQuestionnaire 
+          key={formKey} 
           data={data} 
           onChange={handleDataChange} 
           mode="practitioner" 

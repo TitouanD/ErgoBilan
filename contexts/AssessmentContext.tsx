@@ -97,10 +97,22 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const loadFromDraft = (draft: any) => {
-      if (draft.patient) setPatient(draft.patient);
-      if (draft.tests) setTests(draft.tests);
-      if (draft.observations) setObservations(draft.observations);
-      if (draft.sections) setSections(draft.sections);
+      console.log("📥 Context: Loading Draft...", draft);
+      // Utilisation du spread {...obj} pour créer une nouvelle référence objet
+      // Cela garantit que React détecte le changement même si les propriétés internes sont identiques
+      if (draft.patient) {
+          console.log("   -> Patient loaded:", draft.patient.lastName);
+          setPatient({ ...draft.patient });
+      }
+      if (draft.tests) {
+          console.log("   -> Tests loaded:", Object.keys(draft.tests).length);
+          setTests({ ...draft.tests });
+      }
+      if (draft.observations) {
+          console.log("   -> Observations loaded");
+          setObservations({ ...draft.observations });
+      }
+      if (draft.sections) setSections([...draft.sections]);
       if (draft.step) setStep(draft.step);
   };
 
