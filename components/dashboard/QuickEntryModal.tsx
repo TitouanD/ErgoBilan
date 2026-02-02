@@ -13,7 +13,15 @@ interface Props {
 
 export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) => {
   const [showCatalog, setShowCatalog] = useState(false);
-  const [selectedTests, setSelectedTests] = useState(TEST_CATALOG[0].tests.slice(0, 1)); 
+  const [selectedTests, setSelectedTests] = useState(TEST_CATALOG[0].tests.slice(0, 1)); // Default with one test
+  
+  // Structure de données locale pour la session: { testId: { subtestId: ScoreResult } }
+  // On simplifie pour la sauvegarde : QuickEntry crée UNE session qui peut contenir plusieurs tests.
+  // NOTE: La structure TestSession actuelle dans types.ts ne supporte qu'un seul testId.
+  // Pour respecter la structure existante sans tout casser, on va créer une UI qui permet d'ajouter plusieurs tests
+  // mais on forcera peut-être la création de plusieurs sessions ou on modifiera le type plus tard.
+  // Pour l'instant, faisons simple : On affiche les tests, mais on sauvegarde sous le nom du PREMIER test 
+  // ou "Session Multi-tests".
   
   const [allResults, setAllResults] = useState<Record<string, Record<string, ScoreResult>>>({});
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
@@ -47,6 +55,9 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
   };
 
   const handleSave = () => {
+    // On doit fusionner tous les résultats dans un seul objet Record<string, ScoreResult>
+    // car TestSession.results est plat (subtestId -> ScoreResult).
+    // Attention aux collisions d'ID de sous-tests si deux tests ont les mêmes IDs (peu probable ici).
     const flatResults: Record<string, ScoreResult> = {};
     
     Object.values(allResults).forEach(testRes => {
@@ -55,6 +66,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
         });
     });
 
+    // Nom de la session
     const sessionName = selectedTests.length === 1 ? selectedTests[0].name : "Séance Multi-tests";
     const mainTestId = selectedTests[0]?.id || 'multi';
 
@@ -68,11 +80,14 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
     onSave(session);
   };
 
+  // Fallback patient object for SubtestRowCheck (which needs dob/gender for analytics)
   const safePatient = patient || ({} as Patient);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
         <div className="bg-[#F9F9F9] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
+            
+            {/* Header */}
             <div className="p-8 border-b border-stone-200 flex justify-between items-center bg-white sticky top-0 z-10">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-[#E07A5F]/10 rounded-2xl text-[#E07A5F]">
@@ -123,6 +138,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                         </div>
                     ))}
 
+                    {/* Bouton Ajouter */}
                     <button 
                         onClick={() => setShowCatalog(true)}
                         className="w-full py-6 border-2 border-dashed border-stone-300 rounded-[32px] flex flex-col items-center justify-center text-stone-400 hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all gap-2"
@@ -131,6 +147,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                         <span className="font-bold text-lg">Ajouter un autre test à cette séance</span>
                     </button>
 
+                    {/* Info Gratuite */}
                     <div className="bg-white p-6 rounded-2xl border border-stone-100 flex gap-4 items-center shadow-sm">
                         <div className="p-3 bg-emerald-50 rounded-full text-emerald-600">
                             <Info size={24} />
@@ -145,6 +162,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                 </div>
             </div>
 
+            {/* Footer Actions */}
             <div className="p-6 bg-white border-t border-stone-200 flex justify-end gap-4 z-10">
                 <button onClick={onClose} className="px-8 py-4 font-bold text-stone-400 hover:text-stone-600 transition-all uppercase text-xs tracking-widest">
                     Abandonner
@@ -158,7 +176,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
         <TestCatalogModal 
             isOpen={showCatalog} 
             onClose={() => setShowCatalog(false)} 
-            existingTests={{}} 
+            existingTests={{}} // Dans QuickEntry, on considère qu'on ajoute toujours du neuf
             onAddTests={handleAddTests}
         />
     </div>

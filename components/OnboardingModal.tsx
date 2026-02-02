@@ -1,1 +1,0 @@
-// Fichier supprimé. Remplacé par OnboardingExperience.tsx

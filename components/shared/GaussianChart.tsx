@@ -18,6 +18,7 @@ export const GaussianChart: React.FC<GaussianChartProps> = ({ mean, sd, userScor
   const xMax = mean + (3.5 * sd);
   const totalRange = xMax - xMin;
 
+  // Calculs pour les stops du dégradé
   const posMinus2SD = ((mean - (2 * sd)) - xMin) / totalRange * 100;
   const posMinus1SD = ((mean - (1 * sd)) - xMin) / totalRange * 100;
   
@@ -29,11 +30,11 @@ export const GaussianChart: React.FC<GaussianChartProps> = ({ mean, sd, userScor
         <AreaChart data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#E07A5F" stopOpacity={0.7} />
+              <stop offset="0%" stopColor="#E07A5F" stopOpacity={0.7} /> {/* Terracotta (Difficulté) */}
               <stop offset={`${posMinus2SD}%`} stopColor="#E07A5F" stopOpacity={0.7} />
-              <stop offset={`${posMinus2SD}%`} stopColor="#F2CC8F" stopOpacity={0.7} />
+              <stop offset={`${posMinus2SD}%`} stopColor="#F2CC8F" stopOpacity={0.7} /> {/* Ocre (Fragilité) */}
               <stop offset={`${posMinus1SD}%`} stopColor="#F2CC8F" stopOpacity={0.7} />
-              <stop offset={`${posMinus1SD}%`} stopColor="#81B29A" stopOpacity={0.7} />
+              <stop offset={`${posMinus1SD}%`} stopColor="#81B29A" stopOpacity={0.7} /> {/* Sauge (Confort) */}
               <stop offset="100%" stopColor="#81B29A" stopOpacity={0.7} />
             </linearGradient>
             

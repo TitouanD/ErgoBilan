@@ -14,6 +14,8 @@ export const PrivacyAirlockModal: React.FC<Props> = ({ onConfirm, onCancel, anon
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                
+                {/* Header Sécurité */}
                 <div className="bg-[#3D405B] p-6 text-white flex justify-between items-start">
                     <div className="flex gap-4">
                         <div className="p-3 bg-white/10 rounded-2xl border border-white/10">

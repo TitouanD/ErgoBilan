@@ -26,6 +26,7 @@ import { seedDatabaseFromCatalog } from './services/seedCatalog';
 import { PatientFile, Contribution, TestSession, PendingQuestionnaire } from './types';
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Save, Loader2, Link as LinkIcon, Copy, X, User } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData } from './utils/crypto';
+import { Logger } from './utils/logger';
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
@@ -37,6 +38,7 @@ const AppRouter = () => {
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
     const [showOnboarding, setShowOnboarding] = useState(false);
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
     
     // Modals
     const [showPaywall, setShowPaywall] = useState(false);
@@ -54,7 +56,7 @@ const AppRouter = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [processingQueueId, setProcessingQueueId] = useState<string | null>(null);
 
-    // Initialisation & Routing State
+    // Initialisation
     useEffect(() => {
         const init = async () => {
             const params = new URLSearchParams(window.location.search);
@@ -63,18 +65,31 @@ const AppRouter = () => {
                 return;
             }
             await seedDatabaseFromCatalog();
-            
-            // Redirection intelligente selon authState
-            if (authState === 'locked' || authState === 'authenticated') {
-                setMode('dashboard');
-                setShowAuthModal(false);
-            } else if (authState === 'registering') {
-                setMode('landing');
-                setShowAuthModal(true); // Force l'ouverture pour complétion
-                // Note: AuthWizard détectera isProfileCompletion grâce à la prop
-            }
         };
         init();
+    }, []);
+
+    // Routing Logic basés sur authState
+    useEffect(() => {
+        Logger.debug("AppRouter authState changed:", authState);
+        
+        if (authState === 'unauthenticated') {
+            setMode('landing');
+            setIsLoggingIn(false);
+        } else if (authState === 'locked') {
+            // Le composant PinUnlock prendra le relais via le return conditionnel principal
+            setShowAuthModal(false);
+            setIsLoggingIn(false);
+        } else if (authState === 'authenticated') {
+            setMode('dashboard');
+            setShowAuthModal(false);
+            setIsLoggingIn(false);
+        } else if (authState === 'registering') {
+            Logger.info("Redirecting to Wizard for profile completion");
+            setMode('landing');
+            setShowAuthModal(true); // Force l'ouverture pour complétion
+            setIsLoggingIn(false);
+        }
     }, [authState]);
 
     // Chargement des données chiffrées
@@ -97,14 +112,16 @@ const AppRouter = () => {
 
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
-        // Le listener dans AuthContext gérera la suite (loadUser etc)
+        setIsLoggingIn(true);
+        Logger.info("Attempting login for:", email);
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) { 
+            Logger.error("Login failed:", error.message);
             alert(error.message); 
-        } else {
-            // On ferme la modale temporairement, elle se rouvrira si "registering" ou passera à "locked"
-            setShowAuthModal(false); 
-        }
+            setIsLoggingIn(false);
+        } 
+        // Note: On ne ferme PAS la modale ici. 
+        // On attend que le useEffect détecte le changement d'authState vers 'locked' ou 'registering'.
     };
 
     const handleUnlock = (key: CryptoKey) => {
@@ -200,9 +217,6 @@ const AppRouter = () => {
 
     const handleFinalize = async () => {
         if (!sessionKey) return;
-        const newReport = { id: `rep_${Date.now()}`, date: new Date().toISOString(), type: 'initial', status: 'completed', patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}` };
-        // Logic de merge session/file similaire à l'ancien App.tsx
-        // Simplifié ici pour brièveté, mais doit utiliser StorageService.saveFile
         assessment.resetAssessment();
         await StorageService.clearDraft();
         setAvailableDraft(null);
@@ -236,7 +250,13 @@ const AppRouter = () => {
                                 <form onSubmit={(e: any) => { e.preventDefault(); handleLogin(e.target.email.value, e.target.pass.value); }} className="space-y-4">
                                     <input name="email" type="email" placeholder="Email" className="w-full p-4 bg-stone-50 rounded-xl" required />
                                     <input name="pass" type="password" placeholder="Mot de passe" className="w-full p-4 bg-stone-50 rounded-xl" required />
-                                    <button type="submit" className="w-full py-4 bg-[#3D405B] text-white rounded-xl font-bold">Se connecter</button>
+                                    <button 
+                                        type="submit" 
+                                        disabled={isLoggingIn}
+                                        className="w-full py-4 bg-[#3D405B] text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-70"
+                                    >
+                                        {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : "Se connecter"}
+                                    </button>
                                 </form>
                                 <button onClick={() => setAuthMode('register')} className="w-full mt-4 text-sm text-stone-400 font-bold">Créer un compte</button>
                             </div>
@@ -270,7 +290,7 @@ const AppRouter = () => {
                     {mode === 'assessment' && assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
                     <button onClick={() => setMode('contribution')} className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold text-[#3D405B] hover:bg-stone-50"><FilePlus size={14}/> Contribuer</button>
                     <button onClick={() => setShowPaywall(true)} className="flex items-center gap-2 bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full text-xs font-bold border border-amber-200"><Crown size={14}/> {userProfile.credits} Crédits</button>
-                    <button onClick={() => { setSessionKey(null); setMode('landing'); }} className="p-2 text-stone-400 hover:text-stone-600"><LogOut size={18}/></button>
+                    <button onClick={logout} className="p-2 text-stone-400 hover:text-stone-600"><LogOut size={18}/></button>
                 </div>
             </header>
 

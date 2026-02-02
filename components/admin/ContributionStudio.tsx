@@ -34,16 +34,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
   const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [zoom, setZoom] = useState(1);
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files.length > 0) {
-          const newFiles = Array.from(e.target.files) as File[];
-          setFiles(newFiles);
-          setCurrentFileIndex(0);
-          setStep('processing');
-          processRealExtraction(newFiles);
-      }
-  };
+
+  // --- HELPER FUNCTIONS (Définies avant usage) ---
 
   const cleanNumberStr = (val: string): string => {
       if (!val) return "";
@@ -72,12 +64,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       }
 
       // Nettoyage des valeurs numériques
-      newRow.standard = cleanNumberStr(newRow.standard);
-      newRow.zScore = cleanNumberStr(newRow.zScore);
-      newRow.percentile = cleanNumberStr(newRow.percentile);
+      newRow.standard = cleanNumberStr(newRow.standard || '');
+      newRow.zScore = cleanNumberStr(newRow.zScore || '');
+      newRow.percentile = cleanNumberStr(newRow.percentile || '');
       if (newRow.mean) newRow.mean = cleanNumberStr(newRow.mean);
-      if (newRow.sd) newRow.sd = cleanNumberStr(newRow.sd);
-      // Raw peut contenir des fourchettes (0-5), on ne nettoie pas trop agressivement si Lookup
+      if (newRow.sd) newRow.sd = cleanNumberStr(newRow.sd || '');
 
       const sVal = parseFloat(newRow.standard);
       const zVal = parseFloat(newRow.zScore);
@@ -108,6 +99,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
       return newRow;
   };
+
+  // --- PROCESSING FUNCTION ---
 
   const processRealExtraction = async (inputFiles: File[]) => {
       try {
@@ -208,13 +201,25 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           } else {
               setRows(flatRows);
           }
-          if (extractedData.test_context && !testName) setTestName(extractedData.test_context);
+          if (extractedData?.test_context && !testName) setTestName(extractedData.test_context);
           setStep('editor');
 
       } catch (error) {
           console.error("Gemini Extraction Error:", error);
           alert("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
           setStep('upload');
+      }
+  };
+
+  // --- HANDLERS ---
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const newFiles = Array.from(e.target.files) as File[];
+          setFiles(newFiles);
+          setCurrentFileIndex(0);
+          setStep('processing');
+          processRealExtraction(newFiles);
       }
   };
 
@@ -239,8 +244,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   const checkConsistency = (row: ExtractedRow): boolean => {
       if (tableStructure === 'PARAMETRIC') return true; 
-      const zStr = cleanNumberStr(row.zScore);
-      const pStr = cleanNumberStr(row.percentile);
+      const zStr = cleanNumberStr(row.zScore || '');
+      const pStr = cleanNumberStr(row.percentile || '');
       const z = parseFloat(zStr);
       const p = parseFloat(pStr);
       if (isNaN(z) || isNaN(p)) return true;
@@ -304,6 +309,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       }
   };
 
+  // --- RENDER ---
+
   if (step === 'intro') { 
       return (
         <div className="fixed inset-0 z-[50] bg-[#3D405B]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
@@ -355,7 +362,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       );
   }
 
-  // ... (Code identique pour upload/processing/success) ...
   if (step === 'upload' || step === 'processing') { 
       return (
         <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
@@ -523,10 +529,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 {tableStructure === 'PARAMETRIC' ? (
                                                     <>
                                                         <div className="col-span-4">
-                                                            <input value={row.mean} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
+                                                            <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
                                                         </div>
                                                         <div className="col-span-4">
-                                                            <input value={row.sd} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
+                                                            <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
                                                         </div>
                                                     </>
                                                 ) : (
@@ -568,6 +574,5 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 </div>
             </div>
         </div>
-    </div>
-  );
+    );
 };

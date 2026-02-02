@@ -12,7 +12,10 @@ interface Props {
 }
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
+  
+  // Fonction de wrapper pour updateData qui gère aussi l'âge auto
   const handleDataChange = (partialData: Partial<Patient>) => {
+      // Si date naissance modifiée, on recalcule l'âge ici aussi (redondance safe)
       if (partialData.dob) {
           partialData.age = calculateAge(partialData.dob);
       }
@@ -25,6 +28,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
 
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
+      
+      {/* Header Praticien */}
       <div className="mb-10 border-b border-stone-200 pb-6 flex justify-between items-end">
         <div>
             <h2 className="text-3xl font-serif font-bold text-stone-900">Dossier Patient</h2>
@@ -35,6 +40,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
         </div>
       </div>
 
+      {/* Bloc Notes Privées (Hors SharedQuestionnaire) */}
       <div className="bg-[#fffdf5] border border-[#F2CC8F]/50 rounded-[24px] p-6 mb-8 shadow-sm">
           <div className="flex items-center gap-2 mb-4 text-[#d97706]">
               <Lock size={18} />
@@ -51,6 +57,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           </div>
       </div>
 
+      {/* Le Questionnaire Universel en mode Praticien */}
       <SharedQuestionnaire 
           data={data} 
           onChange={handleDataChange} 

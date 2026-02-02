@@ -12,10 +12,11 @@ interface Props {
   onNewBilan: (type: 'initial' | 'reevaluation') => void;
   onQuickEntry: () => void;
   onOpenReport: (reportId: string) => void;
-  draftAvailable?: boolean;
-  onResumeDraft?: () => void;
+  draftAvailable?: boolean; // NOUVEAU
+  onResumeDraft?: () => void; // NOUVEAU
 }
 
+// Fonction utilitaire pour retrouver la définition d'un sous-test n'importe où dans le catalogue
 const findSubtestDefInCatalog = (subId: string) => {
     for (const cat of TEST_CATALOG) {
         for (const test of cat.tests) {
@@ -29,8 +30,12 @@ const findSubtestDefInCatalog = (subId: string) => {
 const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ session, patient }) => {
     const [isOpen, setIsOpen] = useState(false);
     
+    // Stratégie de récupération des définitions :
+    // 1. Si session.testId correspond à un test connu (ex: "mabc-2"), on l'utilise.
+    // 2. Sinon (ex: "bilan_initial"), on cherche chaque sous-test individuellement dans tout le catalogue.
     const knownTestDef = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === session.testId);
 
+    // Préparation de la liste des items à afficher
     const itemsToRender = knownTestDef 
         ? knownTestDef.subtests.map(st => ({ 
             key: st.id, 
@@ -88,9 +93,10 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
                         </div>
                         <div className="space-y-2">
                             {itemsToRender.map((item) => {
-                                if (!item.res) return null; 
+                                if (!item.res) return null; // Skip si pas de résultat pour ce sous-test
 
                                 if (item.def) {
+                                    // Cas Idéal : On a la définition, on affiche le composant riche
                                     return (
                                         <div key={item.key}>
                                             <SubtestRowCheck 
@@ -104,6 +110,7 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
                                         </div>
                                     );
                                 } else {
+                                    // Fallback : Définition introuvable (Test supprimé ou ID orphelin)
                                     return (
                                         <div key={item.key} className="p-4 bg-white rounded-lg mb-2 text-sm text-stone-600 border border-stone-200 flex justify-between items-center">
                                             <div>
@@ -131,17 +138,19 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
 export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
   const chartData = file.sessions ? file.sessions.map(s => ({
       date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
-      score: 10 + (Math.random() * 4 - 2), 
+      score: 10 + (Math.random() * 4 - 2), // Simulation score moyen pour le graph
       label: s.testName
   })) : [];
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 animate-in slide-in-from-right duration-500">
       
+      {/* Navigation */}
       <button onClick={onBack} className="flex items-center gap-2 text-stone-400 hover:text-[#3D405B] font-bold text-[10px] uppercase tracking-widest mb-8 transition-colors">
         <ArrowLeft size={16} /> Retour Dashboard
       </button>
 
+      {/* ALERTE BROUILLON DISPONIBLE */}
       {draftAvailable && (
           <div className="mb-8 p-4 bg-amber-50 border-l-4 border-amber-400 rounded-r-xl shadow-sm flex items-center justify-between animate-in slide-in-from-top-2">
               <div className="flex items-center gap-3">
@@ -162,6 +171,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
           </div>
       )}
 
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div className="flex items-center gap-6">
             <div className="w-20 h-20 rounded-2xl bg-[#3D405B] text-white flex items-center justify-center font-serif font-bold text-3xl shadow-xl shadow-[#3D405B]/10 transform -rotate-3">
@@ -193,7 +203,11 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* COLONNE GAUCHE (VISUALISATION & HISTORIQUE) */}
         <div className="lg:col-span-2 space-y-12">
+            
+            {/* 1. GRAPHIQUE */}
             <div className="bg-white rounded-[32px] p-8 border border-stone-100 shadow-sm relative overflow-hidden">
                 <div className="flex justify-between items-start mb-8">
                     <div>
@@ -246,6 +260,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
                 </div>
             </div>
 
+            {/* 2. JOURNAL DES SÉANCES (NEW) */}
             <div>
                 <div className="flex items-center gap-3 mb-6 px-2">
                     <Calendar size={24} className="text-[#3D405B]" />
@@ -274,6 +289,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
             </div>
         </div>
 
+        {/* COLONNE DROITE */}
         <div className="space-y-6">
             <div className="space-y-4">
                 <h3 className="font-serif font-bold text-lg text-[#3D405B] px-2 flex items-center gap-2">

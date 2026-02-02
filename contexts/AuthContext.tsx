@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
+import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -12,7 +13,7 @@ interface AuthContextType {
   sessionKey: CryptoKey | null;
   authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated';
   isLoading: boolean;
-  tempEmail: string | null; // Pour passer l'email au Wizard en cas de registering
+  tempEmail: string | null;
   refreshProfile: () => Promise<void>;
   setSessionKey: (key: CryptoKey | null) => void;
   unlockSession: (key: CryptoKey) => void;
@@ -60,29 +61,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        Logger.info("Session found at startup:", session.user.id);
         await loadUser(session.user.id, session.user.email!);
       } else {
+        Logger.info("No session found at startup.");
         setAuthState('unauthenticated');
         setIsLoading(false);
       }
     };
     initAuth();
 
-    // 2. Abonnement aux changements (Login/Logout/Signup depuis n'importe où)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
+    // 2. Abonnement aux changements
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        Logger.debug("Auth State Change:", event);
+        
+        if (event === 'SIGNED_OUT') {
+            handleLocalLogout();
+        } else if (session?.user) {
             // Éviter de recharger si on est déjà dans un état stable pour cet user
             if (practitioner?.id !== session.user.id) {
-                setAuthState('authenticating'); // UI Feedback immédiat
+                setAuthState('authenticating');
                 await loadUser(session.user.id, session.user.email!);
             }
-        } else {
-            // Logout
-            setPractitioner(null);
-            setSessionKey(null);
-            setUserProfile(INITIAL_PROFILE);
-            setAuthState('unauthenticated');
-            setIsLoading(false);
         }
     });
 
@@ -111,27 +111,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
   }, [authState]);
 
+  const handleLocalLogout = () => {
+      Logger.info("Performing local logout cleanup");
+      setPractitioner(null);
+      setSessionKey(null);
+      setUserProfile(INITIAL_PROFILE);
+      setAuthState('unauthenticated');
+      setIsLoading(false);
+  };
+
   const loadUser = async (userId: string, email: string) => {
+      Logger.info("Loading user profile for:", userId);
       try {
-          const { data: user } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
+          const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
           
+          if (error) {
+              Logger.error("Supabase error loading practitioner:", error);
+              throw error;
+          }
+
           if (user) {
+              Logger.info("Practitioner profile found. Locking session.");
               setPractitioner({ 
-                  id: user.id, email: user.email!, firstName: user.first_name!, 
-                  lastName: user.last_name!, phonePro: user.phone_pro || '', 
-                  siret: user.siret || '', addressPro: user.address_pro || '', 
-                  encryptionSalt: user.encryption_salt!, encryptionValidator: user.encryption_validator! 
+                  id: user.id, 
+                  email: user.email!, 
+                  firstName: user.first_name!, 
+                  lastName: user.last_name!, 
+                  phonePro: user.phone_pro || '', 
+                  siret: user.siret || '', 
+                  addressPro: user.address_pro || '', 
+                  encryptionSalt: user.encryption_salt!, 
+                  encryptionValidator: user.encryption_validator! 
               });
               await refreshProfile(userId);
               setAuthState('locked'); // Profil trouvé -> Ecran PIN
           } else {
               // User authentifié chez Supabase mais pas de profil dans 'practitioners'
+              Logger.warn("User authenticated but NO practitioner profile found. Redirecting to wizard.");
               setTempEmail(email);
               setAuthState('registering'); // -> Redirection vers Wizard Completion
           }
       } catch (e) {
-          console.error("Auth Load Error", e);
-          setAuthState('unauthenticated');
+          Logger.error("Critical Auth Load Error", e);
+          // En cas d'erreur critique de chargement, on déconnecte pour éviter les états incohérents
+          await supabase.auth.signOut();
+          handleLocalLogout();
       } finally {
           setIsLoading(false);
       }
@@ -141,28 +165,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const targetId = userId || userProfile.id;
       if (!targetId) return;
       
+      Logger.debug("Refreshing profile data for:", targetId);
       const fullProfile = await SubscriptionService.getUserProfile(targetId);
       if (fullProfile) setUserProfile(fullProfile);
       
       // Abonnement Realtime aux crédits
       SubscriptionService.subscribeToCredits(targetId, (newCredits) => { 
+          Logger.debug("Realtime credits update:", newCredits);
           setUserProfile(prev => ({ ...prev, credits: newCredits })); 
       });
   };
 
   const unlockSession = (key: CryptoKey) => {
+      Logger.info("Session unlocked successfully");
       setSessionKey(key);
       setAuthState('authenticated');
   };
 
   const lockSession = () => {
+      Logger.info("Session locked (timeout or manual)");
       setSessionKey(null);
       setAuthState('locked');
   };
 
   const logout = async () => {
+      Logger.info("User requested logout");
+      // Nettoyage immédiat de l'état local pour sécurité visuelle instantanée
+      handleLocalLogout();
+      // Puis appel serveur
       await supabase.auth.signOut();
-      // Le state sera nettoyé par le listener onAuthStateChange
   };
 
   const updateUserProfile = (update: Partial<UserProfile>) => {

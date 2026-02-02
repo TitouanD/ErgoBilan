@@ -19,6 +19,7 @@ interface Props {
   onContribute?: () => void;
 }
 
+// --- CATALOGUE MODAL (EXPORTÉ) ---
 export const TestCatalogModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -49,8 +50,11 @@ export const TestCatalogModal: React.FC<{
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/40 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-4xl h-[700px] rounded-[32px] shadow-2xl flex overflow-hidden flex-col md:flex-row">
+                {/* Sidebar Catégories */}
                 <div className="w-full md:w-1/3 bg-stone-50 p-6 md:p-8 border-b md:border-r border-stone-100 flex flex-col gap-2">
                     <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-4 hidden md:block">Catalogue</h3>
+                    
+                    {/* Barre de recherche simulée */}
                     <div className="relative mb-4">
                         <Search className="absolute left-3 top-1/2 -translate-x-1/2 text-stone-400" size={16} />
                         <input 
@@ -61,6 +65,7 @@ export const TestCatalogModal: React.FC<{
                             className="w-full pl-10 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-sm outline-none focus:border-[#E07A5F]"
                         />
                     </div>
+
                     <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
                         {TEST_CATALOG.map(cat => (
                             <button
@@ -72,6 +77,8 @@ export const TestCatalogModal: React.FC<{
                             </button>
                         ))}
                     </div>
+
+                    {/* CTA CONTRIBUTION INTÉGRÉ */}
                     {onContribute && (
                         <div className="mt-4 pt-4 border-t border-stone-200">
                             <button 
@@ -89,6 +96,8 @@ export const TestCatalogModal: React.FC<{
                         </div>
                     )}
                 </div>
+
+                {/* Zone de Sélection */}
                 <div className="flex-1 p-6 md:p-10 bg-white flex flex-col relative">
                      <div className="flex justify-between items-center mb-6">
                          <div>
@@ -97,10 +106,12 @@ export const TestCatalogModal: React.FC<{
                          </div>
                          <button onClick={onClose} className="p-3 bg-stone-50 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors"><X size={20}/></button>
                      </div>
+
                      <div className="flex-1 overflow-y-auto grid grid-cols-1 gap-4 pb-20">
                         {TEST_CATALOG.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).map(test => {
                              const isAlreadyAdded = !!existingTests[test.id];
                              const isSelected = selectedIds.includes(test.id);
+                             
                              return (
                                  <button 
                                     key={test.id}
@@ -118,6 +129,7 @@ export const TestCatalogModal: React.FC<{
                                         <span className={`font-bold text-lg block mb-1 ${isAlreadyAdded ? 'text-stone-400' : 'text-[#3D405B]'}`}>{test.name}</span>
                                         <span className="text-xs text-stone-400 font-medium">{test.subtests.length} sous-tests inclus</span>
                                     </div>
+                                    
                                     {isAlreadyAdded ? (
                                         <span className="flex items-center gap-1 text-xs font-bold text-[#81B29A] uppercase bg-[#81B29A]/10 px-3 py-1.5 rounded-full">
                                             <Check size={12} strokeWidth={3}/> Ajouté
@@ -130,12 +142,15 @@ export const TestCatalogModal: React.FC<{
                                  </button>
                              )
                         })}
+                        {/* Empty State Search */}
                         {TEST_CATALOG.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
                              <div className="text-center py-10">
                                  <p className="text-stone-400 text-sm">Aucun résultat.</p>
                              </div>
                         )}
                      </div>
+
+                     {/* Footer Validation */}
                      <div className="absolute bottom-0 left-0 right-0 p-6 bg-white border-t border-stone-100 flex justify-between items-center">
                         <span className="text-sm font-bold text-stone-500">
                             {selectedIds.length} test{selectedIds.length > 1 ? 's' : ''} sélectionné{selectedIds.length > 1 ? 's' : ''}
@@ -154,6 +169,7 @@ export const TestCatalogModal: React.FC<{
     );
 }
 
+// Helper pour l'interprétation textuelle
 const getInterpretation = (z: number) => {
     if (z <= -2) return { text: "Difficulté significative (Zone Pathologique)", color: "text-[#D62828]" };
     if (z <= -1) return { text: "Fragilité à surveiller (Zone Limite)", color: "text-[#E07A5F]" };
@@ -161,6 +177,7 @@ const getInterpretation = (z: number) => {
     return { text: "Performance dans la moyenne attendue", color: "text-[#81B29A]" };
 };
 
+// --- SOUS-COMPOSANT EXPORTÉ : Smart Test Row (Accordéon) ---
 export const SubtestRowCheck: React.FC<{
     testId: string; 
     patient: Patient;
@@ -178,7 +195,7 @@ export const SubtestRowCheck: React.FC<{
     
     const [localExpanded, setLocalExpanded] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
-    const [isComputing, setIsComputing] = useState(false);
+    const [isComputing, setIsComputing] = useState(false); // État de chargement DB
 
     const isExpanded = controlledExpanded !== undefined ? controlledExpanded : localExpanded;
     
@@ -187,30 +204,40 @@ export const SubtestRowCheck: React.FC<{
         else setLocalExpanded(!localExpanded);
     };
 
+    // 1. Logique Saisie RAW (via Moteur DB)
     const handleRawInput = async (val: string) => {
         if (readOnly || result.status === 'validated') return;
         if (onFocus) onFocus();
 
         const num = parseFloat(val);
         
+        // Mise à jour immédiate de l'input brut (UX sans lag)
         onChange({ raw: val, status: 'empty' }); 
 
         if (isNaN(num)) return;
 
+        // Calcul Async
         setIsComputing(true);
         try {
-            const ageInMonths = 96; 
+            // Conversion Age String -> Mois (Approximation ou précis)
+            // Pour la démo, on assume 8 ans = 96 mois si age string.
+            // Idéalement il faudrait patient.ageInMonths
+            const ageInMonths = 96; // TODO: Vrai calcul d'âge depuis patient.dob
+
+            // Use Composite ID for DB lookup
             const dbSubtestId = `${testId}_${subtest.id}`;
             const computed = await ScoringEngine.compute(dbSubtestId, num, ageInMonths, patient.gender === 'F' ? 'F' : 'M');
             
             if (computed) {
                 onChange({
-                    raw: val,
+                    raw: val, // Garde le string saisi
                     standard: computed.standard,
                     percentile: computed.percentile,
                     zScore: computed.zScore,
                     status: 'estimated'
                 });
+            } else {
+                // Pas de norme trouvée -> On laisse vide pour saisie manuelle
             }
         } catch (e) {
             console.error(e);
@@ -219,6 +246,7 @@ export const SubtestRowCheck: React.FC<{
         }
     };
 
+    // 2. Logique Édition Manuelle (Calcul Bidirectionnel Purement Mathématique - Pas de DB)
     const handleCalculatedEdit = (field: 'standard' | 'zScore' | 'percentile', val: string) => {
         if (readOnly || result.status === 'validated') return;
         if (onFocus) onFocus();
@@ -244,6 +272,7 @@ export const SubtestRowCheck: React.FC<{
         });
     };
 
+    // 3. Validation
     const handleActionClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (readOnly) return;
@@ -276,6 +305,7 @@ export const SubtestRowCheck: React.FC<{
         onChange({ observation: txt });
     };
 
+    // États visuels
     const isEstimated = result.status === 'estimated';
     const isValidated = result.status === 'validated';
     const isEmpty = result.status === 'empty' || result.raw === '';
@@ -285,7 +315,7 @@ export const SubtestRowCheck: React.FC<{
     if (z <= -2) semanticColor = "#D62828";
     else if (z <= -1) semanticColor = "#E07A5F";
     
-    const PROPOSAL_COLOR = "#6366F1";
+    const PROPOSAL_COLOR = "#6366F1"; // Indigo
     
     const getCalculatedInputStyle = () => {
         if (isValidated) {
@@ -324,19 +354,26 @@ export const SubtestRowCheck: React.FC<{
                 ${isExpanded ? 'shadow-md ring-1 ring-stone-100' : 'hover:shadow'}
                 ${onErrorPulse && isEstimated ? 'animate-pulse ring-2 ring-indigo-300 shadow-indigo-100' : 'border-stone-100'}
             `}>
+                
                 <div 
                     className="absolute left-0 top-0 bottom-0 w-[6px] rounded-l-2xl transition-colors duration-500 z-10"
                     style={{ backgroundColor: isValidated ? semanticColor : (isEstimated ? PROPOSAL_COLOR : '#F5F5F4') }}
                 />
+
                 <div 
                     onClick={() => (isValidated || readOnly) && handleToggle()}
                     className={`flex items-center gap-4 p-4 pl-8 transition-colors ${(isValidated || readOnly) ? 'cursor-pointer' : ''}`}
                 >
+                    {/* 1. Label */}
                     <div className="w-1/4 min-w-[120px]">
                         <h4 className="font-bold text-sm text-[#3D405B] group-hover:text-[#E07A5F] transition-colors">{subtest.name}</h4>
                         <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{subtest.unit}</span>
                     </div>
+
+                    {/* 2. Inputs GRID (Brut | NS | ET | %) */}
                     <div className="flex-1 flex items-center justify-start gap-2 md:gap-4 overflow-x-auto no-scrollbar">
+                        
+                        {/* BRUT (Source) */}
                         <div className="flex flex-col items-center min-w-[60px]">
                             <span className="text-[9px] font-bold text-stone-300 uppercase mb-1">Brut</span>
                             <div className="relative">
@@ -358,7 +395,10 @@ export const SubtestRowCheck: React.FC<{
                                 {isValidated && <Lock size={10} className="absolute top-1 right-1 text-stone-300" />}
                             </div>
                         </div>
+
                         <div className="h-8 w-px bg-stone-100 hidden sm:block"></div>
+
+                        {/* NS (Calculé) */}
                         <div className="flex flex-col items-center min-w-[60px] relative">
                             <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>NS</span>
                             <input
@@ -374,6 +414,8 @@ export const SubtestRowCheck: React.FC<{
                             />
                             {isEstimated && !isValidated && <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full text-white text-[8px] flex items-center justify-center font-bold pointer-events-none">?</div>}
                         </div>
+
+                        {/* ET / Z-Score (Calculé) */}
                         <div className="flex flex-col items-center min-w-[60px]">
                             <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>ET</span>
                             <input
@@ -388,6 +430,8 @@ export const SubtestRowCheck: React.FC<{
                                 style={calcStyle}
                             />
                         </div>
+
+                        {/* % (Calculé) */}
                         <div className="flex flex-col items-center min-w-[60px]">
                             <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>%</span>
                             <input 
@@ -403,6 +447,8 @@ export const SubtestRowCheck: React.FC<{
                             />
                         </div>
                     </div>
+
+                    {/* 3. Action */}
                     <div className="flex justify-end items-center gap-4 pl-4 border-l border-transparent sm:border-stone-50 ml-4">
                         {!readOnly && (
                             <div className="relative group/btn">
@@ -430,6 +476,7 @@ export const SubtestRowCheck: React.FC<{
                                 )}
                             </div>
                         )}
+
                         {readOnly && isValidated && (
                             <div className={`text-stone-300 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
                                  <ChevronDown size={20} />
@@ -437,11 +484,15 @@ export const SubtestRowCheck: React.FC<{
                         )}
                     </div>
                 </div>
+
+                {/* CONTENU ÉTENDU */}
                 <div 
                     className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)] ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                 >
                     <div className="overflow-hidden">
                         <div className="p-6 pt-0 border-t border-stone-50 bg-stone-50/30 rounded-b-2xl">
+                            
+                            {/* Timestamp */}
                             {isValidated && result.validatedAt && (
                                 <div className="flex justify-end mt-2 mb-2">
                                     <span className="text-[9px] text-stone-400 font-medium flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-stone-100 shadow-sm">
@@ -450,6 +501,7 @@ export const SubtestRowCheck: React.FC<{
                                     </span>
                                 </div>
                             )}
+
                             <div className="flex flex-col md:flex-row gap-8 items-center mt-2">
                                  <div className="w-full md:flex-1 h-40 bg-white rounded-xl border border-stone-100 p-4 shadow-sm relative">
                                      <div className="absolute top-2 left-3 z-10 bg-stone-100 px-2 py-1 rounded text-[10px] font-bold text-stone-500 uppercase">
@@ -463,6 +515,7 @@ export const SubtestRowCheck: React.FC<{
                                          isActive={isExpanded}
                                      />
                                  </div>
+
                                  <div className="w-full md:w-1/3 space-y-4">
                                      <div>
                                          <h5 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Interprétation</h5>
@@ -470,6 +523,7 @@ export const SubtestRowCheck: React.FC<{
                                              <Activity size={16} /> {interpretation.text}
                                          </p>
                                      </div>
+
                                      <div>
                                          <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1 flex items-center gap-2">
                                              <MessageSquarePlus size={12}/> Notes Cliniques
@@ -489,6 +543,8 @@ export const SubtestRowCheck: React.FC<{
                     </div>
                 </div>
             </div>
+
+            {/* MODALE CONFIRMATION (Smart Gate) */}
             {showConfirmModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden p-6 animate-in zoom-in-95 duration-200 border-t-4 border-[#4F46E5]">
@@ -498,11 +554,13 @@ export const SubtestRowCheck: React.FC<{
                             </div>
                             <h3 className="font-serif font-bold text-xl text-[#3D405B]">Certification Requise</h3>
                         </div>
+                        
                         <p className="text-stone-600 text-sm leading-relaxed mb-6">
                             Les valeurs <strong>NS ({result.standard})</strong>, <strong>ET ({result.zScore})</strong> et <strong>% ({result.percentile})</strong> sont liées mathématiquement.
                             <br/><br/>
                             En tant que professionnel, confirmez-vous que ces résultats sont cohérents ?
                         </p>
+
                         <div className="flex gap-3 justify-end">
                             <button 
                                 onClick={() => setShowConfirmModal(false)}

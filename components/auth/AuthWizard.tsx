@@ -4,12 +4,13 @@ import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldChe
 import { setupPin } from '../../utils/crypto';
 import { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
+import { Logger } from '../../utils/logger';
 
 interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
     onCancel: () => void;
-    isProfileCompletion?: boolean; // NOUVEAU: Mode complétion
-    initialEmail?: string;         // NOUVEAU: Email pré-rempli
+    isProfileCompletion?: boolean; 
+    initialEmail?: string;         
 }
 
 export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '' }) => {
@@ -26,7 +27,6 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     const [showPassword, setShowPassword] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Si on est en mode complétion, l'email est figé
     useEffect(() => {
         if (initialEmail) setFormData(prev => ({ ...prev, email: initialEmail }));
     }, [initialEmail]);
@@ -41,14 +41,12 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             alert("Veuillez renseigner votre nom et prénom.");
             return;
         }
-        // Validation Email basique
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email)) {
             alert("Veuillez entrer une adresse email valide.");
             return;
         }
         
-        // Si complétion de profil (utilisateur déjà loggé), on saute l'étape Mot de Passe (Step 2)
         if (isProfileCompletion) {
             setStep(3);
         } else {
@@ -81,16 +79,18 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         }
 
         setIsSubmitting(true);
+        Logger.info("Starting Final Registration/Completion process");
+
         try {
             let userId = '';
 
             if (isProfileCompletion) {
-                // Mode Complétion : On récupère l'utilisateur déjà connecté
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error("Session perdue. Veuillez vous reconnecter.");
                 userId = user.id;
+                Logger.info("Completing profile for existing auth user:", userId);
             } else {
-                // Mode Inscription : On crée le compte Auth
+                Logger.info("Creating new auth user:", formData.email);
                 const { data: authData, error: authError } = await supabase.auth.signUp({
                     email: formData.email,
                     password: formData.password,
@@ -98,19 +98,16 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 
                 if (authError) throw authError;
                 
-                // Si l'utilisateur existe déjà mais n'est pas confirmé ou autre cas
                 if (!authData.user) {
-                    // Cas rare : user null sans erreur (peut arriver si confirm email requis et rate limit silencieux ?)
                     throw new Error("L'inscription a échoué. L'utilisateur existe peut-être déjà.");
                 }
                 
                 userId = authData.user.id;
             }
 
-            // 2. Crypto Setup (PIN) - Génération des clés
+            Logger.debug("Generating keys and PIN");
             const { key, salt, validator } = await setupPin(formData.pin);
 
-            // 3. Création Profil dans la table 'practitioners'
             const newPractitioner: PractitionerProfile = {
                 id: userId, 
                 email: formData.email,
@@ -123,7 +120,12 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 encryptionValidator: validator
             };
 
-            const { error: dbError } = await supabase.from('practitioners').insert({
+            Logger.debug("Upserting practitioner record (Handling potential existing row from triggers)");
+            
+            // UTILISATION DE UPSERT AU LIEU DE INSERT
+            // Si le trigger 'handle_new_user' a déjà créé la ligne, on la met à jour.
+            // Cela évite l'erreur de clé dupliquée et évite souvent de redéclencher des triggers d'insertion problématiques.
+            const { error: dbError } = await supabase.from('practitioners').upsert({
                 id: newPractitioner.id,
                 email: newPractitioner.email,
                 first_name: newPractitioner.firstName,
@@ -137,19 +139,24 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
             if (dbError) throw dbError;
 
-            // 4. Callback Succès
+            Logger.info("Registration successful");
             onComplete(newPractitioner, key);
 
         } catch (e: any) {
-            console.error("Erreur inscription/complétion", e);
+            Logger.error("Registration error FULL OBJECT:", e);
+            
             let msg = e.message || "Une erreur est survenue.";
             
-            // Traduction des erreurs Supabase courantes
+            // Parsing intelligent des erreurs Supabase/Postgres
             if (msg.includes("Password should be at least")) msg = "Le mot de passe est trop court (min 6 caractères).";
             if (msg.includes("Email address") && msg.includes("invalid")) msg = "L'adresse email est invalide ou non autorisée.";
             if (msg.includes("already registered") || msg.includes("unique")) msg = "Cette adresse email est déjà utilisée. Essayez de vous connecter.";
-            if (msg.includes("security purposes") && msg.includes("after")) msg = "Trop de tentatives. Veuillez attendre une minute avant de réessayer.";
-            if (msg.includes("Rate limit exceeded")) msg = "Trop de requêtes. Veuillez patienter.";
+            if (msg.includes("violates row-level security")) msg = "Erreur de permissions (RLS). Vérifiez que vous ne tentez pas de modifier un compte existant sans être connecté.";
+            
+            // Si on est en dev, on ajoute le détail technique pour aider le debug
+            if (process.env.NODE_ENV === 'development' && e.details) {
+                msg += ` (DEV DETAIL: ${e.details})`;
+            }
 
             alert("Erreur : " + msg);
         } finally {
@@ -162,22 +169,15 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="bg-stone-50 p-8 border-b border-stone-100">
                     <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-6">
-                        {isProfileCompletion ? "Finalisation du Profil" : "Création de compte Cloud"}
+                        {isProfileCompletion ? "Finalisation du Profil" : "Création de compte"}
                     </h2>
                     
-                    {/* Indicateur d'étape adaptatif */}
                     <div className="flex justify-between items-center relative">
                         <div className="absolute top-1/2 left-0 w-full h-1 bg-stone-200 -z-0"></div>
-                        
-                        {/* Etape 1 */}
                         <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 1 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>1</div>
-                        
-                        {/* Etape 2 (Masquée ou Grisée en mode complétion car sautée) */}
                         {!isProfileCompletion && (
                             <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 2 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>2</div>
                         )}
-                        
-                        {/* Etape 3 (Devient la 2ème étape visuelle en mode complétion) */}
                         <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${step >= 3 ? 'bg-[#E07A5F] text-white' : 'bg-stone-200 text-stone-400'}`}>
                             {isProfileCompletion ? '2' : '3'}
                         </div>
@@ -190,10 +190,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                             {isProfileCompletion && (
                                 <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-4 rounded-r-lg">
                                     <p className="text-xs text-amber-700 font-bold">
-                                        Compte Auth détecté. Veuillez configurer votre profil praticien et votre code PIN sécurisé.
+                                        Compte authentifié détecté. Veuillez configurer vos informations professionnelles.
                                     </p>
                                 </div>
                             )}
+                            
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-bold text-stone-400 uppercase ml-1">Prénom</label>
@@ -204,6 +205,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                     <input required name="lastName" value={formData.lastName} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-bold text-[#3D405B]" placeholder="Dupont" />
                                 </div>
                             </div>
+                            
                             <div>
                                 <label className="text-xs font-bold text-stone-400 uppercase ml-1">Email Pro</label>
                                 <div className="relative">
@@ -214,12 +216,38 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                         name="email" 
                                         value={formData.email} 
                                         onChange={handleChange} 
-                                        disabled={isProfileCompletion} // Bloqué si déjà loggé
+                                        disabled={isProfileCompletion} 
                                         className={`w-full pl-10 p-3 rounded-xl border outline-none font-medium text-[#3D405B] ${isProfileCompletion ? 'bg-stone-100 border-stone-200 text-stone-500 cursor-not-allowed' : 'bg-stone-50 border-stone-200 focus:border-[#E07A5F]'}`} 
                                         placeholder="jean.dupont@ergo.com" 
                                     />
                                 </div>
                             </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">Téléphone Pro</label>
+                                    <div className="relative">
+                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18} />
+                                        <input name="phone" value={formData.phone} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="06..." />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-stone-400 uppercase ml-1">SIRET (Optionnel)</label>
+                                    <div className="relative">
+                                        <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-300" size={18} />
+                                        <input name="siret" value={formData.siret} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="123 456 789..." />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs font-bold text-stone-400 uppercase ml-1">Adresse Cabinet</label>
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-3 text-stone-300" size={18} />
+                                    <input name="address" value={formData.address} onChange={handleChange} className="w-full pl-10 p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] font-medium text-[#3D405B]" placeholder="10 Rue de la Santé, 75000 Paris" />
+                                </div>
+                            </div>
+
                             <div className="flex justify-between items-center pt-4">
                                 <button type="button" onClick={onCancel} className="text-stone-400 font-bold hover:text-stone-600 text-sm">Annuler</button>
                                 <button type="submit" className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2">

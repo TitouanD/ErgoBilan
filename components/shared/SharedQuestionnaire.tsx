@@ -23,6 +23,9 @@ const SECTIONS_CONFIG: { id: SectionKey; title: string; icon: any; fields: (keyo
 ];
 
 export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) => {
+  
+  // En mode Praticien, on ouvre uniquement les sections incomplètes par défaut
+  // En mode Famille, on ouvre la première section
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
       identity: true,
       parents: mode === 'family' ? false : true,
@@ -33,21 +36,25 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       daily: mode === 'family' ? false : true,
   });
 
+  // Calcul du % de complétion pour la famille
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
+      // Logique "Smart Fold" pour le praticien : Si une section a des données, on la ferme par défaut au chargement
       if (mode === 'practitioner') {
           const newOpenState = { ...openSections };
           SECTIONS_CONFIG.forEach(sec => {
               const hasData = sec.fields.some(f => data[f] && data[f].length > 0);
+              // Si donnée présente, on ferme pour réduire le bruit visuel
               if (hasData) newOpenState[sec.id] = false;
-              else newOpenState[sec.id] = true;
+              else newOpenState[sec.id] = true; // Sinon on ouvre pour inciter à remplir
           });
           setOpenSections(newOpenState);
       }
-  }, []);
+  }, []); // Run once on mount
 
   useEffect(() => {
+      // Mise à jour progression
       if (mode === 'family') {
           const totalFields = SECTIONS_CONFIG.reduce((acc, sec) => acc + sec.fields.length, 0);
           const filledFields = SECTIONS_CONFIG.reduce((acc, sec) => acc + sec.fields.filter(f => data[f] && data[f].length > 2).length, 0);
@@ -68,6 +75,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       }
   };
 
+  // Gestion Fratrie
   const addSibling = () => {
       onChange({ siblings: [...(data.siblings || []), { firstName: '', age: '', relation: 'Frère', livesWithChild: true }] });
   };
@@ -82,9 +90,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       onChange({ siblings: newSiblings });
   };
 
+  // Helper pour vérifier si une section est complète (pour le mode praticien)
   const isSectionComplete = (sectionId: SectionKey) => {
       const section = SECTIONS_CONFIG.find(s => s.id === sectionId);
       if (!section) return false;
+      // On considère "complet" si au moins 50% des champs clés sont remplis (approximation heuristique)
       const filled = section.fields.filter(f => data[f] && data[f].length > 0).length;
       return filled >= 1; 
   };
@@ -106,6 +116,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
         {SECTIONS_CONFIG.map((section) => {
             const isOpen = openSections[section.id];
             const isComplete = isSectionComplete(section.id);
+            // En mode praticien, on affiche vert si complet
             const headerColor = mode === 'practitioner' && isComplete ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-stone-200';
             const iconColor = mode === 'practitioner' && isComplete ? 'text-emerald-600 bg-emerald-100' : 'text-[#E07A5F] bg-[#fff5f2]';
 
@@ -135,6 +146,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
                     {isOpen && (
                         <div className="p-6 bg-white border-t border-stone-50 animate-in slide-in-from-top-2">
+                            {/* CONTENU SPÉCIFIQUE PAR SECTION */}
+                            
                             {section.id === 'identity' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div className="space-y-1">
@@ -179,6 +192,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             <input name="parentEmail" type="email" value={data.parentEmail || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" />
                                         </div>
                                     </div>
+                                    
+                                    {/* Fratrie */}
                                     <div className="bg-stone-50 p-4 rounded-2xl border border-stone-100">
                                         <div className="flex justify-between items-center mb-3">
                                             <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Fratrie</span>
@@ -244,11 +259,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 </div>
                             )}
 
+                            {/* Section générique pour les zones de texte longues (Médical, Dev, Vie Quot) */}
                             {['medical', 'dev', 'daily'].includes(section.id) && (
                                 <div className="space-y-5">
                                     {section.fields.map(field => (
                                         <div key={field} className="space-y-1">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">
+                                                {/* Mapping simple des labels */}
                                                 {field === 'medicalDiagnosis' ? 'Diagnostics' : 
                                                  field === 'medicalTreatments' ? 'Traitements' :
                                                  field === 'pregnancyBirth' ? 'Grossesse & Naissance' :
@@ -268,6 +285,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     ))}
                                 </div>
                             )}
+
                         </div>
                     )}
                 </div>

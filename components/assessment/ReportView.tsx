@@ -14,6 +14,7 @@ interface Props {
   branding?: BrandingConfig;
 }
 
+// Helper pour le gras (**text**)
 const parseBold = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, i) => {
@@ -24,6 +25,7 @@ const parseBold = (text: string) => {
     });
 };
 
+// Composant dédié pour l'édition de légende sans perte de focus
 const CaptionEditor: React.FC<{ 
     initialValue: string; 
     onSave: (val: string) => void; 
@@ -39,6 +41,7 @@ const CaptionEditor: React.FC<{
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onBlur={() => onSave(value)}
+            // FIX: bg-transparent et text-stone-700 pour éviter le fond noir
             className="w-full bg-transparent border border-transparent hover:border-stone-200 outline-none text-sm text-stone-700 italic resize-none focus:bg-white focus:ring-2 focus:ring-[#E07A5F]/20 focus:border-[#E07A5F]/20 rounded p-2 transition-all leading-relaxed print:resize-none print:border-none print:p-0"
             rows={4}
             placeholder="Ajoutez une légende..."
@@ -49,21 +52,25 @@ const CaptionEditor: React.FC<{
 export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding }) => {
   const getSection = (id: string) => sections.find(s => s.id === id);
 
+  // STYLE DYNAMIQUE (BRANDING)
   const isCustom = branding?.isEnabled;
   const primaryColor = isCustom ? branding.primaryColor : '#3D405B';
   const secondaryColor = isCustom ? branding.secondaryColor : '#E07A5F';
   const fontFamily = isCustom ? branding.fontFamily : 'Merriweather';
   const corners = isCustom ? branding.cornerStyle : 'rounded';
   
+  // Header Config
   const headerLayout = isCustom ? branding.headerLayout : 'row';
   const headerAlign = isCustom ? branding.headerAlignment : 'left';
   const logoSize = isCustom ? branding.logoSize : 'medium';
 
+  // Dérivation des classes CSS basées sur la config
   const roundedClass = corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl'; // soft = 2xl
   
   const titleStyle = { fontFamily, color: primaryColor };
   const accentStyle = { color: secondaryColor };
 
+  // --- SOUS-COMPOSANT : GESTIONNAIRE DE SECTION INTERACTIF ---
   const InteractiveSection = ({ sectionId }: { sectionId: string }) => {
       const section = getSection(sectionId);
       if (!section) return null;
@@ -215,6 +222,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                           <div key={idx} className="relative group/block">
                               {isEditing ? (
                                   <div className="relative mb-4 print:hidden">
+                                      {/* FIX: Ensure bg-white and text color */}
                                       <textarea 
                                           value={tempText}
                                           onChange={(e) => setTempText(e.target.value)}
@@ -274,6 +282,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       );
   };
 
+  // Section Title Component
   const SectionTitle = ({ title }: { title: string }) => {
       return (
           <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
@@ -287,8 +296,15 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       );
   };
 
+  // HEADER DYNAMIQUE COMPLET (Style Word)
   const HeaderRenderer = () => {
       const logoClass = logoSize === 'small' ? 'h-12' : logoSize === 'medium' ? 'h-20' : 'h-32';
+      
+      // Conteneur principal: Flex
+      // Si Layout = 'column', flex-col.
+      // Si Layout = 'row', flex-row.
+      // Alignment = 'left' -> items-start / justify-start
+      // Alignment = 'center' -> items-center / justify-center (col) ou justify-between (row)
       
       let containerClass = "flex mb-12 border-b-2 border-stone-100 pb-8 gap-6 ";
       
@@ -298,14 +314,17 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
           else if (headerAlign === 'right') containerClass += "items-end text-right";
           else containerClass += "items-start text-left";
       } else {
+          // Row
           containerClass += "items-start ";
           if (headerAlign === 'right') containerClass += "flex-row-reverse text-right";
-          else if (headerAlign === 'center') containerClass += "justify-center text-center"; 
+          else if (headerAlign === 'center') containerClass += "justify-center text-center"; // Rare pour un row mais possible
           else containerClass += "justify-between text-left";
       }
 
       return (
           <header className={containerClass}>
+              
+              {/* BLOC 1 : IDENTITÉ CABINET + LOGO */}
               <div className={`space-y-3 ${headerLayout === 'row' ? 'flex-1' : ''}`}>
                   {isCustom && branding.logoUrl && (
                       <img 
@@ -333,6 +352,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                   </div>
               </div>
 
+              {/* BLOC 2 : INFO PATIENT (Encadré) */}
               <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass} min-w-[200px] ${headerLayout === 'column' ? 'w-full' : ''}`}>
                   <div className={headerLayout === 'column' && headerAlign === 'center' ? 'text-center' : 'text-right'}>
                       <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
@@ -347,29 +367,40 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
   return (
     <div id="printable-report" className="w-[210mm] mx-auto text-stone-800 font-sans print:w-full print:mx-0">
+      
+      {/* PAGE 1 : HEADER + INTRO + PREMIERES SECTIONS */}
       <div className="bg-white p-[15mm] shadow-xl min-h-[297mm] relative mb-8 print:shadow-none print:mb-0 print:break-after-page section-page">
+          
           <HeaderRenderer />
+
           <div className="mb-8 text-sm text-stone-500 italic text-right">
             Fait le {new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}
           </div>
+
           <h1 className="text-center font-bold text-3xl mb-12" style={titleStyle}>
             Rapport d’évaluation
           </h1>
+
+          {/* INTRODUCTION LÉGALE */}
           <div className={`text-xs text-stone-600 text-justify mb-10 leading-relaxed border-l-4 pl-4 py-2 bg-stone-50 ${roundedClass}`} style={{ borderColor: secondaryColor }}>
             <p className="mb-2"><strong>{patient.firstName}</strong> et ses parents consentent à cette évaluation.</p>
             <p>Ce bilan a pour objectif d'analyser les capacités fonctionnelles et de proposer des axes d'intervention adaptés.</p>
           </div>
+
+          {/* SECTIONS PAGE 1 */}
           <InteractiveSection sectionId="mandat_ref" />
           <InteractiveSection sectionId="mandat_eval" />
           <InteractiveSection sectionId="profil" />
       </div>
       
+      {/* PAGE 2 : DIAGNOSTIC & SUITE */}
       <div className="bg-white p-[15mm] shadow-xl min-h-[297mm] relative mb-8 print:shadow-none print:mb-0 print:break-after-page section-page">
           <InteractiveSection sectionId="diagnostic" />
           <InteractiveSection sectionId="objectifs" />
           <InteractiveSection sectionId="recommandations" />
       </div>
 
+      {/* PAGE 3 : ANNEXES */}
       <div className="bg-white p-[15mm] shadow-xl min-h-[297mm] relative mb-8 print:shadow-none print:mb-0 section-page">
           <section className="mb-10">
             <div className="flex items-center justify-center gap-3 mb-8">
@@ -378,6 +409,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     Annexes : Résultats Chiffrés
                 </h2>
             </div>
+            
             <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass}`}>
                 <p className="font-bold mb-2">Guide de lecture :</p>
                 <ul className="list-disc ml-4 space-y-1">
@@ -386,6 +418,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <li><span className="font-bold text-[#E07A5F]">Rouge :</span> Zone de difficulté (Inférieur à -2 ET).</li>
                 </ul>
             </div>
+
             <div className="space-y-12">
                 {Object.entries(tests).map(([testId, subtests]) => {
                     const def = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === testId);
@@ -400,6 +433,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                 <h3 className="font-bold text-lg" style={titleStyle}>{def.name}</h3>
                                 <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">{validSubtests.length} épreuves</span>
                             </div>
+
                             <div className="p-6">
                                 <table className="w-full border-collapse text-sm mb-8">
                                     <thead>
@@ -433,6 +467,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                         })}
                                     </tbody>
                                 </table>
+
                                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-stone-100">
                                     {validSubtests.slice(0, 4).map(([subId, result]) => { 
                                         const subDef = def.subtests.find(s => s.id === subId);
@@ -451,6 +486,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 })}
             </div>
           </section>
+
+          {/* FOOTER */}
           <footer className="mt-20 pt-8 border-t border-stone-200 flex justify-between items-end break-inside-avoid text-xs text-stone-400">
             <div>
                 <p>{branding?.footerText || "Document confidentiel"}</p>
@@ -461,6 +498,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             )}
           </footer>
       </div>
+
     </div>
   );
 };
