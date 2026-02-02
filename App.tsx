@@ -62,6 +62,7 @@ const AppRouter = () => {
         const init = async () => {
             const params = new URLSearchParams(window.location.search);
             if (params.get('q_id') && window.location.hash.includes('key=')) {
+                Logger.info('UI', 'Redirecting to Family Portal via URL');
                 setMode('portal');
                 return;
             }
@@ -72,7 +73,7 @@ const AppRouter = () => {
 
     // Routing Logic basés sur authState
     useEffect(() => {
-        Logger.debug("AppRouter authState changed:", authState);
+        Logger.debug('UI', `AppRouter authState changed: ${authState}`);
         
         if (authState === 'unauthenticated') {
             setMode('landing');
@@ -85,7 +86,7 @@ const AppRouter = () => {
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
-            Logger.info("Redirecting to Wizard for profile completion");
+            Logger.info('AUTH', "Redirecting to Wizard for profile completion");
             setMode('landing');
             setShowAuthModal(true); 
             setIsLoggingIn(false);
@@ -96,6 +97,7 @@ const AppRouter = () => {
     useEffect(() => {
         if (sessionKey && authState === 'authenticated') {
             const loadData = async () => {
+                Logger.info('DB', 'Loading encrypted user data...');
                 const files = await StorageService.loadPatientList(sessionKey);
                 setPatientFiles(files);
                 
@@ -115,10 +117,10 @@ const AppRouter = () => {
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
         setIsLoggingIn(true);
-        Logger.info("Attempting login for:", email);
+        Logger.info('AUTH', "Attempting login for:", email);
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) { 
-            Logger.error("Login failed:", error.message);
+            Logger.error('AUTH', "Login failed", error.message);
             alert(error.message); 
             setIsLoggingIn(false);
         } 
@@ -212,7 +214,7 @@ const AppRouter = () => {
                 setMode('assessment');
             }
         } catch (e) {
-            console.error(e);
+            Logger.error('CRYPTO', "Error importing pending questionnaire", e);
             alert("Erreur lors de l'importation du dossier.");
         } finally {
             setProcessingQueueId(null);
@@ -254,7 +256,7 @@ const AppRouter = () => {
             refreshProfile(); // Actualise le solde de crédits
 
         } catch (e: any) {
-            console.error("Generation Error:", e);
+            Logger.error('AI', "Generation Error in UI", e);
             if (e.message === "CREDIT_INSUFFICIENT") {
                 setPricingModalMode('paywall');
             } else if (e.message === "TIMEOUT_AI") {

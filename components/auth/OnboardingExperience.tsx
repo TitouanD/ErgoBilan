@@ -9,9 +9,6 @@ interface Props {
 export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
     const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
     
-    // Modification: On retire la génération de master key ici car elle se fait dans AuthWizard maintenant
-    // On garde juste le visuel éducatif
-
     return (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center animate-in fade-in duration-500 font-sans text-[#3D405B]">
             
@@ -132,7 +129,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                         </div>
                     )}
 
-                    {/* VISUEL ÉTAPE 4 : LE CADEAU (Offre Performance) */}
+                    {/* VISUEL ÉTAPE 4 : LE CADEAU (3 Crédits) */}
                     {step === 4 && (
                         <div className="relative animate-in slide-in-from-right duration-500 w-full max-w-md flex flex-col items-center">
                             
@@ -145,19 +142,19 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                     <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 transform -rotate-6">
                                         <Gift size={40} />
                                     </div>
-                                    <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">30 Jours Offerts</h3>
+                                    <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Offre de Bienvenue</h3>
                                     <div className="inline-block px-4 py-1 bg-stone-100 rounded-full text-xs font-bold text-stone-500 uppercase tracking-widest mb-6">
-                                        Plan Performance
+                                        Essai Gratuit
                                     </div>
                                     
                                     <div className="space-y-3 text-left">
                                         <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl">
                                             <div className="p-1.5 bg-white rounded-full shadow-sm text-[#E07A5F]"><Check size={14} strokeWidth={3}/></div>
-                                            <span className="text-sm font-bold text-stone-600">6 Bilans / mois</span>
+                                            <span className="text-sm font-bold text-stone-600">3 Crédits Offerts</span>
                                         </div>
                                         <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl">
                                             <div className="p-1.5 bg-white rounded-full shadow-sm text-[#E07A5F]"><Check size={14} strokeWidth={3}/></div>
-                                            <span className="text-sm font-bold text-stone-600">IA Rédactionnelle</span>
+                                            <span className="text-sm font-bold text-stone-600">Valable 30 jours</span>
                                         </div>
                                     </div>
                                 </div>
@@ -271,30 +268,29 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                         </div>
                     )}
 
-                    {/* --- ÉTAPE 4 : OFFRE (NO-FRICTION) --- */}
+                    {/* --- ÉTAPE 4 : OFFRE DE BIENVENUE (3 CREDITS) --- */}
                     {step === 4 && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
                              <div className="mb-4">
                                 <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B] mb-4">
-                                    On vous offre le meilleur <br/> pour démarrer.
+                                    Démarrez maintenant <br/> sans contrainte.
                                 </h2>
                                 <p className="text-lg text-stone-500 leading-relaxed">
-                                    Nous avons activé le plan <strong className="text-[#E07A5F]">Performance</strong> gratuitement pour 30 jours. 
-                                    Prenez le temps de découvrir sans contrainte.
+                                    Nous avons crédité votre compte de <strong className="text-[#E07A5F]">3 bilans offerts</strong>. 
+                                    Aucun engagement, aucune carte bancaire requise.
                                 </p>
                              </div>
 
-                             {/* ARGUMENT MASSUE : FLEXIBILITÉ */}
                              <div className="bg-amber-50 rounded-2xl p-6 border-l-4 border-amber-400 shadow-sm">
                                 <div className="flex items-start gap-4">
                                     <div className="p-2 bg-white rounded-full shadow-sm text-amber-500 mt-1">
-                                        <LifeBuoy size={24} />
+                                        <Clock size={24} />
                                     </div>
                                     <div>
-                                        <h4 className="font-bold text-amber-900 text-lg mb-1">Le Droit à la Flexibilité</h4>
+                                        <h4 className="font-bold text-amber-900 text-lg mb-1">Durée Limitée</h4>
                                         <p className="text-amber-800 leading-relaxed">
-                                            Chez nous, vous ne perdez jamais ce que vous payez. <br/>
-                                            <strong>Vos crédits non utilisés sont automatiquement reportés</strong> au mois suivant.
+                                            Votre période d'essai est valable <strong>30 jours</strong>. <br/>
+                                            Passé ce délai, les fonctionnalités premium seront verrouillées.
                                         </p>
                                     </div>
                                 </div>
@@ -308,7 +304,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                     Accéder à mon espace <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                                 </button>
                                 <div className="mt-4 flex justify-between items-center px-2">
-                                    <p className="text-xs text-stone-400 font-medium">Aucune carte bancaire requise.</p>
+                                    <p className="text-xs text-stone-400 font-medium">Inscription en 2 minutes.</p>
                                 </div>
                              </div>
                         </div>

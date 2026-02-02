@@ -79,7 +79,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         }
 
         setIsSubmitting(true);
-        Logger.info("Starting Final Registration/Completion process");
+        Logger.info('AUTH', "Starting Final Registration/Completion process");
 
         try {
             let userId = '';
@@ -88,9 +88,9 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error("Session perdue. Veuillez vous reconnecter.");
                 userId = user.id;
-                Logger.info("Completing profile for existing auth user:", userId);
+                Logger.info('AUTH', "Completing profile for existing auth user:", userId);
             } else {
-                Logger.info("Creating new auth user:", formData.email);
+                Logger.info('AUTH', "Creating new auth user:", formData.email);
                 const { data: authData, error: authError } = await supabase.auth.signUp({
                     email: formData.email,
                     password: formData.password,
@@ -105,7 +105,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 userId = authData.user.id;
             }
 
-            Logger.debug("Generating keys and PIN");
+            Logger.debug('AUTH', "Generating keys and PIN");
             const { key, salt, validator } = await setupPin(formData.pin);
 
             const newPractitioner: PractitionerProfile = {
@@ -120,7 +120,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 encryptionValidator: validator
             };
 
-            Logger.debug("Upserting practitioner record (Handling potential existing row from triggers)");
+            Logger.debug('DB', "Upserting practitioner record (Handling potential existing row from triggers)");
             
             // UTILISATION DE UPSERT AU LIEU DE INSERT
             // Si le trigger 'handle_new_user' a déjà créé la ligne, on la met à jour.
@@ -139,11 +139,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
             if (dbError) throw dbError;
 
-            Logger.info("Registration successful");
+            Logger.info('AUTH', "Registration successful");
             onComplete(newPractitioner, key);
 
         } catch (e: any) {
-            Logger.error("Registration error FULL OBJECT:", e);
+            Logger.error('AUTH', "Registration error FULL OBJECT:", e);
             
             let msg = e.message || "Une erreur est survenue.";
             

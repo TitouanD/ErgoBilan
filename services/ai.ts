@@ -4,6 +4,7 @@ import { SubscriptionService } from './subscription';
 import { cleanAndParseJson } from '../utils/aiHelpers';
 import { Patient } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
+import { Logger } from '../utils/logger';
 
 // --- CONFIGURATION EXPERTE V2 ---
 
@@ -43,11 +44,16 @@ export const AIService = {
      */
     generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<any[]> => {
         
+        Logger.info('AI', 'Starting report generation process', { patientId: patient.id });
+
         // 1. Vérification & Consommation Crédit
+        Logger.debug('AI', 'Requesting credit consumption...');
         const hasCredit = await SubscriptionService.consumeCredit();
         if (!hasCredit) {
+            Logger.warn('AI', 'Credit consumption failed: Insufficient funds');
             throw new Error("CREDIT_INSUFFICIENT");
         }
+        Logger.info('AI', 'Credit consumed successfully. Proceeding to Gemini.');
 
         // 2. Appel IA avec Timeout Race
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); 
@@ -77,6 +83,8 @@ TÂCHE : Rédige les 3 sections suivantes au format JSON :
    - Important : Mentionne toujours les points forts ou "compétences préservées" et les intérêts de l'enfant.
 `;
             
+            Logger.debug('AI', 'Sending BIO Prompt to Gemini', { model, promptLength: promptBio.length });
+            
             const bioResponse = await ai.models.generateContent({ 
                 model, 
                 contents: promptBio, 
@@ -85,6 +93,8 @@ TÂCHE : Rédige les 3 sections suivantes au format JSON :
                     systemInstruction: SYSTEM_INSTRUCTION
                 } 
             });
+            
+            Logger.debug('AI', 'Received BIO Response', bioResponse.text?.substring(0, 100) + '...');
             const jsonBio = cleanAndParseJson(bioResponse.text);
 
             // --- ÉTAPE 2 : DIAGNOSTIC & PRÉCONISATIONS ---
@@ -119,6 +129,7 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
      - CAS B (Fragilités, compensé, ou léger) : "Un accompagnement régulier n'est pas indiqué ce jour. La mise en place d'adaptations est recommandée." -> Liste les points de vigilance ou propose une guidance ponctuelle.
 `;
             
+            Logger.debug('AI', 'Sending DIAG Prompt to Gemini');
             const diagResponse = await ai.models.generateContent({ 
                 model, 
                 contents: promptDiag, 
@@ -128,6 +139,8 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
                 } 
             });
             const jsonDiag = cleanAndParseJson(diagResponse.text);
+
+            Logger.info('AI', 'Generation completed successfully. Hydrating templates.');
 
             return [
                 { id: 'mandat_ref', title: 'Mandat de référencement', content: hydrateReport(jsonBio.mandat_referencement || "Non généré.", patient), status: 'draft', isAiGenerated: true },
@@ -140,7 +153,6 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
         };
 
         // --- TIMEOUT WRAPPER ---
-        // Empêche le chargement infini si l'API ne répond pas
         const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => {
                 reject(new Error("TIMEOUT_AI"));
@@ -152,11 +164,11 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
             const result = await Promise.race([callAI(), timeoutPromise]);
             return result as any[];
         } catch (e: any) {
-            console.error("AI Service Error:", e);
+            Logger.error('AI', 'Generation failed', e);
             if (e.message === "TIMEOUT_AI") {
                 throw new Error("Le serveur IA met trop de temps à répondre. Veuillez réessayer plus tard.");
             }
-            throw e; // Relancer les autres erreurs (crédits, etc)
+            throw e; 
         }
     }
 };

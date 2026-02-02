@@ -61,10 +61,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        Logger.info("Session found at startup:", session.user.id);
+        Logger.info('AUTH', "Session found at startup", session.user.id);
         await loadUser(session.user.id, session.user.email!);
       } else {
-        Logger.info("No session found at startup.");
+        Logger.info('AUTH', "No session found at startup.");
         setAuthState('unauthenticated');
         setIsLoading(false);
       }
@@ -73,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Abonnement aux changements
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        Logger.debug("Auth State Change:", event);
+        Logger.debug('AUTH', `Auth State Change: ${event}`);
         
         if (event === 'SIGNED_OUT') {
             handleLocalLogout();
@@ -92,7 +92,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Auto-Lock (Sécurité Inactivité)
   useEffect(() => {
       let idleTimer: ReturnType<typeof setTimeout>;
-      const performLock = () => { if (authState === 'authenticated') lockSession(); };
+      const performLock = () => { 
+          if (authState === 'authenticated') {
+              Logger.warn('AUTH', 'Idle timeout reached. Locking session.');
+              lockSession(); 
+          }
+      };
       const resetIdleTimer = () => { 
           if (authState !== 'authenticated') return; 
           clearTimeout(idleTimer); 
@@ -112,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [authState]);
 
   const handleLocalLogout = () => {
-      Logger.info("Performing local logout cleanup");
+      Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
       setUserProfile(INITIAL_PROFILE);
@@ -121,17 +126,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loadUser = async (userId: string, email: string) => {
-      Logger.info("Loading user profile for:", userId);
+      Logger.info('AUTH', "Loading user profile", userId);
       try {
           const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
           
           if (error) {
-              Logger.error("Supabase error loading practitioner:", error);
+              Logger.error('AUTH', "Supabase error loading practitioner", error);
               throw error;
           }
 
           if (user) {
-              Logger.info("Practitioner profile found. Locking session.");
+              Logger.info('AUTH', "Practitioner profile found. Locking session.");
               setPractitioner({ 
                   id: user.id, 
                   email: user.email!, 
@@ -147,12 +152,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setAuthState('locked'); // Profil trouvé -> Ecran PIN
           } else {
               // User authentifié chez Supabase mais pas de profil dans 'practitioners'
-              Logger.warn("User authenticated but NO practitioner profile found. Redirecting to wizard.");
+              Logger.warn('AUTH', "User authenticated but NO practitioner profile found. Redirecting to wizard.");
               setTempEmail(email);
               setAuthState('registering'); // -> Redirection vers Wizard Completion
           }
       } catch (e) {
-          Logger.error("Critical Auth Load Error", e);
+          Logger.error('AUTH', "Critical Auth Load Error", e);
           // En cas d'erreur critique de chargement, on déconnecte pour éviter les états incohérents
           await supabase.auth.signOut();
           handleLocalLogout();
@@ -165,31 +170,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const targetId = userId || userProfile.id;
       if (!targetId) return;
       
-      Logger.debug("Refreshing profile data for:", targetId);
+      Logger.debug('DB', "Refreshing profile data", targetId);
       const fullProfile = await SubscriptionService.getUserProfile(targetId);
       if (fullProfile) setUserProfile(fullProfile);
       
       // Abonnement Realtime aux crédits
       SubscriptionService.subscribeToCredits(targetId, (newCredits) => { 
-          Logger.debug("Realtime credits update:", newCredits);
+          Logger.debug('DB', "Realtime credits update received", newCredits);
           setUserProfile(prev => ({ ...prev, credits: newCredits })); 
       });
   };
 
   const unlockSession = (key: CryptoKey) => {
-      Logger.info("Session unlocked successfully");
+      Logger.info('CRYPTO', "Session unlocked successfully with derived key");
       setSessionKey(key);
       setAuthState('authenticated');
   };
 
   const lockSession = () => {
-      Logger.info("Session locked (timeout or manual)");
+      Logger.info('CRYPTO', "Locking session (Clearing keys)");
       setSessionKey(null);
       setAuthState('locked');
   };
 
   const logout = async () => {
-      Logger.info("User requested logout");
+      Logger.info('AUTH', "User requested logout");
       // Nettoyage immédiat de l'état local pour sécurité visuelle instantanée
       handleLocalLogout();
       // Puis appel serveur

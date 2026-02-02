@@ -2,15 +2,18 @@
 import { supabase } from './db';
 import { PatientFile, Patient, ReportMetadata, TestSession } from '../types';
 import { encryptData, decryptData } from '../utils/crypto';
+import { Logger } from '../utils/logger';
 
 // --- HELPERS CHIFFREMENT ---
 
 const encryptBlob = async (data: any, key: CryptoKey) => {
+    // Logger.debug('CRYPTO', 'Encrypting blob...'); // Trop verbeux
     const res = await encryptData(data, key);
     return { iv: res.iv, content: res.content };
 };
 
 const decryptBlob = async (iv: string, content: string, key: CryptoKey) => {
+    // Logger.debug('CRYPTO', 'Decrypting blob...'); // Trop verbeux
     return await decryptData({ iv, content }, key);
 };
 
@@ -28,6 +31,7 @@ export const StorageService = {
         if (!user) return;
 
         const patientId = draftData?.patient?.id || null;
+        Logger.debug('DB', 'Saving draft...', { patientId });
         
         // Chiffrement
         const enc = await encryptBlob(draftData, key);
@@ -85,17 +89,17 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return null;
 
+        Logger.debug('DB', 'Fetching draft', { patientId: patientId || 'orphan' });
+
         let query = supabase.from('drafts').select('*').eq('user_id', user.id);
         
         if (patientId) {
             query = query.eq('patient_id', patientId);
         } else {
             // Si pas de patientId, on cherche le dernier brouillon orphelin (création)
-            // ou le dernier tout court si on veut reprendre le travail générique
             query = query.is('patient_id', null); 
         }
 
-        // On prend le plus récent correspondant aux critères
         const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
 
         if (error || !data) return null;
@@ -103,7 +107,7 @@ export const StorageService = {
         try {
             return await decryptBlob(data.iv, data.encrypted_data, key);
         } catch (e) {
-            console.error("Erreur déchiffrement brouillon:", e);
+            Logger.error('CRYPTO', "Failed to decrypt draft", e);
             return null;
         }
     },
@@ -112,6 +116,8 @@ export const StorageService = {
     deleteDraft: async (patientId?: string): Promise<void> => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+
+        Logger.info('DB', 'Deleting draft', { patientId });
 
         let query = supabase.from('drafts').delete().eq('user_id', user.id);
         
@@ -124,9 +130,6 @@ export const StorageService = {
         await query;
     },
 
-    /**
-     * @deprecated Utiliser deleteDraft(patientId) à la place
-     */
     clearDraft: async (): Promise<void> => {
         // Fallback pour compatibilité
     },
@@ -138,17 +141,9 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Utilisateur non connecté");
 
+        Logger.info('DB', 'Saving patient file (Encrypted)', { id: file.id });
+
         // 1. Patient
-        // IMPORTANT: On stocke 'archived' dans un champ JSON ou colonne dédiée si le schéma le permettait.
-        // Ici, on va l'inclure dans le BLOB chiffré ET potentiellement on pourrait ajouter une colonne 'status' dans Supabase plus tard.
-        // Pour l'instant, on se base sur le BLOB chiffré qui contient l'objet Patient complet.
-        
-        const encPatient = await encryptBlob(file.patient, key);
-        
-        // Note: 'archived' n'est pas dans l'objet 'Patient', mais dans 'PatientFile'.
-        // Pour persister l'état 'archived' sans changer le schéma SQL 'patients', 
-        // on va l'ajouter dans l'objet patient chiffré comme métadonnée cachée ou on utilise une astuce.
-        // MIEUX : On ajoute une propriété cachée au patient avant chiffrement.
         const patientToSave = { ...file.patient, _archived: file.archived }; 
         const encIdentity = await encryptBlob(patientToSave, key);
 
@@ -205,13 +200,15 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) return [];
 
+        Logger.debug('DB', 'Loading patient list...');
+
         const { data: patients, error } = await supabase
             .from('patients')
             .select('*')
             .eq('user_id', user.id);
 
         if (error) {
-            console.error("Erreur chargement liste patients:", error);
+            Logger.error('DB', "Error loading patient list", error);
             return [];
         }
 
@@ -237,7 +234,7 @@ export const StorageService = {
                     archived: isArchived
                 });
             } catch (e) {
-                console.error(`Erreur déchiffrement patient ${row.id}`, e);
+                Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
             }
         }
 
@@ -249,6 +246,8 @@ export const StorageService = {
     loadPatientDetails: async (patientId: string, key: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[] }> => {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) throw new Error("Non connecté");
+
+        Logger.debug('DB', 'Loading detailed patient data', { patientId });
 
         // 1. Charger Reports
         const { data: reportsData } = await supabase
@@ -284,7 +283,7 @@ export const StorageService = {
     },
 
     deleteFile: async (id: string): Promise<void> => {
-        // Suppression en cascade via FK théoriquement, mais on force le nettoyage
+        Logger.warn('DB', 'DELETING PATIENT FILE', { id });
         await supabase.from('reports').delete().eq('patient_id', id);
         await supabase.from('sessions').delete().eq('patient_id', id);
         await supabase.from('drafts').delete().eq('patient_id', id);

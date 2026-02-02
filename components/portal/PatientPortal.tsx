@@ -5,6 +5,7 @@ import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, Al
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase } from '../../services/db';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
+import { Logger } from '../../utils/logger';
 
 interface Props {
   onBack: () => void;
@@ -38,6 +39,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   const attemptLogin = async (urlStr: string) => {
       setLoadingStep('validating');
       setErrorMessage('');
+      Logger.info('UI', 'Portal Login Attempt', { urlLength: urlStr.length });
       
       try {
           // Parsing URL
@@ -67,6 +69,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               throw new Error("Lien incomplet. Vérifiez que vous avez copié tout le lien.");
           }
 
+          Logger.debug('AUTH', 'Extracted ID & Key', { qId });
+
           // 1. Importation Clé
           const key = await importQuestionnaireKey(keyString);
           setEncryptionKey(key);
@@ -88,6 +92,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
           // 3. Déchiffrement si existant
           if (data.family_encrypted_data) {
+              Logger.info('CRYPTO', 'Decrypting existing family data...');
               const [iv, content] = data.family_encrypted_data.split(':');
               if (iv && content) {
                   const decrypted = await decryptData({ iv, content }, key);
@@ -100,7 +105,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           setLoadingStep('ready');
 
       } catch (e: any) {
-          console.error("Erreur Connexion:", e);
+          Logger.error('AUTH', "Portal Login Error", e);
           setLoadingStep('idle'); // Retour au formulaire
           setErrorMessage(e.message || "Erreur de connexion.");
       }
@@ -125,6 +130,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
       }
       if (!questionnaireId || !encryptionKey) return;
 
+      Logger.info('DB', 'Encrypting and sending family data...');
       setLoadingStep('loading');
       try {
           const payload = {
@@ -145,12 +151,13 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
           if (error) throw error;
 
+          Logger.info('DB', 'Data sent successfully.');
           setIsCompleted(true);
           setLoadingStep('ready');
           window.scrollTo(0, 0);
 
       } catch (e) {
-          console.error("Erreur sauvegarde", e);
+          Logger.error('DB', "Portal Save Error", e);
           alert("Erreur lors de l'envoi sécurisé.");
           setLoadingStep('ready');
       }

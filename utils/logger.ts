@@ -1,38 +1,50 @@
 
-const isDev = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost';
+/**
+ * SYSTÈME DE LOGGING SIMPLIFIÉ (TEXTE BRUT)
+ * Compatible avec les consoles Cloud Sandbox qui ne supportent pas le CSS (%c).
+ */
+
+// Détection d'environnement souple : 
+// Active les logs si on est en localhost OU si l'URL contient ?debug=true
+const isDev = true; //TODO A MODIFIER ABSOLUMENT
+
+const SCOPES = {
+    AUTH:   '🔐 [AUTH]',
+    AI:     '✨ [GENAI]',
+    DB:     '🗄️ [DATA]',
+    CRYPTO: '🛡️ [SECURITY]',
+    UI:     '🖥️ [UI]',
+    SYSTEM: '⚙️ [SYSTEM]',
+} as const;
+
+type LogScope = keyof typeof SCOPES;
 
 export const Logger = {
-    info: (...args: any[]) => {
-        if (isDev) {
-            console.info(`%c[INFO ${new Date().toLocaleTimeString()}]`, 'color: #3b82f6; font-weight: bold;', ...args);
-        }
+    info: (scope: LogScope, message: string, data?: any) => {
+        if (!isDev) return;
+        const prefix = SCOPES[scope] || SCOPES.SYSTEM;
+        if (data !== undefined) console.info(`${prefix} ${message}`, data);
+        else console.info(`${prefix} ${message}`);
     },
-    warn: (...args: any[]) => {
-        if (isDev) {
-            console.warn(`%c[WARN ${new Date().toLocaleTimeString()}]`, 'color: #f59e0b; font-weight: bold;', ...args);
-        }
+
+    debug: (scope: LogScope, message: string, data?: any) => {
+        if (!isDev) return;
+        const prefix = SCOPES[scope] || SCOPES.SYSTEM;
+        if (data !== undefined) console.debug(`${prefix} ${message}`, data);
+        else console.debug(`${prefix} ${message}`);
     },
-    error: (...args: any[]) => {
-        // En dev, on veut tout voir, y compris la stack trace et l'objet erreur complet
-        if (isDev) {
-            console.group(`%c[ERROR ${new Date().toLocaleTimeString()}]`, 'color: #ef4444; font-weight: bold;');
-            args.forEach(arg => {
-                if (typeof arg === 'object' && arg !== null) {
-                    console.error(arg); // Affiche l'objet interactif
-                    if (arg.message) console.error("Message:", arg.message);
-                    if (arg.details) console.error("Details:", arg.details);
-                    if (arg.hint) console.error("Hint:", arg.hint);
-                    if (arg.code) console.error("PG Code:", arg.code);
-                } else {
-                    console.error(arg);
-                }
-            });
-            console.groupEnd();
-        }
+
+    warn: (scope: LogScope, message: string, data?: any) => {
+        if (!isDev) return;
+        const prefix = SCOPES[scope] || SCOPES.SYSTEM;
+        if (data !== undefined) console.warn(`${prefix} ${message}`, data);
+        else console.warn(`${prefix} ${message}`);
     },
-    debug: (...args: any[]) => {
-        if (isDev) {
-            console.debug(`%c[DEBUG ${new Date().toLocaleTimeString()}]`, 'color: #8b5cf6;', ...args);
-        }
+
+    error: (scope: LogScope, message: string, error?: any) => {
+        const prefix = SCOPES[scope] || SCOPES.SYSTEM;
+        // Les erreurs sont toujours affichées, même en prod
+        if (error !== undefined) console.error(`${prefix} ${message}`, error);
+        else console.error(`${prefix} ${message}`);
     }
 };

@@ -68,7 +68,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 <div className="p-2 bg-[#E07A5F] text-white rounded-lg"><Zap size={20} fill="currentColor"/></div>
                                 <div>
                                     <h3 className="font-bold text-[#3D405B] text-sm">Passer en Abonnement</h3>
-                                    <p className="text-xs text-[#E07A5F] font-bold">Dès 9.50€ le 1er mois</p>
+                                    <p className="text-xs text-[#E07A5F] font-bold">Dès 19€ / mois</p>
                                 </div>
                             </div>
                             <ArrowRight size={20} className="text-[#E07A5F] group-hover:translate-x-1 transition-transform"/>
@@ -145,7 +145,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 borderColor="border-amber-100"
                                 tooltip="Vos crédits non utilisés ne sont jamais perdus ! Ils sont stockés pour le mois suivant (limite de 6)."
                             >
-                                <span className="text-xs text-amber-800 font-bold leading-tight">6 reports max</span>
+                                <span className="text-xs text-amber-800 font-bold leading-tight">Reports crédits inclus</span>
                             </FeatureWithTooltip>
 
                             <li className="flex gap-3"><Coins size={18} className="text-stone-400 shrink-0"/> <span>Hors-forfait : <strong>15€</strong> / bilan</span></li>
@@ -205,9 +205,9 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 highlightColor="text-[#E07A5F]"
                                 bgColor="bg-white/60"
                                 borderColor="border-[#E07A5F]/20"
-                                tooltip={<span><strong>Droit à la flexibilité :</strong> Vos crédits non utilisés sont reportés (x3). Vacances, maladie, mois creux... vous ne perdez rien.</span>}
+                                tooltip={<span><strong>Droit à la flexibilité :</strong> Vos crédits non utilisés sont reportés. Vacances, maladie, mois creux... vous ne perdez rien.</span>}
                             >
-                                <span className="font-bold text-[#E07A5F]">18 reports max (Flexibilité)</span>
+                                <span className="font-bold text-[#E07A5F]">Reports de crédits inclus</span>
                             </FeatureWithTooltip>
 
                             <li className="flex gap-3"><Coins size={20} className="text-[#E07A5F] shrink-0"/> <span>Hors-forfait : <strong>8€</strong> / bilan</span></li>
@@ -236,24 +236,24 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                         </button>
                     </div>
 
-                    {/* COLONNE 3: PREMIUM */}
+                    {/* COLONNE 3: EXPERT (Ex-Premium Illimité, maintenant 20 crédits) */}
                     <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-stone-200 bg-white flex flex-col items-center text-center hover:border-stone-300 transition-colors shadow-sm order-3">
                         <div className="mb-2 p-2 bg-stone-100 text-stone-400 rounded-xl"><Crown size={20}/></div>
-                        <h3 className="font-bold text-lg text-[#3D405B]">Premium</h3>
+                        <h3 className="font-bold text-lg text-[#3D405B]">Expert</h3>
                         <div className="my-2">
                             <span className="text-4xl font-serif font-bold text-[#3D405B]">89€</span><span className="text-stone-400 text-sm">/mois</span>
                         </div>
-                        <p className="text-xs text-stone-400 font-medium mb-6">Liberté totale pour experts</p>
+                        <p className="text-xs text-stone-400 font-medium mb-6">Pour les cabinets intensifs</p>
                         <ul className="space-y-4 text-sm text-stone-600 mb-8 text-left w-full px-2">
                             <FeatureWithTooltip 
                                 icon={Check} 
                                 highlightColor="text-[#81B29A]"
-                                tooltip="Ne comptez plus. Idéal pour les cabinets de groupe ou les périodes de bilans intensifs."
+                                tooltip="Un volume énorme pour les spécialistes. Coût par bilan : 4,45€. Le tarif le plus bas du marché."
                             >
-                                <span className="text-lg font-bold text-[#3D405B]">ILLIMITÉ</span>
+                                <span className="text-lg font-bold text-[#3D405B]">20 bilans / mois</span>
                             </FeatureWithTooltip>
 
-                            <li className="flex gap-3"><Check size={18} className="text-[#81B29A] shrink-0"/> <span>Sans aucune limite de volume</span></li>
+                            <li className="flex gap-3"><Check size={18} className="text-[#81B29A] shrink-0"/> <span>Gros volume d'activité</span></li>
                             
                             <FeatureWithTooltip 
                                 icon={Palette} 
@@ -263,10 +263,10 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 <span>Personnalisation Avancée</span>
                             </FeatureWithTooltip>
 
-                            <li className="flex gap-3"><Sparkles size={18} className="text-[#81B29A] shrink-0"/> <span>Demandes sur-mesure</span></li>
-                            <li className="flex gap-3"><Coins size={18} className="text-[#81B29A] shrink-0"/> <span>Aucun frais supplémentaire</span></li>
+                            <li className="flex gap-3"><Sparkles size={18} className="text-[#81B29A] shrink-0"/> <span>Accès Prioritaire IA</span></li>
+                            <li className="flex gap-3"><Coins size={18} className="text-[#81B29A] shrink-0"/> <span>Hors-forfait : <strong>5€</strong> / bilan</span></li>
                         </ul>
-                        <button onClick={() => onSelectPlan('expert')} className="mt-auto w-full py-3 border-2 border-stone-200 text-stone-400 font-bold rounded-xl hover:border-[#3D405B] hover:text-[#3D405B] transition-all text-sm">Choisir Premium</button>
+                        <button onClick={() => onSelectPlan('expert')} className="mt-auto w-full py-3 border-2 border-stone-200 text-stone-400 font-bold rounded-xl hover:border-[#3D405B] hover:text-[#3D405B] transition-all text-sm">Choisir Expert</button>
                     </div>
 
                 </div>
