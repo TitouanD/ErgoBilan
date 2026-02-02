@@ -1,12 +1,13 @@
 
 import React, { useState } from 'react';
-import { Patient } from '../../types';
+import { Patient, PatientFile } from '../../types';
 import { calculateAge } from '../../utils';
 import { User, Lock, AlertTriangle, Database, CheckCircle2 } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAssessment } from '../../contexts/AssessmentContext';
 import { MOCK_SESSION_DATA } from '../../data/mockSession';
+import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 
 interface Props {
@@ -16,14 +17,12 @@ interface Props {
 }
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
-  const { userProfile } = useAuth();
-  const { loadFromDraft } = useAssessment();
+  const { userProfile, sessionKey } = useAuth();
+  const { loadFromDraft, patient } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [formKey, setFormKey] = useState(0); // Clé pour forcer le remount du formulaire
+  const [formKey, setFormKey] = useState(0); 
   
-  // Fonction de wrapper pour updateData qui gère aussi l'âge auto
   const handleDataChange = (partialData: Partial<Patient>) => {
-      // Si date naissance modifiée, on recalcule l'âge ici aussi (redondance safe)
       if (partialData.dob) {
           partialData.age = calculateAge(partialData.dob);
       }
@@ -34,22 +33,51 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
       updateData({ interviewNotes: e.target.value });
   };
 
-  const handleFakeData = (e: React.MouseEvent) => {
+  /**
+   * Crée l'entrée patient en DB si elle n'existe pas encore.
+   * Assure que le dossier n'est pas orphelin.
+   */
+  const ensurePatientCreated = async (currentData: Patient): Promise<Patient> => {
+      if (!sessionKey) return currentData;
+
+      let patientToSave = { ...currentData };
+      
+      // Si pas d'ID, on en crée un
+      if (!patientToSave.id) {
+          patientToSave.id = crypto.randomUUID();
+          updateData({ id: patientToSave.id });
+      }
+
+      // Création immédiate du fichier Patient
+      // Cela permet d'avoir le dossier visible sur le Dashboard même sans "Sauvegarder & Quitter"
+      const newFile: PatientFile = {
+          id: patientToSave.id!,
+          patient: patientToSave,
+          reports: [],
+          sessions: [],
+          lastInteraction: new Date().toISOString(),
+          archived: false
+      };
+
+      await StorageService.saveFile(newFile, sessionKey);
+      return patientToSave;
+  };
+
+  const handleFakeData = async (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       
-      console.log("👉 ADMIN: Clic sur FAKE DATA -> Lancement Injection");
-      
       try {
-          // On passe une copie fraîche des données pour être sûr que React détecte le changement
           const freshData = JSON.parse(JSON.stringify(MOCK_SESSION_DATA));
           
-          console.log("👉 ADMIN: Données prêtes, appel du Context...", freshData.patient.lastName);
+          // Génération ID et Sauvegarde immédiate
+          const patientWithId = await ensurePatientCreated(freshData.patient);
+          freshData.patient = patientWithId;
+
           loadFromDraft(freshData);
           
-          // Feedback visuel
           setDataLoaded(true);
-          setFormKey(prev => prev + 1); // Force le re-render du formulaire
+          setFormKey(prev => prev + 1); 
           
           setTimeout(() => setDataLoaded(false), 2000);
       } catch (err) {
@@ -58,17 +86,25 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
       }
   };
 
+  const handleNextStep = async () => {
+      try {
+          await ensurePatientCreated(data);
+          onNext();
+      } catch (e) {
+          console.error("Erreur création patient:", e);
+          alert("Impossible de créer le dossier patient. Vérifiez votre connexion.");
+      }
+  };
+
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
       
-      {/* Header Praticien */}
       <div className="mb-10 border-b border-stone-200 pb-6 flex justify-between items-end relative z-10">
         <div>
             <h2 className="text-3xl font-serif font-bold text-stone-900">Dossier Patient</h2>
             <p className="text-stone-500 font-medium mt-2">Revue des données transmises et complétion.</p>
         </div>
         <div className="flex gap-3 items-center">
-            {/* BOUTON ADMIN FAKE DATA (Visible seulement si Admin) */}
             {userProfile.isAdmin && (
                 <button 
                     type="button"
@@ -86,7 +122,6 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
         </div>
       </div>
 
-      {/* Bloc Notes Privées (Hors SharedQuestionnaire) */}
       <div className="bg-[#fffdf5] border border-[#F2CC8F]/50 rounded-[24px] p-6 mb-8 shadow-sm">
           <div className="flex items-center gap-2 mb-4 text-[#d97706]">
               <Lock size={18} />
@@ -103,8 +138,6 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           </div>
       </div>
 
-      {/* Le Questionnaire Universel en mode Praticien */}
-      {/* key={formKey} force le composant à se recréer quand on injecte les données */}
       <SharedQuestionnaire 
           key={formKey} 
           data={data} 
@@ -114,7 +147,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
 
       <div className="flex justify-center pt-12">
         <button 
-            onClick={onNext}
+            onClick={handleNextStep}
             disabled={!data.lastName || !data.firstName}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >

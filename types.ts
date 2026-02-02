@@ -154,6 +154,7 @@ export interface PatientFile {
   reports: ReportMetadata[];
   sessions: TestSession[];
   lastInteraction: string;
+  archived?: boolean; // NOUVEAU FLAG
 }
 
 export interface AnonymousTestContribution {

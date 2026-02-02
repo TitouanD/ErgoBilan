@@ -128,9 +128,7 @@ export const StorageService = {
      * @deprecated Utiliser deleteDraft(patientId) à la place
      */
     clearDraft: async (): Promise<void> => {
-        // Fallback pour compatibilité, supprime tout ou juste les orphelins ?
-        // Pour sécurité, on ne fait rien ici pour éviter de supprimer les mauvais drafts.
-        // La logique doit être déplacée dans deleteDraft.
+        // Fallback pour compatibilité
     },
 
     /**
@@ -141,14 +139,26 @@ export const StorageService = {
         if (!user) throw new Error("Utilisateur non connecté");
 
         // 1. Patient
+        // IMPORTANT: On stocke 'archived' dans un champ JSON ou colonne dédiée si le schéma le permettait.
+        // Ici, on va l'inclure dans le BLOB chiffré ET potentiellement on pourrait ajouter une colonne 'status' dans Supabase plus tard.
+        // Pour l'instant, on se base sur le BLOB chiffré qui contient l'objet Patient complet.
+        
         const encPatient = await encryptBlob(file.patient, key);
+        
+        // Note: 'archived' n'est pas dans l'objet 'Patient', mais dans 'PatientFile'.
+        // Pour persister l'état 'archived' sans changer le schéma SQL 'patients', 
+        // on va l'ajouter dans l'objet patient chiffré comme métadonnée cachée ou on utilise une astuce.
+        // MIEUX : On ajoute une propriété cachée au patient avant chiffrement.
+        const patientToSave = { ...file.patient, _archived: file.archived }; 
+        const encIdentity = await encryptBlob(patientToSave, key);
+
         const patientPayload = {
             id: file.id,
             user_id: user.id, 
             updated_at: new Date().toISOString(),
             last_interaction: file.lastInteraction,
-            iv: encPatient.iv,
-            encrypted_identity: encPatient.content
+            iv: encIdentity.iv,
+            encrypted_identity: encIdentity.content
         };
 
         const { error: patError } = await supabase.from('patients').upsert(patientPayload);
@@ -209,13 +219,22 @@ export const StorageService = {
 
         for (const row of patients) {
             try {
-                const patientData = await decryptBlob(row.iv, row.encrypted_identity, key) as Patient;
+                // On récupère le patient et son état archivé potentiel
+                const decryptedData = await decryptBlob(row.iv, row.encrypted_identity, key) as any;
+                
+                // Nettoyage de la propriété cachée _archived pour l'objet Patient
+                const isArchived = decryptedData._archived === true;
+                delete decryptedData._archived;
+                
+                const patientData = decryptedData as Patient;
+
                 files.push({
                     id: row.id,
                     patient: patientData,
                     reports: [], 
                     sessions: [],
-                    lastInteraction: row.last_interaction
+                    lastInteraction: row.last_interaction,
+                    archived: isArchived
                 });
             } catch (e) {
                 console.error(`Erreur déchiffrement patient ${row.id}`, e);
@@ -265,6 +284,15 @@ export const StorageService = {
     },
 
     deleteFile: async (id: string): Promise<void> => {
+        // Suppression en cascade via FK théoriquement, mais on force le nettoyage
+        await supabase.from('reports').delete().eq('patient_id', id);
+        await supabase.from('sessions').delete().eq('patient_id', id);
+        await supabase.from('drafts').delete().eq('patient_id', id);
         await supabase.from('patients').delete().eq('id', id);
+    },
+
+    toggleArchive: async (file: PatientFile, key: CryptoKey): Promise<void> => {
+        const newFile = { ...file, archived: !file.archived };
+        await StorageService.saveFile(newFile, key);
     }
 };

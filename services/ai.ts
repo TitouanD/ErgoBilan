@@ -26,6 +26,8 @@ TES RÈGLES D'OR (Non négociables) :
 // 2. Sécurité des Données
 const SECURITY_INSTRUCTION = `RÈGLE DE SÉCURITÉ : Tu ne dois JAMAIS modifier, supprimer ou inventer les placeholders anonymisés (ex: {{PATIENT_PRENOM}}, {{ECOLE}}). Ils doivent rester intacts dans le texte généré.`;
 
+const TIMEOUT_MS = 90000; // 90 secondes max avant timeout forcé
+
 export interface GenerationPayload {
     safeQuestionnaire: string;
     safeObservations: string;
@@ -37,6 +39,7 @@ export const AIService = {
     
     /**
      * Génère le rapport complet en une ou plusieurs passes selon la complexité.
+     * Inclut un Timeout de sécurité.
      */
     generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<any[]> => {
         
@@ -46,11 +49,11 @@ export const AIService = {
             throw new Error("CREDIT_INSUFFICIENT");
         }
 
-        // 2. Appel IA
+        // 2. Appel IA avec Timeout Race
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); 
         const model = 'gemini-3-flash-preview'; 
 
-        try {
+        const callAI = async () => {
             // --- ÉTAPE 1 : CONTEXTUALISATION & PROFIL ---
             const promptBio = `
 ${SECURITY_INSTRUCTION}
@@ -126,21 +129,34 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
             });
             const jsonDiag = cleanAndParseJson(diagResponse.text);
 
-            // 3. Hydratation & Formatting Final
             return [
                 { id: 'mandat_ref', title: 'Mandat de référencement', content: hydrateReport(jsonBio.mandat_referencement || "Non généré.", patient), status: 'draft', isAiGenerated: true },
                 { id: 'mandat_eval', title: 'Mandat d\'évaluation', content: hydrateReport(jsonBio.mandat_evaluation || "Non généré.", patient), status: 'draft', isAiGenerated: true },
                 { id: 'profil', title: 'Profil occupationnel', content: hydrateReport(jsonBio.profil_occupationnel || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                
                 { id: 'diagnostic', title: 'Diagnostic en ergothérapie', content: hydrateReport(jsonDiag.synthese_diagnostic || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                
                 { id: 'recommandations', title: 'Recommandations pédagogiques', content: hydrateReport(jsonDiag.recommandations || "Non généré.", patient), status: 'draft', isAiGenerated: true },
                 { id: 'objectifs', title: 'Objectifs & Projet Thérapeutique', content: hydrateReport(jsonDiag.objectifs_generaux || "Non généré.", patient), status: 'draft', isAiGenerated: true },
             ];
+        };
 
-        } catch (e) {
-            console.error("AI Generation Error:", e);
-            throw new Error("GENERATION_FAILED");
+        // --- TIMEOUT WRAPPER ---
+        // Empêche le chargement infini si l'API ne répond pas
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+                reject(new Error("TIMEOUT_AI"));
+            }, TIMEOUT_MS);
+        });
+
+        try {
+            // Course entre l'IA et le Timeout
+            const result = await Promise.race([callAI(), timeoutPromise]);
+            return result as any[];
+        } catch (e: any) {
+            console.error("AI Service Error:", e);
+            if (e.message === "TIMEOUT_AI") {
+                throw new Error("Le serveur IA met trop de temps à répondre. Veuillez réessayer plus tard.");
+            }
+            throw e; // Relancer les autres erreurs (crédits, etc)
         }
     }
 };

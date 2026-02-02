@@ -1,10 +1,12 @@
 
 import React, { useState } from 'react';
 import { PatientFile, TestSession, Patient, ScoreResult } from '../../types';
-import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
 import { CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, XAxis, YAxis } from 'recharts';
 import { TEST_CATALOG } from '../../data/testCatalog';
 import { SubtestRowCheck } from '../assessment/Step2Tests';
+import { StorageService } from '../../services/storage';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Props {
   file: PatientFile;
@@ -30,12 +32,8 @@ const findSubtestDefInCatalog = (subId: string) => {
 const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ session, patient }) => {
     const [isOpen, setIsOpen] = useState(false);
     
-    // Stratégie de récupération des définitions :
-    // 1. Si session.testId correspond à un test connu (ex: "mabc-2"), on l'utilise.
-    // 2. Sinon (ex: "bilan_initial"), on cherche chaque sous-test individuellement dans tout le catalogue.
     const knownTestDef = TEST_CATALOG.flatMap(c => c.tests).find(t => t.id === session.testId);
 
-    // Préparation de la liste des items à afficher
     const itemsToRender = knownTestDef 
         ? knownTestDef.subtests.map(st => ({ 
             key: st.id, 
@@ -93,10 +91,9 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
                         </div>
                         <div className="space-y-2">
                             {itemsToRender.map((item) => {
-                                if (!item.res) return null; // Skip si pas de résultat pour ce sous-test
+                                if (!item.res) return null; 
 
                                 if (item.def) {
-                                    // Cas Idéal : On a la définition, on affiche le composant riche
                                     return (
                                         <div key={item.key}>
                                             <SubtestRowCheck 
@@ -110,7 +107,6 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
                                         </div>
                                     );
                                 } else {
-                                    // Fallback : Définition introuvable (Test supprimé ou ID orphelin)
                                     return (
                                         <div key={item.key} className="p-4 bg-white rounded-lg mb-2 text-sm text-stone-600 border border-stone-200 flex justify-between items-center">
                                             <div>
@@ -134,13 +130,92 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
     );
 };
 
+const DeleteConfirmationModal: React.FC<{
+    onConfirm: () => void;
+    onCancel: () => void;
+}> = ({ onConfirm, onCancel }) => {
+    const [input, setInput] = useState('');
+    const isValid = input.toLowerCase() === 'supprimer';
+
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="bg-white rounded-[32px] p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+                <button onClick={onCancel} className="absolute top-6 right-6 text-stone-300 hover:text-stone-500"><X size={24}/></button>
+                
+                <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
+                    <Trash2 size={32} />
+                </div>
+                
+                <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Zone de Danger</h3>
+                <p className="text-stone-500 text-sm mb-6 leading-relaxed">
+                    Cette action est <strong>irréversible</strong>. <br/>
+                    Toutes les données, rapports et historiques de ce patient seront effacés définitivement.
+                </p>
+
+                <div className="mb-6">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2 block">
+                        Tapez "supprimer" pour confirmer
+                    </label>
+                    <input 
+                        type="text" 
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        className="w-full text-center p-4 rounded-xl border-2 border-stone-200 focus:border-rose-500 outline-none font-bold text-rose-500 uppercase placeholder:normal-case placeholder:font-normal"
+                        placeholder="supprimer"
+                    />
+                </div>
+
+                <div className="flex gap-3">
+                    <button onClick={onCancel} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors">Annuler</button>
+                    <button 
+                        onClick={onConfirm}
+                        disabled={!isValid}
+                        className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all ${isValid ? 'bg-rose-500 hover:bg-rose-600 hover:-translate-y-1' : 'bg-stone-300 cursor-not-allowed'}`}
+                    >
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
+  const { sessionKey } = useAuth();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const chartData = file.sessions ? file.sessions.map(s => ({
       date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
-      score: 10 + (Math.random() * 4 - 2), // Simulation score moyen pour le graph
+      score: 10 + (Math.random() * 4 - 2), 
       label: s.testName
   })) : [];
+
+  const handleArchive = async () => {
+      if (!sessionKey) return;
+      setIsProcessing(true);
+      try {
+          await StorageService.toggleArchive(file, sessionKey);
+          onBack(); // Retour au dashboard pour rafraichir
+      } catch (e) {
+          alert("Erreur lors de l'archivage.");
+      } finally {
+          setIsProcessing(false);
+      }
+  };
+
+  const handleDelete = async () => {
+      if (!sessionKey) return;
+      setIsProcessing(true);
+      try {
+          await StorageService.deleteFile(file.id);
+          onBack(); 
+      } catch (e) {
+          alert("Erreur lors de la suppression.");
+      } finally {
+          setIsProcessing(false);
+      }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 animate-in slide-in-from-right duration-500">
@@ -174,11 +249,14 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
         <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-2xl bg-[#3D405B] text-white flex items-center justify-center font-serif font-bold text-3xl shadow-xl shadow-[#3D405B]/10 transform -rotate-3">
+            <div className={`w-20 h-20 rounded-2xl flex items-center justify-center font-serif font-bold text-3xl shadow-xl shadow-[#3D405B]/10 transform -rotate-3 ${file.archived ? 'bg-stone-300 text-white' : 'bg-[#3D405B] text-white'}`}>
                 {file.patient.firstName.charAt(0)}{file.patient.lastName.charAt(0)}
             </div>
             <div>
-                <h1 className="font-serif text-4xl font-bold text-[#3D405B] mb-1">{file.patient.firstName} {file.patient.lastName}</h1>
+                <h1 className="font-serif text-4xl font-bold text-[#3D405B] mb-1 flex items-center gap-3">
+                    {file.patient.firstName} {file.patient.lastName}
+                    {file.archived && <span className="bg-stone-100 text-stone-400 text-xs px-3 py-1 rounded-full uppercase tracking-wider border border-stone-200">Archivé</span>}
+                </h1>
                 <div className="flex gap-2">
                     <span className="text-[10px] font-bold uppercase bg-stone-100 px-2 py-1 rounded text-stone-500">{file.patient.age}</span>
                     <span className="text-[10px] font-bold uppercase bg-[#E07A5F]/10 px-2 py-1 rounded text-[#E07A5F]">{file.patient.classLevel}</span>
@@ -329,8 +407,33 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
                      </div>
                  </div>
             </div>
+
+            {/* ZONE D'ACTIONS DOSSIER */}
+            <div className="pt-4 space-y-3">
+                <button 
+                    onClick={handleArchive}
+                    disabled={isProcessing}
+                    className="w-full py-3 bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-700 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                >
+                    {file.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                    {file.archived ? "Désarchiver le dossier" : "Archiver le dossier"}
+                </button>
+                <button 
+                    onClick={() => setShowDeleteModal(true)}
+                    className="w-full py-3 bg-white border border-rose-100 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                >
+                    <Trash2 size={16} /> Supprimer le dossier
+                </button>
+            </div>
         </div>
       </div>
+
+      {showDeleteModal && (
+          <DeleteConfirmationModal 
+            onConfirm={handleDelete}
+            onCancel={() => setShowDeleteModal(false)}
+          />
+      )}
     </div>
   );
 };

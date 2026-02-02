@@ -15,9 +15,8 @@ interface Props {
   processingQueueId?: string | null;
   onContribute?: () => void; 
   
-  // Modification : On passe maintenant une Map d'index (ID Patient -> Date Update)
   draftsIndex?: Record<string, string>; 
-  onResumeDraft?: (patientId: string) => void; // Modification : Accepte l'ID
+  onResumeDraft?: (patientId: string) => void;
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -66,7 +65,6 @@ const ReferralCard = () => {
 }
 
 export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft }) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('active');
 
@@ -77,12 +75,25 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
     [pendingQuestionnaires, searchQuery]
   );
 
-  const filteredFiles = useMemo(() => 
+  // Filtrage intelligent Actifs vs Archivés
+  const activeFiles = useMemo(() => 
     patientFiles.filter(f => 
+        !f.archived && 
         (f.patient.firstName + ' ' + f.patient.lastName).toLowerCase().includes(searchQuery.toLowerCase())
     ),
     [patientFiles, searchQuery]
   );
+
+  const archivedFiles = useMemo(() => 
+    patientFiles.filter(f => 
+        f.archived && 
+        (f.patient.firstName + ' ' + f.patient.lastName).toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [patientFiles, searchQuery]
+  );
+
+  // Liste à afficher selon l'onglet
+  const currentFilesList = activeTab === 'archived' ? archivedFiles : activeFiles;
 
   return (
     <div className="animate-in fade-in duration-700 relative">
@@ -105,7 +116,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
             {/* 1. KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 <StatCard icon={Clock} value={`${hoursSaved}h`} label="Temps Libéré" subtext="~ 2 dimanches récupérés" highlight={true} />
-                <StatCard icon={Users} value={patientFiles.length} label="Patients Actifs" subtext="+3 cette semaine" />
+                <StatCard icon={Users} value={activeFiles.length} label="Patients Actifs" subtext="+3 cette semaine" />
                 <ReferralCard />
             </div>
 
@@ -136,8 +147,8 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
             <div className="flex gap-8 border-b border-stone-200 mb-8 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'pending', label: 'En attente', icon: Inbox, count: filteredPending.length },
-                    { id: 'active', label: 'Patients Actifs', icon: UserCheck, count: filteredFiles.length },
-                    { id: 'archived', label: 'Archives', icon: Archive, count: 0 }
+                    { id: 'active', label: 'Patients Actifs', icon: UserCheck, count: activeFiles.length },
+                    { id: 'archived', label: 'Archives', icon: Archive, count: archivedFiles.length }
                 ].map(tab => (
                     <button 
                         key={tab.id}
@@ -193,16 +204,16 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                     </div>
                 ))}
 
-                {/* VUE ACTIVE */}
-                {activeTab === 'active' && filteredFiles.map((file) => {
+                {/* VUE ACTIVE & ARCHIVED */}
+                {(activeTab === 'active' || activeTab === 'archived') && currentFilesList.map((file) => {
                     // Check dans l'index si un brouillon existe pour ce patient
                     const draftDate = draftsIndex[file.id];
                     const hasDraft = !!draftDate;
                     
                     return (
-                        <div key={file.id} onClick={() => onOpenPatient(file.id)} className="group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden">
+                        <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden ${file.archived ? 'opacity-70 grayscale hover:grayscale-0' : ''}`}>
                             <div className="flex items-center gap-4 mb-6">
-                                <div className="w-12 h-12 rounded-full bg-[#3D405B] text-white flex items-center justify-center font-serif font-bold text-xl">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-serif font-bold text-xl ${file.archived ? 'bg-stone-300 text-white' : 'bg-[#3D405B] text-white'}`}>
                                     {file.patient.firstName.charAt(0)}{file.patient.lastName.charAt(0)}
                                 </div>
                                 <div>
@@ -214,7 +225,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                             </div>
                             <div className="flex-1 space-y-4">
                                 <div className="flex items-center gap-3 text-xs text-stone-600">
-                                    <div className="w-2 h-2 rounded-full bg-[#E07A5F]"></div>
+                                    <div className={`w-2 h-2 rounded-full ${file.archived ? 'bg-stone-400' : 'bg-[#E07A5F]'}`}></div>
                                     <span>{file.reports.length} interventions archivées</span>
                                 </div>
                                 <div className="text-xs text-stone-400 bg-stone-50 p-2 rounded-lg flex items-center gap-2">
@@ -222,8 +233,8 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                                 </div>
                             </div>
                             
-                            {/* BOUTON DRAFT (Si actif) */}
-                            {hasDraft ? (
+                            {/* BOUTON DRAFT (Si actif et non archivé) */}
+                            {hasDraft && !file.archived ? (
                                 <div className="mt-4">
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); onResumeDraft && onResumeDraft(file.id); }}
@@ -244,12 +255,15 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                 })}
 
                 {/* EMPTY STATE */}
-                {((activeTab === 'active' && filteredFiles.length === 0) || (activeTab === 'pending' && filteredPending.length === 0)) && (
+                {((activeTab === 'active' && activeFiles.length === 0) || 
+                  (activeTab === 'pending' && filteredPending.length === 0) ||
+                  (activeTab === 'archived' && archivedFiles.length === 0)) && (
                     <div className="col-span-full py-20 flex flex-col items-center text-center">
                         <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center text-stone-200 mb-4">
-                            <Search size={32} />
+                            {activeTab === 'archived' ? <Archive size={32} /> : <Search size={32} />}
                         </div>
                         <h3 className="font-bold text-stone-500">Aucun résultat</h3>
+                        {activeTab === 'active' && <p className="text-xs text-stone-400 mt-2">Créez un nouveau dossier pour commencer.</p>}
                     </div>
                 )}
             </div>

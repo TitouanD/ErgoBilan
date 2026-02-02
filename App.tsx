@@ -15,9 +15,9 @@ import { Step3Observations } from './components/assessment/Step3Observations';
 import { Step4Validation } from './components/assessment/Step4Validation';
 import { Step5Export } from './components/assessment/Step5Export';
 import { PricingModal } from './components/shared/PricingModal';
-import { PrivacyAirlockModal } from './components/assessment/PrivacyAirlockModal';
 import { PatientDetail } from './components/dashboard/PatientDetail';
 import { QuickEntryModal } from './components/dashboard/QuickEntryModal';
+import { GenerationLoader } from './components/shared/GenerationLoader';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
@@ -43,10 +43,8 @@ const AppRouter = () => {
     // Modals
     const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
-    const [showPrivacyAirlock, setShowPrivacyAirlock] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [createdLink, setCreatedLink] = useState<string | null>(null);
-    const [pendingPayload, setPendingPayload] = useState<GenerationPayload | null>(null);
     
     // Data Lists (Loaded on Dashboard)
     const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
@@ -221,37 +219,51 @@ const AppRouter = () => {
         }
     };
 
-    const prepareGeneration = () => {
-        const p = assessment.patient;
-        const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
-        const rawQ = `Motif: ${p.reason}\nScolarité: ${p.school} ${p.classLevel}\nVie: ${p.meals} ${p.dressing}`;
-        const rawObs = `Anamnèse: ${assessment.observations.anamnese}\nMotricité: ${assessment.observations.motricite}`;
-        
-        setPendingPayload({
-            safeQuestionnaire: anonymizeData(rawQ, p).text,
-            safeObservations: anonymizeData(rawObs, p).text,
-            scoresRaw: JSON.stringify(assessment.tests, null, 2),
-            childContext: `L'enfant est ${genderString} de ${p.age}.`
-        });
+    /**
+     * Génère le rapport directement (Flux sans friction).
+     * Inclut l'anonymisation et l'appel IA.
+     */
+    const handleGenerateReport = async () => {
         setShowConfirmGeneration(false);
-        setShowPrivacyAirlock(true);
-    };
-
-    const executeGeneration = async () => {
-        setShowPrivacyAirlock(false);
-        if (!pendingPayload) return;
-        setIsGenerating(true);
+        setIsGenerating(true); // Active le GenerationLoader
+        
         try {
-            const sections = await AIService.generateFullReport(pendingPayload, assessment.patient);
+            // 1. Préparation & Anonymisation (Silent Process)
+            const p = assessment.patient;
+            const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
+            
+            // Construction des blocs de texte bruts
+            const rawQ = `Motif: ${p.reason}\nScolarité: ${p.school} ${p.classLevel}\nVie: ${p.meals} ${p.dressing}`;
+            const rawObs = `Anamnèse: ${assessment.observations.anamnese}\nMotricité: ${assessment.observations.motricite}`;
+            
+            // Anonymisation via l'utilitaire sécurisé
+            const payload: GenerationPayload = {
+                safeQuestionnaire: anonymizeData(rawQ, p).text,
+                safeObservations: anonymizeData(rawObs, p).text,
+                scoresRaw: JSON.stringify(assessment.tests, null, 2),
+                childContext: `L'enfant est ${genderString} de ${p.age}.`
+            };
+
+            // 2. Appel IA (Consommation de crédit via Service)
+            // Le AIService gère maintenant le Timeout
+            const sections = await AIService.generateFullReport(payload, assessment.patient);
+            
+            // 3. Mise à jour UI
             assessment.setSections(sections);
             assessment.setStep(4);
-            refreshProfile();
+            refreshProfile(); // Actualise le solde de crédits
+
         } catch (e: any) {
-            if (e.message === "CREDIT_INSUFFICIENT") setPricingModalMode('paywall');
-            else alert("Erreur IA: " + e.message);
+            console.error("Generation Error:", e);
+            if (e.message === "CREDIT_INSUFFICIENT") {
+                setPricingModalMode('paywall');
+            } else if (e.message === "TIMEOUT_AI") {
+                alert("Le serveur IA est surchargé. Vos crédits n'ont pas été débités. Veuillez réessayer.");
+            } else {
+                alert("Une erreur est survenue lors de la génération : " + e.message);
+            }
         } finally {
-            setIsGenerating(false);
-            setPendingPayload(null);
+            setIsGenerating(false); // Désactive le GenerationLoader
         }
     };
 
@@ -271,6 +283,15 @@ const AppRouter = () => {
         
         assessment.resetAssessment();
         setMode('dashboard');
+    };
+
+    const handleContributionAccess = () => {
+        // Restriction : Accès réservé aux plans payants (pas de plan gratuit/essai)
+        if (userProfile.subscriptionPlan === 'free') {
+            setPricingModalMode('plans');
+            return;
+        }
+        setMode('contribution');
     };
 
     // --- RENDUS ---
@@ -366,7 +387,7 @@ const AppRouter = () => {
                 </div>
                 <div className="flex items-center gap-3">
                     {mode === 'assessment' && assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
-                    <button onClick={() => setMode('contribution')} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Contribuer</button>
+                    <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Contribuer</button>
                     <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
                     <div className="h-8 w-px bg-stone-200 mx-1"></div>
                     <button onClick={logout} className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Déconnexion"><LogOut size={20}/></button>
@@ -388,6 +409,7 @@ const AppRouter = () => {
                     // Passage de l'index des brouillons (Map)
                     draftsIndex={draftsIndex}
                     onResumeDraft={handleResumeDraft}
+                    onContribute={handleContributionAccess}
                 />
             )}
 
@@ -407,7 +429,7 @@ const AppRouter = () => {
             {mode === 'assessment' && (
                 <div className="max-w-7xl mx-auto p-6">
                     {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} />}
-                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => assessment.setStep(3)} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={() => setMode('contribution')} userProfile={userProfile} />}
+                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => assessment.setStep(3)} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
                     {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
                     {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', content: c })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
                     {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
@@ -431,6 +453,13 @@ const AppRouter = () => {
                     </div>
                 </div>
             )}
+            
+            {/* Nouveau GenerationLoader : Remplace le spin infini sur le bouton */}
+            <GenerationLoader 
+                isVisible={isGenerating} 
+                onCancel={() => { setIsGenerating(false); alert("Génération annulée."); }} 
+            />
+
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] max-w-md text-center shadow-2xl">
@@ -438,16 +467,21 @@ const AppRouter = () => {
                             <Sparkles size={40} />
                         </div>
                         <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Lancer l'analyse IA ?</h3>
-                        <p className="text-stone-500 text-sm mb-8 font-medium">Cette action consommera <strong className="text-[#E07A5F]">1 crédit</strong> de votre solde.</p>
+                        <p className="text-stone-500 text-sm mb-4 font-medium">Cette action consommera <strong className="text-[#E07A5F]">1 crédit</strong>.</p>
+                        
+                        <div className="bg-stone-50 p-3 rounded-xl mb-8 border border-stone-100 flex gap-2 text-left">
+                            <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
+                            <p className="text-[10px] text-stone-500 leading-relaxed">
+                                <strong>Confidentialité garantie :</strong> Les données sont anonymisées automatiquement avant l'envoi. Aucun nom ne quitte votre navigateur.
+                            </p>
+                        </div>
+
                         <div className="flex gap-4">
                             <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors">Annuler</button>
-                            <button onClick={prepareGeneration} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">Confirmer</button>
+                            <button onClick={handleGenerateReport} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">Confirmer</button>
                         </div>
                     </div>
                 </div>
-            )}
-            {showPrivacyAirlock && pendingPayload && (
-                <PrivacyAirlockModal anonymizedContent={pendingPayload.safeQuestionnaire + '\n\n' + pendingPayload.safeObservations} onConfirm={executeGeneration} onCancel={() => setShowPrivacyAirlock(false)} />
             )}
             {showQuickEntry && (
                 <QuickEntryModal onClose={() => setShowQuickEntry(false)} onSave={async (sess) => { if(selectedFile && sessionKey) { await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, sessionKey); setShowQuickEntry(false); }}} />
