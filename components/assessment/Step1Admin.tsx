@@ -150,6 +150,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
 
       <div className="flex justify-center pt-12">
         <button 
+            id="demo-btn-next-step1" // TUTO CIBLE
             onClick={handleNextStep}
             disabled={!data.lastName || !data.firstName}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

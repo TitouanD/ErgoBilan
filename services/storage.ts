@@ -3,6 +3,7 @@ import { supabase } from './db';
 import { PatientFile, Patient, ReportMetadata, TestSession } from '../types';
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
+import { MOCK_SESSION_DATA } from '../data/mockSession';
 
 // --- HELPERS CHIFFREMENT ---
 
@@ -15,8 +16,16 @@ const decryptBlob = async (iv: string, content: string, key: CryptoKey) => {
     return await decryptData({ iv, content }, key);
 };
 
+// --- DEMO MODE STATE ---
+let _isDemoMode = false;
+
 export const StorageService = {
     
+    setDemoMode: (active: boolean) => {
+        _isDemoMode = active;
+        Logger.warn('DB', `Storage Service switched to DEMO MODE: ${active}`);
+    },
+
     init: async (key: CryptoKey): Promise<void> => {
         // No-op pour Supabase pur
     },
@@ -25,6 +34,11 @@ export const StorageService = {
      * GESTION DES BROUILLONS (Reste chiffré avec SESSION_KEY/PIN car privé)
      */
     saveDraft: async (draftData: any, sessionKey: CryptoKey): Promise<void> => {
+        if (_isDemoMode) {
+            Logger.info('DB', '[DEMO] Draft saved to volatile memory');
+            return;
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
@@ -58,6 +72,8 @@ export const StorageService = {
     },
 
     getDraftsMetadata: async (): Promise<Record<string, string>> => {
+        if (_isDemoMode) return {};
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return {};
 
@@ -78,6 +94,8 @@ export const StorageService = {
     },
 
     getDraft: async (sessionKey: CryptoKey, patientId?: string): Promise<any | null> => {
+        if (_isDemoMode) return null;
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return null;
 
@@ -101,6 +119,8 @@ export const StorageService = {
     },
 
     deleteDraft: async (patientId?: string): Promise<void> => {
+        if (_isDemoMode) return;
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
@@ -120,6 +140,12 @@ export const StorageService = {
      * Utilise OrgKey pour déverrouiller ou créer la FileKey.
      */
     saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
+        if (_isDemoMode) {
+            Logger.info('DB', '[DEMO] File save simulated');
+            // On pourrait stocker en RAM ici si on voulait persister durant la session démo
+            return;
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Utilisateur non connecté");
 
@@ -230,6 +256,26 @@ export const StorageService = {
     },
 
     loadPatientList: async (orgKey: CryptoKey): Promise<PatientFile[]> => {
+        // --- MODE DÉMO : RETOURNE LES DONNÉES MOCKÉES ---
+        if (_isDemoMode) {
+            // Conversion de MOCK_SESSION_DATA en PatientFile
+            const mockFile: PatientFile = {
+                id: 'demo-patient-1',
+                patient: MOCK_SESSION_DATA.patient,
+                reports: [],
+                sessions: [{
+                    id: 'demo-session-1',
+                    date: new Date().toISOString(),
+                    testId: 'multi',
+                    testName: 'Bilan Initial',
+                    results: MOCK_SESSION_DATA.tests as any // Casting rapide
+                }],
+                lastInteraction: new Date().toISOString(),
+                archived: false
+            };
+            return [mockFile];
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) return [];
 
@@ -284,6 +330,19 @@ export const StorageService = {
     },
 
     loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[] }> => {
+        if (_isDemoMode) {
+            return {
+                reports: [],
+                sessions: [{
+                    id: 'demo-session-1',
+                    date: new Date().toISOString(),
+                    testId: 'multi',
+                    testName: 'Bilan Initial',
+                    results: MOCK_SESSION_DATA.tests as any
+                }]
+            };
+        }
+
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) throw new Error("Non connecté");
 
@@ -335,6 +394,7 @@ export const StorageService = {
     },
 
     deleteFile: async (id: string): Promise<void> => {
+        if (_isDemoMode) return;
         Logger.warn('DB', 'DELETING PATIENT FILE', { id });
         // RLS assure que seul un membre de l'orga peut supprimer
         await supabase.from('reports').delete().eq('patient_id', id);
@@ -344,6 +404,7 @@ export const StorageService = {
     },
 
     toggleArchive: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
+        if (_isDemoMode) return;
         const newFile = { ...file, archived: !file.archived };
         // saveFile gère la récupération de la FileKey existante via orgKey
         await StorageService.saveFile(newFile, orgKey);

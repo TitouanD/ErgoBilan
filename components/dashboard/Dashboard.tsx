@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
 import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3 } from 'lucide-react';
+import { useTutorial } from '../../contexts/TutorialContext'; // Import Tuto
 
 interface Props {
   userProfile: UserProfile;
@@ -17,6 +18,7 @@ interface Props {
   
   draftsIndex?: Record<string, string>; 
   onResumeDraft?: (patientId: string) => void;
+  isDemoMode?: boolean; // NOUVEAU
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -64,9 +66,10 @@ const ReferralCard = () => {
     );
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft }) => {
+export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('active');
+  const { advanceStep } = useTutorial(); // Hook Tuto
 
   const hoursSaved = Math.round(userProfile.totalBilansGenerated * 1.5);
 
@@ -95,11 +98,19 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
   // Liste à afficher selon l'onglet
   const currentFilesList = activeTab === 'archived' ? archivedFiles : activeFiles;
 
+  // Handler d'ouverture patient avec gestion du Tuto
+  const handleOpenPatient = (id: string) => {
+      onOpenPatient(id);
+      if (id === 'demo-patient-imported') {
+          advanceStep('DASHBOARD_REOPEN'); // TUTO: Avance quand on rouvre
+      }
+  };
+
   return (
     <div className="animate-in fade-in duration-700 relative">
         
-        {/* BANDEAU STICKY */}
-        {(userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
+        {/* BANDEAU STICKY (Masqué en mode démo car remplacé par le bandeau jaune global) */}
+        {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
             <div className="bg-[#3D405B] text-white py-3 px-6 sticky top-20 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2">
                 <div className="flex items-center gap-2 text-sm">
                     <Clock size={16} className="text-[#E07A5F] animate-pulse" />
@@ -123,7 +134,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
             {/* 2. Actions */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-10">
                 <div className="relative w-full md:max-w-md">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                    <Search className="absolute left-4 top-1/2 -translate-x-1/2 text-stone-400" size={20} />
                     <input 
                         type="text"
                         value={searchQuery}
@@ -133,7 +144,11 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                     />
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
-                    <button onClick={onGenerateLink} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group">
+                    <button 
+                        id="demo-btn-link" // TUTO CIBLE
+                        onClick={onGenerateLink} 
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group"
+                    >
                         <LinkIcon size={18} className="text-[#E07A5F] group-hover:rotate-45 transition-transform" /> 
                         <span className="hidden lg:inline">Nouveau lien Famille</span>
                     </button>
@@ -188,6 +203,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                         
                         {q.status === 'completed' ? (
                             <button 
+                                id="demo-card-import" // TUTO CIBLE
                                 onClick={() => onProcessPending && onProcessPending(q)} 
                                 disabled={processingQueueId === q.id}
                                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${processingQueueId === q.id ? 'bg-emerald-600 text-white cursor-wait' : 'bg-[#E07A5F] text-white hover:bg-[#d0694e] shadow-orange-200'}`}
@@ -211,7 +227,12 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                     const hasDraft = !!draftDate;
                     
                     return (
-                        <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden ${file.archived ? 'opacity-70 grayscale hover:grayscale-0' : ''}`}>
+                        <div 
+                            key={file.id} 
+                            id={file.id === 'demo-patient-imported' ? 'demo-card-patient-reopen' : undefined} // TUTO CIBLE
+                            onClick={() => handleOpenPatient(file.id)} 
+                            className={`group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden ${file.archived ? 'opacity-70 grayscale hover:grayscale-0' : ''}`}
+                        >
                             <div className="flex items-center gap-4 mb-6">
                                 <div className={`w-12 h-12 rounded-full flex items-center justify-center font-serif font-bold text-xl ${file.archived ? 'bg-stone-300 text-white' : 'bg-[#3D405B] text-white'}`}>
                                     {file.patient.firstName.charAt(0)}{file.patient.lastName.charAt(0)}

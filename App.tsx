@@ -2,8 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
-import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; // Ajout useCatalog
+import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
 import { ToastProvider, useToast } from './contexts/ToastContext';
+import { TutorialProvider, useTutorial } from './contexts/TutorialContext'; // NOUVEAU
+import { TutorialLayer } from './components/tutorial/TutorialLayer'; // NOUVEAU
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
@@ -24,17 +26,48 @@ import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
 import { anonymizeData } from './utils/anonymizer';
-import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; // Ajout imports
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2 } from 'lucide-react';
-import { decryptData, generateQuestionnaireKey, encryptData } from './utils/crypto';
+import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; 
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info } from 'lucide-react';
+import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
+
+// --- MODALE CONVERSION DÉMO (PAYWALL) ---
+const DemoConversionModal: React.FC<{
+    action: string;
+    onClose: () => void;
+    onConvert: () => void;
+}> = ({ action, onClose, onConvert }) => {
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white max-w-md w-full rounded-[32px] p-8 shadow-2xl text-center relative">
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-stone-100 text-stone-400 transition-colors"><X size={20}/></button>
+                <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]">
+                    <Rocket size={40} />
+                </div>
+                <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Convaincu(e) ?</h3>
+                <p className="text-stone-500 text-sm mb-6 leading-relaxed">
+                    La fonctionnalité <strong>{action}</strong> nécessite un compte sécurisé pour garantir la confidentialité des données (Certification HDS & Chiffrement E2EE).
+                </p>
+                <div className="space-y-3">
+                    <button onClick={onConvert} className="w-full py-4 bg-[#E07A5F] text-white rounded-xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2">
+                        Créer mon compte gratuit <ArrowRight size={18} />
+                    </button>
+                    <button onClick={onClose} className="w-full py-3 text-stone-400 font-bold hover:text-stone-600 transition-colors text-xs uppercase tracking-wider">
+                        Continuer à explorer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail } = useAuth();
-    const { catalog } = useCatalog(); // Accès au catalogue pour les noms de tests
+    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode } = useAuth();
+    const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
+    const { advanceStep } = useTutorial(); // Utilisation du hook Tuto
     
     // UI State local (Navigation)
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
@@ -49,12 +82,14 @@ const AppRouter = () => {
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [createdLink, setCreatedLink] = useState<string | null>(null);
     
+    // Demo Conversion State
+    const [demoConversion, setDemoConversion] = useState<{ show: boolean, action: string }>({ show: false, action: '' });
+
     // Data Lists (Loaded on Dashboard)
     const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
     const [pendingQuestionnaires, setPendingQuestionnaires] = useState<PendingQuestionnaire[]>([]);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
     
-    // NOUVEAU : Map des brouillons disponibles { patientId: timestamp }
     const [draftsIndex, setDraftsIndex] = useState<Record<string, string>>({});
     
     const [isGenerating, setIsGenerating] = useState(false);
@@ -75,8 +110,6 @@ const AppRouter = () => {
 
     // Routing Logic basés sur authState
     useEffect(() => {
-        Logger.debug('UI', `AppRouter authState changed: ${authState}`);
-        
         if (authState === 'unauthenticated') {
             setMode('landing');
             setIsLoggingIn(false);
@@ -88,63 +121,53 @@ const AppRouter = () => {
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
-            Logger.info('AUTH', "Redirecting to Wizard for profile completion");
             setMode('landing');
             setShowAuthModal(true); 
             setIsLoggingIn(false);
         } else if (authState === 'subscription_locked') {
-            // Nouvel état : Paywall Bloquant
             setIsLoggingIn(false);
             setShowAuthModal(false);
             setPricingModalMode('paywall');
         }
     }, [authState]);
 
-    // Chargement des données chiffrées (UTILISE MAINTENANT ORG_KEY POUR LES PATIENTS)
+    // Chargement des données (Géré aussi pour le mode démo via StorageService)
     useEffect(() => {
-        if (sessionKey && orgKey && authState === 'authenticated') {
+        if ((sessionKey && orgKey && authState === 'authenticated') || isDemoMode) {
             const loadData = async () => {
-                Logger.info('DB', 'Loading encrypted user data...');
-                // Chargement des patients avec OrgKey (Partageable)
-                const files = await StorageService.loadPatientList(orgKey);
+                Logger.info('DB', 'Loading user data...');
+                // Chargement des patients (Le StorageService gère le mock si isDemoMode)
+                const files = await StorageService.loadPatientList(orgKey!);
                 setPatientFiles(files);
                 
-                // Charger l'index des brouillons (léger)
                 const draftsMap = await StorageService.getDraftsMetadata();
                 setDraftsIndex(draftsMap);
                 
-                if (practitioner) {
+                if (practitioner && !isDemoMode) {
                     const { data } = await supabase.from('pending_questionnaires').select('*').eq('practitioner_id', practitioner.id).order('created_at', { ascending: false });
                     if (data) setPendingQuestionnaires(data.map((p: any) => ({ ...p, createdAt: p.created_at, practitionerEncryptedKey: p.practitioner_encrypted_key })));
+                } else if (isDemoMode) {
+                    // Fake pending questionnaires for demo
+                    setPendingQuestionnaires([
+                        { id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
+                        { id: 'demo-q2', label: 'Famille DUBOIS (Reçu)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' }
+                    ]);
                 }
             };
             loadData();
         }
-    }, [sessionKey, orgKey, authState, practitioner]);
+    }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);
 
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
         setIsLoggingIn(true);
-        Logger.info('AUTH', "Attempting login for:", email);
-        
-        // Timeout de sécurité : si pas de réponse dans 10s, on débloque le bouton
-        const timer = setTimeout(() => {
-            if (isLoggingIn) {
-                Logger.warn('AUTH', "Login took too long - releasing UI lock");
-                setIsLoggingIn(false);
-            }
-        }, 10000);
-
+        const timer = setTimeout(() => { if (isLoggingIn) setIsLoggingIn(false); }, 10000);
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-        
         clearTimeout(timer);
-        
         if (error) { 
-            Logger.error('AUTH', "Login failed", error.message);
             toast.error(error.message); 
             setIsLoggingIn(false);
         } 
-        // Succès : Le listener onAuthStateChange dans AuthContext va prendre le relais et changer authState, ce qui déclenchera le useEffect ci-dessus pour fermer le modal.
     };
 
     const handleUnlock = (key: CryptoKey) => {
@@ -154,6 +177,14 @@ const AppRouter = () => {
     };
 
     const handleGenerateLink = async () => {
+        if (isDemoMode) {
+            // SCENARIO DEMO STEP 1 -> 2
+            setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`);
+            setPendingQuestionnaires(prev => [{ id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, ...prev]);
+            toast.success("Lien sécurisé généré (Simulation)");
+            advanceStep('DASHBOARD_LINK'); // Avance le tuto
+            return;
+        }
         if (!practitioner || !sessionKey) return;
         const { keyString } = await generateQuestionnaireKey();
         const enc = await encryptData(keyString, sessionKey);
@@ -168,49 +199,59 @@ const AppRouter = () => {
         }
     };
 
-    // Gestion centralisée de la reprise de brouillon
     const handleResumeDraft = async (patientId?: string) => {
-        if (!sessionKey) return;
-        
-        // Charger le brouillon spécifique (Privé -> sessionKey)
-        const draftContent = await StorageService.getDraft(sessionKey, patientId);
-        
+        if (!sessionKey && !isDemoMode) return;
+        const draftContent = await StorageService.getDraft(sessionKey!, patientId);
         if (draftContent) {
             assessment.resetAssessment();
             assessment.loadFromDraft(draftContent);
             setMode('assessment');
             toast.info("Brouillon chargé");
+        } else if (isDemoMode) {
+             toast.info("Les brouillons ne sont pas sauvegardés en mode démo.");
         } else {
             toast.error("Impossible de charger ce brouillon.");
         }
     };
 
     const handleProcessPending = async (q: PendingQuestionnaire) => {
+        if (isDemoMode) {
+            // SCENARIO DEMO STEP 2 -> 3
+            setProcessingQueueId(q.id);
+            setTimeout(async () => {
+                // Simulation Import
+                const { MOCK_SESSION_DATA } = await import('./data/mockSession');
+                const newId = 'demo-patient-imported';
+                const newPatient = { ...MOCK_SESSION_DATA.patient, id: newId, lastName: 'DUBOIS', firstName: 'Thomas' };
+                const newFile: PatientFile = { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() };
+                setPatientFiles(prev => [newFile, ...prev]);
+                setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id));
+                assessment.resetAssessment();
+                assessment.setPatient(newPatient); // Load into context
+                setMode('assessment');
+                setProcessingQueueId(null);
+                advanceStep('DASHBOARD_IMPORT'); // Avance le tuto
+                toast.success("Dossier importé avec succès");
+            }, 1000);
+            return;
+        }
         if (!sessionKey || !orgKey) return;
         setProcessingQueueId(q.id);
         try {
             const { data } = await supabase.from('pending_questionnaires').select('family_encrypted_data, practitioner_encrypted_key').eq('id', q.id).single();
             if (!data?.family_encrypted_data) return;
-            
-            // 1. Déchiffrement de la clé du questionnaire
             const [kIv, kContent] = data.practitioner_encrypted_key.split(':');
             const keyStr = await decryptData({ iv: kIv, content: kContent }, sessionKey);
-            const jwk = JSON.parse(atob(keyStr));
-            const qKey = await window.crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-            
-            // 2. Déchiffrement des données famille
+            const qKey = await importQuestionnaireKey(keyStr);
             const [dIv, dContent] = data.family_encrypted_data.split(':');
             const payload = await decryptData({ iv: dIv, content: dContent }, qKey);
             
             if (payload?.patient) {
                 const newId = crypto.randomUUID();
                 const newPatient = { ...payload.patient, id: newId };
-                
-                // 3. Création du dossier Patient (AVEC ORG_KEY)
                 const newFile: PatientFile = { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() };
                 await StorageService.saveFile(newFile, orgKey);
                 
-                // 4. Création Brouillon Initial (Privé -> sessionKey)
                 const initialDraft = {
                     patient: newPatient,
                     tests: {},
@@ -220,19 +261,12 @@ const AppRouter = () => {
                     timestamp: new Date().toISOString()
                 };
                 
-                // Sauvegarde avec l'ID du patient pour le lier
                 await StorageService.saveDraft(initialDraft, sessionKey);
-                
-                // 5. Mise à jour des états UI
-                // On ajoute ce patient à l'index des brouillons
                 setDraftsIndex(prev => ({ ...prev, [newId]: initialDraft.timestamp }));
                 setPatientFiles(prev => [newFile, ...prev]);
                 setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id));
-                
-                // 6. Nettoyage
                 await supabase.from('pending_questionnaires').delete().eq('id', q.id);
                 
-                // 7. Transition
                 assessment.resetAssessment();
                 assessment.loadFromDraft(initialDraft);
                 setMode('assessment');
@@ -246,209 +280,89 @@ const AppRouter = () => {
         }
     };
 
-    /**
-     * Helper to compute SHA-256 hash of a string (for anonymous source_hash)
-     */
-    const computeSourceHash = async (input: string): Promise<string> => {
-        const msgBuffer = new TextEncoder().encode(input);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
-    };
-
-    /**
-     * Génère le rapport directement (Flux sans friction).
-     * Inclut l'anonymisation et l'appel IA.
-     */
     const handleGenerateReport = async () => {
+        if (isDemoMode) {
+            // SCENARIO DEMO STEP 6 -> 7
+            setShowConfirmGeneration(false);
+            setIsGenerating(true);
+            setTimeout(async () => {
+                const { MOCK_SESSION_DATA } = await import('./data/mockSession');
+                // Mock Generation
+                const sections = [
+                    { id: 'intro', title: 'Mandat', content: "Thomas est reçu ce jour...", status: 'draft', isAiGenerated: true },
+                    { id: 'diag', title: 'Diagnostic', content: "### Analyse Clinique\nThomas présente une dysgraphie...", status: 'draft', isAiGenerated: true }
+                ] as any;
+                assessment.setSections(sections);
+                assessment.setStep(4);
+                setIsGenerating(false);
+                advanceStep('STEP3_GENERATE'); // Avance le tuto
+                toast.success("Rapport généré (Simulation)");
+            }, 2000);
+            return;
+        }
+
         setShowConfirmGeneration(false);
-        setIsGenerating(true); // Active le GenerationLoader
-        
+        setIsGenerating(true); 
         try {
-            // 1. Préparation & Anonymisation (Silent Process)
             const p = assessment.patient;
             const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
-            
-            // Construction des blocs de texte bruts
             const rawQ = `Motif: ${p.reason}\nScolarité: ${p.school} ${p.classLevel}\nVie: ${p.meals} ${p.dressing}`;
             const rawObs = `Anamnèse: ${assessment.observations.anamnese}\nMotricité: ${assessment.observations.motricite}`;
-            
-            // Anonymisation via l'utilitaire sécurisé
             const payload: GenerationPayload = {
                 safeQuestionnaire: anonymizeData(rawQ, p).text,
                 safeObservations: anonymizeData(rawObs, p).text,
                 scoresRaw: JSON.stringify(assessment.tests, null, 2),
                 childContext: `L'enfant est ${genderString} de ${p.age}.`
             };
-
-            // 2. Appel IA (Consommation de crédit via Service)
-            // Le AIService gère maintenant le Timeout
             const sections = await AIService.generateFullReport(payload, assessment.patient);
-            
-            // 3. CROWDSOURCING ANONYME (Privacy-Preserving)
-            // On envoie les données statistiques seulement si la génération (donc paiement) a réussi
-            if (practitioner && practitioner.organizationRole !== 'member') { // Basic check
-                // Récupération de l'Org ID pour le hash
-                const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', practitioner.id).maybeSingle();
-                if (member?.organization_id) {
-                    const sourceHash = await computeSourceHash(member.organization_id);
-                    const insightsPayload: any[] = [];
-                    
-                    // Parsing simplifié de l'âge en mois
-                    const ageMatches = p.age.match(/(\d+)\s*ans?\s*(\d+)?/);
-                    let ageInMonths = 0;
-                    if (ageMatches) {
-                        ageInMonths = (parseInt(ageMatches[1]) * 12) + (parseInt(ageMatches[2] || '0'));
-                    }
-
-                    Object.entries(assessment.tests).forEach(([testId, subtests]) => {
-                        Object.entries(subtests).forEach(([subId, score]) => {
-                            if (score.status === 'validated' && score.raw !== '') {
-                                // --- TEMPORAL FUZZING (JITTER) ---
-                                // On génère un timestamp aléatoire dans le mois courant pour éviter la corrélation temporelle
-                                // Cela satisfait "Mois/Année suffisants" tout en brisant le lien entre les scores d'une même session.
-                                const now = new Date();
-                                const randomDay = Math.floor(Math.random() * 28) + 1; // 1-28 pour éviter les débordements
-                                const randomHour = Math.floor(Math.random() * 24);
-                                const randomMin = Math.floor(Math.random() * 60);
-                                const fuzzedDate = new Date(now.getFullYear(), now.getMonth(), randomDay, randomHour, randomMin);
-
-                                insightsPayload.push({
-                                    source_hash: sourceHash,
-                                    age_months: ageInMonths,
-                                    gender: p.gender === 'F' ? 'F' : 'M',
-                                    is_clinical: true, // Par défaut car c'est un patient
-                                    diagnostic_tag: 'Inconnu', // Pourrait être inféré
-                                    test_id: testId,
-                                    subtest_id: subId,
-                                    raw_score: parseFloat(score.raw),
-                                    computed_standard: parseFloat(score.standard) || null,
-                                    computed_percentile: parseFloat(score.percentile) || null,
-                                    created_at: fuzzedDate.toISOString() // Insertion explicite de la date bruitée
-                                });
-                            }
-                        });
-                    });
-
-                    if (insightsPayload.length > 0) {
-                        // Insert asynchrone sans await bloquant
-                        supabase.from('contribution_insights').insert(insightsPayload).then(({ error }) => {
-                            if (error) Logger.warn('DB', 'Failed to save anonymous insights', error);
-                            else Logger.info('DB', 'Anonymous insights saved (Privacy-Preserved).');
-                        });
-                    }
-                }
-            }
-
-            // 4. Mise à jour UI
             assessment.setSections(sections);
             assessment.setStep(4);
-            refreshProfile(); // Actualise le solde de crédits
+            refreshProfile(); 
             toast.success("Rapport généré avec succès");
-
         } catch (e: any) {
             Logger.error('AI', "Generation Error in UI", e);
-            if (e.message === "CREDIT_INSUFFICIENT") {
-                setPricingModalMode('paywall');
-            } else if (e.message === "TIMEOUT_AI") {
-                toast.error("Le serveur IA est surchargé. Vos crédits n'ont pas été débités. Veuillez réessayer.");
-            } else {
-                toast.error("Une erreur est survenue lors de la génération : " + e.message);
-            }
+            if (e.message === "CREDIT_INSUFFICIENT") setPricingModalMode('paywall');
+            else if (e.message === "TIMEOUT_AI") toast.error("Le serveur IA est surchargé. Réessayez.");
+            else toast.error("Erreur lors de la génération : " + e.message);
         } finally {
-            setIsGenerating(false); // Désactive le GenerationLoader
+            setIsGenerating(false);
         }
     };
 
-    /**
-     * FINALISATION ET PERSISTANCE (FIX CRITIQUE)
-     * Convertit les données de travail en objets permanents, chiffre et stocke en DB.
-     */
     const handleFinalize = async () => {
-        if (!sessionKey || !orgKey) return;
-
-        // 1. Sécurisation : On vérifie qu'on a un patient ID
-        const patientId = assessment.patient.id;
-        if (!patientId) {
-            toast.error("Erreur critique : ID Patient manquant.");
+        if (isDemoMode) {
+            // SCENARIO DEMO STEP 7 -> FIN
+            advanceStep('STEP4_VALIDATE');
+            setMode('dashboard');
+            toast.success("Bilan validé (Fin du scénario démo)");
             return;
         }
-
-        setIsGenerating(true); // Show loader during encryption/save
-
+        if (!sessionKey || !orgKey) return;
+        const patientId = assessment.patient.id;
+        if (!patientId) { toast.error("Erreur critique : ID Patient manquant."); return; }
+        setIsGenerating(true); 
         try {
-            // 2. Construction de la Session de Tests (Flattening)
             const flatResults: Record<string, ScoreResult> = {};
             const testNames: string[] = [];
-
             Object.entries(assessment.tests).forEach(([tId, subtests]) => {
-                // Récupération du nom depuis le catalogue
                 const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === tId);
                 const prettyName = catalogDef ? catalogDef.name : tId;
                 testNames.push(prettyName);
-                
-                Object.entries(subtests).forEach(([sId, res]) => {
-                    flatResults[sId] = res;
-                });
+                Object.entries(subtests).forEach(([sId, res]) => flatResults[sId] = res);
             });
-
-            const newSession: TestSession = {
-                id: crypto.randomUUID(),
-                date: new Date().toISOString(),
-                testId: 'multi', // On marque comme multi-test ou le test principal
-                testName: testNames.join(', ') || `Bilan du ${new Date().toLocaleDateString()}`,
-                results: flatResults
-            };
-
-            // 3. Construction du Rapport (Contenu complet)
-            // Note: On injecte 'sections' qui sera chiffré dans le blob JSON
-            const newReport: ReportMetadata = {
-                id: crypto.randomUUID(),
-                date: new Date().toISOString(),
-                type: 'initial', // Pourrait être dynamique
-                status: 'completed',
-                patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`,
-                sections: assessment.sections // <--- PERSISTANCE DU CONTENU
-            };
-
-            // 4. Récupération du dossier existant pour mise à jour
-            // On cherche dans la liste chargée localement
+            const newSession: TestSession = { id: crypto.randomUUID(), date: new Date().toISOString(), testId: 'multi', testName: testNames.join(', ') || `Bilan du ${new Date().toLocaleDateString()}`, results: flatResults };
+            const newReport: ReportMetadata = { id: crypto.randomUUID(), date: new Date().toISOString(), type: 'initial', status: 'completed', patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`, sections: assessment.sections };
             const currentFileIndex = patientFiles.findIndex(f => f.id === patientId);
             if (currentFileIndex === -1) throw new Error("Dossier local introuvable");
-
             const currentFile = patientFiles[currentFileIndex];
-
-            const updatedFile: PatientFile = {
-                ...currentFile,
-                lastInteraction: new Date().toISOString(),
-                sessions: [newSession, ...(currentFile.sessions || [])],
-                reports: [newReport, ...(currentFile.reports || [])]
-            };
-
-            // 5. SAUVEGARDE E2EE (Database) via StorageService qui gère le chiffrement
+            const updatedFile: PatientFile = { ...currentFile, lastInteraction: new Date().toISOString(), sessions: [newSession, ...(currentFile.sessions || [])], reports: [newReport, ...(currentFile.reports || [])] };
             await StorageService.saveFile(updatedFile, orgKey);
-
-            // 6. Mise à jour State Local (Pour reflet immédiat dashboard)
-            setPatientFiles(prev => {
-                const newList = [...prev];
-                newList[currentFileIndex] = updatedFile;
-                return newList;
-            });
-
-            // 7. Nettoyage du Brouillon
+            setPatientFiles(prev => { const newList = [...prev]; newList[currentFileIndex] = updatedFile; return newList; });
             await StorageService.deleteDraft(patientId);
-            setDraftsIndex(prev => {
-                const newIndex = { ...prev };
-                delete newIndex[patientId];
-                return newIndex;
-            });
-
-            // 8. Sortie
+            setDraftsIndex(prev => { const newIndex = { ...prev }; delete newIndex[patientId]; return newIndex; });
             assessment.resetAssessment();
             setMode('dashboard');
             toast.success("Bilan sauvegardé et archivé avec succès.");
-
         } catch (e: any) {
             Logger.error('DB', "Erreur Finalisation", e);
             toast.error("Erreur lors de la sauvegarde : " + e.message);
@@ -458,18 +372,15 @@ const AppRouter = () => {
     };
 
     const handleContributionAccess = () => {
-        // Restriction : Accès réservé aux plans payants (pas de plan gratuit/essai)
-        if (userProfile.subscriptionPlan === 'free') {
-            setPricingModalMode('plans');
-            return;
-        }
+        if (isDemoMode) { setDemoConversion({ show: true, action: "La contribution (Studio)" }); return; }
+        if (userProfile.subscriptionPlan === 'free') { setPricingModalMode('plans'); return; }
         setMode('contribution');
     };
 
     // --- RENDUS ---
 
-    // Écran de PIN (Déverrouillage)
-    if (authState === 'locked' && practitioner) {
+    // Écran de PIN
+    if (authState === 'locked' && practitioner && !isDemoMode) {
         return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     }
 
@@ -496,6 +407,16 @@ const AppRouter = () => {
                         <button onClick={() => setMode('portal')} className="bg-white text-[#3D405B] px-10 py-4 rounded-2xl font-bold shadow-md hover:shadow-lg border border-stone-100 hover:border-[#E07A5F]/30 transition-all flex items-center justify-center gap-2">
                             Espace Famille <User size={20}/>
                         </button>
+                    </div>
+
+                    {/* LIEN DISCRET MODE DÉMO (OPTION A) */}
+                    <div className="mt-8 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-500">
+                        <p className="text-stone-400 text-sm">
+                            Pas encore de compte ?{' '}
+                            <button onClick={startDemo} className="font-bold text-[#3D405B] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">
+                                Explorer l'interface sans inscription
+                            </button>
+                        </p>
                     </div>
                 </div>
                 {showAuthModal && (
@@ -546,7 +467,6 @@ const AppRouter = () => {
         );
     }
 
-    // Gestion des flux spéciaux (Onboarding, Portail, Admin)
     if (showOnboarding) return <OnboardingExperience onComplete={() => setShowOnboarding(false)} />;
     if (mode === 'portal') return <PatientPortal onBack={() => setMode('landing')} />;
     if (mode === 'contribution') return <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />;
@@ -555,7 +475,7 @@ const AppRouter = () => {
     // DASHBOARD & APPS
     return (
         <div className="min-h-screen bg-[#F9F9F9] pb-20 font-sans">
-            {/* Header Commun */}
+            
             <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
                 <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => setMode('dashboard')}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> AutoBilan.
@@ -569,22 +489,43 @@ const AppRouter = () => {
                 </div>
             </header>
 
+            {/* BANDEAU MODE DÉMO AVEC CTA INSCRIPTION (SOUS LE HEADER) */}
+            {isDemoMode && (
+                <div className="bg-[#F2CC8F] text-[#78350f] py-2 px-6 sticky top-20 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2 text-sm">
+                        <Info size={16} strokeWidth={3} />
+                        <span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span>
+                    </div>
+                    <button 
+                        onClick={() => logout()} // Le logout renvoie vers la landing/inscription
+                        className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md"
+                    >
+                        S'inscrire gratuitement <ArrowRight size={12} />
+                    </button>
+                </div>
+            )}
+
             {mode === 'dashboard' && (
                 <Dashboard 
                     userProfile={userProfile} pendingQuestionnaires={pendingQuestionnaires} patientFiles={patientFiles}
                     onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
                     onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
                     onOpenPatient={async (id) => { 
-                        // Utilisation de orgKey pour charger les détails
+                        // Gestion Demo pour details patient
                         const details = await StorageService.loadPatientDetails(id, orgKey!); 
-                        setSelectedFile({ ...patientFiles.find(f => f.id === id)!, ...details }); 
-                        setMode('detail'); 
+                        // En mode démo, on cherche dans patientFiles local si orgKey est bidon
+                        const baseFile = patientFiles.find(f => f.id === id);
+                        if (baseFile) {
+                            setSelectedFile({ ...baseFile, ...details }); 
+                            setMode('detail'); 
+                        }
                     }}
                     onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
                     
                     draftsIndex={draftsIndex}
                     onResumeDraft={handleResumeDraft}
                     onContribute={handleContributionAccess}
+                    isDemoMode={isDemoMode}
                 />
             )}
 
@@ -602,14 +543,12 @@ const AppRouter = () => {
 
             {mode === 'assessment' && (
                 <div className="max-w-7xl mx-auto p-6">
-                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} />}
-                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => assessment.setStep(3)} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
+                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); advanceStep('STEP1_REVIEW'); }} />}
+                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); advanceStep('STEP2_NEXT'); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
                     {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
                     
-                    {/* FIX: Blindage contre undefined content */}
-                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
+                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => { assessment.setStep(5); advanceStep('STEP4_VALIDATE'); }} onBack={() => setMode('dashboard')} />}
                     
-                    {/* NOTE: handleFinalize est passé ici à onValidate */}
                     {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
                 </div>
             )}
@@ -618,7 +557,6 @@ const AppRouter = () => {
             {pricingModalMode && (
                 <PricingModal 
                     onClose={() => {
-                        // Si le mode est "Paywall" (Abonnement expiré/invalide), la fermeture provoque la déconnexion
                         if (pricingModalMode === 'paywall' && authState === 'subscription_locked') {
                             logout();
                         } else {
@@ -675,7 +613,13 @@ const AppRouter = () => {
 
                         <div className="flex gap-4">
                             <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors">Annuler</button>
-                            <button onClick={handleGenerateReport} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">Confirmer</button>
+                            <button 
+                                id="demo-btn-generate"
+                                onClick={handleGenerateReport} 
+                                className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all"
+                            >
+                                Confirmer
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -684,29 +628,53 @@ const AppRouter = () => {
                 <QuickEntryModal 
                     onClose={() => setShowQuickEntry(false)} 
                     onSave={async (sess) => { 
-                        // Utilise orgKey car cela modifie un dossier patient
                         if(selectedFile && orgKey) { 
                             await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
                             setShowQuickEntry(false); 
                             toast.success("Séance ajoutée au dossier");
+                        } else if (isDemoMode) {
+                            // Mock save update for UI
+                            setShowQuickEntry(false); 
+                            toast.success("Séance ajoutée (Mode Démo)");
                         }
                     }} 
                 />
             )}
+
+            {/* CONVERSION MODAL (DEMO) */}
+            {demoConversion.show && (
+                <DemoConversionModal 
+                    action={demoConversion.action}
+                    onClose={() => setDemoConversion({ show: false, action: '' })}
+                    onConvert={() => {
+                        setDemoConversion({ show: false, action: '' });
+                        logout(); // Déconnexion du mode démo pour inscription réelle
+                    }}
+                />
+            )}
+
+            {/* TUTORIAL LAYER (DEMO ONLY) */}
+            <TutorialLayer />
+
         </div>
     );
 };
 
-export default function App() {
-    return (
-        <AuthProvider>
-            <ToastProvider>
-                <CatalogProvider>
-                    <AssessmentProvider>
-                        <AppRouter />
-                    </AssessmentProvider>
-                </CatalogProvider>
-            </ToastProvider>
-        </AuthProvider>
-    );
-}
+// Root Component with Providers
+const App = () => {
+  return (
+    <ToastProvider>
+      <AuthProvider>
+        <CatalogProvider>
+          <AssessmentProvider>
+            <TutorialProvider>
+                <AppRouter />
+            </TutorialProvider>
+          </AssessmentProvider>
+        </CatalogProvider>
+      </AuthProvider>
+    </ToastProvider>
+  );
+};
+
+export default App;

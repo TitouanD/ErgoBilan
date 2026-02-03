@@ -9,6 +9,7 @@ import { StorageService } from '../../services/storage';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useTutorial } from '../../contexts/TutorialContext'; // Import Tuto
 
 interface Props {
   file: PatientFile;
@@ -185,6 +186,7 @@ const DeleteConfirmationModal: React.FC<{
 
 export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
   const { orgKey } = useAuth(); // utilise orgKey pour gérer le dossier
+  const { advanceStep } = useTutorial(); // Hook Tuto
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const toast = useToast();
@@ -221,6 +223,12 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       } finally {
           setIsProcessing(false);
       }
+  };
+
+  // Handler Reeval
+  const handleReeval = () => {
+      onNewBilan('reevaluation');
+      advanceStep('DETAIL_REEVAL'); // TUTO: Avance vers la fin
   };
 
   return (
@@ -276,7 +284,8 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
                 <span className="group-hover:text-[#E07A5F]">Saisie Rapide</span>
             </button>
             <button 
-                onClick={() => onNewBilan('reevaluation')}
+                id="demo-btn-reeval" // TUTO CIBLE
+                onClick={handleReeval}
                 className="flex items-center gap-2 bg-[#3D405B] text-white px-8 py-4 rounded-2xl font-bold shadow-xl shadow-stone-300 hover:bg-[#2c2e42] transition-all hover:-translate-y-1 text-sm group relative overflow-hidden"
             >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>

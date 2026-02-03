@@ -168,6 +168,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
             </button>
             <div className="h-8 w-px bg-stone-100"></div>
             <button 
+                id="demo-btn-validate" // TUTO CIBLE
                 onClick={onNext}
                 disabled={!allValidated || sections.length === 0}
                 className="flex items-center gap-3 px-8 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm disabled:opacity-40 disabled:grayscale transition-all hover:bg-rose-700 shadow-lg"

@@ -2,8 +2,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
+import { StorageService } from '../services/storage';
 import { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
-import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; // Ajout import
+import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; 
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -18,13 +19,16 @@ interface AuthContextType {
   authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked';
   isLoading: boolean;
   tempEmail: string | null;
+  isDemoMode: boolean; // NOUVEAU : Flag UI
+  
   refreshProfile: () => Promise<void>;
   setSessionKey: (key: CryptoKey | null) => void;
-  unlockSession: (key: CryptoKey) => Promise<void>; // Devient async
+  unlockSession: (key: CryptoKey) => Promise<void>; 
   lockSession: () => void;
   logout: () => void;
   updateUserProfile: (update: Partial<UserProfile>) => void;
-  setOrgKey: (key: CryptoKey | null) => void; // Setter manuel si besoin (ex: après création)
+  setOrgKey: (key: CryptoKey | null) => void; 
+  startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,10 +60,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
-  const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); // NOUVEAU
+  const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
   const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked'>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // Initialisation Session & Listener
   useEffect(() => {
@@ -99,18 +104,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
       let idleTimer: ReturnType<typeof setTimeout>;
       const performLock = () => { 
-          if (authState === 'authenticated') {
+          if (authState === 'authenticated' && !isDemoMode) { // Pas de lock en démo
               Logger.warn('AUTH', 'Idle timeout reached. Locking session.');
               lockSession(); 
           }
       };
       const resetIdleTimer = () => { 
-          if (authState !== 'authenticated') return; 
+          if (authState !== 'authenticated' || isDemoMode) return; 
           clearTimeout(idleTimer); 
           idleTimer = setTimeout(performLock, IDLE_TIMEOUT_MS); 
       };
       
-      if (authState === 'authenticated') { 
+      if (authState === 'authenticated' && !isDemoMode) { 
           window.addEventListener('mousemove', resetIdleTimer); 
           window.addEventListener('keydown', resetIdleTimer); 
           resetIdleTimer(); 
@@ -120,15 +125,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           window.removeEventListener('mousemove', resetIdleTimer); 
           window.removeEventListener('keydown', resetIdleTimer); 
       };
-  }, [authState]);
+  }, [authState, isDemoMode]);
 
   const handleLocalLogout = () => {
       Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
-      setOrgKey(null); // Cleanup OrgKey
+      setOrgKey(null); 
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
+      setIsDemoMode(false);
+      StorageService.setDemoMode(false); // Reset Storage
+      setIsLoading(false);
+  };
+
+  /**
+   * --- MODE DÉMONSTRATION ---
+   * Hydrate un faux profil, désactive le chiffrement et lance l'app.
+   */
+  const startDemo = async () => {
+      setIsLoading(true);
+      Logger.info('AUTH', "Starting Demo Mode...");
+      
+      // 1. Configurer le Storage pour Mock
+      StorageService.setDemoMode(true);
+      setIsDemoMode(true);
+
+      // 2. Faux Profil Praticien
+      const mockPractitioner: PractitionerProfile = {
+          id: 'demo-practitioner',
+          email: 'demo@autobilan.fr',
+          firstName: 'Invité',
+          lastName: 'Démo',
+          encryptionSalt: 'mock-salt',
+          encryptionValidator: 'mock-validator',
+          organizationRole: 'owner'
+      };
+      setPractitioner(mockPractitioner);
+
+      // 3. Faux Profil User (Riche en crédits pour l'affichage, mais bloqué au paiement)
+      const mockUser: UserProfile = {
+          id: 'demo-practitioner',
+          email: 'demo@autobilan.fr',
+          credits: 99, // Fake
+          subscriptionPlan: 'free',
+          status: 'active',
+          isAdmin: false,
+          isTrial: true,
+          trialDaysRemaining: 30,
+          totalBilansGenerated: 12,
+          hasAcceptedResponsibility: false,
+          branding: { ...DEFAULT_BRANDING, cabinetName: "Cabinet de Démonstration", isEnabled: true }
+      };
+      setUserProfile(mockUser);
+
+      // 4. Clés Bidon (Nécessaires pour que l'UI ne crash pas, mais inutilisées par StorageService en mode démo)
+      const dummyKey = await generateSymetricKey();
+      setSessionKey(dummyKey);
+      setOrgKey(dummyKey);
+
+      setAuthState('authenticated');
       setIsLoading(false);
   };
 
@@ -156,7 +212,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setPractitioner(profile);
 
               // 2. CHECK ABONNEMENT BLOQUANT AVEC TIMEOUT
-              // On attend la réponse, mais pas plus de 5 secondes.
               Logger.debug('AUTH', "Checking subscription status (Blocking with Timeout)...");
               
               let fullProfile: UserProfile | null = null;
@@ -170,45 +225,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   ]);
               } catch (subError) {
                   Logger.error('AUTH', "Critical: Subscription check failed/timeout", subError);
-                  // Si le check échoue, on ne laisse PAS passer. Sécurité d'abord.
-                  // On simule un profil null pour déclencher le verrouillage
                   fullProfile = null;
               }
 
               if (fullProfile) {
                   setUserProfile(fullProfile);
                   
-                  // Abonnement Realtime aux crédits (Non bloquant)
                   SubscriptionService.subscribeToCredits(userId, (newCredits) => { 
                       setUserProfile(prev => ({ ...prev, credits: newCredits })); 
                   });
 
-                  // VALIDATION STRICTE DE L'ACCÈS
-                  // Accès autorisé si : (Plan Payant Actif) OU (Essai Valide)
                   const hasValidAccess = fullProfile.status === 'active' || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
 
                   if (!hasValidAccess) {
-                      Logger.warn('AUTH', `Access Denied. Status: ${fullProfile.status}, TrialDays: ${fullProfile.trialDaysRemaining}`);
-                      setAuthState('subscription_locked'); // -> UI Paywall Bloquant
+                      setAuthState('subscription_locked'); 
                   } else if (profile.encryptionValidator === 'pending') {
-                      Logger.warn('AUTH', "Profile found but PIN is pending. Redirecting to setup.");
                       setTempEmail(email); 
                       setAuthState('registering'); 
                   } else {
-                      Logger.info('AUTH', "Access Granted. Locking session (waiting for PIN).");
-                      setAuthState('locked'); // -> UI PIN
+                      setAuthState('locked'); 
                   }
 
               } else {
-                  // Echec récupération profil abonnement (Timeout ou Erreur réseau grave)
-                  Logger.error('AUTH', "Impossible to verify subscription. Locking access.");
-                  // On peut mettre un message d'erreur spécifique dans l'UI via un Toast si besoin, 
-                  // mais ici on verrouille par sécurité.
                   setAuthState('subscription_locked'); 
               }
 
           } else {
-              // User authentifié chez Supabase mais pas de profil dans 'practitioners'
               Logger.warn('AUTH', "User authenticated but NO practitioner profile found. Redirecting to wizard.");
               setTempEmail(email);
               setAuthState('registering'); 
@@ -224,7 +266,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async (userId?: string) => {
       const targetId = userId || userProfile.id;
-      if (!targetId) return;
+      if (!targetId || isDemoMode) return; // Pas de refresh en démo
       try {
           const fullProfile = await SubscriptionService.getUserProfile(targetId);
           if (fullProfile) setUserProfile(fullProfile);
@@ -233,19 +275,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   };
 
-  /**
-   * PROCESSUS DE DÉVERROUILLAGE HIÉRARCHIQUE (CRITIQUE)
-   * 1. Reçoit la MasterKey (dérivée du PIN).
-   * 2. Récupère la OrgKey chiffrée depuis la table organization_members.
-   * 3. Déchiffre la OrgKey avec la MasterKey.
-   * 4. Stocke les deux en mémoire.
-   */
   const unlockSession = async (key: CryptoKey) => {
       if (!practitioner) return;
       Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
 
       try {
-          // A. Récupérer le membre et la clé chiffrée
           const { data: memberData, error } = await supabase
               .from('organization_members')
               .select('encrypted_org_key, organization_id')
@@ -257,13 +291,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (memberData && memberData.encrypted_org_key) {
               const [iv, content] = memberData.encrypted_org_key.split(':');
               const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
-              Logger.info('CRYPTO', "Organization Key successfully unwrapped.");
               
               setSessionKey(key); 
               setOrgKey(unwrappedOrgKey); 
               setAuthState('authenticated');
           } else {
-              // Fallback (Migration/Init)
               Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
               let orgId = memberData?.organization_id;
               if (!orgId) {
@@ -286,7 +318,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               if (upsertError) throw upsertError;
                   
-              Logger.info('CRYPTO', "New Organization Key generated and saved.");
               setSessionKey(key);
               setOrgKey(newOrgKey);
               setAuthState('authenticated');
@@ -308,7 +339,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
       Logger.info('AUTH', "User requested logout");
       handleLocalLogout();
-      await supabase.auth.signOut();
+      if (!isDemoMode) await supabase.auth.signOut(); // Pas d'appel Supabase en démo
   };
 
   const updateUserProfile = (update: Partial<UserProfile>) => {
@@ -317,8 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ 
-        userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail,
-        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile 
+        userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
+        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo
     }}>
       {children}
     </AuthContext.Provider>
