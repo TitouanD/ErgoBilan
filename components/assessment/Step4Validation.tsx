@@ -115,7 +115,8 @@ const SectionCard: React.FC<{
                         </button>
                         {!isValidated && (
                             <button 
-                                onClick={() => onValidate(section.id)}
+                                // FIX: Passer 'section.content' explicitement pour éviter undefined
+                                onClick={() => onValidate(section.id, section.content)}
                                 className="flex items-center gap-2 bg-stone-900 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-600 transition-all font-bold text-xs uppercase tracking-wider shadow-md"
                             >
                                 <Check size={16} /> Valider

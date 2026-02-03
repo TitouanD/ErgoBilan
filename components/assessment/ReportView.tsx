@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
 import { GaussianChart } from '../shared/GaussianChart';
@@ -75,7 +76,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       const section = getSection(sectionId);
       if (!section) return null;
 
-      const paragraphs = section.content.split('\n').filter(line => line.trim().length > 0);
+      // FIX: Protection contre content undefined/null avec (|| '')
+      const paragraphs = (section.content || '').split('\n').filter(line => line.trim().length > 0);
       
       const [editingIndex, setEditingIndex] = useState<number | null>(null);
       const [tempText, setTempText] = useState('');
