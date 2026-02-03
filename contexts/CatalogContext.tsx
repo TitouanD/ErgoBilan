@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
 import { TEST_CATALOG, CategoryDef, TestDef } from '../data/testCatalog';
@@ -25,7 +26,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             if (count && count > 0) {
                 Logger.info('DB', 'Loading catalog from Supabase...');
                 
-                // Fetch Tests
+                // Fetch Tests (RLS will automatically filter Public + My Org's Private)
                 const { data: dbTests, error: testError } = await supabase.from('official_tests').select('*');
                 if (testError) throw testError;
 
@@ -38,9 +39,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     // Filter tests for this category
                     const catTests = dbTests.filter((t: any) => t.category_id === cat.id);
                     
-                    // If no tests in DB for this category, we might skip it or keep it empty
-                    // For now, if DB has data, we prioritize DB content.
-                    
                     const mappedTests: TestDef[] = catTests.map((t: any) => {
                         const subtests = dbSubtests
                             .filter((s: any) => s.test_id === t.id)
@@ -49,17 +47,17 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                                 name: s.name,
                                 unit: s.unit || 'pts',
                                 scoreType: s.score_type as any,
-                                lowerIsBetter: false // Default, as DB column might be missing
+                                lowerIsBetter: false 
                             }));
 
                         return {
                             id: t.id,
                             name: t.name,
-                            subtests: subtests
+                            subtests: subtests,
+                            isPrivate: !!t.organization_id // Flag to identify private tests
                         };
                     });
 
-                    // Only return category if it has tests from DB or if we want to show empty categories
                     return { ...cat, tests: mappedTests };
                 });
 

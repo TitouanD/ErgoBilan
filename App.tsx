@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
-import { CatalogProvider } from './contexts/CatalogContext';
+import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; // Ajout useCatalog
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
@@ -24,7 +24,7 @@ import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
 import { anonymizeData } from './utils/anonymizer';
-import { PatientFile, PendingQuestionnaire } from './types';
+import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; // Ajout imports
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2 } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData } from './utils/crypto';
 import { Logger } from './utils/logger';
@@ -32,6 +32,7 @@ import { Logger } from './utils/logger';
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail } = useAuth();
+    const { catalog } = useCatalog(); // Accès au catalogue pour les noms de tests
     const assessment = useAssessment();
     const toast = useToast();
     
@@ -246,6 +247,17 @@ const AppRouter = () => {
     };
 
     /**
+     * Helper to compute SHA-256 hash of a string (for anonymous source_hash)
+     */
+    const computeSourceHash = async (input: string): Promise<string> => {
+        const msgBuffer = new TextEncoder().encode(input);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    };
+
+    /**
      * Génère le rapport directement (Flux sans friction).
      * Inclut l'anonymisation et l'appel IA.
      */
@@ -274,7 +286,62 @@ const AppRouter = () => {
             // Le AIService gère maintenant le Timeout
             const sections = await AIService.generateFullReport(payload, assessment.patient);
             
-            // 3. Mise à jour UI
+            // 3. CROWDSOURCING ANONYME (Privacy-Preserving)
+            // On envoie les données statistiques seulement si la génération (donc paiement) a réussi
+            if (practitioner && practitioner.organizationRole !== 'member') { // Basic check
+                // Récupération de l'Org ID pour le hash
+                const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', practitioner.id).maybeSingle();
+                if (member?.organization_id) {
+                    const sourceHash = await computeSourceHash(member.organization_id);
+                    const insightsPayload: any[] = [];
+                    
+                    // Parsing simplifié de l'âge en mois
+                    const ageMatches = p.age.match(/(\d+)\s*ans?\s*(\d+)?/);
+                    let ageInMonths = 0;
+                    if (ageMatches) {
+                        ageInMonths = (parseInt(ageMatches[1]) * 12) + (parseInt(ageMatches[2] || '0'));
+                    }
+
+                    Object.entries(assessment.tests).forEach(([testId, subtests]) => {
+                        Object.entries(subtests).forEach(([subId, score]) => {
+                            if (score.status === 'validated' && score.raw !== '') {
+                                // --- TEMPORAL FUZZING (JITTER) ---
+                                // On génère un timestamp aléatoire dans le mois courant pour éviter la corrélation temporelle
+                                // Cela satisfait "Mois/Année suffisants" tout en brisant le lien entre les scores d'une même session.
+                                const now = new Date();
+                                const randomDay = Math.floor(Math.random() * 28) + 1; // 1-28 pour éviter les débordements
+                                const randomHour = Math.floor(Math.random() * 24);
+                                const randomMin = Math.floor(Math.random() * 60);
+                                const fuzzedDate = new Date(now.getFullYear(), now.getMonth(), randomDay, randomHour, randomMin);
+
+                                insightsPayload.push({
+                                    source_hash: sourceHash,
+                                    age_months: ageInMonths,
+                                    gender: p.gender === 'F' ? 'F' : 'M',
+                                    is_clinical: true, // Par défaut car c'est un patient
+                                    diagnostic_tag: 'Inconnu', // Pourrait être inféré
+                                    test_id: testId,
+                                    subtest_id: subId,
+                                    raw_score: parseFloat(score.raw),
+                                    computed_standard: parseFloat(score.standard) || null,
+                                    computed_percentile: parseFloat(score.percentile) || null,
+                                    created_at: fuzzedDate.toISOString() // Insertion explicite de la date bruitée
+                                });
+                            }
+                        });
+                    });
+
+                    if (insightsPayload.length > 0) {
+                        // Insert asynchrone sans await bloquant
+                        supabase.from('contribution_insights').insert(insightsPayload).then(({ error }) => {
+                            if (error) Logger.warn('DB', 'Failed to save anonymous insights', error);
+                            else Logger.info('DB', 'Anonymous insights saved (Privacy-Preserved).');
+                        });
+                    }
+                }
+            }
+
+            // 4. Mise à jour UI
             assessment.setSections(sections);
             assessment.setStep(4);
             refreshProfile(); // Actualise le solde de crédits
@@ -294,23 +361,100 @@ const AppRouter = () => {
         }
     };
 
+    /**
+     * FINALISATION ET PERSISTANCE (FIX CRITIQUE)
+     * Convertit les données de travail en objets permanents, chiffre et stocke en DB.
+     */
     const handleFinalize = async () => {
-        if (!sessionKey) return;
-        
-        // Supprimer le brouillon de CE patient
-        if (assessment.patient.id) {
-            await StorageService.deleteDraft(assessment.patient.id);
-            // Mettre à jour l'index local
+        if (!sessionKey || !orgKey) return;
+
+        // 1. Sécurisation : On vérifie qu'on a un patient ID
+        const patientId = assessment.patient.id;
+        if (!patientId) {
+            toast.error("Erreur critique : ID Patient manquant.");
+            return;
+        }
+
+        setIsGenerating(true); // Show loader during encryption/save
+
+        try {
+            // 2. Construction de la Session de Tests (Flattening)
+            const flatResults: Record<string, ScoreResult> = {};
+            const testNames: string[] = [];
+
+            Object.entries(assessment.tests).forEach(([tId, subtests]) => {
+                // Récupération du nom depuis le catalogue
+                const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === tId);
+                const prettyName = catalogDef ? catalogDef.name : tId;
+                testNames.push(prettyName);
+                
+                Object.entries(subtests).forEach(([sId, res]) => {
+                    flatResults[sId] = res;
+                });
+            });
+
+            const newSession: TestSession = {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                testId: 'multi', // On marque comme multi-test ou le test principal
+                testName: testNames.join(', ') || `Bilan du ${new Date().toLocaleDateString()}`,
+                results: flatResults
+            };
+
+            // 3. Construction du Rapport (Contenu complet)
+            // Note: On injecte 'sections' qui sera chiffré dans le blob JSON
+            const newReport: ReportMetadata = {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                type: 'initial', // Pourrait être dynamique
+                status: 'completed',
+                patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`,
+                sections: assessment.sections // <--- PERSISTANCE DU CONTENU
+            };
+
+            // 4. Récupération du dossier existant pour mise à jour
+            // On cherche dans la liste chargée localement
+            const currentFileIndex = patientFiles.findIndex(f => f.id === patientId);
+            if (currentFileIndex === -1) throw new Error("Dossier local introuvable");
+
+            const currentFile = patientFiles[currentFileIndex];
+
+            const updatedFile: PatientFile = {
+                ...currentFile,
+                lastInteraction: new Date().toISOString(),
+                sessions: [newSession, ...(currentFile.sessions || [])],
+                reports: [newReport, ...(currentFile.reports || [])]
+            };
+
+            // 5. SAUVEGARDE E2EE (Database) via StorageService qui gère le chiffrement
+            await StorageService.saveFile(updatedFile, orgKey);
+
+            // 6. Mise à jour State Local (Pour reflet immédiat dashboard)
+            setPatientFiles(prev => {
+                const newList = [...prev];
+                newList[currentFileIndex] = updatedFile;
+                return newList;
+            });
+
+            // 7. Nettoyage du Brouillon
+            await StorageService.deleteDraft(patientId);
             setDraftsIndex(prev => {
                 const newIndex = { ...prev };
-                delete newIndex[assessment.patient.id!];
+                delete newIndex[patientId];
                 return newIndex;
             });
+
+            // 8. Sortie
+            assessment.resetAssessment();
+            setMode('dashboard');
+            toast.success("Bilan sauvegardé et archivé avec succès.");
+
+        } catch (e: any) {
+            Logger.error('DB', "Erreur Finalisation", e);
+            toast.error("Erreur lors de la sauvegarde : " + e.message);
+        } finally {
+            setIsGenerating(false);
         }
-        
-        assessment.resetAssessment();
-        setMode('dashboard');
-        toast.success("Bilan finalisé et archivé");
     };
 
     const handleContributionAccess = () => {
@@ -418,7 +562,7 @@ const AppRouter = () => {
                 </div>
                 <div className="flex items-center gap-3">
                     {mode === 'assessment' && assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
-                    <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Contribuer</button>
+                    <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Créer un Test</button>
                     <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
                     <div className="h-8 w-px bg-stone-200 mx-1"></div>
                     <button onClick={logout} className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Déconnexion"><LogOut size={20}/></button>
@@ -465,6 +609,7 @@ const AppRouter = () => {
                     {/* FIX: Blindage contre undefined content */}
                     {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
                     
+                    {/* NOTE: handleFinalize est passé ici à onValidate */}
                     {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
                 </div>
             )}
@@ -518,9 +663,14 @@ const AppRouter = () => {
                         
                         <div className="bg-stone-50 p-3 rounded-xl mb-8 border border-stone-100 flex gap-2 text-left">
                             <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
-                            <p className="text-[10px] text-stone-500 leading-relaxed">
-                                <strong>Confidentialité garantie :</strong> Les données sont anonymisées automatiquement avant l'envoi. Aucun nom ne quitte votre navigateur.
-                            </p>
+                            <div className="space-y-1">
+                                <p className="text-[10px] text-stone-500 leading-relaxed">
+                                    <strong>Confidentialité :</strong> Les données sont anonymisées automatiquement avant l'envoi.
+                                </p>
+                                <p className="text-[10px] text-stone-500 leading-relaxed">
+                                    <strong>Crowdsourcing :</strong> Les scores anonymes seront ajoutés à la base communautaire pour affiner les normes.
+                                </p>
+                            </div>
                         </div>
 
                         <div className="flex gap-4">

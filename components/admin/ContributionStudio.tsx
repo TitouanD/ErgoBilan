@@ -1,10 +1,9 @@
-
 import React, { useState } from 'react';
-import { X, Upload, FileText, Check, AlertTriangle, Search, Loader2, Award, ArrowRight, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, RotateCcw, ChevronLeft, ChevronRight, Eye, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon } from 'lucide-react';
+import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight } from 'lucide-react';
 import { Contribution, ExtractedRow } from '../../types';
 import { GoogleGenAI } from "@google/genai";
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
-import { calculateFromStandard, calculateFromZ, calculateFromPercentile, percentileToZScore, zScoreToPercentile } from '../../utils/scoring';
+import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
@@ -38,7 +37,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [zoom, setZoom] = useState(1);
   const toast = useToast();
 
-  // --- HELPER FUNCTIONS (Définies avant usage) ---
+  // --- HELPER FUNCTIONS ---
 
   const cleanNumberStr = (val: string): string => {
       if (!val) return "";
@@ -172,27 +171,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
               extractedData.tables.forEach((table: any) => {
                   if (Array.isArray(table.rows)) {
                       table.rows.forEach((r: any) => {
-                          
-                          // Construction explicite des champs
                           const rawRow: ExtractedRow = {
                               id: (globalIdCounter++).toString(),
                               subtest: table.subtest_id || extractedData.test_context || "Global",
                               label: r.label || '',
-                              
-                              // Mapping Lookup
                               raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
                               standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
-                              
-                              // Mapping Parametric
                               mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
                               sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
-                              
-                              // Common
                               zScore: r.z_score ? String(r.z_score) : '',
                               percentile: r.percentile ? String(r.percentile) : '',
                               isTrap: false
                           };
-                          
                           flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
                       });
                   }
@@ -237,7 +227,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       setRows(prev => prev.map(r => {
           if (r.id !== id) return r;
           const updated = { ...r, [field]: value };
-          // Recalcul auto seulement pour Lookup et champs standards
           if (tableStructure === 'LOOKUP' && ['standard', 'zScore', 'percentile'].includes(field)) {
               return sanitizeAndCalculate(updated, tableStructure, field);
           }
@@ -267,6 +256,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const handleDeleteRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
   const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(groupedRows).length + 1));
   
+  // --- DIRECT INSERTION LOGIC (NO QUEUE) ---
   const handleSubmit = async () => {
       if (!testName.trim()) {
           setTestNameError(true);
@@ -274,41 +264,113 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           return;
       }
 
-      // FLUX A : Sauvegarde dans la queue de contribution SQL
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const contributionData: Contribution = {
-          id: crypto.randomUUID(),
-          userId: user?.id || 'anon',
-          userName: 'Praticien',
-          testName: testName,
-          docType: 'image',
-          status: 'pending',
-          vigilanceScore: 'pass',
-          submittedAt: new Date().toISOString(),
-          structureType: tableStructure, // EXPLICITE
-          rows: rows
-      };
-
       try {
-          await supabase.from('contributions_queue')
-              .insert({
-                  id: contributionData.id,
-                  user_id: user?.id,
-                  source_type: 'scan_ocr',
-                  status: 'pending',
-                  raw_data_json: JSON.stringify(contributionData),
-                  target_test_name: testName,
-                  created_at: contributionData.submittedAt,
-                  // structure_type: tableStructure
-              });
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error("Utilisateur non connecté");
+
+          // 1. Get Organization ID
+          const { data: member } = await supabase
+              .from('organization_members')
+              .select('organization_id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+          if (!member?.organization_id) throw new Error("Aucune organisation trouvée pour ce compte.");
+          const orgId = member.organization_id;
+
+          // 2. Prepare Test Object
+          const testId = `priv_${orgId.split('-')[0]}_${Date.now()}`; // Unique ID with prefix
           
-          Logger.info('DB', "Contribution sauvegardée.");
+          await supabase.from('official_tests').insert({
+              id: testId,
+              name: testName,
+              category_id: 'community',
+              version: '1.0',
+              author: user.email,
+              organization_id: orgId // Linked to Private Org
+          });
+
+          // 3. Prepare Subtests & Norms
+          for (const [subtestName, subRows] of Object.entries(groupedRows)) {
+              const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+              const subtestId = `${testId}_${subtestSlug}`;
+
+              // Insert Subtest
+              await supabase.from('official_subtests').insert({
+                  id: subtestId,
+                  test_id: testId,
+                  name: subtestName,
+                  unit: 'pts',
+                  score_type: 'standard',
+                  computation_mode: tableStructure,
+                  organization_id: orgId
+              });
+
+              // Insert Norms
+              const normsPayload = subRows.map((row, idx) => {
+                  // Parsing Age/Label
+                  const ageMatch = row.label.match(/(\d+)/); 
+                  const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
+                  
+                  let mean = null;
+                  let sd = null;
+                  let rawMin = 0;
+                  let rawMax = 0;
+
+                  if (tableStructure === 'PARAMETRIC') {
+                      mean = parseFloat(row.mean || row.raw) || 0;
+                      sd = parseFloat(row.sd || row.zScore) || 0;
+                  } else {
+                      // Lookup parsing simplistic
+                      rawMin = parseFloat(row.raw) || 0;
+                      rawMax = parseFloat(row.raw) || 0;
+                  }
+
+                  return {
+                      id: `${subtestId}_n_${idx}_${Date.now()}`,
+                      subtest_id: subtestId,
+                      organization_id: orgId,
+                      age_min_months: ageYear * 12, 
+                      age_max_months: (ageYear * 12) + 11,
+                      gender: 'Mixed',
+                      raw_min: rawMin,
+                      raw_max: rawMax,
+                      mean: mean,
+                      sd: sd,
+                      standard_score: tableStructure === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
+                      percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null,
+                      z_score: tableStructure === 'LOOKUP' ? (parseFloat(row.zScore) || null) : null
+                  };
+              });
+
+              if (normsPayload.length > 0) {
+                  const { error: normsError } = await supabase.from('official_norms').insert(normsPayload);
+                  if (normsError) throw normsError;
+              }
+          }
+          
+          Logger.info('DB', "Test privé créé avec succès.");
+          
+          // Construire l'objet Contribution pour la callback UI (affichage success)
+          const contributionData: Contribution = {
+              id: testId,
+              userId: user.id,
+              userName: 'Moi',
+              testName: testName,
+              docType: 'image',
+              status: 'validated',
+              vigilanceScore: 'pass',
+              submittedAt: new Date().toISOString(),
+              structureType: tableStructure,
+              rows: rows
+          };
+          
           onSubmit(contributionData);
           setStep('success');
-      } catch (e) {
-          Logger.error('DB', "Erreur sauvegarde contribution:", e);
-          toast.error("Erreur lors de la sauvegarde.");
+
+      } catch (e: any) {
+          Logger.error('DB', "Erreur sauvegarde test:", e);
+          toast.error("Erreur lors de la création du test : " + e.message);
       }
   };
 
@@ -325,38 +387,38 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-8 mx-auto transform -rotate-6">
                             <Sparkles size={48} className="text-[#E07A5F]" />
                         </div>
-                        <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Contribution</h2>
-                        <p className="text-stone-500 text-sm font-medium">Digitalisez vos manuels cliniques.</p>
+                        <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Mes Tests Privés</h2>
+                        <p className="text-stone-500 text-sm font-medium">Numérisez vos propres manuels.</p>
                     </div>
                 </div>
                 <div className="w-full md:w-3/5 p-10 md:p-12">
-                    <h3 className="text-2xl font-bold text-[#3D405B] mb-8">Intelligence d'Extraction</h3>
+                    <h3 className="text-2xl font-bold text-[#3D405B] mb-8">Studio de Création</h3>
                     <div className="space-y-8">
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">1</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Classification Hybride</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Le moteur identifie automatiquement si le tableau est <strong>Paramétrique</strong> (Moyenne/ET) ou une <strong>Table de Conversion</strong>.</p>
+                                <h4 className="font-bold text-[#3D405B]">Vos données, votre cabinet</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Les tests créés ici ne sont visibles que par vous et les membres de votre organisation.</p>
                             </div>
                         </div>
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">2</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Gestion du Pivot</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Les tableaux listant les âges en colonnes sont automatiquement redressés en lignes.</p>
+                                <h4 className="font-bold text-[#3D405B]">Extraction Intelligente</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Prenez en photo un tableau de normes (Moyenne/ET ou Conversion), l'IA le structure automatiquement.</p>
                             </div>
                         </div>
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">3</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Normalisation</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Les intervalles de scores bruts (ex: "19-20") sont préservés pour permettre le Lookup.</p>
+                                <h4 className="font-bold text-[#3D405B]">Utilisation Immédiate</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Une fois validé, le test apparaît instantanément dans votre catalogue de saisie.</p>
                             </div>
                         </div>
                     </div>
                     <div className="mt-10 pt-6 border-t border-stone-100 flex justify-end">
                         <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
-                            Importer un document <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                            Commencer <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                         </button>
                     </div>
                 </div>
@@ -370,15 +432,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
             <div className="w-full max-w-2xl bg-white rounded-[32px] shadow-xl p-10 text-center relative overflow-hidden">
                 <button onClick={onClose} className="absolute top-6 left-6 text-stone-400 hover:text-stone-600 flex items-center gap-2 font-bold text-sm uppercase tracking-wider">
-                    <ArrowLeft size={16} /> Quitter
+                    <ArrowLeft size={16} /> Annuler
                 </button>
                 <div className="mb-8 flex justify-center">
                     <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-3xl flex items-center justify-center transform -rotate-3 shadow-lg shadow-orange-200">
                         <Camera size={40} />
                     </div>
                 </div>
-                <h1 className="font-serif text-3xl font-bold text-[#3D405B] mb-4">Scanner un barème</h1>
-                <p className="text-stone-500 mb-10 max-w-md mx-auto leading-relaxed">Tableau de statistiques (Moy/ET) ou de conversion (Score Brut).</p>
+                <h1 className="font-serif text-3xl font-bold text-[#3D405B] mb-4">Scanner un tableau</h1>
+                <p className="text-stone-500 mb-10 max-w-md mx-auto leading-relaxed">Prenez en photo une page de manuel (Moyennes/Ecart-Types ou Table de conversion).</p>
                 {step === 'upload' ? (
                     <div className="space-y-6 max-w-md mx-auto">
                         <div className="text-left">
@@ -386,7 +448,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <input 
                                 value={testName} 
                                 onChange={(e) => { setTestName(e.target.value); setTestNameError(false); }} 
-                                placeholder="Ex: MABC-2, NEPSY-II..." 
+                                placeholder="Ex: Mon Test Perso" 
                                 className={`w-full p-4 bg-stone-50 rounded-xl border outline-none focus:border-[#E07A5F] font-bold text-[#3D405B] ${testNameError ? 'border-rose-500 bg-rose-50' : 'border-stone-200'}`} 
                             />
                             {testNameError && <p className="text-xs text-rose-500 font-bold mt-1 ml-1">Le nom est obligatoire.</p>}
@@ -395,16 +457,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" />
                             <div className="relative z-10 pointer-events-none">
                                 <Upload size={32} className="text-stone-300 group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
-                                <p className="font-bold text-[#3D405B]">Importer le tableau</p>
-                                <p className="text-xs text-stone-400 mt-1">L'IA détectera le type de données.</p>
+                                <p className="font-bold text-[#3D405B]">Importer l'image</p>
+                                <p className="text-xs text-stone-400 mt-1">L'IA détectera les données.</p>
                             </div>
                         </div>
                     </div>
                 ) : (
                     <div className="py-12">
                         <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
-                        <p className="font-bold text-[#3D405B]">Analyse Gemini 3 en cours...</p>
-                        <p className="text-xs text-stone-400">Classification Paramétrique vs Lookup...</p>
+                        <p className="font-bold text-[#3D405B]">Analyse en cours...</p>
+                        <p className="text-xs text-stone-400">Structuration des données...</p>
                     </div>
                 )}
             </div>
@@ -419,8 +481,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
                     <Check size={48} strokeWidth={4} />
                 </div>
-                <h2 className="font-serif text-4xl font-bold text-[#3D405B] mb-4">Base de données enrichie !</h2>
-                <p className="text-stone-500 text-lg mb-8 max-w-md mx-auto">Votre contribution va être validée par la modération.</p>
+                <h2 className="font-serif text-4xl font-bold text-[#3D405B] mb-4">Test Créé !</h2>
+                <p className="text-stone-500 text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue (catégorie 'Community').</p>
                 <button onClick={onClose} className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all">Retour au Dashboard</button>
             </div>
         </div>
@@ -446,11 +508,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-stone-400 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Édition des données extraites</p>
+                    <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Organisation)</p>
                 </div>
             </div>
             <div className="flex items-center gap-3">
-                <button onClick={handleSubmit} className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm"><Save size={16} /> Soumettre la contribution</button>
+                <button onClick={handleSubmit} className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm"><Save size={16} /> Enregistrer le test</button>
             </div>
         </div>
 

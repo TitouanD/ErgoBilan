@@ -152,12 +152,30 @@ export interface UserProfile {
   branding: BrandingConfig;
 }
 
+export interface ReportAttachment {
+  id: string;
+  type: 'image-full' | 'image-text';
+  url: string;
+  caption?: string; 
+  positionIndex: number; 
+}
+
+export interface ReportSection {
+  id: string;
+  title: string;
+  content: string;
+  status: 'draft' | 'validated';
+  isAiGenerated: boolean;
+  attachments?: ReportAttachment[];
+}
+
 export interface ReportMetadata {
   id: string;
   date: string;
   type: 'initial' | 'reevaluation' | 'final';
   status: 'draft' | 'completed';
   patientName: string;
+  sections?: ReportSection[]; // Ajout pour stocker le contenu
 }
 
 export interface TestSession {
@@ -237,23 +255,6 @@ export interface ScoreResult {
 
 export type TestData = Record<string, Record<string, ScoreResult>>;
 export type SectionStatus = 'draft' | 'validated';
-
-export interface ReportAttachment {
-  id: string;
-  type: 'image-full' | 'image-text';
-  url: string;
-  caption?: string; 
-  positionIndex: number; 
-}
-
-export interface ReportSection {
-  id: string;
-  title: string;
-  content: string;
-  status: SectionStatus;
-  isAiGenerated: boolean;
-  attachments?: ReportAttachment[];
-}
 
 export interface Observations {
   anamnese: string;
