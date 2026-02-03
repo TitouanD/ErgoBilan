@@ -5,6 +5,7 @@ import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
 import { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
@@ -15,6 +16,7 @@ interface Props {
 
 export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '' }) => {
     const [step, setStep] = useState<1 | 2 | 3>(1);
+    const toast = useToast();
     
     // Form Data
     const [formData, setFormData] = useState({
@@ -39,12 +41,12 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     const handleStep1Submit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.firstName.trim() || !formData.lastName.trim()) {
-            alert("Veuillez renseigner votre nom et prénom.");
+            toast.error("Veuillez renseigner votre nom et prénom.");
             return;
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email)) {
-            alert("Veuillez entrer une adresse email valide.");
+            toast.error("Veuillez entrer une adresse email valide.");
             return;
         }
         
@@ -58,11 +60,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     const handleStep2Submit = (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.password.length < 6) {
-            alert("Le mot de passe doit contenir au moins 6 caractères.");
+            toast.error("Le mot de passe doit contenir au moins 6 caractères.");
             return;
         }
         if (formData.password !== formData.confirmPassword) {
-            alert("Les mots de passe ne correspondent pas.");
+            toast.error("Les mots de passe ne correspondent pas.");
             return;
         }
         setStep(3);
@@ -76,11 +78,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     const handleFinalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.pin.length !== 6) {
-            alert("Le PIN doit faire exactement 6 chiffres.");
+            toast.error("Le PIN doit faire exactement 6 chiffres.");
             return;
         }
         if (formData.pin !== formData.confirmPin) {
-            alert("Les codes PIN ne correspondent pas.");
+            toast.error("Les codes PIN ne correspondent pas.");
             return;
         }
 
@@ -208,7 +210,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             Logger.error('AUTH', "Registration Error", e);
             let msg = e.message || "Une erreur est survenue.";
             if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB (RLS).";
-            alert("Erreur : " + msg);
+            toast.error(msg);
         } finally {
             setIsSubmitting(false);
             setStatusMessage("");

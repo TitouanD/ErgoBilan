@@ -6,6 +6,7 @@ import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase } from '../../services/db';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
 import { Logger } from '../../utils/logger';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
   onBack: () => void;
@@ -15,6 +16,7 @@ interface Props {
 export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   const [loadingStep, setLoadingStep] = useState<'idle' | 'validating' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const toast = useToast();
   
   // State pour le login manuel
   const [pastedLink, setPastedLink] = useState('');
@@ -125,7 +127,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
   const handleSaveData = async () => {
       if (!localPatient.lastName || !localPatient.firstName) {
-          alert("Merci de renseigner au moins le nom et le prénom de l'enfant.");
+          toast.error("Merci de renseigner au moins le nom et le prénom de l'enfant.");
           return;
       }
       if (!questionnaireId || !encryptionKey) return;
@@ -158,7 +160,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
       } catch (e) {
           Logger.error('DB', "Portal Save Error", e);
-          alert("Erreur lors de l'envoi sécurisé.");
+          toast.error("Erreur lors de l'envoi sécurisé.");
           setLoadingStep('ready');
       }
   };

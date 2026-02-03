@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
 import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, Maximize2, MousePointerClick, Square, Circle, AlignLeft, AlignCenter, AlignRight, Columns, Rows } from 'lucide-react';
 import { ReportView } from './ReportView';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
   patient: Patient;
@@ -271,6 +272,7 @@ const BrandingEditor: React.FC<{
 
 export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing }) => {
   const [showEditor, setShowEditor] = useState(false);
+  const toast = useToast();
 
   // TECHNIQUE "POPUP PRINT" : Contourne les restrictions Iframe des Sandboxes
   // et garantit un rendu CSS parfait (backgrounds, polices, layout).
@@ -280,7 +282,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
 
       const printWindow = window.open('', '_blank', 'width=1000,height=1200');
       if (!printWindow) {
-          alert("Veuillez autoriser les popups pour générer le PDF.");
+          toast.error("Veuillez autoriser les popups pour générer le PDF.");
           return;
       }
 

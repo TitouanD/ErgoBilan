@@ -7,13 +7,15 @@ import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; // Aj
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const SUBSCRIPTION_CHECK_TIMEOUT_MS = 5000; // 5 secondes max pour vérifier l'abo
 
 interface AuthContextType {
   userProfile: UserProfile;
   practitioner: PractitionerProfile | null;
   sessionKey: CryptoKey | null; // MasterKey (PIN)
   orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
-  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated';
+  // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
+  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked';
   isLoading: boolean;
   tempEmail: string | null;
   refreshProfile: () => Promise<void>;
@@ -55,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
   const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); // NOUVEAU
-  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated'>('unauthenticated');
+  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked'>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
 
@@ -133,37 +135,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadUser = async (userId: string, email: string) => {
       Logger.info('AUTH', "Loading user profile", userId);
       try {
+          // 1. Charger le Praticien (Rapide)
           const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
           
-          if (error) {
-              Logger.error('AUTH', "Supabase error loading practitioner", error);
-              // On ne jette pas l'erreur, on assume que le profil n'existe pas pour envoyer au wizard
-          }
+          if (error) Logger.error('AUTH', "Supabase error loading practitioner", error);
 
           if (user) {
-              Logger.info('AUTH', "Practitioner profile found. Locking session.");
-              setPractitioner({ 
+              const profile: PractitionerProfile = { 
                   id: user.id, 
                   email: user.email!, 
-                  firstName: user.first_name!, 
-                  lastName: user.last_name!, 
+                  firstName: user.first_name || '', 
+                  lastName: user.last_name || '', 
                   phonePro: user.phone_pro || '', 
                   siret: user.siret || '', 
                   addressPro: user.address_pro || '', 
                   encryptionSalt: user.encryption_salt!, 
                   encryptionValidator: user.encryption_validator! 
-              });
-              await refreshProfile(userId);
-              setAuthState('locked'); // Profil trouvé -> Ecran PIN
+              };
+              
+              setPractitioner(profile);
+
+              // 2. CHECK ABONNEMENT BLOQUANT AVEC TIMEOUT
+              // On attend la réponse, mais pas plus de 5 secondes.
+              Logger.debug('AUTH', "Checking subscription status (Blocking with Timeout)...");
+              
+              let fullProfile: UserProfile | null = null;
+              
+              try {
+                  fullProfile = await Promise.race([
+                      SubscriptionService.getUserProfile(userId),
+                      new Promise<null>((_, reject) => 
+                          setTimeout(() => reject(new Error("Subscription check timed out")), SUBSCRIPTION_CHECK_TIMEOUT_MS)
+                      )
+                  ]);
+              } catch (subError) {
+                  Logger.error('AUTH', "Critical: Subscription check failed/timeout", subError);
+                  // Si le check échoue, on ne laisse PAS passer. Sécurité d'abord.
+                  // On simule un profil null pour déclencher le verrouillage
+                  fullProfile = null;
+              }
+
+              if (fullProfile) {
+                  setUserProfile(fullProfile);
+                  
+                  // Abonnement Realtime aux crédits (Non bloquant)
+                  SubscriptionService.subscribeToCredits(userId, (newCredits) => { 
+                      setUserProfile(prev => ({ ...prev, credits: newCredits })); 
+                  });
+
+                  // VALIDATION STRICTE DE L'ACCÈS
+                  // Accès autorisé si : (Plan Payant Actif) OU (Essai Valide)
+                  const hasValidAccess = fullProfile.status === 'active' || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
+
+                  if (!hasValidAccess) {
+                      Logger.warn('AUTH', `Access Denied. Status: ${fullProfile.status}, TrialDays: ${fullProfile.trialDaysRemaining}`);
+                      setAuthState('subscription_locked'); // -> UI Paywall Bloquant
+                  } else if (profile.encryptionValidator === 'pending') {
+                      Logger.warn('AUTH', "Profile found but PIN is pending. Redirecting to setup.");
+                      setTempEmail(email); 
+                      setAuthState('registering'); 
+                  } else {
+                      Logger.info('AUTH', "Access Granted. Locking session (waiting for PIN).");
+                      setAuthState('locked'); // -> UI PIN
+                  }
+
+              } else {
+                  // Echec récupération profil abonnement (Timeout ou Erreur réseau grave)
+                  Logger.error('AUTH', "Impossible to verify subscription. Locking access.");
+                  // On peut mettre un message d'erreur spécifique dans l'UI via un Toast si besoin, 
+                  // mais ici on verrouille par sécurité.
+                  setAuthState('subscription_locked'); 
+              }
+
           } else {
               // User authentifié chez Supabase mais pas de profil dans 'practitioners'
               Logger.warn('AUTH', "User authenticated but NO practitioner profile found. Redirecting to wizard.");
               setTempEmail(email);
-              setAuthState('registering'); // -> Redirection vers Wizard Completion
+              setAuthState('registering'); 
           }
       } catch (e) {
           Logger.error('AUTH', "Critical Auth Load Error", e);
-          // En cas d'erreur critique de chargement, on déconnecte pour éviter les états incohérents
           await supabase.auth.signOut();
           handleLocalLogout();
       } finally {
@@ -174,16 +225,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProfile = async (userId?: string) => {
       const targetId = userId || userProfile.id;
       if (!targetId) return;
-      
-      Logger.debug('DB', "Refreshing profile data", targetId);
-      const fullProfile = await SubscriptionService.getUserProfile(targetId);
-      if (fullProfile) setUserProfile(fullProfile);
-      
-      // Abonnement Realtime aux crédits
-      SubscriptionService.subscribeToCredits(targetId, (newCredits) => { 
-          Logger.debug('DB', "Realtime credits update received", newCredits);
-          setUserProfile(prev => ({ ...prev, credits: newCredits })); 
-      });
+      try {
+          const fullProfile = await SubscriptionService.getUserProfile(targetId);
+          if (fullProfile) setUserProfile(fullProfile);
+      } catch (e) {
+          Logger.warn('DB', "Failed to refresh profile details", e);
+      }
   };
 
   /**
@@ -205,27 +252,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .eq('user_id', practitioner.id)
               .maybeSingle();
 
-          // Tolérance zéro sur l'erreur DB
           if (error) throw error;
 
           if (memberData && memberData.encrypted_org_key) {
-              // B. Déchiffrer la Org Key
               const [iv, content] = memberData.encrypted_org_key.split(':');
               const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
               Logger.info('CRYPTO', "Organization Key successfully unwrapped.");
               
-              setSessionKey(key); // Master Key
-              setOrgKey(unwrappedOrgKey); // Org Key
+              setSessionKey(key); 
+              setOrgKey(unwrappedOrgKey); 
               setAuthState('authenticated');
           } else {
-              // CAS MIGRATION / INITIALISATION TARDIVE
-              // Si l'utilisateur a un compte mais pas encore de clé d'orga chiffrée (ex: créé par le trigger SQL qui met NULL ou échec trigger)
+              // Fallback (Migration/Init)
               Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
-              
-              // 1. Vérifier si l'organisation existe (sinon la créer)
               let orgId = memberData?.organization_id;
               if (!orgId) {
-                  // Fallback ultime : création orga si manquant
                   const { data: newOrg } = await supabase.from('organizations').insert({ name: 'Mon Cabinet' }).select().single();
                   orgId = newOrg.id;
               }
@@ -234,7 +275,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const wrapped = await wrapKey(newOrgKey, key);
               const wrappedStr = `${wrapped.iv}:${wrapped.content}`;
               
-              // On met à jour la DB (Upsert pour gérer le cas où membre n'existait pas)
               const { error: upsertError } = await supabase
                   .from('organization_members')
                   .upsert({ 
@@ -247,7 +287,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (upsertError) throw upsertError;
                   
               Logger.info('CRYPTO', "New Organization Key generated and saved.");
-              
               setSessionKey(key);
               setOrgKey(newOrgKey);
               setAuthState('authenticated');
@@ -256,7 +295,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
           Logger.error('CRYPTO', "Failed to unlock session/org key", e);
           alert("Erreur critique de déchiffrement. Veuillez vérifier votre PIN ou contacter le support.");
-          // On ne déverrouille pas si la chaîne de confiance est brisée
       }
   };
 

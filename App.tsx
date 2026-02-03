@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider } from './contexts/CatalogContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
@@ -32,6 +33,7 @@ import { Logger } from './utils/logger';
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail } = useAuth();
     const assessment = useAssessment();
+    const toast = useToast();
     
     // UI State local (Navigation)
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
@@ -89,6 +91,11 @@ const AppRouter = () => {
             setMode('landing');
             setShowAuthModal(true); 
             setIsLoggingIn(false);
+        } else if (authState === 'subscription_locked') {
+            // Nouvel état : Paywall Bloquant
+            setIsLoggingIn(false);
+            setShowAuthModal(false);
+            setPricingModalMode('paywall');
         }
     }, [authState]);
 
@@ -102,8 +109,6 @@ const AppRouter = () => {
                 setPatientFiles(files);
                 
                 // Charger l'index des brouillons (léger)
-                // Les brouillons restent privés -> sessionKey (PIN) non, on utilise sessionKey implicitement dans StorageService.getDraftsMetadata via RLS user_id
-                // Pour le contenu du draft, on passera sessionKey
                 const draftsMap = await StorageService.getDraftsMetadata();
                 setDraftsIndex(draftsMap);
                 
@@ -120,17 +125,31 @@ const AppRouter = () => {
     const handleLogin = async (email: string, pass: string) => {
         setIsLoggingIn(true);
         Logger.info('AUTH', "Attempting login for:", email);
+        
+        // Timeout de sécurité : si pas de réponse dans 10s, on débloque le bouton
+        const timer = setTimeout(() => {
+            if (isLoggingIn) {
+                Logger.warn('AUTH', "Login took too long - releasing UI lock");
+                setIsLoggingIn(false);
+            }
+        }, 10000);
+
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+        
+        clearTimeout(timer);
+        
         if (error) { 
             Logger.error('AUTH', "Login failed", error.message);
-            alert(error.message); 
+            toast.error(error.message); 
             setIsLoggingIn(false);
         } 
+        // Succès : Le listener onAuthStateChange dans AuthContext va prendre le relais et changer authState, ce qui déclenchera le useEffect ci-dessus pour fermer le modal.
     };
 
     const handleUnlock = (key: CryptoKey) => {
         unlockSession(key);
         setMode('dashboard');
+        toast.success("Session déverrouillée");
     };
 
     const handleGenerateLink = async () => {
@@ -144,6 +163,7 @@ const AppRouter = () => {
         if (data) {
             setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`);
             setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]);
+            toast.success("Lien sécurisé généré");
         }
     };
 
@@ -158,8 +178,9 @@ const AppRouter = () => {
             assessment.resetAssessment();
             assessment.loadFromDraft(draftContent);
             setMode('assessment');
+            toast.info("Brouillon chargé");
         } else {
-            alert("Impossible de charger ce brouillon.");
+            toast.error("Impossible de charger ce brouillon.");
         }
     };
 
@@ -214,10 +235,11 @@ const AppRouter = () => {
                 assessment.resetAssessment();
                 assessment.loadFromDraft(initialDraft);
                 setMode('assessment');
+                toast.success("Dossier importé avec succès");
             }
         } catch (e) {
             Logger.error('CRYPTO', "Error importing pending questionnaire", e);
-            alert("Erreur lors de l'importation du dossier.");
+            toast.error("Erreur lors de l'importation du dossier.");
         } finally {
             setProcessingQueueId(null);
         }
@@ -256,15 +278,16 @@ const AppRouter = () => {
             assessment.setSections(sections);
             assessment.setStep(4);
             refreshProfile(); // Actualise le solde de crédits
+            toast.success("Rapport généré avec succès");
 
         } catch (e: any) {
             Logger.error('AI', "Generation Error in UI", e);
             if (e.message === "CREDIT_INSUFFICIENT") {
                 setPricingModalMode('paywall');
             } else if (e.message === "TIMEOUT_AI") {
-                alert("Le serveur IA est surchargé. Vos crédits n'ont pas été débités. Veuillez réessayer.");
+                toast.error("Le serveur IA est surchargé. Vos crédits n'ont pas été débités. Veuillez réessayer.");
             } else {
-                alert("Une erreur est survenue lors de la génération : " + e.message);
+                toast.error("Une erreur est survenue lors de la génération : " + e.message);
             }
         } finally {
             setIsGenerating(false); // Désactive le GenerationLoader
@@ -287,6 +310,7 @@ const AppRouter = () => {
         
         assessment.resetAssessment();
         setMode('dashboard');
+        toast.success("Bilan finalisé et archivé");
     };
 
     const handleContributionAccess = () => {
@@ -300,10 +324,12 @@ const AppRouter = () => {
 
     // --- RENDUS ---
 
+    // Écran de PIN (Déverrouillage)
     if (authState === 'locked' && practitioner) {
         return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     }
 
+    // Écran Landing / Login
     if (mode === 'landing') {
         return (
             <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
@@ -376,6 +402,7 @@ const AppRouter = () => {
         );
     }
 
+    // Gestion des flux spéciaux (Onboarding, Portail, Admin)
     if (showOnboarding) return <OnboardingExperience onComplete={() => setShowOnboarding(false)} />;
     if (mode === 'portal') return <PatientPortal onBack={() => setMode('landing')} />;
     if (mode === 'contribution') return <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />;
@@ -440,7 +467,22 @@ const AppRouter = () => {
             )}
 
             {/* Modales Globales */}
-            {pricingModalMode && <PricingModal onClose={() => setPricingModalMode(null)} onSelectPlan={() => alert("Stripe Integration")} onUnlockOneOff={() => alert("Stripe One-Off")} isPaywallMode={pricingModalMode === 'paywall'} />}
+            {pricingModalMode && (
+                <PricingModal 
+                    onClose={() => {
+                        // Si le mode est "Paywall" (Abonnement expiré/invalide), la fermeture provoque la déconnexion
+                        if (pricingModalMode === 'paywall' && authState === 'subscription_locked') {
+                            logout();
+                        } else {
+                            setPricingModalMode(null);
+                        }
+                    }} 
+                    onSelectPlan={() => toast.info("Intégration Stripe à venir")} 
+                    onUnlockOneOff={() => toast.info("Intégration Stripe One-Off à venir")} 
+                    isPaywallMode={pricingModalMode === 'paywall'} 
+                />
+            )}
+            
             {createdLink && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] text-center max-w-lg shadow-2xl relative">
@@ -450,7 +492,7 @@ const AppRouter = () => {
                         <p className="text-stone-500 text-sm mb-6">Envoyez ce lien sécurisé à la famille.</p>
                         <div className="bg-stone-50 border border-stone-200 p-4 rounded-2xl font-mono text-xs mb-6 flex items-center gap-3 text-[#3D405B]">
                             <div className="truncate flex-1 font-bold">{createdLink}</div>
-                            <button onClick={() => navigator.clipboard.writeText(createdLink)} className="hover:text-[#E07A5F] transition-colors"><Copy size={18}/></button>
+                            <button onClick={() => { navigator.clipboard.writeText(createdLink); toast.success("Lien copié !"); }} className="hover:text-[#E07A5F] transition-colors"><Copy size={18}/></button>
                         </div>
                         <button onClick={() => setCreatedLink(null)} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all">Terminer</button>
                     </div>
@@ -459,7 +501,7 @@ const AppRouter = () => {
             
             <GenerationLoader 
                 isVisible={isGenerating} 
-                onCancel={() => { setIsGenerating(false); alert("Génération annulée."); }} 
+                onCancel={() => { setIsGenerating(false); toast.info("Génération annulée."); }} 
             />
 
             {showConfirmGeneration && (
@@ -493,6 +535,7 @@ const AppRouter = () => {
                         if(selectedFile && orgKey) { 
                             await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
                             setShowQuickEntry(false); 
+                            toast.success("Séance ajoutée au dossier");
                         }
                     }} 
                 />
@@ -504,11 +547,13 @@ const AppRouter = () => {
 export default function App() {
     return (
         <AuthProvider>
-            <CatalogProvider>
-                <AssessmentProvider>
-                    <AppRouter />
-                </AssessmentProvider>
-            </CatalogProvider>
+            <ToastProvider>
+                <CatalogProvider>
+                    <AssessmentProvider>
+                        <AppRouter />
+                    </AssessmentProvider>
+                </CatalogProvider>
+            </ToastProvider>
         </AuthProvider>
     );
 }

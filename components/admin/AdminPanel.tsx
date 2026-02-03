@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Contribution, UserProfile } from '../../types';
 import { AdminService } from '../../services/admin';
 import { Check, X, AlertTriangle, FileText, LayoutGrid, ShieldAlert, Layers, Loader2, Database, Ban } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
+import { Logger } from '../../utils/logger';
 
 interface Props {
   userProfile: UserProfile; // Requis pour la sécurité
@@ -15,6 +17,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const toast = useToast();
 
   // SÉCURITÉ CRITIQUE : Bloquer le rendu si non-admin
   if (!userProfile.isAdmin) {
@@ -39,7 +42,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
           const data = await AdminService.getPendingContributions();
           setContributions(data);
       } catch (e) {
-          console.error("Erreur chargement admin:", e);
+          Logger.error('SYSTEM', "Erreur chargement admin:", e);
       } finally {
           setIsLoading(false);
       }
@@ -51,15 +54,17 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
       try {
           if (status === 'rejected') {
               await AdminService.rejectContribution(selectedContribution.id);
+              toast.success("Contribution rejetée");
           } else {
               await AdminService.integrateContribution(selectedContribution);
+              toast.success("Contribution intégrée au catalogue");
           }
           // Rafraîchir la liste
           await loadData();
           setSelectedContribution(null);
       } catch (e) {
-          console.error("Erreur action admin:", e);
-          alert("Erreur lors de l'opération. Vérifiez la console (Conflit de nom ou RLS).");
+          Logger.error('DB', "Erreur action admin:", e);
+          toast.error("Erreur lors de l'opération. Vérifiez la console (Conflit de nom ou RLS).");
       } finally {
           setIsProcessing(false);
       }

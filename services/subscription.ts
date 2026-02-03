@@ -1,6 +1,7 @@
 
 import { supabase } from './db';
 import { UserProfile, BrandingConfig } from '../types';
+import { Logger } from '../utils/logger';
 
 // Valeurs par défaut pour éviter les crashs si la DB est incomplète
 const DEFAULT_BRANDING: BrandingConfig = {
@@ -85,7 +86,7 @@ export const SubscriptionService = {
             };
 
         } catch (e) {
-            console.error("Erreur chargement profil:", e);
+            Logger.error('DB', "Erreur chargement profil:", e);
             return null;
         }
     },
@@ -99,7 +100,7 @@ export const SubscriptionService = {
             if (error) throw error;
             return data === true; // Retourne true si succès, false si pas assez de crédits
         } catch (e) {
-            console.error("Erreur consommation crédit:", e);
+            Logger.error('DB', "Erreur consommation crédit:", e);
             return false;
         }
     },

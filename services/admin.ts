@@ -1,6 +1,7 @@
 
 import { supabase } from './db';
 import { Contribution } from '../types';
+import { Logger } from '../utils/logger';
 
 /**
  * Service dédié aux opérations Administrateur.
@@ -35,7 +36,7 @@ export const AdminService = {
                     parsed = item.raw_data_json;
                 }
             } catch (e) {
-                console.error(`Erreur JSON pour contribution ${item.id}:`, e);
+                Logger.error('SYSTEM', `Erreur JSON pour contribution ${item.id}:`, e);
                 // On garde un objet vide pour ne pas crasher l'UI, l'ID permettra de l'identifier
             }
             
@@ -81,7 +82,7 @@ export const AdminService = {
 
         if (existingTest) {
             testId = existingTest.id;
-            console.log(`Test existant trouvé (${testId}), ajout des données à ce test.`);
+            Logger.info('DB', `Test existant trouvé (${testId}), ajout des données à ce test.`);
         } else {
             const { error: testError } = await supabase
                 .from('official_tests')
@@ -122,7 +123,7 @@ export const AdminService = {
                     computation_mode: contribution.structureType || 'LOOKUP' // ICI : Utilisation du type détecté
                 }, { onConflict: 'id' });
             
-            if (subError) console.error(`Erreur Subtest ${subtestName}:`, subError);
+            if (subError) Logger.error('DB', `Erreur Subtest ${subtestName}:`, subError);
 
             // B. Insert Norms
             // On génère des IDs uniques basés sur le temps pour éviter les conflits si on re-importe
@@ -169,7 +170,7 @@ export const AdminService = {
                     .from('official_norms')
                     .insert(normsPayload);
                 
-                if (normsError) console.error("Erreur insertion normes", normsError);
+                if (normsError) Logger.error('DB', "Erreur insertion normes", normsError);
             }
         }
 

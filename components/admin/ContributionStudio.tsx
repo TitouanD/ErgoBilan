@@ -6,6 +6,8 @@ import { GoogleGenAI } from "@google/genai";
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, percentileToZScore, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
+import { useToast } from '../../contexts/ToastContext';
+import { Logger } from '../../utils/logger';
 
 interface Props {
   onClose: () => void;
@@ -34,6 +36,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
   const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [zoom, setZoom] = useState(1);
+  const toast = useToast();
 
   // --- HELPER FUNCTIONS (Définies avant usage) ---
 
@@ -205,8 +208,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           setStep('editor');
 
       } catch (error) {
-          console.error("Gemini Extraction Error:", error);
-          alert("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
+          Logger.error('AI', "Gemini Extraction Error", error);
+          toast.error("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
           setStep('upload');
       }
   };
@@ -300,12 +303,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   // structure_type: tableStructure
               });
           
-          console.log("✅ Contribution Flux A sauvegardée.");
+          Logger.info('DB', "Contribution sauvegardée.");
           onSubmit(contributionData);
           setStep('success');
       } catch (e) {
-          console.error("Erreur sauvegarde contribution:", e);
-          alert("Erreur lors de la sauvegarde.");
+          Logger.error('DB', "Erreur sauvegarde contribution:", e);
+          toast.error("Erreur lors de la sauvegarde.");
       }
   };
 
@@ -559,7 +562,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                         );
                                     })}
                                     
-                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-stone-200 rounded-lg text-stone-400 text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
+                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border dashed border-stone-200 rounded-lg text-stone-400 text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
                                         <Plus size={12} /> Ajouter une ligne
                                     </button>
                                 </div>

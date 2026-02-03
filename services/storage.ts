@@ -130,7 +130,7 @@ export const StorageService = {
         // On vérifie si le dossier existe déjà pour récupérer sa clé
         const { data: existingPatient } = await supabase
             .from('patients')
-            .select('encrypted_file_key')
+            .select('encrypted_file_key, organization_id')
             .eq('id', file.id)
             .maybeSingle();
 
@@ -139,6 +139,11 @@ export const StorageService = {
             const [iv, content] = existingPatient.encrypted_file_key.split(':');
             fileKey = await unwrapKey({ iv, content }, orgKey);
             encryptedFileKeyStr = existingPatient.encrypted_file_key; // On garde la même version chiffrée
+            
+            // Assurer que l'objet file a l'organizationId correct
+            if (!file.patient.organizationId) {
+                file.patient.organizationId = existingPatient.organization_id;
+            }
         } else {
             // Cas B : Nouveau Dossier -> On génère une nouvelle clé unique
             Logger.info('CRYPTO', "Generating new File Key for patient " + file.id);
@@ -147,43 +152,50 @@ export const StorageService = {
             encryptedFileKeyStr = `${wrapped.iv}:${wrapped.content}`;
         }
 
+        // Si l'organizationId est toujours manquant, on le récupère du user courant
+        if (!file.patient.organizationId) {
+             const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1).single();
+             if(member) {
+                 file.patient.organizationId = member.organization_id;
+             } else {
+                 throw new Error("Impossible de lier le patient : L'utilisateur n'appartient à aucune organisation.");
+             }
+        }
+
         Logger.info('DB', 'Saving patient file (Encrypted with FileKey)', { id: file.id });
 
         // 2. Chiffrement de l'identité avec la FileKey
         const patientToSave = { ...file.patient, _archived: file.archived }; 
         const encIdentity = await encryptBlob(patientToSave, fileKey);
 
+        // CONSTRUCTION PAYLOAD PATIENT (CORRECTIF SCHEMA V1.3)
+        // Note: La table 'patients' ne contient PAS de colonne 'user_id'. 
+        // L'accès est géré par 'organization_id' et la table de jointure 'organization_members'.
         const patientPayload = {
             id: file.id,
-            user_id: user.id, 
-            organization_id: file.patient.organizationId, // Important pour le filtrage RLS orga
+            organization_id: file.patient.organizationId, // OBLIGATOIRE
             updated_at: new Date().toISOString(),
             last_interaction: file.lastInteraction,
             iv: encIdentity.iv,
             encrypted_identity: encIdentity.content,
-            encrypted_file_key: encryptedFileKeyStr // Sauvegarde de la clé du dossier (Wrapped)
+            encrypted_file_key: encryptedFileKeyStr
+            // user_id: user.id <-- SUPPRIMÉ CAR INEXISTANT EN DB
         };
 
-        // Note: On ne met pas organization_id ici s'il n'est pas dans l'objet patient, 
-        // mais idéalement il faudrait le récupérer du user context. 
-        // Pour l'instant on laisse le trigger SQL gérer l'orga par défaut ou on le fera plus tard.
-        
-        // Petite correction : Récupérer l'ID orga du user courant pour lier le patient
-        if(!patientPayload.organization_id) {
-             const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).single();
-             if(member) patientPayload.organization_id = member.organization_id;
+        const { error: patError } = await supabase.from('patients').upsert(patientPayload);
+        if (patError) {
+            Logger.error('DB', "Erreur Save Patient", patError);
+            throw patError;
         }
 
-        const { error: patError } = await supabase.from('patients').upsert(patientPayload);
-        if (patError) throw patError;
-
         // 3. Rapports (Chiffrés avec FileKey)
+        // La table 'reports' contient bien 'user_id' selon le schéma
         if (file.reports.length > 0) {
             const reportsPayloads = await Promise.all(file.reports.map(async (r) => {
                 const enc = await encryptBlob(r, fileKey);
                 return {
                     id: r.id,
-                    user_id: user.id,
+                    user_id: user.id, // OK ici
                     patient_id: file.id,
                     created_at: r.date,
                     type: r.type,
@@ -192,16 +204,18 @@ export const StorageService = {
                     encrypted_content: enc.content
                 };
             }));
-            await supabase.from('reports').upsert(reportsPayloads);
+            const { error: repError } = await supabase.from('reports').upsert(reportsPayloads);
+            if (repError) Logger.error('DB', "Erreur Save Reports", repError);
         }
 
         // 4. Sessions (Chiffrées avec FileKey)
+        // La table 'sessions' contient bien 'user_id' selon le schéma
         if (file.sessions.length > 0) {
             const sessionsPayloads = await Promise.all(file.sessions.map(async (s) => {
                 const enc = await encryptBlob(s.results, fileKey);
                 return {
                     id: s.id,
-                    user_id: user.id,
+                    user_id: user.id, // OK ici
                     patient_id: file.id,
                     date: s.date,
                     test_id: s.testId,
@@ -210,7 +224,8 @@ export const StorageService = {
                     encrypted_results: enc.content
                 };
             }));
-            await supabase.from('sessions').upsert(sessionsPayloads);
+            const { error: sessError } = await supabase.from('sessions').upsert(sessionsPayloads);
+            if (sessError) Logger.error('DB', "Erreur Save Sessions", sessError);
         }
     },
 
@@ -234,9 +249,6 @@ export const StorageService = {
         for (const row of patients) {
             try {
                 if (!row.encrypted_file_key) {
-                    // LEGACY SUPPORT : Si pas de clé de fichier (anciens dossiers v1)
-                    // Il faudrait idéalement une migration, mais ici on skip ou on tente de déchiffrer avec OrgKey direct (si c'était le cas avant)
-                    // Dans la V1.2 "Step 3", on assume que tout passe par FileKey maintenant.
                     Logger.warn('CRYPTO', `Patient ${row.id} has no file key. Skipping (Legacy format).`);
                     continue;
                 }

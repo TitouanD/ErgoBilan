@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useRef, useEffect } from 'r
 import { Patient, TestData, Observations, ReportSection } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
+import { Logger } from '../utils/logger';
 
 interface AssessmentContextType {
   patient: Patient;
@@ -71,7 +72,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           try { 
               await StorageService.saveDraft(draftData, sessionKey); 
           } catch(e) { 
-              console.error("Autosave failed", e); 
+              Logger.error('DB', "Autosave failed", e); 
           } finally { 
               setIsAutoSaving(false); 
           }
@@ -97,19 +98,19 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const loadFromDraft = (draft: any) => {
-      console.log("📥 Context: Loading Draft...", draft);
+      Logger.debug('DB', "Context: Loading Draft...", draft);
       // Utilisation du spread {...obj} pour créer une nouvelle référence objet
       // Cela garantit que React détecte le changement même si les propriétés internes sont identiques
       if (draft.patient) {
-          console.log("   -> Patient loaded:", draft.patient.lastName);
+          Logger.debug('DB', " -> Patient loaded:", draft.patient.lastName);
           setPatient({ ...draft.patient });
       }
       if (draft.tests) {
-          console.log("   -> Tests loaded:", Object.keys(draft.tests).length);
+          Logger.debug('DB', " -> Tests loaded:", Object.keys(draft.tests).length);
           setTests({ ...draft.tests });
       }
       if (draft.observations) {
-          console.log("   -> Observations loaded");
+          Logger.debug('DB', " -> Observations loaded");
           setObservations({ ...draft.observations });
       }
       if (draft.sections) setSections([...draft.sections]);

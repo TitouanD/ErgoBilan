@@ -1,4 +1,6 @@
 
+import { Logger } from './logger';
+
 /**
  * Convertit un File (Blob) en chaîne Base64 compatible avec l'API Gemini (sans préfixe data:...)
  */
@@ -60,7 +62,7 @@ export const cleanAndParseJson = (text: string | undefined): any => {
         const sanitised = clean.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
         return JSON.parse(sanitised);
     } catch (e) {
-        console.error("JSON Parsing Error:", e, "Cleaned text:", clean);
+        Logger.error('AI', "JSON Parsing Error:", e);
         return null;
     }
 };

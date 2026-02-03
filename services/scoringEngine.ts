@@ -1,6 +1,7 @@
 
 import { supabase } from './db';
 import { calculateFromZ, zScoreToPercentile } from '../utils/scoring';
+import { Logger } from '../utils/logger';
 
 export interface ComputationResult {
     raw: number;
@@ -29,7 +30,7 @@ export const ScoringEngine = {
             .maybeSingle();
 
         if (!subtest) {
-            console.warn(`[ScoringEngine] Sous-test introuvable: ${subtestId}`);
+            Logger.warn('SYSTEM', `[ScoringEngine] Sous-test introuvable: ${subtestId}`);
             return null;
         }
 

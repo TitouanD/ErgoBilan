@@ -9,6 +9,7 @@ import { useAssessment } from '../../contexts/AssessmentContext';
 import { MOCK_SESSION_DATA } from '../../data/mockSession';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
   data: Patient;
@@ -20,7 +21,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
   const { userProfile, sessionKey, orgKey } = useAuth(); // Import orgKey
   const { loadFromDraft, patient } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [formKey, setFormKey] = useState(0); 
+  const [formKey, setFormKey] = useState(0);
+  const toast = useToast();
   
   const handleDataChange = (partialData: Partial<Patient>) => {
       if (partialData.dob) {
@@ -80,9 +82,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           setFormKey(prev => prev + 1); 
           
           setTimeout(() => setDataLoaded(false), 2000);
+          toast.success("Données de test injectées");
       } catch (err) {
-          console.error("ERREUR INJECTION:", err);
-          alert("Erreur lors de l'injection des données test.");
+          Logger.error('SYSTEM', "ERREUR INJECTION:", err);
+          toast.error("Erreur lors de l'injection des données test.");
       }
   };
 
@@ -91,8 +94,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           await ensurePatientCreated(data);
           onNext();
       } catch (e) {
-          console.error("Erreur création patient:", e);
-          alert("Impossible de créer le dossier patient. Vérifiez votre connexion.");
+          Logger.error('DB', "Erreur création patient:", e);
+          toast.error("Impossible de créer le dossier patient. Vérifiez votre connexion.");
       }
   };
 

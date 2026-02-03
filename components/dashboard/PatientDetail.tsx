@@ -8,6 +8,7 @@ import { SubtestRowCheck } from '../assessment/Step2Tests';
 import { StorageService } from '../../services/storage';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCatalog } from '../../contexts/CatalogContext';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
   file: PatientFile;
@@ -186,6 +187,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
   const { orgKey } = useAuth(); // utilise orgKey pour gérer le dossier
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const toast = useToast();
 
   const chartData = file.sessions ? file.sessions.map(s => ({
       date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
@@ -199,8 +201,9 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       try {
           await StorageService.toggleArchive(file, orgKey);
           onBack(); // Retour au dashboard pour rafraichir
+          toast.success("Dossier mis à jour");
       } catch (e) {
-          alert("Erreur lors de l'archivage.");
+          toast.error("Erreur lors de l'archivage.");
       } finally {
           setIsProcessing(false);
       }
@@ -212,8 +215,9 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       try {
           await StorageService.deleteFile(file.id);
           onBack(); 
+          toast.success("Dossier supprimé");
       } catch (e) {
-          alert("Erreur lors de la suppression.");
+          toast.error("Erreur lors de la suppression.");
       } finally {
           setIsProcessing(false);
       }
