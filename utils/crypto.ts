@@ -126,3 +126,38 @@ export const importQuestionnaireKey = async (keyString: string): Promise<CryptoK
       throw new Error("Clé de questionnaire invalide ou corrompue.");
   }
 };
+
+// --- NOUVEAU : KEY WRAPPING (HIÉRARCHIE DE CLÉS) ---
+
+// 1. Générer une nouvelle clé AES-GCM exportable (ex: OrgKey ou FileKey)
+export const generateSymetricKey = async (): Promise<CryptoKey> => {
+    return window.crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true, // Exportable pour pouvoir être chiffrée (wrapped)
+        ["encrypt", "decrypt"]
+    );
+};
+
+// 2. Wrap Key : Chiffre une clé "enfant" avec une clé "parent"
+// Ex: Chiffrer OrgKey avec MasterKey(PIN)
+export const wrapKey = async (keyToWrap: CryptoKey, wrappingKey: CryptoKey): Promise<{ iv: string, content: string }> => {
+    // On exporte d'abord la clé à chiffrer en format JWK (JSON)
+    const exportedKey = await window.crypto.subtle.exportKey("jwk", keyToWrap);
+    // On chiffre ce JSON comme une donnée normale
+    return encryptData(exportedKey, wrappingKey);
+};
+
+// 3. Unwrap Key : Déchiffre une clé "enfant" avec une clé "parent"
+// Ex: Déchiffrer OrgKey avec MasterKey(PIN)
+export const unwrapKey = async (encryptedKey: { iv: string, content: string }, unwrappingKey: CryptoKey): Promise<CryptoKey> => {
+    // On déchiffre pour récupérer le JSON (JWK)
+    const decryptedJwk = await decryptData(encryptedKey, unwrappingKey);
+    // On réimporte le JSON en objet CryptoKey utilisable
+    return window.crypto.subtle.importKey(
+        "jwk",
+        decryptedJwk,
+        { name: "AES-GCM" },
+        true,
+        ["encrypt", "decrypt"] // Droits de la clé restaurée
+    );
+};

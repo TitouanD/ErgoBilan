@@ -17,7 +17,7 @@ interface Props {
 }
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
-  const { userProfile, sessionKey } = useAuth();
+  const { userProfile, sessionKey, orgKey } = useAuth(); // Import orgKey
   const { loadFromDraft, patient } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [formKey, setFormKey] = useState(0); 
@@ -38,7 +38,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
    * Assure que le dossier n'est pas orphelin.
    */
   const ensurePatientCreated = async (currentData: Patient): Promise<Patient> => {
-      if (!sessionKey) return currentData;
+      // Pour créer un dossier patient, on a besoin de la clé d'organisation
+      if (!orgKey) return currentData;
 
       let patientToSave = { ...currentData };
       
@@ -48,8 +49,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           updateData({ id: patientToSave.id });
       }
 
-      // Création immédiate du fichier Patient
-      // Cela permet d'avoir le dossier visible sur le Dashboard même sans "Sauvegarder & Quitter"
+      // Création immédiate du fichier Patient avec OrgKey (Chiffré pour le cabinet)
       const newFile: PatientFile = {
           id: patientToSave.id!,
           patient: patientToSave,
@@ -59,7 +59,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
           archived: false
       };
 
-      await StorageService.saveFile(newFile, sessionKey);
+      await StorageService.saveFile(newFile, orgKey);
       return patientToSave;
   };
 

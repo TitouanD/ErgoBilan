@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff } from 'lucide-react';
-import { setupPin } from '../../utils/crypto';
+import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
 import { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
@@ -26,6 +26,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
     const [showPassword, setShowPassword] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [statusMessage, setStatusMessage] = useState("");
 
     useEffect(() => {
         if (initialEmail) setFormData(prev => ({ ...prev, email: initialEmail }));
@@ -67,6 +68,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         setStep(3);
     };
 
+    /**
+     * SÉCURISATION MAXIMALE DE L'INSCRIPTION (Mode Update-Only)
+     * Cette fonction attend que le Trigger SQL ait créé le squelette du compte,
+     * puis met à jour les informations (Nom, Clés) au lieu d'insérer des doublons.
+     */
     const handleFinalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.pin.length !== 6) {
@@ -79,35 +85,111 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         }
 
         setIsSubmitting(true);
-        Logger.info('AUTH', "Starting Final Registration/Completion process");
+        setStatusMessage("Initialisation sécurisée...");
+        Logger.info('AUTH', "Starting Update-Only Registration Process");
 
         try {
             let userId = '';
 
+            // --- ÉTAPE 1 : AUTHENTIFICATION ---
             if (isProfileCompletion) {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error("Session perdue. Veuillez vous reconnecter.");
                 userId = user.id;
-                Logger.info('AUTH', "Completing profile for existing auth user:", userId);
             } else {
-                Logger.info('AUTH', "Creating new auth user:", formData.email);
+                setStatusMessage("Création du compte utilisateur...");
                 const { data: authData, error: authError } = await supabase.auth.signUp({
                     email: formData.email,
                     password: formData.password,
                 });
                 
                 if (authError) throw authError;
-                
-                if (!authData.user) {
-                    throw new Error("L'inscription a échoué. L'utilisateur existe peut-être déjà.");
-                }
-                
+                if (!authData.user) throw new Error("Échec de création du compte Auth.");
                 userId = authData.user.id;
             }
 
-            Logger.debug('AUTH', "Generating keys and PIN");
-            const { key, salt, validator } = await setupPin(formData.pin);
+            // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
+            setStatusMessage("Génération des clés de chiffrement...");
+            const { key: masterKey, salt, validator } = await setupPin(formData.pin);
+            const orgKey = await generateSymetricKey();
+            const wrappedOrgKey = await wrapKey(orgKey, masterKey);
+            const wrappedOrgKeyStr = `${wrappedOrgKey.iv}:${wrappedOrgKey.content}`;
 
+            // --- ÉTAPE 3 : ATTENTE DU TRIGGER (Server-Side Authority) ---
+            setStatusMessage("Configuration du cabinet (Trigger DB)...");
+            
+            // On attend que la DB crée les lignes via le trigger handle_new_user (max 5s)
+            let profileReady = false;
+            for (let i = 0; i < 10; i++) {
+                const { data } = await supabase.from('practitioners').select('id').eq('id', userId).maybeSingle();
+                if (data) {
+                    profileReady = true;
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 500)); // Wait 500ms
+            }
+
+            // --- ÉTAPE 4 : MISE À JOUR DES DONNÉES ---
+            setStatusMessage("Finalisation du profil...");
+
+            // A. Practitioner (Update ou Upsert safe)
+            // On utilise upsert ici : Si la ligne existe (Trigger OK), ça update. Sinon ça crée (Fallback).
+            const { error: pracError } = await supabase.from('practitioners').upsert({
+                id: userId,
+                email: formData.email,
+                first_name: formData.firstName,
+                last_name: formData.lastName,
+                phone_pro: formData.phone || '',
+                siret: formData.siret || '',
+                address_pro: formData.address || '',
+                encryption_salt: salt,
+                encryption_validator: validator
+                // Note: On ne touche pas à 'credits' ni 'is_admin', gérés par le serveur.
+            });
+            if (pracError) throw pracError;
+
+            // B. Organization Member (Update Key)
+            let memberReady = false;
+            // On attend que le membre soit créé par le trigger (lié à l'orga par défaut)
+            for (let i = 0; i < 10; i++) {
+                const { data } = await supabase.from('organization_members').select('organization_id').eq('user_id', userId).maybeSingle();
+                if (data) {
+                    memberReady = true;
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+
+            if (memberReady) {
+                // Update simple : On injecte la clé dans la ligne existante créée par le trigger
+                const { error: memberError } = await supabase
+                    .from('organization_members')
+                    .update({ encrypted_org_key: wrappedOrgKeyStr })
+                    .eq('user_id', userId);
+                if (memberError) throw memberError;
+            } else {
+                // Fallback (Rare): Le trigger a échoué à créer l'orga/membre
+                Logger.warn('AUTH', "Trigger failed to create Org Member. Manual Fallback.");
+                const { data: newOrg } = await supabase.from('organizations').insert({ name: 'Cabinet ' + formData.lastName }).select().single();
+                if (newOrg) {
+                    await supabase.from('organization_members').insert({
+                        organization_id: newOrg.id,
+                        user_id: userId,
+                        role: 'owner',
+                        encrypted_org_key: wrappedOrgKeyStr
+                    });
+                }
+                // Subscription fallback (Trigger creates it usually)
+                const { data: sub } = await supabase.from('subscriptions').select('id').eq('user_id', userId).maybeSingle();
+                if (!sub) {
+                    await supabase.from('subscriptions').insert({ user_id: userId, plan_id: 'free', status: 'trialing' });
+                }
+            }
+
+            // --- SUCCÈS ---
+            setStatusMessage("Terminé !");
+            Logger.info('AUTH', "Registration flow completed.");
+            
             const newPractitioner: PractitionerProfile = {
                 id: userId, 
                 email: formData.email,
@@ -120,47 +202,16 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 encryptionValidator: validator
             };
 
-            Logger.debug('DB', "Upserting practitioner record (Handling potential existing row from triggers)");
-            
-            // UTILISATION DE UPSERT AU LIEU DE INSERT
-            // Si le trigger 'handle_new_user' a déjà créé la ligne, on la met à jour.
-            // Cela évite l'erreur de clé dupliquée et évite souvent de redéclencher des triggers d'insertion problématiques.
-            const { error: dbError } = await supabase.from('practitioners').upsert({
-                id: newPractitioner.id,
-                email: newPractitioner.email,
-                first_name: newPractitioner.firstName,
-                last_name: newPractitioner.lastName,
-                phone_pro: newPractitioner.phonePro || '',
-                siret: newPractitioner.siret || '',
-                address_pro: newPractitioner.addressPro || '',
-                encryption_salt: newPractitioner.encryptionSalt,
-                encryption_validator: newPractitioner.encryptionValidator
-            });
-
-            if (dbError) throw dbError;
-
-            Logger.info('AUTH', "Registration successful");
-            onComplete(newPractitioner, key);
+            onComplete(newPractitioner, masterKey);
 
         } catch (e: any) {
-            Logger.error('AUTH', "Registration error FULL OBJECT:", e);
-            
+            Logger.error('AUTH', "Registration Error", e);
             let msg = e.message || "Une erreur est survenue.";
-            
-            // Parsing intelligent des erreurs Supabase/Postgres
-            if (msg.includes("Password should be at least")) msg = "Le mot de passe est trop court (min 6 caractères).";
-            if (msg.includes("Email address") && msg.includes("invalid")) msg = "L'adresse email est invalide ou non autorisée.";
-            if (msg.includes("already registered") || msg.includes("unique")) msg = "Cette adresse email est déjà utilisée. Essayez de vous connecter.";
-            if (msg.includes("violates row-level security")) msg = "Erreur de permissions (RLS). Vérifiez que vous ne tentez pas de modifier un compte existant sans être connecté.";
-            
-            // Si on est en dev, on ajoute le détail technique pour aider le debug
-            if (process.env.NODE_ENV === 'development' && e.details) {
-                msg += ` (DEV DETAIL: ${e.details})`;
-            }
-
+            if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB (RLS).";
             alert("Erreur : " + msg);
         } finally {
             setIsSubmitting(false);
+            setStatusMessage("");
         }
     };
 
@@ -308,7 +359,8 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                             <div className="flex justify-between items-center pt-4">
                                 <button type="button" onClick={() => setStep(isProfileCompletion ? 1 : 2)} className="text-stone-400 font-bold hover:text-stone-600 text-sm px-4">Retour</button>
                                 <button type="submit" disabled={isSubmitting} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50">
-                                    {isSubmitting ? "Création..." : "Terminer et Accéder"} <Check size={20} strokeWidth={3}/>
+                                    {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} strokeWidth={3}/>}
+                                    {isSubmitting ? statusMessage : "Terminer et Accéder"}
                                 </button>
                             </div>
                         </form>

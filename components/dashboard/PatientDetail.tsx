@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { PatientFile, TestSession, Patient, ScoreResult } from '../../types';
 import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
@@ -182,7 +183,7 @@ const DeleteConfirmationModal: React.FC<{
 };
 
 export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
-  const { sessionKey } = useAuth();
+  const { orgKey } = useAuth(); // utilise orgKey pour gérer le dossier
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -193,10 +194,10 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
   })) : [];
 
   const handleArchive = async () => {
-      if (!sessionKey) return;
+      if (!orgKey) return;
       setIsProcessing(true);
       try {
-          await StorageService.toggleArchive(file, sessionKey);
+          await StorageService.toggleArchive(file, orgKey);
           onBack(); // Retour au dashboard pour rafraichir
       } catch (e) {
           alert("Erreur lors de l'archivage.");
@@ -206,7 +207,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
   };
 
   const handleDelete = async () => {
-      if (!sessionKey) return;
+      if (!orgKey) return;
       setIsProcessing(true);
       try {
           await StorageService.deleteFile(file.id);

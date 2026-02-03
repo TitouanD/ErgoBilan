@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
+import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; // Ajout import
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -10,16 +11,18 @@ const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 interface AuthContextType {
   userProfile: UserProfile;
   practitioner: PractitionerProfile | null;
-  sessionKey: CryptoKey | null;
+  sessionKey: CryptoKey | null; // MasterKey (PIN)
+  orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
   authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated';
   isLoading: boolean;
   tempEmail: string | null;
   refreshProfile: () => Promise<void>;
   setSessionKey: (key: CryptoKey | null) => void;
-  unlockSession: (key: CryptoKey) => void;
+  unlockSession: (key: CryptoKey) => Promise<void>; // Devient async
   lockSession: () => void;
   logout: () => void;
   updateUserProfile: (update: Partial<UserProfile>) => void;
+  setOrgKey: (key: CryptoKey | null) => void; // Setter manuel si besoin (ex: après création)
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,6 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
+  const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); // NOUVEAU
   const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated'>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
@@ -120,6 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
+      setOrgKey(null); // Cleanup OrgKey
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
       setIsLoading(false);
@@ -132,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (error) {
               Logger.error('AUTH', "Supabase error loading practitioner", error);
-              throw error;
+              // On ne jette pas l'erreur, on assume que le profil n'existe pas pour envoyer au wizard
           }
 
           if (user) {
@@ -181,23 +186,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
   };
 
-  const unlockSession = (key: CryptoKey) => {
-      Logger.info('CRYPTO', "Session unlocked successfully with derived key");
-      setSessionKey(key);
-      setAuthState('authenticated');
+  /**
+   * PROCESSUS DE DÉVERROUILLAGE HIÉRARCHIQUE (CRITIQUE)
+   * 1. Reçoit la MasterKey (dérivée du PIN).
+   * 2. Récupère la OrgKey chiffrée depuis la table organization_members.
+   * 3. Déchiffre la OrgKey avec la MasterKey.
+   * 4. Stocke les deux en mémoire.
+   */
+  const unlockSession = async (key: CryptoKey) => {
+      if (!practitioner) return;
+      Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
+
+      try {
+          // A. Récupérer le membre et la clé chiffrée
+          const { data: memberData, error } = await supabase
+              .from('organization_members')
+              .select('encrypted_org_key, organization_id')
+              .eq('user_id', practitioner.id)
+              .maybeSingle();
+
+          // Tolérance zéro sur l'erreur DB
+          if (error) throw error;
+
+          if (memberData && memberData.encrypted_org_key) {
+              // B. Déchiffrer la Org Key
+              const [iv, content] = memberData.encrypted_org_key.split(':');
+              const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
+              Logger.info('CRYPTO', "Organization Key successfully unwrapped.");
+              
+              setSessionKey(key); // Master Key
+              setOrgKey(unwrappedOrgKey); // Org Key
+              setAuthState('authenticated');
+          } else {
+              // CAS MIGRATION / INITIALISATION TARDIVE
+              // Si l'utilisateur a un compte mais pas encore de clé d'orga chiffrée (ex: créé par le trigger SQL qui met NULL ou échec trigger)
+              Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
+              
+              // 1. Vérifier si l'organisation existe (sinon la créer)
+              let orgId = memberData?.organization_id;
+              if (!orgId) {
+                  // Fallback ultime : création orga si manquant
+                  const { data: newOrg } = await supabase.from('organizations').insert({ name: 'Mon Cabinet' }).select().single();
+                  orgId = newOrg.id;
+              }
+
+              const newOrgKey = await generateSymetricKey();
+              const wrapped = await wrapKey(newOrgKey, key);
+              const wrappedStr = `${wrapped.iv}:${wrapped.content}`;
+              
+              // On met à jour la DB (Upsert pour gérer le cas où membre n'existait pas)
+              const { error: upsertError } = await supabase
+                  .from('organization_members')
+                  .upsert({ 
+                      organization_id: orgId,
+                      user_id: practitioner.id,
+                      role: 'owner',
+                      encrypted_org_key: wrappedStr
+                  });
+
+              if (upsertError) throw upsertError;
+                  
+              Logger.info('CRYPTO', "New Organization Key generated and saved.");
+              
+              setSessionKey(key);
+              setOrgKey(newOrgKey);
+              setAuthState('authenticated');
+          }
+
+      } catch (e) {
+          Logger.error('CRYPTO', "Failed to unlock session/org key", e);
+          alert("Erreur critique de déchiffrement. Veuillez vérifier votre PIN ou contacter le support.");
+          // On ne déverrouille pas si la chaîne de confiance est brisée
+      }
   };
 
   const lockSession = () => {
       Logger.info('CRYPTO', "Locking session (Clearing keys)");
       setSessionKey(null);
+      setOrgKey(null);
       setAuthState('locked');
   };
 
   const logout = async () => {
       Logger.info('AUTH', "User requested logout");
-      // Nettoyage immédiat de l'état local pour sécurité visuelle instantanée
       handleLocalLogout();
-      // Puis appel serveur
       await supabase.auth.signOut();
   };
 
@@ -207,8 +279,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ 
-        userProfile, practitioner, sessionKey, authState, isLoading, tempEmail,
-        refreshProfile, setSessionKey, unlockSession, lockSession, logout, updateUserProfile 
+        userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail,
+        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile 
     }}>
       {children}
     </AuthContext.Provider>

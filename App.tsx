@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
@@ -29,7 +30,7 @@ import { Logger } from './utils/logger';
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail } = useAuth();
     const assessment = useAssessment();
     
     // UI State local (Navigation)
@@ -91,15 +92,18 @@ const AppRouter = () => {
         }
     }, [authState]);
 
-    // Chargement des données chiffrées
+    // Chargement des données chiffrées (UTILISE MAINTENANT ORG_KEY POUR LES PATIENTS)
     useEffect(() => {
-        if (sessionKey && authState === 'authenticated') {
+        if (sessionKey && orgKey && authState === 'authenticated') {
             const loadData = async () => {
                 Logger.info('DB', 'Loading encrypted user data...');
-                const files = await StorageService.loadPatientList(sessionKey);
+                // Chargement des patients avec OrgKey (Partageable)
+                const files = await StorageService.loadPatientList(orgKey);
                 setPatientFiles(files);
                 
                 // Charger l'index des brouillons (léger)
+                // Les brouillons restent privés -> sessionKey (PIN) non, on utilise sessionKey implicitement dans StorageService.getDraftsMetadata via RLS user_id
+                // Pour le contenu du draft, on passera sessionKey
                 const draftsMap = await StorageService.getDraftsMetadata();
                 setDraftsIndex(draftsMap);
                 
@@ -110,7 +114,7 @@ const AppRouter = () => {
             };
             loadData();
         }
-    }, [sessionKey, authState, practitioner]);
+    }, [sessionKey, orgKey, authState, practitioner]);
 
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
@@ -147,7 +151,7 @@ const AppRouter = () => {
     const handleResumeDraft = async (patientId?: string) => {
         if (!sessionKey) return;
         
-        // Charger le brouillon spécifique
+        // Charger le brouillon spécifique (Privé -> sessionKey)
         const draftContent = await StorageService.getDraft(sessionKey, patientId);
         
         if (draftContent) {
@@ -160,7 +164,7 @@ const AppRouter = () => {
     };
 
     const handleProcessPending = async (q: PendingQuestionnaire) => {
-        if (!sessionKey) return;
+        if (!sessionKey || !orgKey) return;
         setProcessingQueueId(q.id);
         try {
             const { data } = await supabase.from('pending_questionnaires').select('family_encrypted_data, practitioner_encrypted_key').eq('id', q.id).single();
@@ -180,11 +184,11 @@ const AppRouter = () => {
                 const newId = crypto.randomUUID();
                 const newPatient = { ...payload.patient, id: newId };
                 
-                // 3. Création du dossier Patient
+                // 3. Création du dossier Patient (AVEC ORG_KEY)
                 const newFile: PatientFile = { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() };
-                await StorageService.saveFile(newFile, sessionKey);
+                await StorageService.saveFile(newFile, orgKey);
                 
-                // 4. Création Brouillon Initial
+                // 4. Création Brouillon Initial (Privé -> sessionKey)
                 const initialDraft = {
                     patient: newPatient,
                     tests: {},
@@ -400,13 +404,13 @@ const AppRouter = () => {
                     onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
                     onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
                     onOpenPatient={async (id) => { 
-                        const details = await StorageService.loadPatientDetails(id, sessionKey!); 
+                        // Utilisation de orgKey pour charger les détails
+                        const details = await StorageService.loadPatientDetails(id, orgKey!); 
                         setSelectedFile({ ...patientFiles.find(f => f.id === id)!, ...details }); 
                         setMode('detail'); 
                     }}
                     onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
                     
-                    // Passage de l'index des brouillons (Map)
                     draftsIndex={draftsIndex}
                     onResumeDraft={handleResumeDraft}
                     onContribute={handleContributionAccess}
@@ -420,7 +424,6 @@ const AppRouter = () => {
                     onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
                     onOpenReport={() => {}}
                     
-                    // Vérification simple : est-ce que cet ID est dans la map ?
                     draftAvailable={!!draftsIndex[selectedFile.id]}
                     onResumeDraft={() => handleResumeDraft(selectedFile.id)}
                 />
@@ -454,7 +457,6 @@ const AppRouter = () => {
                 </div>
             )}
             
-            {/* Nouveau GenerationLoader : Remplace le spin infini sur le bouton */}
             <GenerationLoader 
                 isVisible={isGenerating} 
                 onCancel={() => { setIsGenerating(false); alert("Génération annulée."); }} 
@@ -484,7 +486,16 @@ const AppRouter = () => {
                 </div>
             )}
             {showQuickEntry && (
-                <QuickEntryModal onClose={() => setShowQuickEntry(false)} onSave={async (sess) => { if(selectedFile && sessionKey) { await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, sessionKey); setShowQuickEntry(false); }}} />
+                <QuickEntryModal 
+                    onClose={() => setShowQuickEntry(false)} 
+                    onSave={async (sess) => { 
+                        // Utilise orgKey car cela modifie un dossier patient
+                        if(selectedFile && orgKey) { 
+                            await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
+                            setShowQuickEntry(false); 
+                        }
+                    }} 
+                />
             )}
         </div>
     );

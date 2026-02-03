@@ -1,5 +1,5 @@
 
-// ... (Autres interfaces inchangées : Sibling, Patient, SharedDocument, BrandingConfig, PractitionerProfile, UserProfile...)
+// ... (Autres interfaces inchangées : Sibling, SharedDocument, BrandingConfig...)
 
 export interface Sibling {
   firstName: string;
@@ -8,9 +8,25 @@ export interface Sibling {
   livesWithChild: boolean;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  stripeCustomerId?: string;
+  createdAt: string;
+}
+
+export interface OrganizationMember {
+  organizationId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  encryptedOrgKey: string | null; // Null avant l'initialisation crypto
+  joinedAt: string;
+}
+
 export interface Patient {
   // Identité
   id?: string; 
+  organizationId?: string; // NOUVEAU : Lien Cabinet
   firstName: string;
   lastName: string;
   dob: string;
@@ -107,6 +123,10 @@ export interface PractitionerProfile {
   addressPro?: string;
   encryptionSalt: string;
   encryptionValidator: string;
+  
+  // Organization Context (Loaded after login)
+  organizationId?: string;
+  organizationRole?: 'owner' | 'member';
 }
 
 export interface UserProfile {
@@ -154,7 +174,10 @@ export interface PatientFile {
   reports: ReportMetadata[];
   sessions: TestSession[];
   lastInteraction: string;
-  archived?: boolean; // NOUVEAU FLAG
+  archived?: boolean; 
+  
+  // Crypto Metadata
+  encryptedFileKey?: string; // NOUVEAU: Clé du dossier (chiffrée avec OrgKey)
 }
 
 export interface AnonymousTestContribution {
