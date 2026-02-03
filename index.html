@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Roboto:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Open+Sans:wght@400;600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
     <style>
       :root {
         --app-bg: #F9F9F9; /* Coquille d'oeuf */
@@ -61,15 +61,59 @@
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 10px; }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #D1D5DB; }
 
+      /* --- STYLES WYSIWYG A4 (Item 1) --- */
+      
+      /* Vue Écran : On simule le papier sur un fond gris */
+      .page-a4 {
+        width: 210mm;
+        min-height: 297mm;
+        padding: 15mm;
+        margin: 10mm auto;
+        background: white;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.05); /* Ombre portée réaliste */
+        position: relative;
+        box-sizing: border-box;
+      }
+
       /* STYLES D'IMPRESSION */
       @media print {
         @page { margin: 0; size: A4; }
-        body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        
+        body { 
+          background: white; 
+          -webkit-print-color-adjust: exact; 
+          print-color-adjust: exact; 
+        }
+        
         body * { visibility: hidden; }
+        
+        /* On cible le wrapper d'impression */
         #printable-report, #printable-report * { visibility: visible; }
-        #printable-report { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 15mm; box-shadow: none; min-height: auto; }
-        .no-print { display: none !important; }
-        .break-before-page { page-break-before: always; }
+        
+        #printable-report { 
+          position: absolute; 
+          left: 0; 
+          top: 0; 
+          width: 100%; 
+          margin: 0; 
+          padding: 0; 
+        }
+
+        /* La page A4 devient la référence physique */
+        .page-a4 {
+          margin: 0;
+          box-shadow: none;
+          page-break-after: always; /* Force le saut de page après chaque bloc .page-a4 */
+          min-height: 297mm; /* Hauteur A4 exacte */
+          height: auto;
+          width: 100%;
+          border: none;
+          padding: 15mm; /* Maintient le padding interne */
+        }
+
+        /* Masquer les éléments d'interface lors de l'impression */
+        .no-print, .no-print * { display: none !important; }
+        
         .break-inside-avoid { page-break-inside: avoid; }
       }
     </style>

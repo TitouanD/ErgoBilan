@@ -202,7 +202,6 @@ const BrandingEditor: React.FC<{
                         <div className="space-y-3">
                             <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1 block flex items-center gap-2"><Home size={14}/> Coordonnées</label>
                             
-                            {/* FIX: Suppression des BG sombres, utilisation de border input standards */}
                             <input 
                                 value={branding.cabinetName}
                                 onChange={(e) => onUpdate({ ...branding, cabinetName: e.target.value })}
@@ -274,8 +273,6 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
   const [showEditor, setShowEditor] = useState(false);
   const toast = useToast();
 
-  // TECHNIQUE "POPUP PRINT" : Contourne les restrictions Iframe des Sandboxes
-  // et garantit un rendu CSS parfait (backgrounds, polices, layout).
   const handleDownloadPDF = () => {
       const reportContent = document.getElementById('printable-report');
       if (!reportContent) return;
@@ -286,20 +283,16 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
           return;
       }
 
-      // Récupération des feuilles de style actuelles (Tailwind + Fonts)
+      // Styles
       const styles = Array.from(document.styleSheets)
         .map(styleSheet => {
             try {
-                return Array.from(styleSheet.cssRules)
-                    .map(rule => rule.cssText)
-                    .join('');
+                return Array.from(styleSheet.cssRules).map(rule => rule.cssText).join('');
             } catch (e) {
                 return '';
             }
-        })
-        .join('');
+        }).join('');
 
-        // Ajout explicite des fonts Google
         const fontLinks = `
             <link rel="preconnect" href="https://fonts.googleapis.com">
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -309,13 +302,12 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
       printWindow.document.write(`
         <html>
           <head>
-            <title>Bilan Ergothérapique - ${patient.firstName} ${patient.lastName}</title>
+            <title>Bilan - ${patient.firstName} ${patient.lastName}</title>
             ${fontLinks}
             <style>
               ${styles}
               body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
               @page { margin: 0; size: A4; }
-              /* Force background graphics */
               * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             </style>
           </head>
@@ -326,7 +318,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                   setTimeout(function() {
                       window.print();
                       window.close();
-                  }, 800); // Délai pour chargement des fonts/images
+                  }, 800);
               };
             </script>
           </body>
@@ -339,85 +331,49 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
       if (isPremium) {
           setShowEditor(!showEditor);
       } else {
-          onShowPricing(); // Trigger Paywall/Upsell si clic sans être premium
+          onShowPricing(); 
       }
   };
 
   return (
-    <div className="min-h-screen bg-stone-100 pb-20 pt-10 relative">
+    <div className="min-h-screen bg-[#333333] pb-20 pt-10 relative">
       
-      {/* Barre d'outils flottante (non imprimée) */}
+      {/* Barre d'outils flottante */}
       <div className="fixed top-24 right-8 flex flex-col gap-3 z-50 no-print animate-in slide-in-from-right duration-500">
         
-        {/* BOUTON PERSONNALISER */}
-        <button 
-            onClick={toggleEditor}
-            className={`w-14 h-14 rounded-full shadow-xl border flex items-center justify-center transition-all hover:scale-110 group tooltip relative ${isPremium ? 'bg-white text-[#3D405B] border-stone-200 hover:text-[#E07A5F] hover:border-[#E07A5F]' : 'bg-stone-100 text-stone-300 border-stone-200 cursor-pointer'}`}
-            title="Personnaliser le thème"
-        >
+        <button onClick={toggleEditor} className={`w-14 h-14 rounded-full shadow-xl border flex items-center justify-center transition-all hover:scale-110 group tooltip relative ${isPremium ? 'bg-white text-[#3D405B] border-stone-200 hover:text-[#E07A5F] hover:border-[#E07A5F]' : 'bg-stone-100 text-stone-300 border-stone-200 cursor-pointer'}`} title="Personnaliser le thème">
             <Palette size={24} />
-            {!isPremium && (
-                <div className="absolute -top-1 -right-1 bg-[#E07A5F] text-white rounded-full p-1 shadow-sm">
-                    <Lock size={10} />
-                </div>
-            )}
-            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">
-                {isPremium ? "Personnaliser le Thème" : "Personnalisation (Premium)"}
-            </span>
+            {!isPremium && <div className="absolute -top-1 -right-1 bg-[#E07A5F] text-white rounded-full p-1 shadow-sm"><Lock size={10} /></div>}
+            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">{isPremium ? "Personnaliser le Thème" : "Personnalisation (Premium)"}</span>
         </button>
 
-        {/* BOUTON TÉLÉCHARGER PDF */}
-        <button 
-            onClick={handleDownloadPDF}
-            className="w-14 h-14 bg-white text-[#3D405B] rounded-full shadow-xl border border-stone-200 flex items-center justify-center hover:text-[#E07A5F] hover:border-[#E07A5F] transition-all hover:scale-110 group tooltip"
-            title="Télécharger en PDF"
-        >
+        <button onClick={handleDownloadPDF} className="w-14 h-14 bg-white text-[#3D405B] rounded-full shadow-xl border border-stone-200 flex items-center justify-center hover:text-[#E07A5F] hover:border-[#E07A5F] transition-all hover:scale-110 group tooltip" title="Télécharger en PDF">
             <Download size={24} />
-            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">
-                Télécharger PDF
-            </span>
+            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">Télécharger PDF</span>
         </button>
 
-        {/* BOUTON VALIDER ET TERMINER */}
-        <button 
-            onClick={onValidate}
-            className="w-14 h-14 bg-[#4a0418] text-white rounded-full shadow-xl shadow-rose-900/30 flex items-center justify-center hover:bg-emerald-600 transition-all hover:scale-110 group tooltip"
-            title="Valider et Archiver"
-        >
+        <button onClick={onValidate} className="w-14 h-14 bg-[#4a0418] text-white rounded-full shadow-xl shadow-rose-900/30 flex items-center justify-center hover:bg-emerald-600 transition-all hover:scale-110 group tooltip" title="Valider et Archiver">
             <Check size={24} />
-            <span className="absolute right-16 bg-emerald-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">
-                Valider & Terminer
-            </span>
+            <span className="absolute right-16 bg-emerald-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">Valider & Terminer</span>
         </button>
       </div>
 
       <div className="max-w-[210mm] mx-auto mb-6 text-center space-y-2 no-print">
-        <h2 className="text-3xl font-serif font-bold text-[#4a0418]">Visualisation du Bilan</h2>
-        <p className="text-stone-500 text-sm">Vérifiez la mise en page finale avant de valider.</p>
+        <h2 className="text-3xl font-serif font-bold text-white">Aperçu Avant Impression</h2>
+        <p className="text-stone-400 text-sm">Vérifiez la mise en page. Utilisez les flèches pour ajuster les sauts de page.</p>
         
-        {/* INCENTIVE BANNER (Si pas premium) */}
         {!isPremium && (
-            <div 
-                onClick={onShowPricing}
-                className="mt-4 mx-auto max-w-lg bg-white border-2 border-[#E07A5F] border-dashed rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-[#fff5f2] transition-colors group"
-            >
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-[#E07A5F]/10 rounded-lg text-[#E07A5F]">
-                        <Crown size={20} />
-                    </div>
-                    <div className="text-left">
-                        <p className="font-bold text-[#3D405B] text-sm">Envie de personnaliser ce document ?</p>
-                        <p className="text-xs text-stone-500">Ajoutez votre logo et vos couleurs avec le plan Performance.</p>
-                    </div>
+            <div onClick={onShowPricing} className="mt-4 mx-auto max-w-lg bg-white/10 backdrop-blur border border-white/20 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-white/20 transition-colors group">
+                <div className="flex items-center gap-3 text-white">
+                    <Crown size={20} className="text-[#F2CC8F]" />
+                    <div className="text-left"><p className="font-bold text-sm">Passer en Premium</p><p className="text-[10px] opacity-80">Supprimez le logo AutoBilan et mettez le vôtre.</p></div>
                 </div>
-                <button className="bg-[#E07A5F] text-white px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider group-hover:scale-105 transition-transform">
-                    Voir l'offre
-                </button>
+                <button className="bg-[#E07A5F] text-white px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider group-hover:scale-105 transition-transform">Voir l'offre</button>
             </div>
         )}
       </div>
 
-      {/* Zone d'aperçu du document A4 */}
+      {/* Zone de l'aperçu A4 Centré */}
       <div className="flex justify-center mb-20 overflow-visible transition-all duration-500" style={{ marginRight: showEditor ? '384px' : '0' }}>
           <ReportView 
               patient={patient} 
@@ -428,20 +384,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
           />
       </div>
 
-      {showEditor && (
-          <BrandingEditor 
-            branding={branding} 
-            onUpdate={onUpdateBranding} 
-            onClose={() => setShowEditor(false)} 
-          />
-      )}
-
-      <div className="text-center no-print pb-10">
-        <p className="text-xs text-stone-400 italic">
-            N'oubliez pas de télécharger le PDF avant de valider. <br/>
-            Une fois validé, le bilan sera archivé dans le dossier du patient.
-        </p>
-      </div>
+      {showEditor && <BrandingEditor branding={branding} onUpdate={onUpdateBranding} onClose={() => setShowEditor(false)} />}
     </div>
   );
 };

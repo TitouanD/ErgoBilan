@@ -50,9 +50,14 @@ export interface GenerationPayload {
     childContext: string;
 }
 
-// Helper pour extraire l'âge en années
+// Helper pour extraire l'âge en années (Plus robuste)
 const getAgeYears = (ageStr: string): number => {
-    const match = ageStr.match(/(\d+)/);
+    // Cherche "X ans", "X years", ou juste un nombre au début
+    const match = ageStr.match(/(\d+)\s*(?:ans|yrs|years)?/i);
+    // Si format "10 mois", on considère 0 an pour éviter 10 > 20
+    if (ageStr.toLowerCase().includes('mois') && !ageStr.toLowerCase().includes('ans')) {
+        return 0;
+    }
     return match ? parseInt(match[1], 10) : 0;
 };
 
@@ -90,13 +95,12 @@ export const AIService = {
 
         const callAI = async () => {
             
-            // --- CONSTRUCTION DYNAMIQUE DES USER PROMPTS ---
+            // --- ÉTAPE 1 : PROFIL & CONTEXTE ---
+            // Construction propre du prompt sans commentaire interne
             
             let promptBio = '';
-            let promptDiag = '';
-
+            
             if (isAdult) {
-                // === MODE ADULTE ===
                 promptBio = `
 ${SECURITY_INSTRUCTION}
 
@@ -121,11 +125,55 @@ TÂCHE : Rédige les 3 sections suivantes au format JSON :
      - Vie Sociale & Professionnelle (Travail, Loisirs, Conduite automobile).
    - Important : Mentionne l'environnement (Logement, Aidants présents).
 `;
+            } else {
+                promptBio = `
+${SECURITY_INSTRUCTION}
 
+CONTEXTE ENFANT : ${payload.childContext}
+
+DONNÉES BRUTES (Questionnaire Famille & École) :
+${payload.safeQuestionnaire}
+
+TÂCHE : Rédige les 3 sections suivantes au format JSON :
+
+1. "mandat_referencement" : Une phrase simple et formelle.
+   - Structure imposée : "{{PATIENT_PRENOM}} est reçu(e) en consultation d’ergothérapie à la demande de {{MEDECIN}} (ou famille) afin d’évaluer [Insérer ici le motif principal reformulé cliniquement]."
+
+2. "mandat_evaluation" : Un paragraphe décrivant la plainte principale et son impact scolaire/quotidien.
+   - Style : Décris la gêne fonctionnelle (illisibilité, lenteur, douleur, agitation) et le contexte scolaire de manière claire pour les parents.
+
+3. "profil_occupationnel" : Une synthèse complète de la vie de l'enfant (Hors résultats des tests).
+   - Structure : Rédige 3 ou 4 paragraphes thématiques fluides.
+   - Thèmes : Développement, Autonomie (repas, habillage, sommeil), Vie scolaire (classe, AESH, comportement), Loisirs/Intérêts.
+   - Important : Mentionne toujours les points forts ou "compétences préservées" et les intérêts de l'enfant.
+`;
+            }
+
+            Logger.debug('AI', 'Sending BIO Prompt to Gemini', { model, promptLength: promptBio.length });
+            
+            const bioResponse = await ai.models.generateContent({ 
+                model, 
+                contents: promptBio, 
+                config: { 
+                    responseMimeType: "application/json",
+                    systemInstruction: activeSystemPrompt
+                } 
+            });
+            
+            const jsonBio = cleanAndParseJson(bioResponse.text);
+            Logger.debug('AI', 'Received BIO Response');
+
+            // --- ÉTAPE 2 : DIAGNOSTIC (CHAINING SÉQUENTIEL) ---
+            // On injecte le résultat parsé de l'étape 1 directement dans le prompt de l'étape 2.
+            
+            const profilContext = JSON.stringify(jsonBio.profil_occupationnel || "Non disponible");
+            let promptDiag = '';
+
+            if (isAdult) {
                 promptDiag = `
 ${SECURITY_INSTRUCTION}
 
-CONTEXTE ÉTABLI (Profil) : A insérer ici par le code si on faisait du chaining, mais ici on a le contexte global.
+CONTEXTE ÉTABLI (Profil) : ${profilContext}
 
 OBSERVATIONS CLINIQUES (Capacités fonctionnelles) :
 ${payload.safeObservations}
@@ -150,35 +198,11 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
      - Liste 3-4 objectifs centrés sur l'occupation (ex: "Pouvoir se doucher seul en sécurité", "Reprendre la conduite").
      - Indique si un suivi en ergothérapie est nécessaire ou si des conseils ponctuels suffisent.
 `;
-
             } else {
-                // === MODE PÉDIATRIQUE (Legacy intact) ===
-                promptBio = `
-${SECURITY_INSTRUCTION}
-
-CONTEXTE ENFANT : ${payload.childContext}
-
-DONNÉES BRUTES (Questionnaire Famille & École) :
-${payload.safeQuestionnaire}
-
-TÂCHE : Rédige les 3 sections suivantes au format JSON :
-
-1. "mandat_referencement" : Une phrase simple et formelle.
-   - Structure imposée : "{{PATIENT_PRENOM}} est reçu(e) en consultation d’ergothérapie à la demande de {{MEDECIN}} (ou famille) afin d’évaluer [Insérer ici le motif principal reformulé cliniquement]."
-
-2. "mandat_evaluation" : Un paragraphe décrivant la plainte principale et son impact scolaire/quotidien.
-   - Style : Décris la gêne fonctionnelle (illisibilité, lenteur, douleur, agitation) et le contexte scolaire de manière claire pour les parents.
-
-3. "profil_occupationnel" : Une synthèse complète de la vie de l'enfant (Hors résultats des tests).
-   - Structure : Rédige 3 ou 4 paragraphes thématiques fluides.
-   - Thèmes : Développement, Autonomie (repas, habillage, sommeil), Vie scolaire (classe, AESH, comportement), Loisirs/Intérêts.
-   - Important : Mentionne toujours les points forts ou "compétences préservées" et les intérêts de l'enfant.
-`;
-
                 promptDiag = `
 ${SECURITY_INSTRUCTION}
 
-CONTEXTE ÉTABLI (Profil) : (Sera injecté via contexte précédent ou implicite)
+CONTEXTE ÉTABLI (Profil) : ${profilContext}
 
 OBSERVATIONS CLINIQUES (Signes d'appel - Step 3) :
 ${payload.safeObservations}
@@ -206,27 +230,6 @@ Rédige 3 sections JSON (Le contenu des valeurs doit être du texte MARKDOWN, a�
 `;
             }
 
-            // --- EXÉCUTION ---
-            
-            // ÉTAPE 1 : PROFIL
-            Logger.debug('AI', 'Sending BIO Prompt to Gemini', { model, promptLength: promptBio.length });
-            
-            const bioResponse = await ai.models.generateContent({ 
-                model, 
-                contents: promptBio, 
-                config: { 
-                    responseMimeType: "application/json",
-                    systemInstruction: activeSystemPrompt
-                } 
-            });
-            
-            Logger.debug('AI', 'Received BIO Response', bioResponse.text?.substring(0, 100) + '...');
-            const jsonBio = cleanAndParseJson(bioResponse.text);
-
-            // Injecter le profil généré dans le prompt Diag pour le contexte
-            promptDiag = promptDiag.replace("CONTEXTE ÉTABLI (Profil) :", `CONTEXTE ÉTABLI (Profil) : ${JSON.stringify(jsonBio.profil_occupationnel)}`);
-
-            // ÉTAPE 2 : DIAGNOSTIC
             Logger.debug('AI', 'Sending DIAG Prompt to Gemini');
             const diagResponse = await ai.models.generateContent({ 
                 model, 
