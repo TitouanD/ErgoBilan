@@ -19,6 +19,19 @@ const decryptBlob = async (iv: string, content: string, key: CryptoKey) => {
 // --- DEMO MODE STATE ---
 let _isDemoMode = false;
 
+// Helper pour éviter les objets undefined dans le UI
+const createEmptyPatient = (): Patient => ({
+    firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
+    parentNames: '', parentPhone: '', parentEmail: '', guardArrangement: '', siblings: [],
+    school: '', classLevel: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
+    prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
+    reason: '', familyExpectations: '',
+    pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
+    meals: '', dressing: '', continence: '', timeSpace: '',
+    schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
+    remarks: '', priorities: ''
+});
+
 export const StorageService = {
     
     setDemoMode: (active: boolean) => {
@@ -142,7 +155,6 @@ export const StorageService = {
     saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
         if (_isDemoMode) {
             Logger.info('DB', '[DEMO] File save simulated');
-            // On pourrait stocker en RAM ici si on voulait persister durant la session démo
             return;
         }
 
@@ -153,7 +165,6 @@ export const StorageService = {
         let fileKey: CryptoKey;
         let encryptedFileKeyStr: string;
 
-        // On vérifie si le dossier existe déjà pour récupérer sa clé
         const { data: existingPatient } = await supabase
             .from('patients')
             .select('encrypted_file_key, organization_id')
@@ -161,51 +172,62 @@ export const StorageService = {
             .maybeSingle();
 
         if (existingPatient && existingPatient.encrypted_file_key) {
-            // Cas A : Dossier existant -> On déchiffre la clé du dossier avec l'OrgKey
+            // Cas A : Dossier existant -> On déchiffre la clé
             const [iv, content] = existingPatient.encrypted_file_key.split(':');
             fileKey = await unwrapKey({ iv, content }, orgKey);
-            encryptedFileKeyStr = existingPatient.encrypted_file_key; // On garde la même version chiffrée
+            encryptedFileKeyStr = existingPatient.encrypted_file_key;
             
-            // Assurer que l'objet file a l'organizationId correct
             if (!file.patient.organizationId) {
                 file.patient.organizationId = existingPatient.organization_id;
             }
         } else {
-            // Cas B : Nouveau Dossier -> On génère une nouvelle clé unique
+            // Cas B : Nouveau Dossier
             Logger.info('CRYPTO', "Generating new File Key for patient " + file.id);
             fileKey = await generateSymetricKey();
             const wrapped = await wrapKey(fileKey, orgKey);
             encryptedFileKeyStr = `${wrapped.iv}:${wrapped.content}`;
         }
 
-        // Si l'organizationId est toujours manquant, on le récupère du user courant
         if (!file.patient.organizationId) {
              const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1).single();
-             if(member) {
-                 file.patient.organizationId = member.organization_id;
-             } else {
-                 throw new Error("Impossible de lier le patient : L'utilisateur n'appartient à aucune organisation.");
-             }
+             if(member) file.patient.organizationId = member.organization_id;
+             else throw new Error("Impossible de lier le patient : L'utilisateur n'appartient à aucune organisation.");
         }
 
         Logger.info('DB', 'Saving patient file (Encrypted with FileKey)', { id: file.id });
 
-        // 2. Chiffrement de l'identité avec la FileKey
+        // 2. Chiffrement de l'identité complète (Pour le détail)
         const patientToSave = { ...file.patient, _archived: file.archived }; 
         const encIdentity = await encryptBlob(patientToSave, fileKey);
 
-        // CONSTRUCTION PAYLOAD PATIENT (CORRECTIF SCHEMA V1.3)
-        // Note: La table 'patients' ne contient PAS de colonne 'user_id'. 
-        // L'accès est géré par 'organization_id' et la table de jointure 'organization_members'.
+        // 3. Chiffrement du PREVIEW (Pour le dashboard rapide)
+        // On extrait juste ce qu'il faut pour afficher la carte
+        const previewData = {
+            id: file.patient.id,
+            firstName: file.patient.firstName,
+            lastName: file.patient.lastName,
+            age: file.patient.age,
+            classLevel: file.patient.classLevel,
+            gender: file.patient.gender
+        };
+        const encPreview = await encryptBlob(previewData, fileKey);
+
+        // CONSTRUCTION PAYLOAD PATIENT
         const patientPayload = {
             id: file.id,
-            organization_id: file.patient.organizationId, // OBLIGATOIRE
+            organization_id: file.patient.organizationId,
             updated_at: new Date().toISOString(),
             last_interaction: file.lastInteraction,
+            
+            // Full Identity (Lourd)
             iv: encIdentity.iv,
             encrypted_identity: encIdentity.content,
+            
+            // Preview (Léger) - NOUVEAU
+            preview_iv: encPreview.iv,
+            encrypted_preview: encPreview.content,
+
             encrypted_file_key: encryptedFileKeyStr
-            // user_id: user.id <-- SUPPRIMÉ CAR INEXISTANT EN DB
         };
 
         const { error: patError } = await supabase.from('patients').upsert(patientPayload);
@@ -214,14 +236,13 @@ export const StorageService = {
             throw patError;
         }
 
-        // 3. Rapports (Chiffrés avec FileKey)
-        // La table 'reports' contient bien 'user_id' selon le schéma
+        // 4. Rapports (Chiffrés avec FileKey)
         if (file.reports.length > 0) {
             const reportsPayloads = await Promise.all(file.reports.map(async (r) => {
                 const enc = await encryptBlob(r, fileKey);
                 return {
                     id: r.id,
-                    user_id: user.id, // OK ici
+                    user_id: user.id,
                     patient_id: file.id,
                     created_at: r.date,
                     type: r.type,
@@ -234,14 +255,13 @@ export const StorageService = {
             if (repError) Logger.error('DB', "Erreur Save Reports", repError);
         }
 
-        // 4. Sessions (Chiffrées avec FileKey)
-        // La table 'sessions' contient bien 'user_id' selon le schéma
+        // 5. Sessions (Chiffrées avec FileKey)
         if (file.sessions.length > 0) {
             const sessionsPayloads = await Promise.all(file.sessions.map(async (s) => {
                 const enc = await encryptBlob(s.results, fileKey);
                 return {
                     id: s.id,
-                    user_id: user.id, // OK ici
+                    user_id: user.id,
                     patient_id: file.id,
                     date: s.date,
                     test_id: s.testId,
@@ -256,9 +276,7 @@ export const StorageService = {
     },
 
     loadPatientList: async (orgKey: CryptoKey): Promise<PatientFile[]> => {
-        // --- MODE DÉMO : RETOURNE LES DONNÉES MOCKÉES ---
         if (_isDemoMode) {
-            // Conversion de MOCK_SESSION_DATA en PatientFile
             const mockFile: PatientFile = {
                 id: 'demo-patient-1',
                 patient: MOCK_SESSION_DATA.patient,
@@ -268,7 +286,7 @@ export const StorageService = {
                     date: new Date().toISOString(),
                     testId: 'multi',
                     testName: 'Bilan Initial',
-                    results: MOCK_SESSION_DATA.tests as any // Casting rapide
+                    results: MOCK_SESSION_DATA.tests as any
                 }],
                 lastInteraction: new Date().toISOString(),
                 archived: false
@@ -279,11 +297,11 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) return [];
 
-        // On récupère via l'organisation (grâce aux RLS)
-        // Note: La query filtre implicitement via RLS, mais on peut être explicite si besoin
+        // Note: On sélectionne tout pour l'instant pour gérer le fallback (migration)
+        // Idéalement on ne sélectionnerait pas encrypted_identity pour économiser la bande passante
         const { data: patients, error } = await supabase
             .from('patients')
-            .select('*'); // RLS se charge de filtrer par orga
+            .select('*'); 
 
         if (error) {
             Logger.error('DB', "Error loading patient list", error);
@@ -294,21 +312,33 @@ export const StorageService = {
 
         for (const row of patients) {
             try {
-                if (!row.encrypted_file_key) {
-                    Logger.warn('CRYPTO', `Patient ${row.id} has no file key. Skipping (Legacy format).`);
-                    continue;
-                }
+                if (!row.encrypted_file_key) continue;
 
-                // 1. Déchiffrer la FileKey avec l'OrgKey
+                // 1. Déchiffrer la FileKey
                 const [kIv, kContent] = row.encrypted_file_key.split(':');
                 const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
-                // 2. Déchiffrer l'identité avec la FileKey
-                const decryptedData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as any;
-                
-                const isArchived = decryptedData._archived === true;
-                delete decryptedData._archived;
-                const patientData = decryptedData as Patient;
+                let patientData: Patient;
+                let isArchived = false;
+
+                // 2. Stratégie "Preview First" (Optimisation)
+                if (row.encrypted_preview && row.preview_iv) {
+                    // Fast Path : On ne déchiffre que le preview
+                    const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
+                    // On merge avec un objet vide pour avoir la structure Patient valide (mais vide ailleurs)
+                    patientData = { ...createEmptyPatient(), ...preview };
+                    
+                    // Note: Le flag _archived est dans l'identité complète habituellement, 
+                    // mais pour le dashboard, on peut assumer false ou devoir le stocker à part.
+                    // Pour l'instant, on suppose actif si preview existe, ou on check le full si besoin.
+                    // TODO: Ajouter 'is_archived' en colonne claire ou dans preview.
+                } else {
+                    // Slow Path (Legacy / Migration) : On déchiffre tout
+                    const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as any;
+                    isArchived = fullData._archived === true;
+                    delete fullData._archived;
+                    patientData = fullData as Patient;
+                }
 
                 files.push({
                     id: row.id,
@@ -317,7 +347,7 @@ export const StorageService = {
                     sessions: [],
                     lastInteraction: row.last_interaction,
                     archived: isArchived,
-                    encryptedFileKey: row.encrypted_file_key // On garde la ref
+                    encryptedFileKey: row.encrypted_file_key
                 });
             } catch (e) {
                 Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
@@ -329,7 +359,7 @@ export const StorageService = {
         );
     },
 
-    loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[] }> => {
+    loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[], patient: Patient }> => {
         if (_isDemoMode) {
             return {
                 reports: [],
@@ -339,30 +369,36 @@ export const StorageService = {
                     testId: 'multi',
                     testName: 'Bilan Initial',
                     results: MOCK_SESSION_DATA.tests as any
-                }]
+                }],
+                patient: MOCK_SESSION_DATA.patient
             };
         }
 
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) throw new Error("Non connecté");
 
-        // 1. Récupérer la clé du dossier (FileKey) depuis la table patients
+        // 1. Récupérer le dossier complet (Clés + Identité FULL)
         const { data: patientRow, error: pError } = await supabase
             .from('patients')
-            .select('encrypted_file_key')
+            .select('encrypted_file_key, encrypted_identity, iv, organization_id')
             .eq('id', patientId)
             .single();
 
         if (pError || !patientRow || !patientRow.encrypted_file_key) {
-            throw new Error("Impossible de récupérer la clé du dossier.");
+            throw new Error("Impossible de récupérer le dossier patient.");
         }
 
         const [kIv, kContent] = patientRow.encrypted_file_key.split(':');
         const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
-        Logger.debug('DB', 'Loading detailed patient data', { patientId });
+        Logger.debug('DB', 'Loading FULL patient identity & details', { patientId });
 
-        // 2. Charger Reports
+        // 2. Déchiffrer l'identité COMPLÈTE (Obligatoire pour l'écran de détail)
+        const decryptedIdentity = await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey) as any;
+        delete decryptedIdentity._archived;
+        const patientFull = { ...decryptedIdentity, id: patientId, organizationId: patientRow.organization_id } as Patient;
+
+        // 3. Charger Reports
         const { data: reportsData } = await supabase
             .from('reports')
             .select('*')
@@ -373,7 +409,7 @@ export const StorageService = {
             return { ...decrypted, id: r.id, date: r.created_at, type: r.type, status: r.status } as ReportMetadata;
         }));
 
-        // 3. Charger Sessions
+        // 4. Charger Sessions
         const { data: sessionsData } = await supabase
             .from('sessions')
             .select('*')
@@ -390,13 +426,12 @@ export const StorageService = {
             } as TestSession;
         }));
 
-        return { reports, sessions };
+        return { reports, sessions, patient: patientFull };
     },
 
     deleteFile: async (id: string): Promise<void> => {
         if (_isDemoMode) return;
         Logger.warn('DB', 'DELETING PATIENT FILE', { id });
-        // RLS assure que seul un membre de l'orga peut supprimer
         await supabase.from('reports').delete().eq('patient_id', id);
         await supabase.from('sessions').delete().eq('patient_id', id);
         await supabase.from('drafts').delete().eq('patient_id', id);
@@ -406,7 +441,6 @@ export const StorageService = {
     toggleArchive: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
         if (_isDemoMode) return;
         const newFile = { ...file, archived: !file.archived };
-        // saveFile gère la récupération de la FileKey existante via orgKey
         await StorageService.saveFile(newFile, orgKey);
     }
 };

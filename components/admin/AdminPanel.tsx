@@ -54,10 +54,10 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
       try {
           if (status === 'rejected') {
               await AdminService.rejectContribution(selectedContribution.id);
-              toast.success("Contribution rejetée");
+              // Suppression toast
           } else {
               await AdminService.integrateContribution(selectedContribution);
-              toast.success("Contribution intégrée au catalogue");
+              // Suppression toast
           }
           // Rafraîchir la liste
           await loadData();

@@ -65,40 +65,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tempEmail, setTempEmail] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
 
-  // MUTEX : Empêche loadUser de tourner en double (Race Condition React StrictMode)
+  // MUTEX & REFS : Empêche loadUser de tourner en double et résout le Stale Closure
   const isLoadingProfileRef = useRef(false);
+  const currentUserIdRef = useRef<string | null>(null);
 
   // Initialisation Session & Listener
   useEffect(() => {
-    // 1. Check initial
-    const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        Logger.info('AUTH', "Session found at startup", session.user.id);
-        setAuthState('authenticating');
-        await loadUser(session.user.id, session.user.email!);
-      } else {
-        Logger.info('AUTH', "No session found at startup.");
-        setAuthState('unauthenticated');
-        setIsLoading(false);
-      }
-    };
-    initAuth();
+    Logger.info('AUTH', "Initializing Auth Listener...");
 
-    // 2. Abonnement aux changements
+    // On utilise onAuthStateChange comme source de vérité unique
+    // Il émettra 'INITIAL_SESSION' au démarrage si une session existe
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        Logger.debug('AUTH', `Auth State Change: ${event}`);
+        Logger.debug('AUTH', `Auth State Change: ${event}`, session?.user?.id);
         
-        if (event === 'SIGNED_OUT') {
-            handleLocalLogout();
+        if (event === 'SIGNED_OUT' || !session) {
+            if (currentUserIdRef.current) {
+                Logger.info('AUTH', "User signed out detected");
+                handleLocalLogout();
+            } else {
+                // Cas initial sans session
+                setIsLoading(false);
+            }
         } else if (session?.user) {
-            if (practitioner?.id !== session.user.id) {
+            // Check via REF pour éviter le stale closure du useEffect[]
+            if (currentUserIdRef.current !== session.user.id) {
+                Logger.info('AUTH', "New user session detected or initial load", session.user.id);
+                // On met à jour la ref immédiatement pour bloquer les appels concurrents
+                currentUserIdRef.current = session.user.id;
+                setAuthState('authenticating');
                 await loadUser(session.user.id, session.user.email!);
+            } else {
+                Logger.debug('AUTH', "Skipping loadUser (Same ID in Ref)");
             }
         }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+        Logger.debug('AUTH', "Unsubscribing Auth Listener");
+        subscription.unsubscribe();
+    };
   }, []);
 
   // Auto-Lock (Sécurité Inactivité)
@@ -138,7 +143,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsDemoMode(false);
       StorageService.setDemoMode(false); 
       setIsLoading(false);
+      
+      // Reset des Refs
       isLoadingProfileRef.current = false; 
+      currentUserIdRef.current = null;
   };
 
   const startDemo = async () => {

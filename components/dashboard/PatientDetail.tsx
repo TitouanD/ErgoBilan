@@ -201,7 +201,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       try {
           await StorageService.toggleArchive(file, orgKey);
           onBack(); // Retour au dashboard pour rafraichir
-          toast.success("Dossier mis à jour");
+          // Suppression du toast "Dossier mis à jour"
       } catch (e) {
           toast.error("Erreur lors de l'archivage.");
       } finally {
@@ -215,7 +215,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
       try {
           await StorageService.deleteFile(file.id);
           onBack(); 
-          toast.success("Dossier supprimé");
+          // Suppression du toast "Dossier supprimé"
       } catch (e) {
           toast.error("Erreur lors de la suppression.");
       } finally {

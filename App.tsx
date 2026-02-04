@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
@@ -28,6 +28,7 @@ import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMeta
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 // --- MODALE CONVERSION DÉMO (PAYWALL) ---
 const DemoConversionModal: React.FC<{
@@ -166,6 +167,53 @@ const AppRouter = () => {
         loadData();
     }, [loadData]);
 
+    // --- REALTIME SUBSCRIPTION ---
+    const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        // Pas de Realtime en mode démo ou si non connecté
+        if (!sessionKey || !orgKey || isDemoMode || authState !== 'authenticated') return;
+
+        Logger.info('DB', 'Initializing Realtime Subscription for Dashboard...');
+
+        const handleRealtimeUpdate = (payload: any) => {
+            Logger.info('DB', 'Realtime Event Received', { table: payload.table, event: payload.eventType });
+            
+            // Debounce : On attend 1s sans nouvel événement avant de recharger
+            if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current);
+            }
+
+            refreshTimeoutRef.current = setTimeout(() => {
+                loadData();
+                // Suppression du Toast "Données mises à jour en temps réel"
+            }, 1000);
+        };
+
+        const channel = supabase.channel('dashboard-updates')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'pending_questionnaires' },
+                handleRealtimeUpdate
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'patients' },
+                handleRealtimeUpdate
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    Logger.debug('DB', 'Realtime Connected');
+                }
+            });
+
+        return () => {
+            Logger.debug('DB', 'Realtime Disconnected');
+            supabase.removeChannel(channel);
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+        };
+    }, [sessionKey, orgKey, authState, isDemoMode, loadData]); // Dependances stables
+
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
         setIsLoggingIn(true);
@@ -179,7 +227,7 @@ const AppRouter = () => {
     const handleUnlock = (key: CryptoKey) => {
         unlockSession(key);
         setMode('dashboard');
-        toast.success("Session déverrouillée");
+        // Suppression du Toast "Session déverrouillée"
     };
 
     const handleGenerateLink = async () => {
@@ -223,6 +271,7 @@ const AppRouter = () => {
 
         if (data) {
             setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`);
+            // Note: Le realtime mettra à jour la liste, mais on l'ajoute localement pour la réactivité immédiate
             setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]);
             toast.success("Lien sécurisé généré");
         }
@@ -235,7 +284,7 @@ const AppRouter = () => {
             assessment.resetAssessment();
             assessment.loadFromDraft(draftContent);
             setMode('assessment');
-            toast.info("Brouillon chargé");
+            // Suppression du Toast "Brouillon chargé"
         } else if (isDemoMode) {
              toast.info("Les brouillons ne sont pas sauvegardés en mode démo.");
         } else {
@@ -564,13 +613,21 @@ const AppRouter = () => {
                     onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
                     onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
                     onOpenPatient={async (id) => { 
-                        // Gestion Demo pour details patient
-                        const details = await StorageService.loadPatientDetails(id, orgKey!); 
-                        // En mode démo, on cherche dans patientFiles local si orgKey est bidon
-                        const baseFile = patientFiles.find(f => f.id === id);
-                        if (baseFile) {
-                            setSelectedFile({ ...baseFile, ...details }); 
-                            setMode('detail'); 
+                        try {
+                            // On charge d'abord les détails (rapports, sessions + identité complète)
+                            const details = await StorageService.loadPatientDetails(id, orgKey!);
+                            
+                            // On cherche le fichier de base (qui ne contient que la preview)
+                            const baseFile = patientFiles.find(f => f.id === id);
+                            
+                            if (baseFile) {
+                                // On fusionne : Base + Détails + Identité complète (qui écrase la preview)
+                                setSelectedFile({ ...baseFile, ...details, patient: details.patient }); 
+                                setMode('detail'); 
+                            }
+                        } catch (e) {
+                            Logger.error('UI', "Erreur ouverture patient", e);
+                            toast.error("Impossible d'ouvrir ce dossier.");
                         }
                     }}
                     onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
@@ -641,7 +698,7 @@ const AppRouter = () => {
             
             <GenerationLoader 
                 isVisible={isGenerating} 
-                onCancel={() => { setIsGenerating(false); toast.info("Génération annulée."); }} 
+                onCancel={() => { setIsGenerating(false); }} 
             />
 
             {showConfirmGeneration && (
@@ -685,11 +742,8 @@ const AppRouter = () => {
                         if(selectedFile && orgKey) { 
                             await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
                             setShowQuickEntry(false); 
-                            toast.success("Séance ajoutée au dossier");
                         } else if (isDemoMode) {
-                            // Mock save update for UI
                             setShowQuickEntry(false); 
-                            toast.success("Séance ajoutée (Mode Démo)");
                         }
                     }} 
                 />

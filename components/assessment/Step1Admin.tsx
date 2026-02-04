@@ -87,7 +87,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           setFormKey(prev => prev + 1); 
           
           setTimeout(() => setDataLoaded(false), 2000);
-          toast.success("Données de test injectées");
+          // Suppression du toast "Données de test injectées"
       } catch (err) {
           Logger.error('SYSTEM', "ERREUR INJECTION:", err);
           toast.error("Erreur lors de l'injection des données test.");

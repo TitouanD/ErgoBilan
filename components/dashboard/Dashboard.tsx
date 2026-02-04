@@ -128,7 +128,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
             {/* 2. Actions */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-10">
                 <div className="relative w-full md:max-w-md">
-                    <Search className="absolute left-4 top-1/2 -translate-x-1/2 text-stone-400" size={20} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
                     <input 
                         type="text"
                         value={searchQuery}
