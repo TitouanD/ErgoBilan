@@ -1,11 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
 import { ToastProvider, useToast } from './contexts/ToastContext';
-import { TutorialProvider, useTutorial } from './contexts/TutorialContext'; // NOUVEAU
-import { TutorialLayer } from './components/tutorial/TutorialLayer'; // NOUVEAU
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
@@ -67,7 +65,6 @@ const AppRouter = () => {
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
-    const { advanceStep } = useTutorial(); // Utilisation du hook Tuto
     
     // UI State local (Navigation)
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
@@ -128,42 +125,51 @@ const AppRouter = () => {
             setIsLoggingIn(false);
             setShowAuthModal(false);
             setPricingModalMode('paywall');
+        } else if (authState === 'error') {
+            setIsLoggingIn(false);
+            toast.error("Problème de connexion. Le serveur ne répond pas assez vite.");
         }
     }, [authState]);
 
-    // Chargement des données (Géré aussi pour le mode démo via StorageService)
-    useEffect(() => {
+    // Fonction centralisée de rechargement des données
+    const loadData = useCallback(async () => {
         if ((sessionKey && orgKey && authState === 'authenticated') || isDemoMode) {
-            const loadData = async () => {
-                Logger.info('DB', 'Loading user data...');
-                // Chargement des patients (Le StorageService gère le mock si isDemoMode)
-                const files = await StorageService.loadPatientList(orgKey!);
-                setPatientFiles(files);
-                
-                const draftsMap = await StorageService.getDraftsMetadata();
-                setDraftsIndex(draftsMap);
-                
-                if (practitioner && !isDemoMode) {
-                    const { data } = await supabase.from('pending_questionnaires').select('*').eq('practitioner_id', practitioner.id).order('created_at', { ascending: false });
-                    if (data) setPendingQuestionnaires(data.map((p: any) => ({ ...p, createdAt: p.created_at, practitionerEncryptedKey: p.practitioner_encrypted_key })));
-                } else if (isDemoMode) {
-                    // Fake pending questionnaires for demo
-                    setPendingQuestionnaires([
-                        { id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
-                        { id: 'demo-q2', label: 'Famille DUBOIS (Reçu)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' }
-                    ]);
-                }
-            };
-            loadData();
+            Logger.info('DB', 'Refreshing user data...');
+            // Chargement des patients
+            const files = await StorageService.loadPatientList(orgKey!);
+            setPatientFiles(files);
+            
+            const draftsMap = await StorageService.getDraftsMetadata();
+            setDraftsIndex(draftsMap);
+            
+            if (practitioner && !isDemoMode) {
+                // Pour les questionnaires, on a aussi besoin de l'orgKey si on veut filtrer, 
+                // mais ici on filtre par practitioner_id ce qui est safe.
+                const { data } = await supabase
+                    .from('pending_questionnaires')
+                    .select('*')
+                    .eq('practitioner_id', practitioner.id)
+                    .order('created_at', { ascending: false });
+                    
+                if (data) setPendingQuestionnaires(data.map((p: any) => ({ ...p, createdAt: p.created_at, practitionerEncryptedKey: p.practitioner_encrypted_key })));
+            } else if (isDemoMode) {
+                setPendingQuestionnaires([
+                    { id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
+                    { id: 'demo-q2', label: 'Famille DUBOIS (Reçu)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' }
+                ]);
+            }
         }
     }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);
+
+    // Chargement initial
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
         setIsLoggingIn(true);
-        const timer = setTimeout(() => { if (isLoggingIn) setIsLoggingIn(false); }, 10000);
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-        clearTimeout(timer);
         if (error) { 
             toast.error(error.message); 
             setIsLoggingIn(false);
@@ -178,20 +184,43 @@ const AppRouter = () => {
 
     const handleGenerateLink = async () => {
         if (isDemoMode) {
-            // SCENARIO DEMO STEP 1 -> 2
             setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`);
             setPendingQuestionnaires(prev => [{ id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, ...prev]);
             toast.success("Lien sécurisé généré (Simulation)");
-            advanceStep('DASHBOARD_LINK'); // Avance le tuto
             return;
         }
         if (!practitioner || !sessionKey) return;
+
+        // Récupérer l'ID de l'organisation
+        const { data: member } = await supabase
+            .from('organization_members')
+            .select('organization_id')
+            .eq('user_id', practitioner.id)
+            .maybeSingle();
+            
+        if (!member?.organization_id) {
+            toast.error("Erreur critique: Organisation introuvable.");
+            return;
+        }
+
         const { keyString } = await generateQuestionnaireKey();
         const enc = await encryptData(keyString, sessionKey);
         const label = `Dossier #${pendingQuestionnaires.length + 1} (${new Date().toLocaleDateString()})`;
-        const { data } = await supabase.from('pending_questionnaires').insert({
-            practitioner_id: practitioner.id, label, status: 'pending', practitioner_encrypted_key: `${enc.iv}:${enc.content}`
+        
+        const { data, error } = await supabase.from('pending_questionnaires').insert({
+            practitioner_id: practitioner.id,
+            organization_id: member.organization_id, // FIX: Ajout de l'ID Orga
+            label, 
+            status: 'pending', 
+            practitioner_encrypted_key: `${enc.iv}:${enc.content}`
         }).select().single();
+
+        if (error) {
+            Logger.error('DB', "Erreur création lien", error);
+            toast.error("Impossible de créer le lien.");
+            return;
+        }
+
         if (data) {
             setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`);
             setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]);
@@ -216,7 +245,7 @@ const AppRouter = () => {
 
     const handleProcessPending = async (q: PendingQuestionnaire) => {
         if (isDemoMode) {
-            // SCENARIO DEMO STEP 2 -> 3
+            // MODE DÉMO : Simulation Import
             setProcessingQueueId(q.id);
             setTimeout(async () => {
                 // Simulation Import
@@ -230,7 +259,6 @@ const AppRouter = () => {
                 assessment.setPatient(newPatient); // Load into context
                 setMode('assessment');
                 setProcessingQueueId(null);
-                advanceStep('DASHBOARD_IMPORT'); // Avance le tuto
                 toast.success("Dossier importé avec succès");
             }, 1000);
             return;
@@ -262,9 +290,10 @@ const AppRouter = () => {
                 };
                 
                 await StorageService.saveDraft(initialDraft, sessionKey);
-                setDraftsIndex(prev => ({ ...prev, [newId]: initialDraft.timestamp }));
-                setPatientFiles(prev => [newFile, ...prev]);
-                setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id));
+                
+                // Refresh global data
+                loadData();
+
                 await supabase.from('pending_questionnaires').delete().eq('id', q.id);
                 
                 assessment.resetAssessment();
@@ -282,11 +311,10 @@ const AppRouter = () => {
 
     const handleGenerateReport = async () => {
         if (isDemoMode) {
-            // SCENARIO DEMO STEP 6 -> 7
+            // MODE DÉMO : Simulation Génération
             setShowConfirmGeneration(false);
             setIsGenerating(true);
             setTimeout(async () => {
-                const { MOCK_SESSION_DATA } = await import('./data/mockSession');
                 // Mock Generation
                 const sections = [
                     { id: 'intro', title: 'Mandat', content: "Thomas est reçu ce jour...", status: 'draft', isAiGenerated: true },
@@ -295,7 +323,6 @@ const AppRouter = () => {
                 assessment.setSections(sections);
                 assessment.setStep(4);
                 setIsGenerating(false);
-                advanceStep('STEP3_GENERATE'); // Avance le tuto
                 toast.success("Rapport généré (Simulation)");
             }, 2000);
             return;
@@ -331,15 +358,15 @@ const AppRouter = () => {
 
     const handleFinalize = async () => {
         if (isDemoMode) {
-            // SCENARIO DEMO STEP 7 -> FIN
-            advanceStep('STEP4_VALIDATE');
             setMode('dashboard');
             toast.success("Bilan validé (Fin du scénario démo)");
             return;
         }
         if (!sessionKey || !orgKey) return;
+        
         const patientId = assessment.patient.id;
         if (!patientId) { toast.error("Erreur critique : ID Patient manquant."); return; }
+        
         setIsGenerating(true); 
         try {
             const flatResults: Record<string, ScoreResult> = {};
@@ -352,14 +379,40 @@ const AppRouter = () => {
             });
             const newSession: TestSession = { id: crypto.randomUUID(), date: new Date().toISOString(), testId: 'multi', testName: testNames.join(', ') || `Bilan du ${new Date().toLocaleDateString()}`, results: flatResults };
             const newReport: ReportMetadata = { id: crypto.randomUUID(), date: new Date().toISOString(), type: 'initial', status: 'completed', patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`, sections: assessment.sections };
+            
+            // FIX: Récupérer le fichier à jour directement depuis le state mis à jour par loadData
             const currentFileIndex = patientFiles.findIndex(f => f.id === patientId);
-            if (currentFileIndex === -1) throw new Error("Dossier local introuvable");
-            const currentFile = patientFiles[currentFileIndex];
-            const updatedFile: PatientFile = { ...currentFile, lastInteraction: new Date().toISOString(), sessions: [newSession, ...(currentFile.sessions || [])], reports: [newReport, ...(currentFile.reports || [])] };
+            
+            // Si toujours pas trouvé, on tente un fallback via la DB, mais normalement loadData a fait le job
+            let currentFile: PatientFile;
+            
+            if (currentFileIndex === -1) {
+                // Fallback: Création d'un objet temporaire si introuvable (peu probable avec le fix Step1)
+                currentFile = {
+                    id: patientId,
+                    patient: assessment.patient,
+                    reports: [],
+                    sessions: [],
+                    lastInteraction: new Date().toISOString(),
+                    archived: false
+                };
+            } else {
+                currentFile = patientFiles[currentFileIndex];
+            }
+
+            const updatedFile: PatientFile = { 
+                ...currentFile, 
+                lastInteraction: new Date().toISOString(), 
+                sessions: [newSession, ...(currentFile.sessions || [])], 
+                reports: [newReport, ...(currentFile.reports || [])] 
+            };
+            
             await StorageService.saveFile(updatedFile, orgKey);
-            setPatientFiles(prev => { const newList = [...prev]; newList[currentFileIndex] = updatedFile; return newList; });
             await StorageService.deleteDraft(patientId);
-            setDraftsIndex(prev => { const newIndex = { ...prev }; delete newIndex[patientId]; return newIndex; });
+            
+            // Refresh global data
+            loadData();
+            
             assessment.resetAssessment();
             setMode('dashboard');
             toast.success("Bilan sauvegardé et archivé avec succès.");
@@ -543,11 +596,12 @@ const AppRouter = () => {
 
             {mode === 'assessment' && (
                 <div className="max-w-7xl mx-auto p-6">
-                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); advanceStep('STEP1_REVIEW'); }} />}
-                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); advanceStep('STEP2_NEXT'); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
+                    {/* FIX: Passage de loadData en callback pour rafraîchir les listes après création */}
+                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); }} onPatientCreated={loadData} />}
+                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
                     {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
                     
-                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => { assessment.setStep(5); advanceStep('STEP4_VALIDATE'); }} onBack={() => setMode('dashboard')} />}
+                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => { assessment.setStep(5); }} onBack={() => setMode('dashboard')} />}
                     
                     {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
                 </div>
@@ -653,9 +707,6 @@ const AppRouter = () => {
                 />
             )}
 
-            {/* TUTORIAL LAYER (DEMO ONLY) */}
-            <TutorialLayer />
-
         </div>
     );
 };
@@ -667,9 +718,7 @@ const App = () => {
       <AuthProvider>
         <CatalogProvider>
           <AssessmentProvider>
-            <TutorialProvider>
-                <AppRouter />
-            </TutorialProvider>
+            <AppRouter />
           </AssessmentProvider>
         </CatalogProvider>
       </AuthProvider>

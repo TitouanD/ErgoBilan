@@ -15,10 +15,11 @@ interface Props {
   data: Patient;
   updateData: (data: Partial<Patient>) => void;
   onNext: () => void;
+  onPatientCreated: () => void; // NOUVEAU: Callback pour refresh App.tsx
 }
 
-export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
-  const { userProfile, sessionKey, orgKey } = useAuth(); // Import orgKey
+export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
+  const { userProfile, sessionKey, orgKey } = useAuth(); 
   const { loadFromDraft, patient } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -62,6 +63,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
       };
 
       await StorageService.saveFile(newFile, orgKey);
+      
+      // IMPORTANT : On signale à l'application parente que la liste a changé
+      if (onPatientCreated) onPatientCreated();
+      
       return patientToSave;
   };
 
@@ -150,7 +155,6 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext }) => {
 
       <div className="flex justify-center pt-12">
         <button 
-            id="demo-btn-next-step1" // TUTO CIBLE
             onClick={handleNextStep}
             disabled={!data.lastName || !data.firstName}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

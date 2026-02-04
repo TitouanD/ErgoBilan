@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { StorageService } from '../services/storage';
@@ -8,7 +8,6 @@ import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-const SUBSCRIPTION_CHECK_TIMEOUT_MS = 5000; // 5 secondes max pour vérifier l'abo
 
 interface AuthContextType {
   userProfile: UserProfile;
@@ -16,7 +15,7 @@ interface AuthContextType {
   sessionKey: CryptoKey | null; // MasterKey (PIN)
   orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
   // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
-  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked';
+  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error';
   isLoading: boolean;
   tempEmail: string | null;
   isDemoMode: boolean; // NOUVEAU : Flag UI
@@ -61,10 +60,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
   const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
-  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked'>('unauthenticated');
+  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error'>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
+
+  // MUTEX : Empêche loadUser de tourner en double (Race Condition React StrictMode)
+  const isLoadingProfileRef = useRef(false);
 
   // Initialisation Session & Listener
   useEffect(() => {
@@ -73,6 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         Logger.info('AUTH', "Session found at startup", session.user.id);
+        setAuthState('authenticating');
         await loadUser(session.user.id, session.user.email!);
       } else {
         Logger.info('AUTH', "No session found at startup.");
@@ -89,9 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'SIGNED_OUT') {
             handleLocalLogout();
         } else if (session?.user) {
-            // Éviter de recharger si on est déjà dans un état stable pour cet user
             if (practitioner?.id !== session.user.id) {
-                setAuthState('authenticating');
                 await loadUser(session.user.id, session.user.email!);
             }
         }
@@ -104,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
       let idleTimer: ReturnType<typeof setTimeout>;
       const performLock = () => { 
-          if (authState === 'authenticated' && !isDemoMode) { // Pas de lock en démo
+          if (authState === 'authenticated' && !isDemoMode) { 
               Logger.warn('AUTH', 'Idle timeout reached. Locking session.');
               lockSession(); 
           }
@@ -135,23 +136,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
       setIsDemoMode(false);
-      StorageService.setDemoMode(false); // Reset Storage
+      StorageService.setDemoMode(false); 
       setIsLoading(false);
+      isLoadingProfileRef.current = false; 
   };
 
-  /**
-   * --- MODE DÉMONSTRATION ---
-   * Hydrate un faux profil, désactive le chiffrement et lance l'app.
-   */
   const startDemo = async () => {
       setIsLoading(true);
       Logger.info('AUTH', "Starting Demo Mode...");
-      
-      // 1. Configurer le Storage pour Mock
       StorageService.setDemoMode(true);
       setIsDemoMode(true);
 
-      // 2. Faux Profil Praticien
       const mockPractitioner: PractitionerProfile = {
           id: 'demo-practitioner',
           email: 'demo@autobilan.fr',
@@ -163,11 +158,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setPractitioner(mockPractitioner);
 
-      // 3. Faux Profil User (Riche en crédits pour l'affichage, mais bloqué au paiement)
       const mockUser: UserProfile = {
           id: 'demo-practitioner',
           email: 'demo@autobilan.fr',
-          credits: 99, // Fake
+          credits: 99, 
           subscriptionPlan: 'free',
           status: 'active',
           isAdmin: false,
@@ -179,7 +173,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setUserProfile(mockUser);
 
-      // 4. Clés Bidon (Nécessaires pour que l'UI ne crash pas, mais inutilisées par StorageService en mode démo)
       const dummyKey = await generateSymetricKey();
       setSessionKey(dummyKey);
       setOrgKey(dummyKey);
@@ -189,9 +182,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loadUser = async (userId: string, email: string) => {
-      Logger.info('AUTH', "Loading user profile", userId);
+      if (isLoadingProfileRef.current) {
+          Logger.warn('AUTH', 'loadUser skipped: operation already in progress.');
+          return;
+      }
+      
+      isLoadingProfileRef.current = true; // LOCK
+      Logger.info('AUTH', "Loading user profile (Standard - No Timeout)", userId);
+      
       try {
-          // 1. Charger le Praticien (Rapide)
+          // 1. Charger le Praticien
           const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
           
           if (error) Logger.error('AUTH', "Supabase error loading practitioner", error);
@@ -211,24 +211,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               
               setPractitioner(profile);
 
-              // 2. CHECK ABONNEMENT BLOQUANT AVEC TIMEOUT
-              Logger.debug('AUTH', "Checking subscription status (Blocking with Timeout)...");
+              // 2. CHECK ABONNEMENT (SANS TIMEOUT)
+              Logger.info('AUTH', "Fetching full profile from SubscriptionService...");
               
-              let fullProfile: UserProfile | null = null;
-              
-              try {
-                  fullProfile = await Promise.race([
-                      SubscriptionService.getUserProfile(userId),
-                      new Promise<null>((_, reject) => 
-                          setTimeout(() => reject(new Error("Subscription check timed out")), SUBSCRIPTION_CHECK_TIMEOUT_MS)
-                      )
-                  ]);
-              } catch (subError) {
-                  Logger.error('AUTH', "Critical: Subscription check failed/timeout", subError);
-                  fullProfile = null;
-              }
+              // On attend simplement la réponse, même si elle met 20 secondes.
+              const fullProfile = await SubscriptionService.getUserProfile(userId);
 
               if (fullProfile) {
+                  Logger.info('AUTH', "Profile loaded successfully", fullProfile.status);
                   setUserProfile(fullProfile);
                   
                   SubscriptionService.subscribeToCredits(userId, (newCredits) => { 
@@ -247,6 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }
 
               } else {
+                  Logger.warn('AUTH', "Subscription Service returned null (Profile not found or error caught in service)");
                   setAuthState('subscription_locked'); 
               }
 
@@ -257,16 +248,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
       } catch (e) {
           Logger.error('AUTH', "Critical Auth Load Error", e);
-          await supabase.auth.signOut();
-          handleLocalLogout();
+          setAuthState('error'); 
       } finally {
+          isLoadingProfileRef.current = false; // UNLOCK
           setIsLoading(false);
       }
   };
 
   const refreshProfile = async (userId?: string) => {
       const targetId = userId || userProfile.id;
-      if (!targetId || isDemoMode) return; // Pas de refresh en démo
+      if (!targetId || isDemoMode) return; 
       try {
           const fullProfile = await SubscriptionService.getUserProfile(targetId);
           if (fullProfile) setUserProfile(fullProfile);
@@ -339,7 +330,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
       Logger.info('AUTH', "User requested logout");
       handleLocalLogout();
-      if (!isDemoMode) await supabase.auth.signOut(); // Pas d'appel Supabase en démo
+      if (!isDemoMode) await supabase.auth.signOut(); 
   };
 
   const updateUserProfile = (update: Partial<UserProfile>) => {

@@ -62,7 +62,9 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auto-Save Logic
   useEffect(() => {
-      if (!sessionKey || step === 1) return; // On ne sauvegarde pas trop tôt ou si pas déverrouillé
+      // Condition modifiée : On sauvegarde si session active ET (soit step > 1, soit on a un ID patient même en step 1)
+      if (!sessionKey) return;
+      if (step === 1 && !patient.id) return; // Pas de sauvegarde si step 1 et pas d'ID
 
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       setIsAutoSaving(true);
@@ -72,7 +74,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           try { 
               await StorageService.saveDraft(draftData, sessionKey); 
           } catch(e) { 
-              Logger.error('DB', "Autosave failed", e); 
+              Logger.warn('DB', "Autosave failed (silently)", e); 
           } finally { 
               setIsAutoSaving(false); 
           }
@@ -99,8 +101,6 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const loadFromDraft = (draft: any) => {
       Logger.debug('DB', "Context: Loading Draft...", draft);
-      // Utilisation du spread {...obj} pour créer une nouvelle référence objet
-      // Cela garantit que React détecte le changement même si les propriétés internes sont identiques
       if (draft.patient) {
           Logger.debug('DB', " -> Patient loaded:", draft.patient.lastName);
           setPatient({ ...draft.patient });

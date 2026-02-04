@@ -7,7 +7,6 @@ import { ScoringEngine } from '../../services/scoringEngine';
 import { GaussianChart } from '../shared/GaussianChart';
 import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
-import { useTutorial } from '../../contexts/TutorialContext'; // Import Tuto
 
 interface Props {
   patient: Patient; 
@@ -29,7 +28,6 @@ export const TestCatalogModal: React.FC<{
     onContribute?: () => void;
 }> = ({ isOpen, onClose, existingTests, onAddTests, onContribute }) => {
     const { catalog } = useCatalog();
-    const { advanceStep } = useTutorial(); // Hook Tuto
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [activeCategory, setActiveCategory] = useState(catalog[0]?.id || '');
     const [searchQuery, setSearchQuery] = useState('');
@@ -41,14 +39,12 @@ export const TestCatalogModal: React.FC<{
             setSelectedIds(selectedIds.filter(tid => tid !== id));
         } else {
             setSelectedIds([...selectedIds, id]);
-            advanceStep('CATALOG_SELECTION'); // TUTO: Avance quand on sélectionne
         }
     };
 
     const handleValidate = () => {
         onAddTests(selectedIds);
         setSelectedIds([]);
-        advanceStep('CATALOG_VALIDATE'); // TUTO: Avance quand on valide
         onClose();
     };
 
@@ -120,7 +116,6 @@ export const TestCatalogModal: React.FC<{
                              return (
                                  <button 
                                     key={test.id}
-                                    id={index === 0 ? 'demo-catalog-item-0' : undefined} // TUTO CIBLE
                                     onClick={() => !isAlreadyAdded && toggleSelection(test.id)}
                                     disabled={isAlreadyAdded}
                                     className={`text-left p-5 rounded-2xl border-2 transition-all flex justify-between items-center group ${
@@ -162,7 +157,6 @@ export const TestCatalogModal: React.FC<{
                             {selectedIds.length} test{selectedIds.length > 1 ? 's' : ''} sélectionné{selectedIds.length > 1 ? 's' : ''}
                         </span>
                         <button 
-                            id="demo-catalog-validate" // TUTO CIBLE
                             onClick={handleValidate}
                             disabled={selectedIds.length === 0}
                             className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#2c2e42] transition-colors shadow-lg"
@@ -592,7 +586,6 @@ export const SubtestRowCheck: React.FC<{
 
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
   const { catalog } = useCatalog();
-  const { advanceStep } = useTutorial(); // Hook Tuto
   const [showCatalog, setShowCatalog] = useState(false);
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
   const [triggerErrorPulse, setTriggerErrorPulse] = useState(false);
@@ -646,7 +639,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
         firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
         onNext();
-        advanceStep('STEP2_NEXT'); // TUTO: Next
     }
   };
 
@@ -660,8 +652,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
             <p className="text-stone-500 font-medium mt-2">Saisissez les résultats. Les scores NS, ET et % sont calculés automatiquement.</p>
         </div>
         <button 
-            id="demo-btn-add-test" // TUTO CIBLE
-            onClick={() => { setShowCatalog(true); advanceStep('STEP2_ADD_TEST'); }} // TUTO: Trigger ouverture
+            onClick={() => setShowCatalog(true)}
             className="flex items-center gap-2 bg-[#3D405B] text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all"
         >
             <Plus size={18} /> Ajouter un test
@@ -734,7 +725,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
                     </span>
                 )}
                 <button 
-                    id="demo-btn-next-step2" // TUTO CIBLE
                     onClick={handleNext} 
                     className={`flex items-center gap-3 px-8 py-4 text-white rounded-2xl font-bold shadow-xl transition-all hover:-translate-y-1 ${triggerErrorPulse ? 'bg-rose-500 shadow-rose-200 animate-shake' : 'bg-[#E07A5F] shadow-orange-200 hover:bg-[#d0694e]'}`}
                 >

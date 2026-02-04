@@ -2,7 +2,6 @@
 import React, { useState, useMemo } from 'react';
 import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
 import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3 } from 'lucide-react';
-import { useTutorial } from '../../contexts/TutorialContext'; // Import Tuto
 
 interface Props {
   userProfile: UserProfile;
@@ -18,7 +17,7 @@ interface Props {
   
   draftsIndex?: Record<string, string>; 
   onResumeDraft?: (patientId: string) => void;
-  isDemoMode?: boolean; // NOUVEAU
+  isDemoMode?: boolean; 
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -69,7 +68,6 @@ const ReferralCard = () => {
 export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('active');
-  const { advanceStep } = useTutorial(); // Hook Tuto
 
   const hoursSaved = Math.round(userProfile.totalBilansGenerated * 1.5);
 
@@ -98,12 +96,8 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
   // Liste à afficher selon l'onglet
   const currentFilesList = activeTab === 'archived' ? archivedFiles : activeFiles;
 
-  // Handler d'ouverture patient avec gestion du Tuto
   const handleOpenPatient = (id: string) => {
       onOpenPatient(id);
-      if (id === 'demo-patient-imported') {
-          advanceStep('DASHBOARD_REOPEN'); // TUTO: Avance quand on rouvre
-      }
   };
 
   return (
@@ -145,7 +139,6 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
                     <button 
-                        id="demo-btn-link" // TUTO CIBLE
                         onClick={onGenerateLink} 
                         className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group"
                     >
@@ -203,7 +196,6 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                         
                         {q.status === 'completed' ? (
                             <button 
-                                id="demo-card-import" // TUTO CIBLE
                                 onClick={() => onProcessPending && onProcessPending(q)} 
                                 disabled={processingQueueId === q.id}
                                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${processingQueueId === q.id ? 'bg-emerald-600 text-white cursor-wait' : 'bg-[#E07A5F] text-white hover:bg-[#d0694e] shadow-orange-200'}`}
@@ -229,7 +221,6 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                     return (
                         <div 
                             key={file.id} 
-                            id={file.id === 'demo-patient-imported' ? 'demo-card-patient-reopen' : undefined} // TUTO CIBLE
                             onClick={() => handleOpenPatient(file.id)} 
                             className={`group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden ${file.archived ? 'opacity-70 grayscale hover:grayscale-0' : ''}`}
                         >
