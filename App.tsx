@@ -25,7 +25,7 @@ import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
 import { anonymizeData } from './utils/anonymizer';
 import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -60,6 +60,40 @@ const DemoConversionModal: React.FC<{
     );
 };
 
+// --- MODALE ERREUR CRITIQUE (POINT 3C) ---
+const CriticalErrorModal: React.FC<{
+    error: string;
+    onRetry: () => void;
+    onClose: () => void;
+}> = ({ error, onRetry, onClose }) => {
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/90 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white max-w-md w-full rounded-[32px] p-8 shadow-2xl text-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
+                
+                <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500 animate-pulse">
+                    <AlertTriangle size={40} />
+                </div>
+                
+                <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Interruption IA</h3>
+                <p className="text-stone-500 text-sm mb-6 leading-relaxed">
+                    Le moteur d'intelligence artificielle n'a pas pu terminer la rédaction du rapport. <br/>
+                    <span className="font-bold text-rose-500 mt-2 block">{error}</span>
+                </p>
+
+                <div className="flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm uppercase tracking-wider">
+                        Abandonner
+                    </button>
+                    <button onClick={onRetry} className="flex-1 py-4 bg-[#3D405B] text-white rounded-xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2">
+                        <RefreshCw size={18} /> Réessayer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode } = useAuth();
@@ -78,7 +112,10 @@ const AppRouter = () => {
     const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
+    
+    // Link Generation State
     const [createdLink, setCreatedLink] = useState<string | null>(null);
+    const [linkCopiedConfirmed, setLinkCopiedConfirmed] = useState(false); // Checkgate
     
     // Demo Conversion State
     const [demoConversion, setDemoConversion] = useState<{ show: boolean, action: string }>({ show: false, action: '' });
@@ -90,7 +127,9 @@ const AppRouter = () => {
     
     const [draftsIndex, setDraftsIndex] = useState<Record<string, string>>({});
     
+    // Generation State & Error Handling (3C)
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState<string | null>(null); // State pour l'erreur critique
     const [processingQueueId, setProcessingQueueId] = useState<string | null>(null);
 
     // Initialisation
@@ -144,8 +183,6 @@ const AppRouter = () => {
             setDraftsIndex(draftsMap);
             
             if (practitioner && !isDemoMode) {
-                // Pour les questionnaires, on a aussi besoin de l'orgKey si on veut filtrer, 
-                // mais ici on filtre par practitioner_id ce qui est safe.
                 const { data } = await supabase
                     .from('pending_questionnaires')
                     .select('*')
@@ -171,22 +208,17 @@ const AppRouter = () => {
     const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        // Pas de Realtime en mode démo ou si non connecté
         if (!sessionKey || !orgKey || isDemoMode || authState !== 'authenticated') return;
 
         Logger.info('DB', 'Initializing Realtime Subscription for Dashboard...');
 
         const handleRealtimeUpdate = (payload: any) => {
             Logger.info('DB', 'Realtime Event Received', { table: payload.table, event: payload.eventType });
-            
-            // Debounce : On attend 1s sans nouvel événement avant de recharger
             if (refreshTimeoutRef.current) {
                 clearTimeout(refreshTimeoutRef.current);
             }
-
             refreshTimeoutRef.current = setTimeout(() => {
                 loadData();
-                // Suppression du Toast "Données mises à jour en temps réel"
             }, 1000);
         };
 
@@ -212,7 +244,7 @@ const AppRouter = () => {
             supabase.removeChannel(channel);
             if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
         };
-    }, [sessionKey, orgKey, authState, isDemoMode, loadData]); // Dependances stables
+    }, [sessionKey, orgKey, authState, isDemoMode, loadData]);
 
     // Handlers
     const handleLogin = async (email: string, pass: string) => {
@@ -227,19 +259,18 @@ const AppRouter = () => {
     const handleUnlock = (key: CryptoKey) => {
         unlockSession(key);
         setMode('dashboard');
-        // Suppression du Toast "Session déverrouillée"
     };
 
     const handleGenerateLink = async () => {
         if (isDemoMode) {
-            setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`);
+            const demoLink = `${window.location.origin}/?q_id=demo-q1#key=demo-key`;
+            setCreatedLink(demoLink);
             setPendingQuestionnaires(prev => [{ id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, ...prev]);
             toast.success("Lien sécurisé généré (Simulation)");
             return;
         }
         if (!practitioner || !sessionKey) return;
 
-        // Récupérer l'ID de l'organisation
         const { data: member } = await supabase
             .from('organization_members')
             .select('organization_id')
@@ -257,7 +288,7 @@ const AppRouter = () => {
         
         const { data, error } = await supabase.from('pending_questionnaires').insert({
             practitioner_id: practitioner.id,
-            organization_id: member.organization_id, // FIX: Ajout de l'ID Orga
+            organization_id: member.organization_id, 
             label, 
             status: 'pending', 
             practitioner_encrypted_key: `${enc.iv}:${enc.content}`
@@ -270,11 +301,60 @@ const AppRouter = () => {
         }
 
         if (data) {
-            setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`);
-            // Note: Le realtime mettra à jour la liste, mais on l'ajoute localement pour la réactivité immédiate
+            const url = `${window.location.origin}/?q_id=${data.id}#key=${keyString}`;
+            setCreatedLink(url);
+            setLinkCopiedConfirmed(false); // Reset checkgate
+            
+            // On ne stocke plus en localStorage (Hygiène de sécurité DB-Only)
             setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]);
             toast.success("Lien sécurisé généré");
         }
+    };
+
+    // Nouvelle fonction de récupération DB-Based
+    const handleCopyLink = async (q: PendingQuestionnaire) => {
+        if (isDemoMode) {
+             const url = `${window.location.origin}/?q_id=${q.id}#key=demo-key`;
+             navigator.clipboard.writeText(url);
+             toast.success("Lien copié !");
+             return;
+        }
+        if (!sessionKey || !q.practitionerEncryptedKey) return;
+
+        try {
+            const [iv, content] = q.practitionerEncryptedKey.split(':');
+            const keyString = await decryptData({ iv, content }, sessionKey);
+            const url = `${window.location.origin}/?q_id=${q.id}#key=${keyString}`;
+            await navigator.clipboard.writeText(url);
+            toast.success("Lien copié dans le presse-papier");
+        } catch (e) {
+            Logger.error('CRYPTO', "Error recovering link", e);
+            toast.error("Impossible de récupérer le lien (Erreur déchiffrement)");
+        }
+    };
+
+    const handleSaveAndQuit = async () => {
+        // Sauvegarde explicite avant de quitter
+        if (sessionKey && assessment.patient.id) {
+            try {
+                const draftData = { 
+                    patient: assessment.patient, 
+                    tests: assessment.tests, 
+                    observations: assessment.observations, 
+                    sections: assessment.sections, 
+                    step: assessment.step, 
+                    timestamp: new Date().toISOString() 
+                };
+                await StorageService.saveDraft(draftData, sessionKey);
+                toast.success("Brouillon sauvegardé");
+            } catch(e) {
+                Logger.error('DB', "Save error before quit", e);
+            }
+        }
+        assessment.resetAssessment(); // Clean context ? Or keep it for quick resume?
+        // En général, on veut nettoyer le contexte pour éviter des conflits si on ouvre un autre patient
+        // Le context est chargé depuis le draft au besoin.
+        setMode('dashboard');
     };
 
     const handleResumeDraft = async (patientId?: string) => {
@@ -284,7 +364,6 @@ const AppRouter = () => {
             assessment.resetAssessment();
             assessment.loadFromDraft(draftContent);
             setMode('assessment');
-            // Suppression du Toast "Brouillon chargé"
         } else if (isDemoMode) {
              toast.info("Les brouillons ne sont pas sauvegardés en mode démo.");
         } else {
@@ -294,10 +373,8 @@ const AppRouter = () => {
 
     const handleProcessPending = async (q: PendingQuestionnaire) => {
         if (isDemoMode) {
-            // MODE DÉMO : Simulation Import
             setProcessingQueueId(q.id);
             setTimeout(async () => {
-                // Simulation Import
                 const { MOCK_SESSION_DATA } = await import('./data/mockSession');
                 const newId = 'demo-patient-imported';
                 const newPatient = { ...MOCK_SESSION_DATA.patient, id: newId, lastName: 'DUBOIS', firstName: 'Thomas' };
@@ -305,7 +382,7 @@ const AppRouter = () => {
                 setPatientFiles(prev => [newFile, ...prev]);
                 setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id));
                 assessment.resetAssessment();
-                assessment.setPatient(newPatient); // Load into context
+                assessment.setPatient(newPatient); 
                 setMode('assessment');
                 setProcessingQueueId(null);
                 toast.success("Dossier importé avec succès");
@@ -339,12 +416,8 @@ const AppRouter = () => {
                 };
                 
                 await StorageService.saveDraft(initialDraft, sessionKey);
-                
-                // Refresh global data
                 loadData();
-
                 await supabase.from('pending_questionnaires').delete().eq('id', q.id);
-                
                 assessment.resetAssessment();
                 assessment.loadFromDraft(initialDraft);
                 setMode('assessment');
@@ -360,11 +433,9 @@ const AppRouter = () => {
 
     const handleGenerateReport = async () => {
         if (isDemoMode) {
-            // MODE DÉMO : Simulation Génération
             setShowConfirmGeneration(false);
             setIsGenerating(true);
             setTimeout(async () => {
-                // Mock Generation
                 const sections = [
                     { id: 'intro', title: 'Mandat', content: "Thomas est reçu ce jour...", status: 'draft', isAiGenerated: true },
                     { id: 'diag', title: 'Diagnostic', content: "### Analyse Clinique\nThomas présente une dysgraphie...", status: 'draft', isAiGenerated: true }
@@ -378,6 +449,7 @@ const AppRouter = () => {
         }
 
         setShowConfirmGeneration(false);
+        setGenerationError(null); // Reset erreur
         setIsGenerating(true); 
         try {
             const p = assessment.patient;
@@ -397,9 +469,13 @@ const AppRouter = () => {
             toast.success("Rapport généré avec succès");
         } catch (e: any) {
             Logger.error('AI', "Generation Error in UI", e);
-            if (e.message === "CREDIT_INSUFFICIENT") setPricingModalMode('paywall');
-            else if (e.message === "TIMEOUT_AI") toast.error("Le serveur IA est surchargé. Réessayez.");
-            else toast.error("Erreur lors de la génération : " + e.message);
+            if (e.message === "CREDIT_INSUFFICIENT") {
+                setPricingModalMode('paywall');
+            } else if (e.message === "TIMEOUT_AI") {
+                setGenerationError("Le serveur IA ne répond pas (Surcharge ou Timeout).");
+            } else {
+                setGenerationError(e.message || "Erreur inconnue lors de la génération.");
+            }
         } finally {
             setIsGenerating(false);
         }
@@ -429,14 +505,10 @@ const AppRouter = () => {
             const newSession: TestSession = { id: crypto.randomUUID(), date: new Date().toISOString(), testId: 'multi', testName: testNames.join(', ') || `Bilan du ${new Date().toLocaleDateString()}`, results: flatResults };
             const newReport: ReportMetadata = { id: crypto.randomUUID(), date: new Date().toISOString(), type: 'initial', status: 'completed', patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`, sections: assessment.sections };
             
-            // FIX: Récupérer le fichier à jour directement depuis le state mis à jour par loadData
             const currentFileIndex = patientFiles.findIndex(f => f.id === patientId);
-            
-            // Si toujours pas trouvé, on tente un fallback via la DB, mais normalement loadData a fait le job
             let currentFile: PatientFile;
             
             if (currentFileIndex === -1) {
-                // Fallback: Création d'un objet temporaire si introuvable (peu probable avec le fix Step1)
                 currentFile = {
                     id: patientId,
                     patient: assessment.patient,
@@ -458,10 +530,7 @@ const AppRouter = () => {
             
             await StorageService.saveFile(updatedFile, orgKey);
             await StorageService.deleteDraft(patientId);
-            
-            // Refresh global data
             loadData();
-            
             assessment.resetAssessment();
             setMode('dashboard');
             toast.success("Bilan sauvegardé et archivé avec succès.");
@@ -490,6 +559,7 @@ const AppRouter = () => {
     if (mode === 'landing') {
         return (
             <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+                {/* ... (Contenu Landing identique) ... */}
                 <div className="absolute inset-0 bg-gradient-to-br from-[#E07A5F]/5 to-[#3D405B]/5 pointer-events-none"></div>
                 <div className="text-center space-y-8 z-10 animate-in fade-in zoom-in-95 duration-700">
                     <div className="flex justify-center">
@@ -511,7 +581,6 @@ const AppRouter = () => {
                         </button>
                     </div>
 
-                    {/* LIEN DISCRET MODE DÉMO (OPTION A) */}
                     <div className="mt-8 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-500">
                         <p className="text-stone-400 text-sm">
                             Pas encore de compte ?{' '}
@@ -579,15 +648,32 @@ const AppRouter = () => {
         <div className="min-h-screen bg-[#F9F9F9] pb-20 font-sans">
             
             <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
-                <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => setMode('dashboard')}>
+                <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> AutoBilan.
                 </div>
+                
                 <div className="flex items-center gap-3">
-                    {mode === 'assessment' && assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
-                    <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Créer un Test</button>
-                    <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
-                    <div className="h-8 w-px bg-stone-200 mx-1"></div>
-                    <button onClick={logout} className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Déconnexion"><LogOut size={20}/></button>
+                    {mode === 'assessment' ? (
+                        // MODE ASSESSMENT : HEADER SIMPLIFIÉ AVEC "SAVE & QUIT"
+                        <>
+                            {assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg mr-2"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
+                            <button 
+                                onClick={handleSaveAndQuit}
+                                className="flex items-center gap-2 px-4 py-2 bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border border-stone-200 hover:border-rose-200"
+                            >
+                                <Save size={16} /> 
+                                <span className="hidden md:inline">Sauvegarder & Quitter</span>
+                            </button>
+                        </>
+                    ) : (
+                        // MODE DASHBOARD : HEADER COMPLET
+                        <>
+                            <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Créer un Test</button>
+                            <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
+                            <div className="h-8 w-px bg-stone-200 mx-1"></div>
+                            <button onClick={logout} className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Déconnexion"><LogOut size={20}/></button>
+                        </>
+                    )}
                 </div>
             </header>
 
@@ -599,7 +685,7 @@ const AppRouter = () => {
                         <span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span>
                     </div>
                     <button 
-                        onClick={() => logout()} // Le logout renvoie vers la landing/inscription
+                        onClick={() => logout()} 
                         className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md"
                     >
                         S'inscrire gratuitement <ArrowRight size={12} />
@@ -614,14 +700,9 @@ const AppRouter = () => {
                     onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
                     onOpenPatient={async (id) => { 
                         try {
-                            // On charge d'abord les détails (rapports, sessions + identité complète)
                             const details = await StorageService.loadPatientDetails(id, orgKey!);
-                            
-                            // On cherche le fichier de base (qui ne contient que la preview)
                             const baseFile = patientFiles.find(f => f.id === id);
-                            
                             if (baseFile) {
-                                // On fusionne : Base + Détails + Identité complète (qui écrase la preview)
                                 setSelectedFile({ ...baseFile, ...details, patient: details.patient }); 
                                 setMode('detail'); 
                             }
@@ -631,11 +712,12 @@ const AppRouter = () => {
                         }
                     }}
                     onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
-                    
                     draftsIndex={draftsIndex}
                     onResumeDraft={handleResumeDraft}
                     onContribute={handleContributionAccess}
                     isDemoMode={isDemoMode}
+                    
+                    onCopyLink={handleCopyLink} // Passage de la fonction de copie DB-based
                 />
             )}
 
@@ -645,7 +727,6 @@ const AppRouter = () => {
                     onQuickEntry={() => setShowQuickEntry(true)} 
                     onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
                     onOpenReport={() => {}}
-                    
                     draftAvailable={!!draftsIndex[selectedFile.id]}
                     onResumeDraft={() => handleResumeDraft(selectedFile.id)}
                 />
@@ -653,7 +734,6 @@ const AppRouter = () => {
 
             {mode === 'assessment' && (
                 <div className="max-w-7xl mx-auto p-6">
-                    {/* FIX: Passage de loadData en callback pour rafraîchir les listes après création */}
                     {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); }} onPatientCreated={loadData} />}
                     {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
                     {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
@@ -680,18 +760,35 @@ const AppRouter = () => {
                 />
             )}
             
+            {/* MODALE LIEN GÉNÉRÉ (Avec Checkgate Anti-Perte) */}
             {createdLink && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] text-center max-w-lg shadow-2xl relative">
-                        <button onClick={() => setCreatedLink(null)} className="absolute top-4 right-4 p-2 bg-stone-50 rounded-full text-stone-400 hover:text-[#3D405B]"><X size={20}/></button>
+                        {/* Pas de croix de fermeture facile pour forcer la copie */}
                         <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600"><LinkIcon size={32}/></div>
                         <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Lien d'accès créé</h2>
-                        <p className="text-stone-500 text-sm mb-6">Envoyez ce lien sécurisé à la famille.</p>
+                        <p className="text-stone-500 text-sm mb-6">Attention : Ce lien n'est affiché qu'une seule fois ici.</p>
+                        
                         <div className="bg-stone-50 border border-stone-200 p-4 rounded-2xl font-mono text-xs mb-6 flex items-center gap-3 text-[#3D405B]">
                             <div className="truncate flex-1 font-bold">{createdLink}</div>
                             <button onClick={() => { navigator.clipboard.writeText(createdLink); toast.success("Lien copié !"); }} className="hover:text-[#E07A5F] transition-colors"><Copy size={18}/></button>
                         </div>
-                        <button onClick={() => setCreatedLink(null)} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all">Terminer</button>
+
+                        {/* Checkgate */}
+                        <div className="flex items-center justify-center gap-3 mb-6 p-3 rounded-xl hover:bg-stone-50 cursor-pointer" onClick={() => setLinkCopiedConfirmed(!linkCopiedConfirmed)}>
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${linkCopiedConfirmed ? 'bg-[#E07A5F] border-[#E07A5F] text-white' : 'border-stone-300 bg-white'}`}>
+                                {linkCopiedConfirmed && <CheckCircle2 size={14} strokeWidth={3} />}
+                            </div>
+                            <span className="text-xs font-bold text-stone-600 select-none">J'ai bien copié le lien et je l'ai sécurisé.</span>
+                        </div>
+
+                        <button 
+                            onClick={() => setCreatedLink(null)} 
+                            disabled={!linkCopiedConfirmed}
+                            className={`w-full py-3 rounded-xl font-bold shadow-lg transition-all ${linkCopiedConfirmed ? 'bg-[#3D405B] text-white hover:bg-[#2c2e42]' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
+                        >
+                            Terminer
+                        </button>
                     </div>
                 </div>
             )}
@@ -700,6 +797,15 @@ const AppRouter = () => {
                 isVisible={isGenerating} 
                 onCancel={() => { setIsGenerating(false); }} 
             />
+
+            {/* MODALE ERREUR CRITIQUE IA */}
+            {generationError && (
+                <CriticalErrorModal 
+                    error={generationError}
+                    onRetry={() => { setGenerationError(null); handleGenerateReport(); }}
+                    onClose={() => setGenerationError(null)}
+                />
+            )}
 
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">

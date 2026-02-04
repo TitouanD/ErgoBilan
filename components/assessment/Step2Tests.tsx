@@ -5,7 +5,7 @@ import { SubtestDef } from '../../data/testCatalog';
 import { SCALES, calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { GaussianChart } from '../shared/GaussianChart';
-import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus, Loader2 } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
@@ -169,9 +169,6 @@ export const TestCatalogModal: React.FC<{
         </div>
     );
 }
-
-// ... (Le reste du fichier reste identique : getInterpretation, SubtestRowCheck, Step2Tests) ...
-// Je remets juste le composant Step2Tests pour le contexte de remplacement complet du fichier
 
 // Helper pour l'interprétation textuelle
 const getInterpretation = (z: number) => {
@@ -374,7 +371,7 @@ export const SubtestRowCheck: React.FC<{
                     {/* 2. Inputs GRID (Brut | NS | ET | %) */}
                     <div className="flex-1 flex items-center justify-start gap-2 md:gap-4 overflow-x-auto no-scrollbar">
                         
-                        {/* BRUT (Source) */}
+                        {/* BRUT (Source) - IMPLEMENTATION 3B : Micro-Loader */}
                         <div className="flex flex-col items-center min-w-[60px]">
                             <span className="text-[9px] font-bold text-stone-300 uppercase mb-1">Brut</span>
                             <div className="relative">
@@ -386,14 +383,20 @@ export const SubtestRowCheck: React.FC<{
                                     onClick={(e) => e.stopPropagation()}
                                     placeholder="-"
                                     disabled={readOnly || isValidated}
-                                    className={`w-16 h-12 ${inputBaseClass} ${isComputing ? 'animate-pulse bg-stone-100' : ''}`}
+                                    className={`w-16 h-12 ${inputBaseClass}`}
                                     style={{ 
                                         backgroundColor: isValidated ? '#F9FAFB' : '#FFFFFF',
                                         border: isValidated ? '1px solid transparent' : '1px solid #E5E7EB',
-                                        color: '#3D405B'
+                                        color: '#3D405B',
+                                        paddingRight: isComputing ? '20px' : '0' // Espace pour le loader
                                     }}
                                 />
                                 {isValidated && <Lock size={10} className="absolute top-1 right-1 text-stone-300" />}
+                                {isComputing && (
+                                    <div className="absolute top-1/2 right-1 -translate-y-1/2 text-[#E07A5F]">
+                                        <Loader2 size={12} className="animate-spin" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
-import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3 } from 'lucide-react';
+import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, RotateCcw } from 'lucide-react';
 
 interface Props {
   userProfile: UserProfile;
@@ -18,6 +18,7 @@ interface Props {
   draftsIndex?: Record<string, string>; 
   onResumeDraft?: (patientId: string) => void;
   isDemoMode?: boolean; 
+  onCopyLink: (q: PendingQuestionnaire) => void; // MODIFIÉ: Nouvelle fonction de copie DB-based
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -65,7 +66,7 @@ const ReferralCard = () => {
     );
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false }) => {
+export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('active');
 
@@ -140,12 +141,13 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                 <div className="flex gap-3 w-full md:w-auto">
                     <button 
                         onClick={onGenerateLink} 
-                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group"
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group shadow-sm"
                     >
                         <LinkIcon size={18} className="text-[#E07A5F] group-hover:rotate-45 transition-transform" /> 
                         <span className="hidden lg:inline">Nouveau lien Famille</span>
                     </button>
-                    <button onClick={onCreateNew} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#E07A5F] text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] transition-all text-sm">
+                    
+                    <button onClick={onCreateNew} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#E07A5F] text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] transition-all text-sm h-fit">
                         <Plus size={18} /> Nouveau Dossier
                     </button>
                 </div>
@@ -207,7 +209,15 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                                 )}
                             </button>
                         ) : (
-                            <div className="text-center text-xs text-stone-400 italic">En attente de la famille...</div>
+                            <div className="mt-auto pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
+                                <span className="text-xs text-stone-400 italic">En attente...</span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onCopyLink(q); }}
+                                    className="flex items-center gap-2 px-3 py-2 bg-stone-50 hover:bg-[#E07A5F] hover:text-white text-stone-500 rounded-lg text-xs font-bold transition-all"
+                                >
+                                    <Copy size={14} /> Copier le lien
+                                </button>
+                            </div>
                         )}
                     </div>
                 ))}

@@ -285,19 +285,22 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                 <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">{validSubtests.length} épreuves</span>
                             </div>
                             <div className="p-6">
-                                <table className="w-full border-collapse text-sm mb-8">
-                                    <thead><tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider"><th className="pb-3 w-1/3">Épreuves</th><th className="pb-3 w-1/4 text-center">Note Standard / ET</th><th className="pb-3 w-1/3 pl-6">Observations</th></tr></thead>
-                                    <tbody className="text-stone-700">
-                                        {validSubtests.map(([subId, result]) => {
-                                            const subDef = def.subtests.find(s => s.id === subId);
-                                            const isPathological = result.zScore <= -2;
-                                            const isFragile = result.zScore <= -1 && result.zScore > -2;
-                                            const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
-                                            let scoreDisplay = (subDef?.scoreType === 'standard' || subDef?.scoreType === 'scaled') ? `NS = ${result.standard}` : `ET = ${result.zScore > 0 ? '+' : ''}${result.zScore}`;
-                                            return <tr key={subId} className="border-b border-stone-50 last:border-0 align-top"><td className="py-3 pr-4 font-medium">• {subDef?.name}</td><td className={`py-3 text-center ${colorClass}`}>{scoreDisplay}</td><td className="py-3 pl-6 italic text-xs text-stone-500">{result.observation || "-"}</td></tr>;
-                                        })}
-                                    </tbody>
-                                </table>
+                                {/* WRAPPER SCROLL HORIZONTAL (Point 3D) */}
+                                <div className="overflow-x-auto w-full">
+                                    <table className="w-full border-collapse text-sm mb-8 min-w-[500px]">
+                                        <thead><tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider"><th className="pb-3 w-1/3">Épreuves</th><th className="pb-3 w-1/4 text-center">Note Standard / ET</th><th className="pb-3 w-1/3 pl-6">Observations</th></tr></thead>
+                                        <tbody className="text-stone-700">
+                                            {validSubtests.map(([subId, result]) => {
+                                                const subDef = def.subtests.find(s => s.id === subId);
+                                                const isPathological = result.zScore <= -2;
+                                                const isFragile = result.zScore <= -1 && result.zScore > -2;
+                                                const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
+                                                let scoreDisplay = (subDef?.scoreType === 'standard' || subDef?.scoreType === 'scaled') ? `NS = ${result.standard}` : `ET = ${result.zScore > 0 ? '+' : ''}${result.zScore}`;
+                                                return <tr key={subId} className="border-b border-stone-50 last:border-0 align-top"><td className="py-3 pr-4 font-medium">• {subDef?.name}</td><td className={`py-3 text-center ${colorClass}`}>{scoreDisplay}</td><td className="py-3 pl-6 italic text-xs text-stone-500">{result.observation || "-"}</td></tr>;
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
                                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-stone-100">
                                     {validSubtests.slice(0, 4).map(([subId, result]) => { 
                                         const subDef = def.subtests.find(s => s.id === subId);
