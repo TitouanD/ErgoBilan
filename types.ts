@@ -23,6 +23,11 @@ export interface OrganizationMember {
   joinedAt: string;
 }
 
+export interface ClinicalSynthesis {
+    diagnosticInput: string; // La conclusion du thérapeute (ex: "TDC avéré")
+    recommendationsInput: string; // Le projet (ex: "Suivi hebdo + outil info")
+}
+
 export interface Patient {
   // Identité
   id?: string; 

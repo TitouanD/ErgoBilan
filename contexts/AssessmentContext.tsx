@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { Patient, TestData, Observations, ReportSection, PatientFile } from '../types';
+import { Patient, TestData, Observations, ReportSection, PatientFile, ClinicalSynthesis } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
 import { Logger } from '../utils/logger';
@@ -9,6 +9,7 @@ interface AssessmentContextType {
   patient: Patient;
   tests: TestData;
   observations: Observations;
+  synthesis: ClinicalSynthesis; // NOUVEAU
   sections: ReportSection[];
   step: number;
   isAutoSaving: boolean;
@@ -22,6 +23,9 @@ interface AssessmentContextType {
   setObservations: (o: Observations) => void;
   updateObservations: (o: Partial<Observations>) => void;
   
+  setSynthesis: (s: ClinicalSynthesis) => void; // NOUVEAU
+  updateSynthesis: (s: Partial<ClinicalSynthesis>) => void; // NOUVEAU
+
   setSections: (s: ReportSection[]) => void;
   updateSection: (id: string, update: Partial<ReportSection>) => void;
   
@@ -48,12 +52,18 @@ const initialObs: Observations = {
   anamnese: '', motricite: '', coordination: '', spatial: '', graphique: ''
 };
 
+const initialSynthesis: ClinicalSynthesis = {
+    diagnosticInput: '',
+    recommendationsInput: ''
+};
+
 export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { sessionKey, orgKey, isDemoMode } = useAuth(); // Récupération de orgKey pour la sauvegarde Patient
+  const { sessionKey, orgKey, isDemoMode } = useAuth(); 
   
   const [patient, setPatient] = useState<Patient>(initialPatient);
   const [tests, setTests] = useState<TestData>({});
   const [observations, setObservations] = useState<Observations>(initialObs);
+  const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis); // NOUVEAU
   const [sections, setSections] = useState<ReportSection[]>([]);
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -62,10 +72,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auto-Save Logic Renforcée
   useEffect(() => {
-      // Conditions d'arrêt : Pas de session (sauf démo) ou données vides
       if (!sessionKey && !isDemoMode) return;
       
-      // On ne sauvegarde pas si le patient n'a même pas un début de nom (évite les fichiers vides)
       const hasMinimalData = patient.lastName.trim().length > 0 || patient.firstName.trim().length > 0;
       if (!hasMinimalData) return;
 
@@ -74,28 +82,21 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
       saveTimeoutRef.current = setTimeout(async () => {
           try {
-              // 1. Sauvegarde du Brouillon (Données Volatiles & Privées)
-              const draftData = { patient, tests, observations, sections, step, timestamp: new Date().toISOString() };
+              // Ajout de 'synthesis' au draft
+              const draftData = { patient, tests, observations, synthesis, sections, step, timestamp: new Date().toISOString() };
               if (sessionKey) {
                   await StorageService.saveDraft(draftData, sessionKey);
               }
 
-              // 2. Sauvegarde Structurelle (Fichier Patient) - UNIQUEMENT SI ID EXISTE
-              // Cela permet au Dashboard de "voir" le patient même si on n'a pas cliqué sur Suivant.
-              // On le fait si on a la clé d'organisation (Authentifié)
               if (orgKey && patient.id && hasMinimalData) {
-                  // On crée un objet PatientFile minimal pour mettre à jour l'identité chiffrée
-                  // Attention : On ne sauvegarde pas les reports/sessions ici, juste l'identité.
                   const fileWrapper: PatientFile = {
                       id: patient.id,
                       patient: patient,
-                      reports: [], // On n'écrase pas, StorageService gère l'upsert intelligent normalement mais ici c'est safe car vide
+                      reports: [], 
                       sessions: [],
                       lastInteraction: new Date().toISOString(),
                       archived: false
                   };
-                  
-                  // Logger.debug('DB', "Auto-creating patient entry for dashboard visibility", patient.id);
                   await StorageService.saveFile(fileWrapper, orgKey);
               }
 
@@ -104,15 +105,14 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           } finally { 
               setIsAutoSaving(false); 
           }
-      }, 2000); // Debounce 2s
+      }, 2000); 
 
       return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [patient, tests, observations, sections, step, sessionKey, orgKey, isDemoMode]);
+  }, [patient, tests, observations, synthesis, sections, step, sessionKey, orgKey, isDemoMode]);
 
   const updatePatient = (data: Partial<Patient>) => {
       setPatient(prev => {
           const newData = { ...prev, ...data };
-          // Génération d'ID immédiate dès la première saisie si inexistant
           if (!newData.id) {
               newData.id = crypto.randomUUID();
               Logger.info('UI', "Generated new Patient ID locally:", newData.id);
@@ -123,6 +123,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const updateTests = (data: Partial<TestData>) => setTests(prev => ({ ...prev, ...data }));
   const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
+  const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data })); // NOUVEAU
   
   const updateSection = (id: string, update: Partial<ReportSection>) => {
       setSections(prev => prev.map(s => s.id === id ? { ...s, ...update } : s));
@@ -132,21 +133,17 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setPatient(initialPatient);
       setTests({});
       setObservations(initialObs);
+      setSynthesis(initialSynthesis);
       setSections([]);
       setStep(1);
   };
 
   const loadFromDraft = (draft: any) => {
       Logger.debug('DB', "Context: Loading Draft...", draft);
-      if (draft.patient) {
-          setPatient({ ...draft.patient });
-      }
-      if (draft.tests) {
-          setTests({ ...draft.tests });
-      }
-      if (draft.observations) {
-          setObservations({ ...draft.observations });
-      }
+      if (draft.patient) setPatient({ ...draft.patient });
+      if (draft.tests) setTests({ ...draft.tests });
+      if (draft.observations) setObservations({ ...draft.observations });
+      if (draft.synthesis) setSynthesis({ ...draft.synthesis }); // NOUVEAU
       if (draft.sections) setSections([...draft.sections]);
       if (draft.step) setStep(draft.step);
   };
@@ -156,6 +153,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         patient, setPatient, updatePatient,
         tests, setTests, updateTests,
         observations, setObservations, updateObservations,
+        synthesis, setSynthesis, updateSynthesis,
         sections, setSections, updateSection,
         step, setStep,
         isAutoSaving,
