@@ -293,11 +293,12 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) return [];
 
-        // Note: On sélectionne tout pour l'instant pour gérer le fallback (migration)
-        // Idéalement on ne sélectionnerait pas encrypted_identity pour économiser la bande passante
+        // PERFORMANCE : Sélection chirurgicale des colonnes et tri Serveur
+        // On évite le select('*') qui ramène tout le blob inutilement si on a le preview
         const { data: patients, error } = await supabase
             .from('patients')
-            .select('*'); 
+            .select('id, updated_at, last_interaction, encrypted_preview, preview_iv, encrypted_file_key, organization_id, iv, encrypted_identity')
+            .order('last_interaction', { ascending: false });
 
         if (error) {
             Logger.error('DB', "Error loading patient list", error);
@@ -350,9 +351,8 @@ export const StorageService = {
             }
         }
 
-        return files.sort((a, b) => 
-            new Date(b.lastInteraction).getTime() - new Date(a.lastInteraction).getTime()
-        );
+        // Le tri est déjà fait par la DB, on retourne directement
+        return files;
     },
 
     loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[], patient: Patient }> => {

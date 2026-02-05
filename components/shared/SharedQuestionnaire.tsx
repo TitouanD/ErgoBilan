@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Patient, Sibling } from '../../types';
 import { calculateAge } from '../../utils';
+import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
 import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, AlertCircle, Plus, Trash2 } from 'lucide-react';
 
 interface Props {
@@ -37,14 +38,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-      // Logique "Smart Fold" pour le praticien
       if (mode === 'practitioner') {
           const newOpenState = { ...openSections };
           let allClosed = true;
 
           SECTIONS_CONFIG.forEach(sec => {
               const hasData = sec.fields.some(f => data[f] && data[f].length > 0);
-              // Si donnée présente, on ferme pour réduire le bruit visuel
               if (hasData) {
                   newOpenState[sec.id] = false;
               } else {
@@ -53,17 +52,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
               }
           });
 
-          // Si tout est rempli (ex: Fake Data), on force l'ouverture de l'Identité pour éviter l'effet "vide"
           if (allClosed) {
               newOpenState['identity'] = true;
           }
 
           setOpenSections(newOpenState);
       }
-  }, []); // Run once on mount
+  }, []);
 
   useEffect(() => {
-      // Mise à jour progression
       if (mode === 'family') {
           const totalFields = SECTIONS_CONFIG.reduce((acc, sec) => acc + sec.fields.length, 0);
           const filledFields = SECTIONS_CONFIG.reduce((acc, sec) => acc + sec.fields.filter(f => data[f] && data[f].length > 2).length, 0);
@@ -75,13 +72,17 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      const { name, value } = e.target;
-      if (name === 'dob') {
-          onChange({ [name]: value, age: calculateAge(value) });
+  const handleFieldChange = (field: keyof Patient, value: string) => {
+      if (field === 'dob') {
+          onChange({ [field]: value, age: calculateAge(value) });
       } else {
-          onChange({ [name]: value });
+          onChange({ [field]: value });
       }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      // Pour les inputs natifs comme Radio
+      onChange({ [e.target.name]: e.target.value });
   };
 
   const addSibling = () => {
@@ -104,6 +105,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       const filled = section.fields.filter(f => data[f] && data[f].length > 0).length;
       return filled >= 1; 
   };
+
+  const inputClass = "w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all font-bold text-[#3D405B]";
 
   return (
     <div className="space-y-6">
@@ -156,15 +159,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Nom</label>
-                                        <input name="lastName" value={data.lastName || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all font-bold text-[#3D405B]" placeholder="Nom de famille" />
+                                        <DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Prénom</label>
-                                        <input name="firstName" value={data.firstName || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all font-bold text-[#3D405B]" placeholder="Prénom" />
+                                        <DebouncedInput name="firstName" value={data.firstName || ''} onChange={(v) => handleFieldChange('firstName', v)} className={inputClass} placeholder="Prénom" />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Date de naissance</label>
-                                        <input type="date" name="dob" value={data.dob || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all font-bold text-[#3D405B]" />
+                                        <input type="date" name="dob" value={data.dob || ''} onChange={handleChange} className={inputClass} />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Genre</label>
@@ -175,7 +178,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     </div>
                                     <div className="md:col-span-2 space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Adresse</label>
-                                        <input name="address" value={data.address || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" placeholder="Adresse complète" />
+                                        <DebouncedInput name="address" value={data.address || ''} onChange={(v) => handleFieldChange('address', v)} className={inputClass} placeholder="Adresse complète" />
                                     </div>
                                 </div>
                             )}
@@ -184,16 +187,16 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 <div className="space-y-5">
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Noms des responsables</label>
-                                        <input name="parentNames" value={data.parentNames || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" placeholder="Mme X et M. Y" />
+                                        <DebouncedInput name="parentNames" value={data.parentNames || ''} onChange={(v) => handleFieldChange('parentNames', v)} className={inputClass} placeholder="Mme X et M. Y" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Téléphone</label>
-                                            <input name="parentPhone" type="tel" value={data.parentPhone || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" />
+                                            <DebouncedInput name="parentPhone" type="tel" value={data.parentPhone || ''} onChange={(v) => handleFieldChange('parentPhone', v)} className={inputClass} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Email</label>
-                                            <input name="parentEmail" type="email" value={data.parentEmail || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" />
+                                            <DebouncedInput name="parentEmail" type="email" value={data.parentEmail || ''} onChange={(v) => handleFieldChange('parentEmail', v)} className={inputClass} />
                                         </div>
                                     </div>
                                     
@@ -225,16 +228,16 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">École</label>
-                                            <input name="school" value={data.school || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" />
+                                            <DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Classe</label>
-                                            <input name="classLevel" value={data.classLevel || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]" />
+                                            <DebouncedInput name="classLevel" value={data.classLevel || ''} onChange={(v) => handleFieldChange('classLevel', v)} className={inputClass} />
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Dispositifs (PAI, PAP, PPS)</label>
-                                        <select name="carePlan" value={data.carePlan || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B]">
+                                        <select name="carePlan" value={data.carePlan || ''} onChange={handleChange as any} className={inputClass}>
                                             <option value="">Aucun</option>
                                             <option value="PAP">PAP (Plan d'Accompagnement Personnalisé)</option>
                                             <option value="PAI">PAI (Projet d'Accueil Individualisé)</option>
@@ -244,7 +247,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Vie Scolaire & Comportement</label>
-                                        <textarea name="schoolAttention" value={data.schoolAttention || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B] resize-none" rows={3} placeholder="Attention, relations, comportement..." />
+                                        <DebouncedTextarea name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} rows={3} placeholder="Attention, relations, comportement..." />
                                     </div>
                                 </div>
                             )}
@@ -253,11 +256,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 <div className="space-y-5">
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Pourquoi consultez-vous ?</label>
-                                        <textarea name="reason" value={data.reason || ''} onChange={handleChange} className="w-full p-4 bg-rose-50/50 rounded-xl border border-rose-100 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B] resize-none font-medium" rows={4} placeholder="Décrivez les difficultés principales..." />
+                                        <DebouncedTextarea name="reason" value={data.reason || ''} onChange={(v) => handleFieldChange('reason', v)} className="w-full p-4 bg-rose-50/50 rounded-xl border border-rose-100 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B] resize-none font-medium" rows={4} placeholder="Décrivez les difficultés principales..." />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-1">Vos attentes</label>
-                                        <textarea name="familyExpectations" value={data.familyExpectations || ''} onChange={handleChange} className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B] resize-none" rows={2} />
+                                        <DebouncedTextarea name="familyExpectations" value={data.familyExpectations || ''} onChange={(v) => handleFieldChange('familyExpectations', v)} className={inputClass} rows={2} />
                                     </div>
                                 </div>
                             )}
@@ -275,11 +278,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                  field === 'dressing' ? 'Habillage' :
                                                  field}
                                             </label>
-                                            <textarea 
+                                            <DebouncedTextarea 
                                                 name={field} 
                                                 value={data[field] as string || ''} 
-                                                onChange={handleChange} 
-                                                className="w-full p-3 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-[#3D405B] resize-none" 
+                                                onChange={(v) => handleFieldChange(field, v)} 
+                                                className={inputClass} 
                                                 rows={2} 
                                             />
                                         </div>

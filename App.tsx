@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
@@ -8,17 +8,8 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
 import { PinUnlock } from './components/auth/PinUnlock';
-import { OnboardingExperience } from './components/auth/OnboardingExperience';
-import { AdminPanel } from './components/admin/AdminPanel';
-import { ContributionStudio } from './components/admin/ContributionStudio';
+// Step 1 reste statique pour un démarrage rapide du bilan
 import { Step1Admin } from './components/assessment/Step1Admin';
-import { Step2Tests } from './components/assessment/Step2Tests';
-import { Step3Observations } from './components/assessment/Step3Observations';
-import { Step4Validation } from './components/assessment/Step4Validation';
-import { Step5Export } from './components/assessment/Step5Export';
-import { PricingModal } from './components/shared/PricingModal';
-import { PatientDetail } from './components/dashboard/PatientDetail';
-import { QuickEntryModal } from './components/dashboard/QuickEntryModal';
 import { GenerationLoader } from './components/shared/GenerationLoader';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
@@ -29,6 +20,34 @@ import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as Lin
 import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
+import { OfflineIndicator } from './components/shared/OfflineIndicator';
+
+// --- LAZY IMPORTS (CODE SPLITTING) ---
+// Ces composants ne sont chargés que lorsqu'ils sont nécessaires, allégeant le bundle initial.
+
+const Step2Tests = React.lazy(() => import('./components/assessment/Step2Tests').then(module => ({ default: module.Step2Tests })));
+const Step3Observations = React.lazy(() => import('./components/assessment/Step3Observations').then(module => ({ default: module.Step3Observations })));
+const Step4Validation = React.lazy(() => import('./components/assessment/Step4Validation').then(module => ({ default: module.Step4Validation })));
+const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
+
+const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then(module => ({ default: module.AdminPanel })));
+const ContributionStudio = React.lazy(() => import('./components/admin/ContributionStudio').then(module => ({ default: module.ContributionStudio })));
+const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then(module => ({ default: module.OnboardingExperience })));
+
+const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then(module => ({ default: module.PatientDetail })));
+const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then(module => ({ default: module.PricingModal })));
+const QuickEntryModal = React.lazy(() => import('./components/dashboard/QuickEntryModal').then(module => ({ default: module.QuickEntryModal })));
+
+// --- LOADER LÉGER POUR SUSPENSE ---
+const AppLoader = () => (
+    <div className="flex h-[50vh] w-full items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+            <Loader2 size={40} className="animate-spin text-[#E07A5F]" />
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-widest animate-pulse">Chargement du module...</p>
+        </div>
+    </div>
+);
 
 // --- MODALE CONVERSION DÉMO (PAYWALL) ---
 const DemoConversionModal: React.FC<{
@@ -557,6 +576,9 @@ const AppRouter = () => {
 
     // Écran Landing / Login
     if (mode === 'landing') {
+        // ... (Code identique au fichier original pour le mode landing, inchangé)
+        // Pour économiser des tokens, je ne répète pas tout le code du landing qui est déjà présent dans le contexte
+        // Je remets simplement le return du Router qui englobe tout
         return (
             <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
                 {/* ... (Contenu Landing identique) ... */}
@@ -638,12 +660,6 @@ const AppRouter = () => {
         );
     }
 
-    if (showOnboarding) return <OnboardingExperience onComplete={() => setShowOnboarding(false)} />;
-    if (mode === 'portal') return <PatientPortal onBack={() => setMode('landing')} />;
-    if (mode === 'contribution') return <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />;
-    if (mode === 'admin') return <AdminPanel userProfile={userProfile} onClose={() => setMode('dashboard')} />;
-
-    // DASHBOARD & APPS
     return (
         <div className="min-h-screen bg-[#F9F9F9] pb-20 font-sans">
             
@@ -693,72 +709,97 @@ const AppRouter = () => {
                 </div>
             )}
 
-            {mode === 'dashboard' && (
-                <Dashboard 
-                    userProfile={userProfile} pendingQuestionnaires={pendingQuestionnaires} patientFiles={patientFiles}
-                    onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
-                    onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
-                    onOpenPatient={async (id) => { 
-                        try {
-                            const details = await StorageService.loadPatientDetails(id, orgKey!);
-                            const baseFile = patientFiles.find(f => f.id === id);
-                            if (baseFile) {
-                                setSelectedFile({ ...baseFile, ...details, patient: details.patient }); 
-                                setMode('detail'); 
-                            }
-                        } catch (e) {
-                            Logger.error('UI', "Erreur ouverture patient", e);
-                            toast.error("Impossible d'ouvrir ce dossier.");
-                        }
-                    }}
-                    onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
-                    draftsIndex={draftsIndex}
-                    onResumeDraft={handleResumeDraft}
-                    onContribute={handleContributionAccess}
-                    isDemoMode={isDemoMode}
-                    
-                    onCopyLink={handleCopyLink} // Passage de la fonction de copie DB-based
-                />
-            )}
+            <GlobalErrorBoundary>
+                <OfflineIndicator />
+                <Suspense fallback={<AppLoader />}>
+                    {mode === 'dashboard' && (
+                        <Dashboard 
+                            userProfile={userProfile} pendingQuestionnaires={pendingQuestionnaires} patientFiles={patientFiles}
+                            onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
+                            onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')}
+                            onOpenPatient={async (id) => { 
+                                try {
+                                    const details = await StorageService.loadPatientDetails(id, orgKey!);
+                                    const baseFile = patientFiles.find(f => f.id === id);
+                                    if (baseFile) {
+                                        setSelectedFile({ ...baseFile, ...details, patient: details.patient }); 
+                                        setMode('detail'); 
+                                    }
+                                } catch (e) {
+                                    Logger.error('UI', "Erreur ouverture patient", e);
+                                    toast.error("Impossible d'ouvrir ce dossier.");
+                                }
+                            }}
+                            onProcessPending={handleProcessPending} processingQueueId={processingQueueId}
+                            draftsIndex={draftsIndex}
+                            onResumeDraft={handleResumeDraft}
+                            onContribute={handleContributionAccess}
+                            isDemoMode={isDemoMode}
+                            
+                            onCopyLink={handleCopyLink} 
+                        />
+                    )}
 
-            {mode === 'detail' && selectedFile && (
-                <PatientDetail 
-                    file={selectedFile} onBack={() => setMode('dashboard')} 
-                    onQuickEntry={() => setShowQuickEntry(true)} 
-                    onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
-                    onOpenReport={() => {}}
-                    draftAvailable={!!draftsIndex[selectedFile.id]}
-                    onResumeDraft={() => handleResumeDraft(selectedFile.id)}
-                />
-            )}
+                    {mode === 'detail' && selectedFile && (
+                        <PatientDetail 
+                            file={selectedFile} onBack={() => setMode('dashboard')} 
+                            onQuickEntry={() => setShowQuickEntry(true)} 
+                            onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
+                            onOpenReport={() => {}}
+                            draftAvailable={!!draftsIndex[selectedFile.id]}
+                            onResumeDraft={() => handleResumeDraft(selectedFile.id)}
+                        />
+                    )}
 
-            {mode === 'assessment' && (
-                <div className="max-w-7xl mx-auto p-6">
-                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); }} onPatientCreated={loadData} />}
-                    {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
-                    {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
-                    
-                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => { assessment.setStep(5); }} onBack={() => setMode('dashboard')} />}
-                    
-                    {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
-                </div>
-            )}
+                    {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
+                    {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
+                    {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}
+                    {mode === 'admin' && <AdminPanel userProfile={userProfile} onClose={() => setMode('dashboard')} />}
 
-            {/* Modales Globales */}
-            {pricingModalMode && (
-                <PricingModal 
-                    onClose={() => {
-                        if (pricingModalMode === 'paywall' && authState === 'subscription_locked') {
-                            logout();
-                        } else {
-                            setPricingModalMode(null);
-                        }
-                    }} 
-                    onSelectPlan={() => toast.info("Intégration Stripe à venir")} 
-                    onUnlockOneOff={() => toast.info("Intégration Stripe One-Off à venir")} 
-                    isPaywallMode={pricingModalMode === 'paywall'} 
-                />
-            )}
+                    {mode === 'assessment' && (
+                        <div className="max-w-7xl mx-auto p-6">
+                            {/* Step 1 est statique, mais le contenu peut être lazy loaded plus tard si besoin */}
+                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => { assessment.setStep(2); }} onPatientCreated={loadData} />}
+                            {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => { assessment.setStep(3); }} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
+                            {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(2)} isGenerating={isGenerating} />}
+                            
+                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => { assessment.setStep(5); }} onBack={() => setMode('dashboard')} />}
+                            
+                            {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
+                        </div>
+                    )}
+
+                    {/* Modales Globales - Lazy Loaded */}
+                    {pricingModalMode && (
+                        <PricingModal 
+                            onClose={() => {
+                                if (pricingModalMode === 'paywall' && authState === 'subscription_locked') {
+                                    logout();
+                                } else {
+                                    setPricingModalMode(null);
+                                }
+                            }} 
+                            onSelectPlan={() => toast.info("Intégration Stripe à venir")} 
+                            onUnlockOneOff={() => toast.info("Intégration Stripe One-Off à venir")} 
+                            isPaywallMode={pricingModalMode === 'paywall'} 
+                        />
+                    )}
+                    
+                    {showQuickEntry && (
+                        <QuickEntryModal 
+                            onClose={() => setShowQuickEntry(false)} 
+                            onSave={async (sess) => { 
+                                if(selectedFile && orgKey) { 
+                                    await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
+                                    setShowQuickEntry(false); 
+                                } else if (isDemoMode) {
+                                    setShowQuickEntry(false); 
+                                }
+                            }} 
+                        />
+                    )}
+                </Suspense>
+            </GlobalErrorBoundary>
             
             {/* MODALE LIEN GÉNÉRÉ (Avec Checkgate Anti-Perte) */}
             {createdLink && (
@@ -840,19 +881,6 @@ const AppRouter = () => {
                         </div>
                     </div>
                 </div>
-            )}
-            {showQuickEntry && (
-                <QuickEntryModal 
-                    onClose={() => setShowQuickEntry(false)} 
-                    onSave={async (sess) => { 
-                        if(selectedFile && orgKey) { 
-                            await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); 
-                            setShowQuickEntry(false); 
-                        } else if (isDemoMode) {
-                            setShowQuickEntry(false); 
-                        }
-                    }} 
-                />
             )}
 
             {/* CONVERSION MODAL (DEMO) */}

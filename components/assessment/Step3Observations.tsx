@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Observations, TestData } from '../../types';
+import { DebouncedTextarea } from '../shared/DebouncedControls';
 import { Sparkles, Mic, History, Palette, Move, Zap, Activity, ArrowRight, Lightbulb } from 'lucide-react';
 
 interface Props {
@@ -21,10 +22,12 @@ const SUGGESTED_TAGS: Record<string, string[]> = {
     spatial: ["Perdu dans la page", "Sauts de lignes", "Confusion gauche/droite"]
 };
 
-const ObsSection = ({ title, icon: Icon, name, value, onChange, tags }: any) => {
+// --- COMPOSANT MÉMOISÉ POUR ÉVITER LES RE-RENDERS ---
+// Seule la modification de 'value' (le texte) ou des props statiques déclenche un rendu.
+const ObsSection = React.memo(({ title, icon: Icon, name, value, onChange, tags }: any) => {
     const addTag = (tag: string) => {
         const newValue = value ? `${value} ${tag}.` : `${tag}.`;
-        onChange({ target: { name, value: newValue } });
+        onChange(name, newValue);
     };
 
     return (
@@ -52,19 +55,19 @@ const ObsSection = ({ title, icon: Icon, name, value, onChange, tags }: any) => 
                 ))}
             </div>
 
-            <textarea 
+            <DebouncedTextarea 
                 name={name} 
                 value={value} 
-                onChange={onChange}
+                onChange={(val) => onChange(name, val)}
                 className="w-full p-4 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none h-32 resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-[#E07A5F] transition-all leading-relaxed"
                 placeholder="Décrivez vos observations..."
             />
         </div>
     );
-};
+}, (prev, next) => prev.value === next.value && prev.name === next.name); // Custom compare simple
 
 // Sidebar Assistant (Affiche les points d'alerte des tests)
-const AssistantSidebar = ({ tests }: { tests: TestData }) => {
+const AssistantSidebar = React.memo(({ tests }: { tests: TestData }) => {
     const alerts = [];
     Object.entries(tests).forEach(([testId, subtests]) => {
         Object.entries(subtests).forEach(([subId, res]) => {
@@ -128,12 +131,14 @@ const AssistantSidebar = ({ tests }: { tests: TestData }) => {
             </div>
         </div>
     );
-};
+});
 
 export const Step3Observations: React.FC<Props> = ({ obs, updateObs, tests, onNext, onBack, isGenerating }) => {
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    updateObs({ [e.target.name]: e.target.value });
-  };
+  
+  // Wrapper stable pour éviter de casser le React.memo des enfants
+  const handleSectionChange = useCallback((name: string, value: string) => {
+    updateObs({ [name]: value });
+  }, [updateObs]);
 
   return (
     <div className="max-w-6xl mx-auto pb-32 animate-in fade-in duration-500">
@@ -149,11 +154,11 @@ export const Step3Observations: React.FC<Props> = ({ obs, updateObs, tests, onNe
             
             {/* Colonne Principale (Saisie) 2/3 */}
             <div className="lg:col-span-2">
-                <ObsSection icon={History} title="Comportement & Anamnèse" name="anamnese" value={obs.anamnese} onChange={handleChange} tags={SUGGESTED_TAGS.anamnese} />
-                <ObsSection icon={Palette} title="Graphisme & Écriture" name="graphique" value={obs.graphique} onChange={handleChange} tags={SUGGESTED_TAGS.graphique} />
-                <ObsSection icon={Move} title="Motricité Globale" name="motricite" value={obs.motricite} onChange={handleChange} tags={SUGGESTED_TAGS.motricite} />
-                <ObsSection icon={Zap} title="Coordination Fine" name="coordination" value={obs.coordination} onChange={handleChange} tags={SUGGESTED_TAGS.coordination} />
-                <ObsSection icon={Activity} title="Visuo-Spatial" name="spatial" value={obs.spatial} onChange={handleChange} tags={SUGGESTED_TAGS.spatial} />
+                <ObsSection icon={History} title="Comportement & Anamnèse" name="anamnese" value={obs.anamnese} onChange={handleSectionChange} tags={SUGGESTED_TAGS.anamnese} />
+                <ObsSection icon={Palette} title="Graphisme & Écriture" name="graphique" value={obs.graphique} onChange={handleSectionChange} tags={SUGGESTED_TAGS.graphique} />
+                <ObsSection icon={Move} title="Motricité Globale" name="motricite" value={obs.motricite} onChange={handleSectionChange} tags={SUGGESTED_TAGS.motricite} />
+                <ObsSection icon={Zap} title="Coordination Fine" name="coordination" value={obs.coordination} onChange={handleSectionChange} tags={SUGGESTED_TAGS.coordination} />
+                <ObsSection icon={Activity} title="Visuo-Spatial" name="spatial" value={obs.spatial} onChange={handleSectionChange} tags={SUGGESTED_TAGS.spatial} />
             </div>
 
             {/* Colonne Latérale (Assistant) 1/3 */}

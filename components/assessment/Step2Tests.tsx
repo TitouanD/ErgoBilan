@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { TestData, ScoreResult, UserProfile, Patient } from '../../types';
 import { SubtestDef } from '../../data/testCatalog';
 import { SCALES, calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
@@ -178,8 +178,22 @@ const getInterpretation = (z: number) => {
     return { text: "Performance dans la moyenne attendue", color: "text-[#81B29A]" };
 };
 
-// --- SOUS-COMPOSANT EXPORTÉ : Smart Test Row (Accordéon) ---
-export const SubtestRowCheck: React.FC<{
+// --- SOUS-COMPOSANT EXPORTÉ ET MÉMOISÉ : Smart Test Row (Accordéon) ---
+// La clé du succès : React.memo avec comparaison stricte des valeurs
+export const SubtestRowCheck = React.memo(({
+    testId, 
+    patient,
+    subtest,
+    result,
+    onChange,
+    readOnly = false,
+    isExpanded: controlledExpanded,
+    onToggleExpand,
+    onFocus,
+    onErrorPulse,
+    hasAcceptedResponsibility = false,
+    onAcceptResponsibility
+}: {
     testId: string; 
     patient: Patient;
     subtest: SubtestDef;
@@ -192,7 +206,7 @@ export const SubtestRowCheck: React.FC<{
     onErrorPulse?: boolean;
     hasAcceptedResponsibility?: boolean;
     onAcceptResponsibility?: () => void;
-}> = ({ testId, patient, subtest, result, onChange, readOnly = false, isExpanded: controlledExpanded, onToggleExpand, onFocus, onErrorPulse, hasAcceptedResponsibility = false, onAcceptResponsibility }) => {
+}) => {
     
     const [localExpanded, setLocalExpanded] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -585,7 +599,18 @@ export const SubtestRowCheck: React.FC<{
             )}
         </>
     );
-};
+}, (prev, next) => {
+    // COMPARATEUR CUSTOM POUR MEMO
+    // On retourne TRUE si les props sont "égales" (donc on NE RE-REND PAS)
+    return (
+        prev.result === next.result && // Comparaison shallow de l'objet score (si reference change, on update)
+        prev.isExpanded === next.isExpanded &&
+        prev.onErrorPulse === next.onErrorPulse &&
+        prev.readOnly === next.readOnly &&
+        prev.subtest.id === next.subtest.id &&
+        prev.testId === next.testId
+    );
+});
 
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
   const { catalog } = useCatalog();
@@ -593,7 +618,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
   const [triggerErrorPulse, setTriggerErrorPulse] = useState(false);
 
-  const addTests = (testIds: string[]) => {
+  const addTests = useCallback((testIds: string[]) => {
     const newTests = { ...tests };
     testIds.forEach(testId => {
         if (!newTests[testId]) {
@@ -608,24 +633,28 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
         }
     });
     updateTests(newTests);
-  };
+  }, [tests, catalog, updateTests]);
 
-  const removeTest = (testId: string) => {
+  const removeTest = useCallback((testId: string) => {
     const newTests = { ...tests };
     delete newTests[testId];
     updateTests(newTests);
-  };
+  }, [tests, updateTests]);
 
-  const handleSubtestChange = (testId: string, subtestId: string, result: Partial<ScoreResult>) => {
-    const currentTest = tests[testId] || {};
-    const currentSub = currentTest[subtestId] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
-    updateTests({ 
-        [testId]: { 
-            ...currentTest, 
-            [subtestId]: { ...currentSub, ...result } 
-        } 
-    });
-  };
+  // Callback stable pour les enfants
+  const handleSubtestChange = useCallback((testId: string, subtestId: string, result: Partial<ScoreResult>) => {
+    // Note: Pour éviter une closure stale sur 'tests', on devrait utiliser la version callback de setState si updateTests le supportait,
+    // mais ici on accède à tests par prop. Comme 'tests' change à chaque update, ce callback est recréé.
+    // C'est normal. Le but de React.memo sur l'enfant est d'éviter le re-rendu des *autres* lignes.
+    
+    // Pattern d'update immuable
+    const newTests = { ...tests };
+    if(!newTests[testId]) newTests[testId] = {};
+    const currentSub = newTests[testId][subtestId] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
+    
+    newTests[testId][subtestId] = { ...currentSub, ...result };
+    updateTests(newTests);
+  }, [tests, updateTests]);
 
   const handleNext = () => {
     let hasPendingEstimations = false;
@@ -699,6 +728,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
                                         patient={patient}
                                         subtest={st}
                                         result={res}
+                                        // On passe une fonction fléchée qui capture testId et st.id, mais le SubtestRowCheck est mémoisé sur le résultat
                                         onChange={(val) => handleSubtestChange(testId, st.id, val)}
                                         isExpanded={expandedSubtestId === uniqueId}
                                         onToggleExpand={() => setExpandedSubtestId(expandedSubtestId === uniqueId ? null : uniqueId)}
