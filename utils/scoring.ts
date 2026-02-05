@@ -128,23 +128,3 @@ export const calculateFromPercentile = (p: number, scoreType: 'standard' | 'scal
     const standard = Math.round(z * scale.sd + scale.mean);
     return { standard: standard.toString(), zScore: z, percentile: p.toString() };
 };
-
-// Simulation initiale (Placeholder)
-export const estimateScores = (raw: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile') => {
-  // Ici on simule une distribution normale centrée sur 20 avec SD 8 pour l'exemple
-  // Dans le futur : Lookup Table RAW -> NS
-  const simulatedMean = 20; 
-  const simulatedSD = 8;
-  const z = parseFloat(((raw - simulatedMean) / simulatedSD).toFixed(2));
-  
-  if (scoreType === 'percentile') {
-    const p = zScoreToPercentile(z);
-    return { z, standard: p, percentile: p };
-  }
-
-  const scale = SCALES[scoreType];
-  const standard = Math.round(z * scale.sd + scale.mean);
-  const percentile = zScoreToPercentile(z);
-
-  return { z, standard, percentile };
-};

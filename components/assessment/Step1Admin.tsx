@@ -15,7 +15,7 @@ interface Props {
   data: Patient;
   updateData: (data: Partial<Patient>) => void;
   onNext: () => void;
-  onPatientCreated: () => void; // NOUVEAU: Callback pour refresh App.tsx
+  onPatientCreated: () => void;
 }
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
@@ -37,37 +37,26 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   };
 
   /**
-   * Crée l'entrée patient en DB si elle n'existe pas encore.
-   * Assure que le dossier n'est pas orphelin.
+   * Sécurité : On force une sauvegarde explicite au moment de passer à l'étape suivante.
+   * Note : L'ID est normalement déjà généré par le Context dès la saisie.
    */
-  const ensurePatientCreated = async (currentData: Patient): Promise<Patient> => {
-      // Pour créer un dossier patient, on a besoin de la clé d'organisation
-      if (!orgKey) return currentData;
+  const ensurePatientPersisted = async (): Promise<void> => {
+      if (!orgKey || !data.id) return;
 
-      let patientToSave = { ...currentData };
-      
-      // Si pas d'ID, on en crée un
-      if (!patientToSave.id) {
-          patientToSave.id = crypto.randomUUID();
-          updateData({ id: patientToSave.id });
-      }
-
-      // Création immédiate du fichier Patient avec OrgKey (Chiffré pour le cabinet)
-      const newFile: PatientFile = {
-          id: patientToSave.id!,
-          patient: patientToSave,
+      // On s'assure que le fichier patient est bien créé/mis à jour
+      const fileWrapper: PatientFile = {
+          id: data.id,
+          patient: data,
           reports: [],
           sessions: [],
           lastInteraction: new Date().toISOString(),
           archived: false
       };
 
-      await StorageService.saveFile(newFile, orgKey);
+      await StorageService.saveFile(fileWrapper, orgKey);
       
-      // IMPORTANT : On signale à l'application parente que la liste a changé
+      // Le Realtime du Dashboard devrait détecter le changement, mais on appelle le callback au cas où
       if (onPatientCreated) onPatientCreated();
-      
-      return patientToSave;
   };
 
   const handleFakeData = async (e: React.MouseEvent) => {
@@ -77,17 +66,30 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       try {
           const freshData = JSON.parse(JSON.stringify(MOCK_SESSION_DATA));
           
-          // Génération ID et Sauvegarde immédiate
-          const patientWithId = await ensurePatientCreated(freshData.patient);
-          freshData.patient = patientWithId;
-
+          // On génère un ID frais si besoin
+          if (!freshData.patient.id) freshData.patient.id = crypto.randomUUID();
+          
+          // Mise à jour du context via loadFromDraft pour écraser proprement
           loadFromDraft(freshData);
+          
+          // Trigger la sauvegarde immédiate si on a la clé
+          if (orgKey) {
+              const fileWrapper: PatientFile = {
+                  id: freshData.patient.id,
+                  patient: freshData.patient,
+                  reports: [],
+                  sessions: [],
+                  lastInteraction: new Date().toISOString(),
+                  archived: false
+              };
+              await StorageService.saveFile(fileWrapper, orgKey);
+              if (onPatientCreated) onPatientCreated();
+          }
           
           setDataLoaded(true);
           setFormKey(prev => prev + 1); 
-          
           setTimeout(() => setDataLoaded(false), 2000);
-          // Suppression du toast "Données de test injectées"
+          
       } catch (err) {
           Logger.error('SYSTEM', "ERREUR INJECTION:", err);
           toast.error("Erreur lors de l'injection des données test.");
@@ -96,11 +98,18 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
 
   const handleNextStep = async () => {
       try {
-          await ensurePatientCreated(data);
+          // Validation basique
+          if (!data.lastName || !data.firstName) {
+              toast.error("Le nom et le prénom sont obligatoires.");
+              return;
+          }
+          
+          await ensurePatientPersisted();
           onNext();
       } catch (e) {
-          Logger.error('DB', "Erreur création patient:", e);
-          toast.error("Impossible de créer le dossier patient. Vérifiez votre connexion.");
+          Logger.error('DB', "Erreur sauvegarde patient:", e);
+          // On ne bloque pas la navigation si erreur réseau, le draft local/session existe
+          onNext();
       }
   };
 
@@ -120,7 +129,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
                     className={`relative z-50 cursor-pointer px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border transition-all active:scale-95 shadow-md ${dataLoaded ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200'}`}
                 >
                     {dataLoaded ? <CheckCircle2 size={14}/> : <Database size={14} />} 
-                    {dataLoaded ? 'Données Injectées' : 'FAKE DATA (Mayrick)'}
+                    {dataLoaded ? 'Données Injectées' : 'FAKE DATA'}
                 </button>
             )}
             

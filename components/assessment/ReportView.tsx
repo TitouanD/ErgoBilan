@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
 import { GaussianChart } from '../shared/GaussianChart';
 import { SCALES } from '../../utils/scoring';
-import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move } from 'lucide-react';
+import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move, Home, Star, Sparkles } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
@@ -52,15 +52,13 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
   const getSection = (id: string) => sections.find(s => s.id === id);
 
   // --- STATE DE MISE EN PAGE (PAGINATION DYNAMIQUE) ---
-  // On définit quelles sections sont sur quelle page.
-  // 'annexes' est un ID virtuel pour le bloc de graphiques.
   const [pages, setPages] = useState<string[][]>([
       ['mandat_ref', 'mandat_eval', 'profil'], // Page 1
       ['diagnostic', 'objectifs', 'recommandations'], // Page 2
       ['annexes'] // Page 3
   ]);
 
-  // Fonction de déplacement (Item 3)
+  // Fonction de déplacement
   const moveSection = (sectionId: string, fromPageIdx: number, direction: 'up' | 'down' | 'next' | 'prev') => {
       const newPages = [...pages.map(p => [...p])]; // Deep copy
       const page = newPages[fromPageIdx];
@@ -69,32 +67,24 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       if (sectionIdx === -1) return;
 
       if (direction === 'up' && sectionIdx > 0) {
-          // Swap avec l'élément du dessus
           [page[sectionIdx], page[sectionIdx - 1]] = [page[sectionIdx - 1], page[sectionIdx]];
       } 
       else if (direction === 'down' && sectionIdx < page.length - 1) {
-          // Swap avec l'élément du dessous
           [page[sectionIdx], page[sectionIdx + 1]] = [page[sectionIdx + 1], page[sectionIdx]];
       }
       else if (direction === 'next') {
-          // Déplacer vers la page suivante
-          page.splice(sectionIdx, 1); // Retirer de la page actuelle
-          
+          page.splice(sectionIdx, 1); 
           if (fromPageIdx + 1 < newPages.length) {
-              // Ajouter au début de la page suivante
               newPages[fromPageIdx + 1].unshift(sectionId);
           } else {
-              // Créer une nouvelle page
               newPages.push([sectionId]);
           }
       }
       else if (direction === 'prev' && fromPageIdx > 0) {
-          // Déplacer vers la page précédente
           page.splice(sectionIdx, 1);
           newPages[fromPageIdx - 1].push(sectionId);
       }
 
-      // Nettoyage des pages vides (sauf la première)
       const cleanedPages = newPages.filter((p, idx) => idx === 0 || p.length > 0);
       setPages(cleanedPages);
   };
@@ -105,56 +95,86 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
   const secondaryColor = isCustom ? branding.secondaryColor : '#E07A5F';
   const fontFamily = isCustom ? branding.fontFamily : 'Merriweather';
   const corners = isCustom ? branding.cornerStyle : 'rounded';
-  const headerLayout = isCustom ? branding.headerLayout : 'row';
-  const headerAlign = isCustom ? branding.headerAlignment : 'left';
   const logoSize = isCustom ? branding.logoSize : 'medium';
+  const headerTemplate = isCustom ? (branding.headerTemplate || 'classic') : 'classic';
+  const titleStyle = isCustom ? (branding.titleStyle || 'simple') : 'simple';
+  const patientBlockStyle = isCustom ? (branding.patientBlockStyle || 'modern') : 'modern';
 
   const roundedClass = corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl';
-  const titleStyle = { fontFamily, color: primaryColor };
+  const titleStyleCss = { fontFamily, color: primaryColor };
   const accentStyle = { color: secondaryColor };
 
   // --- SOUS-COMPOSANTS ---
 
   const ControlBar = ({ sectionId, pageIdx, isFirst, isLast }: { sectionId: string, pageIdx: number, isFirst: boolean, isLast: boolean }) => {
-      // Ne pas afficher les contrôles à l'impression
-      if(!onUpdateSection) return null; // Mode lecture seule
+      if(!onUpdateSection) return null; 
 
       return (
           <div className="absolute -left-12 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity no-print z-50">
               <div className="bg-stone-800 text-white rounded-lg p-1 shadow-lg flex flex-col gap-1">
-                  <button 
-                    onClick={() => moveSection(sectionId, pageIdx, 'prev')}
-                    disabled={pageIdx === 0}
-                    className="p-1 hover:bg-stone-600 rounded disabled:opacity-30" 
-                    title="Déplacer vers la page précédente"
-                  >
-                      <ArrowUp size={14} />
-                  </button>
-                  <button 
-                    onClick={() => moveSection(sectionId, pageIdx, 'next')}
-                    className="p-1 hover:bg-stone-600 rounded disabled:opacity-30" 
-                    title="Déplacer vers la page suivante"
-                  >
-                      <ArrowDown size={14} />
-                  </button>
+                  <button onClick={() => moveSection(sectionId, pageIdx, 'prev')} disabled={pageIdx === 0} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"><ArrowUp size={14} /></button>
+                  <button onClick={() => moveSection(sectionId, pageIdx, 'next')} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"><ArrowDown size={14} /></button>
                   <div className="h-px bg-stone-600 my-0.5"></div>
-                  <button 
-                    onClick={() => moveSection(sectionId, pageIdx, 'up')}
-                    disabled={isFirst}
-                    className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"
-                    title="Monter"
-                  >
-                      <ArrowUp size={10} />
-                  </button>
-                  <button 
-                    onClick={() => moveSection(sectionId, pageIdx, 'down')}
-                    disabled={isLast}
-                    className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"
-                    title="Descendre"
-                  >
-                      <ArrowDown size={10} />
-                  </button>
+                  <button onClick={() => moveSection(sectionId, pageIdx, 'up')} disabled={isFirst} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"><ArrowUp size={10} /></button>
+                  <button onClick={() => moveSection(sectionId, pageIdx, 'down')} disabled={isLast} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"><ArrowDown size={10} /></button>
               </div>
+          </div>
+      );
+  };
+
+  const SectionTitle = ({ title }: { title: string }) => {
+      // Style Icones (Personnalisation avancée)
+      let IconComponent: any = FileText;
+      let isFilledShape = titleStyle === 'filled-shape';
+
+      if (titleStyle === 'icon-house') IconComponent = Home;
+      else if (titleStyle === 'icon-star') IconComponent = Star;
+      else if (titleStyle === 'icon-sparkle') IconComponent = Sparkles;
+      else if (titleStyle === 'filled-shape') IconComponent = Home; // Default shape icon
+
+      if (titleStyle === 'simple') {
+          return (
+              <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
+                  <div className={`p-1.5 ${roundedClass} ${isCustom ? '' : 'bg-stone-100 text-stone-500'}`} style={isCustom ? { backgroundColor: primaryColor + '15', color: primaryColor } : {}}>
+                      <FileText size={20} />
+                  </div>
+                  <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>{title}</h2>
+              </div>
+          );
+      }
+
+      if (titleStyle === 'underline') {
+          return (
+              <h2 className="text-xl font-bold uppercase tracking-wide mb-6 pb-2 border-b-4 inline-block" style={{ ...titleStyleCss, borderColor: secondaryColor }}>{title}</h2>
+          );
+      }
+
+      if (isFilledShape) {
+          return (
+              <div className="flex items-center gap-3 mb-6">
+                  {/* Forme pleine type "Maison" ou "Rond" avec icône blanche */}
+                  <div className="relative flex items-center justify-center w-10 h-10">
+                      {/* Forme de fond SVG simple */}
+                      <svg viewBox="0 0 100 100" className="absolute w-full h-full" style={{ fill: primaryColor }}>
+                          <path d="M50 0 L100 40 V100 H0 V40 Z" /> {/* Forme Maison */}
+                      </svg>
+                      <div className="relative z-10 text-white">
+                          {/* On peut varier l'icône selon le titre si on veut être intelligent, pour l'instant icône générique */}
+                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                      </div>
+                  </div>
+                  <h2 className="text-xl font-bold uppercase tracking-wide" style={{ color: secondaryColor, fontFamily }}>{title}</h2>
+              </div>
+          );
+      }
+
+      // Icon Styles (Outline)
+      return (
+          <div className="flex items-center gap-3 mb-6">
+              <div style={{ color: secondaryColor }}>
+                  <IconComponent size={24} fill="currentColor" className="opacity-80" />
+              </div>
+              <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>{title}</h2>
           </div>
       );
   };
@@ -170,7 +190,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       const [insertIndex, setInsertIndex] = useState<number | null>(null);
       const [insertType, setInsertType] = useState<'image-full' | 'image-text'>('image-full');
 
-      // Handlers (Text Edit, Images...) - Identiques à la version précédente
       const handleTextClick = (index: number, text: string) => { if (!onUpdateSection) return; setEditingIndex(index); setTempText(text); };
       const saveText = (index: number) => { if (!onUpdateSection) return; const newParagraphs = [...paragraphs]; newParagraphs[index] = tempText; onUpdateSection(section.id, { content: newParagraphs.join('\n\n') }); setEditingIndex(null); };
       const triggerFileSelect = (type: 'image-full' | 'image-text') => { setInsertType(type); fileInputRef.current?.click(); };
@@ -181,10 +200,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       return (
           <div className="mb-8 relative group">
               <ControlBar sectionId={sectionId} pageIdx={pageIdx} isFirst={indexInPage === 0} isLast={indexInPage === totalInPage - 1} />
-              
               <SectionTitle title={section.title} />
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-
               <div className="space-y-2">
                   {paragraphs.map((para, idx) => {
                       const attachmentsHere = section.attachments?.filter(a => a.positionIndex === idx) || [];
@@ -247,22 +264,13 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       );
   };
 
-  const SectionTitle = ({ title }: { title: string }) => (
-      <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
-          <div className={`p-1.5 ${roundedClass} ${isCustom ? '' : 'bg-stone-100 text-stone-500'}`} style={isCustom ? { backgroundColor: primaryColor + '15', color: primaryColor } : {}}>
-              <FileText size={20} />
-          </div>
-          <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyle}>{title}</h2>
-      </div>
-  );
-
   const AnnexesSection = ({ pageIdx, indexInPage, totalInPage }: { pageIdx: number, indexInPage: number, totalInPage: number }) => (
       <div className="relative group mb-8">
           <ControlBar sectionId="annexes" pageIdx={pageIdx} isFirst={indexInPage === 0} isLast={indexInPage === totalInPage - 1} />
           <section>
             <div className="flex items-center justify-center gap-3 mb-8">
                 <div style={accentStyle}><ClipboardList size={24} /></div>
-                <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyle}>Annexes : Résultats Chiffrés</h2>
+                <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats Chiffrés</h2>
             </div>
             <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass}`}>
                 <p className="font-bold mb-2">Guide de lecture :</p>
@@ -281,11 +289,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     return (
                         <div key={testId} className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
                             <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center" style={{ backgroundColor: isCustom ? primaryColor + '08' : undefined }}>
-                                <h3 className="font-bold text-lg" style={titleStyle}>{def.name}</h3>
+                                <h3 className="font-bold text-lg" style={titleStyleCss}>{def.name}</h3>
                                 <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">{validSubtests.length} épreuves</span>
                             </div>
                             <div className="p-6">
-                                {/* WRAPPER SCROLL HORIZONTAL (Point 3D) */}
                                 <div className="overflow-x-auto w-full">
                                     <table className="w-full border-collapse text-sm mb-8 min-w-[500px]">
                                         <thead><tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider"><th className="pb-3 w-1/3">Épreuves</th><th className="pb-3 w-1/4 text-center">Note Standard / ET</th><th className="pb-3 w-1/3 pl-6">Observations</th></tr></thead>
@@ -319,35 +326,108 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
   const HeaderRenderer = () => {
       const logoClass = logoSize === 'small' ? 'h-12' : logoSize === 'medium' ? 'h-20' : 'h-32';
-      let containerClass = "flex mb-12 border-b-2 border-stone-100 pb-8 gap-6 ";
-      if (headerLayout === 'column') {
-          containerClass += "flex-col ";
-          if (headerAlign === 'center') containerClass += "items-center text-center"; else if (headerAlign === 'right') containerClass += "items-end text-right"; else containerClass += "items-start text-left";
-      } else {
-          containerClass += "items-start ";
-          if (headerAlign === 'right') containerClass += "flex-row-reverse text-right"; else if (headerAlign === 'center') containerClass += "justify-center text-center"; else containerClass += "justify-between text-left";
-      }
-      return (
-          <header className={containerClass}>
-              <div className={`space-y-3 ${headerLayout === 'row' ? 'flex-1' : ''}`}>
-                  {isCustom && branding.logoUrl && <img src={branding.logoUrl} alt="Logo" className={`${logoClass} object-contain mb-2 ${headerLayout === 'column' && headerAlign === 'center' ? 'mx-auto' : ''}`} />}
-                  <div>
-                      <h1 className="font-bold text-3xl tracking-tight leading-tight" style={titleStyle}>{branding?.cabinetName || "Cabinet d'Ergothérapie"}</h1>
-                      {isCustom && (
-                          <div className={`text-xs text-stone-500 space-y-1 mt-2 ${headerLayout === 'row' ? 'border-l-2 border-stone-200 pl-3' : ''}`}>
-                              <p className="font-bold text-sm text-stone-700">{branding.practitionerName}</p>
-                              <p>{branding.address}</p>
-                              <div className={`flex gap-4 ${headerLayout === 'column' && headerAlign === 'center' ? 'justify-center' : headerLayout === 'column' && headerAlign === 'right' ? 'justify-end' : ''}`}>{branding.phone && <p className="flex items-center gap-1"><Phone size={10}/> {branding.phone}</p>}{branding.email && <p className="flex items-center gap-1"><Mail size={10}/> {branding.email}</p>}</div>
-                          </div>
-                      )}
-                  </div>
+      
+      // LOGIC LOGO
+      const LogoBlock = () => {
+          if (isCustom && branding?.logoUrl) {
+              return <img src={branding.logoUrl} alt="Logo" className={`${logoClass} object-contain mb-2`} />;
+          }
+          // Si pas de logo et pas de texte principal custom, on ne met rien pour éviter le vide
+          // Ou on met un placeholder si rien n'est configuré
+          return null; 
+      };
+      
+      // LOGIC TITRE CABINET (Marque)
+      const CabinetTitle = () => {
+          // Priorité : Text Custom > Cabinet Name > Fallback
+          const title = branding?.cabinetName || "Cabinet d'Ergothérapie";
+          const subtitle = branding?.brandSubtitle || "";
+
+          return (
+              <div>
+                  <h1 className="font-bold text-3xl tracking-tight leading-tight" style={titleStyleCss}>
+                      {title}
+                  </h1>
+                  {subtitle && (
+                      <p className="text-sm font-bold mt-1" style={{ color: secondaryColor }}>{subtitle}</p>
+                  )}
               </div>
-              <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass} min-w-[200px] ${headerLayout === 'column' ? 'w-full' : ''}`}>
-                  <div className={headerLayout === 'column' && headerAlign === 'center' ? 'text-center' : 'text-right'}>
+          );
+      };
+
+      // LOGIC INFOS PRATICIEN (Détails)
+      // Toujours affiché, mais plus discret
+      const PractitionerDetails = () => (
+          <div className={`text-xs space-y-1 mt-4 ${isCustom ? 'text-stone-500' : 'text-stone-600'}`}>
+              <p>{branding?.address}</p>
+              <div className="flex gap-4">
+                  {branding?.phone && <p className="flex items-center gap-1"><Phone size={10}/> {branding.phone}</p>}
+                  {branding?.email && <p className="flex items-center gap-1"><Mail size={10}/> {branding.email}</p>}
+              </div>
+          </div>
+      );
+
+      const PatientBlock = ({ align }: { align: 'left' | 'right' | 'center' }) => {
+          if (patientBlockStyle === 'minimal') {
+              return (
+                  <div className={`w-full text-${align}`}>
                       <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
                       <p className="text-sm text-stone-600 font-medium">Né(e) le {new Date(patient.dob).toLocaleDateString()}</p>
                       <p className="text-sm text-stone-500">{patient.age}</p>
+                      {patient.address && <p className="text-xs text-stone-400 mt-1">{patient.address}</p>}
                   </div>
+              );
+          }
+          // Modern (Boxed) - Default
+          return (
+              <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass} min-w-[200px] w-full text-${align}`}>
+                  <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
+                  <p className="text-sm text-stone-600 font-medium">Né(e) le {new Date(patient.dob).toLocaleDateString()}</p>
+                  <p className="text-sm text-stone-500">{patient.age}</p>
+              </div>
+          );
+      };
+
+      // MODE CORPORATE (PDF Style) : Patient Left, Praticien Right
+      if (headerTemplate === 'corporate') {
+          return (
+              <header className="flex justify-between items-start mb-12 border-b-2 border-stone-100 pb-8">
+                  <div className="w-1/3 pt-4">
+                      <PatientBlock align="left" />
+                  </div>
+                  <div className="w-1/2 text-right flex flex-col items-end">
+                      <LogoBlock />
+                      <CabinetTitle />
+                      <PractitionerDetails />
+                  </div>
+              </header>
+          );
+      }
+
+      // MODE CENTRÉ
+      if (headerTemplate === 'centered') {
+          return (
+              <header className="flex flex-col items-center text-center mb-12 border-b-2 border-stone-100 pb-8 gap-6">
+                  <LogoBlock />
+                  <CabinetTitle />
+                  <PractitionerDetails />
+                  <div className="w-2/3 border-t border-stone-100 pt-6">
+                      <PatientBlock align="center" />
+                  </div>
+              </header>
+          );
+      }
+
+      // MODE CLASSIC (Default) : Logo/Prac Left, Patient Right
+      return (
+          <header className="flex justify-between items-start mb-12 border-b-2 border-stone-100 pb-8 gap-6">
+              <div className="flex-1">
+                  <LogoBlock />
+                  <CabinetTitle />
+                  <PractitionerDetails />
+              </div>
+              <div className="w-1/3 pt-2">
+                  <PatientBlock align="right" />
               </div>
           </header>
       );
@@ -355,60 +435,50 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
   return (
     <div id="printable-report" className="w-full flex flex-col items-center gap-8 no-scrollbar">
-      
-      {/* RENDU DES PAGES A4 INDIVIDUELLES */}
       {pages.map((pageSections, pageIdx) => (
           <div key={pageIdx} className="page-a4">
-              
-              {/* Header seulement sur la première page */}
               {pageIdx === 0 && (
                   <>
                       <HeaderRenderer />
-                      <div className="mb-8 text-sm text-stone-500 italic text-right">Fait le {new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                      <h1 className="text-center font-bold text-3xl mb-12" style={titleStyle}>Rapport d’évaluation</h1>
+                      
+                      <div className="mb-8 text-sm text-stone-500 italic text-right">
+                          Fait le {new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </div>
+                      
+                      {/* TITRE DOCUMENT CONFIGURABLE */}
+                      <h1 className="text-center font-bold text-3xl mb-12" style={titleStyle === 'underline' ? { ...titleStyleCss, borderBottom: `4px solid ${secondaryColor}`, display: 'inline-block', paddingBottom: '8px' } : titleStyleCss}>
+                          {branding?.documentTitle || "Rapport d’évaluation"}
+                      </h1>
+                      
                       <div className={`text-xs text-stone-600 text-justify mb-10 leading-relaxed border-l-4 pl-4 py-2 bg-stone-50 ${roundedClass}`} style={{ borderColor: secondaryColor }}>
                           <p className="mb-2"><strong>{patient.firstName}</strong> et ses parents consentent à cette évaluation.</p>
                           <p>Ce bilan a pour objectif d'analyser les capacités fonctionnelles et de proposer des axes d'intervention adaptés.</p>
                       </div>
                   </>
               )}
-
-              {/* Rendu des sections de la page */}
               {pageSections.map((sectionId, idx) => {
-                  if (sectionId === 'annexes') {
-                      return <AnnexesSection key={sectionId} pageIdx={pageIdx} indexInPage={idx} totalInPage={pageSections.length} />;
-                  }
+                  if (sectionId === 'annexes') return (
+                      <React.Fragment key={sectionId}>
+                          <AnnexesSection pageIdx={pageIdx} indexInPage={idx} totalInPage={pageSections.length} />
+                      </React.Fragment>
+                  );
                   return (
-                      <InteractiveSection 
-                          key={sectionId} 
-                          sectionId={sectionId} 
-                          pageIdx={pageIdx} 
-                          indexInPage={idx} 
-                          totalInPage={pageSections.length} 
-                      />
+                      <React.Fragment key={sectionId}>
+                          <InteractiveSection sectionId={sectionId} pageIdx={pageIdx} indexInPage={idx} totalInPage={pageSections.length} />
+                      </React.Fragment>
                   );
               })}
-
-              {/* Footer sur chaque page (sauf si contenu trop long, le footer suit le flux, c'est l'avantage du HTML) */}
               <div className="absolute bottom-10 left-[15mm] right-[15mm] border-t border-stone-200 pt-4 flex justify-between items-end text-xs text-stone-400">
-                  <div>
-                      <p>{branding?.footerText || "Document confidentiel"}</p>
-                      <p className="mt-1">Profession inscrite au code de la santé publique.</p>
-                  </div>
+                  <div><p>{branding?.footerText || "Document confidentiel"}</p><p className="mt-1">Profession inscrite au code de la santé publique.</p></div>
                   {branding?.showPageNumbers && <div className="font-mono">Page {pageIdx + 1}/{pages.length}</div>}
               </div>
           </div>
       ))}
-
-      {/* Zone Vide pour permettre l'ajout d'une nouvelle page manuellement si besoin */}
       {onUpdateSection && (
           <div className="no-print pb-20">
-              <button onClick={() => setPages([...pages, []])} className="flex items-center gap-2 px-6 py-3 bg-stone-200 text-stone-500 hover:bg-stone-300 hover:text-stone-700 rounded-xl font-bold uppercase text-xs tracking-wider transition-colors">
-                  <Plus size={16} /> Ajouter une page vide
-              </button>
+              <button onClick={() => setPages([...pages, []])} className="flex items-center gap-2 px-6 py-3 bg-stone-200 text-stone-500 hover:bg-stone-300 hover:text-stone-700 rounded-xl font-bold uppercase text-xs tracking-wider transition-colors"><Plus size={16} /> Ajouter une page vide</button>
           </div>
       )}
-
     </div>
   );
 };

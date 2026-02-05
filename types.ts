@@ -1,12 +1,12 @@
 
-// ... (Autres interfaces inchangées : Sibling, SharedDocument, BrandingConfig...)
-
 export interface Sibling {
   firstName: string;
   age: string;
   relation: string;
   livesWithChild: boolean;
 }
+
+// ... (Autres interfaces inchangées : Sibling, SharedDocument...)
 
 export interface Organization {
   id: string;
@@ -99,11 +99,22 @@ export interface BrandingConfig {
     primaryColor: string;
     secondaryColor: string;
     fontFamily: 'Merriweather' | 'Quicksand' | 'Roboto' | 'Playfair Display' | 'Open Sans' | 'Lato';
+    
+    // NOUVEAU : Templating avancé
+    headerTemplate: 'classic' | 'corporate' | 'centered' | 'minimal';
+    titleStyle: 'simple' | 'underline' | 'icon-house' | 'icon-star' | 'icon-sparkle' | 'filled-shape';
+    
+    // Legacy Layout (gardé pour compatibilité mais surchargé par headerTemplate)
     headerLayout: 'row' | 'column'; 
     headerAlignment: 'left' | 'center' | 'right'; 
+    
     logoSize: 'small' | 'medium' | 'large'; 
     cornerStyle: 'rounded' | 'sharp' | 'soft';
-    cabinetName: string;
+    
+    // Données Contenu (Source de vérité)
+    cabinetName: string; // Titre Principal (ex: Pauline Méloni)
+    brandSubtitle?: string; // Sous-titre (ex: Ergothérapeute D.E)
+    
     practitionerName: string;
     address: string;
     siret?: string;
@@ -111,6 +122,10 @@ export interface BrandingConfig {
     phone?: string;
     footerText?: string;
     showPageNumbers: boolean;
+
+    // NOUVEAUX CHAMPS
+    documentTitle?: string; // ex: "Bilan d'Ergothérapie"
+    patientBlockStyle?: 'modern' | 'minimal';
 }
 
 export interface PractitionerProfile {
@@ -227,7 +242,6 @@ export interface ExtractedRow {
     // Champs Calculés/Communs
     zScore: string;
     percentile: string;
-    isTrap: boolean;
 }
 
 export interface Contribution {

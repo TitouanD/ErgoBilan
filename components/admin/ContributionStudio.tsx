@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight } from 'lucide-react';
 import { Contribution, ExtractedRow } from '../../types';
@@ -180,8 +181,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                               mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
                               sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
                               zScore: r.z_score ? String(r.z_score) : '',
-                              percentile: r.percentile ? String(r.percentile) : '',
-                              isTrap: false
+                              percentile: r.percentile ? String(r.percentile) : ''
                           };
                           flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
                       });
@@ -190,7 +190,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           }
 
           if (flatRows.length === 0) {
-              setRows([{ id: '1', subtest: 'Nouveau Sous-test', label: 'Exemple', raw: '', standard: '', zScore: '', percentile: '', isTrap: false }]);
+              setRows([{ id: '1', subtest: 'Nouveau Sous-test', label: 'Exemple', raw: '', standard: '', zScore: '', percentile: '' }]);
           } else {
               setRows(flatRows);
           }
@@ -250,7 +250,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   const handleAddRowToSubtest = (subtestName: string) => {
-      setRows(prev => [...prev, { id: Date.now().toString(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '', isTrap: false }]);
+      setRows(prev => [...prev, { id: Date.now().toString(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '' }]);
   };
 
   const handleDeleteRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));

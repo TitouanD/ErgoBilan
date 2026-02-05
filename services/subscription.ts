@@ -1,4 +1,3 @@
-
 import { supabase } from './db';
 import { UserProfile, BrandingConfig } from '../types';
 import { Logger } from '../utils/logger';
@@ -9,11 +8,16 @@ const DEFAULT_BRANDING: BrandingConfig = {
     primaryColor: '#3D405B',
     secondaryColor: '#E07A5F',
     fontFamily: 'Merriweather',
+    headerTemplate: 'classic', // Default
+    titleStyle: 'simple',      // Default
     headerLayout: 'row',
     headerAlignment: 'left',
     logoSize: 'medium',
     cornerStyle: 'rounded',
     cabinetName: "Cabinet d'Ergothérapie",
+    brandSubtitle: "",
+    documentTitle: "Bilan d'Ergothérapie",
+    patientBlockStyle: 'modern',
     practitionerName: "",
     address: "",
     siret: "",
@@ -61,10 +65,11 @@ export const SubscriptionService = {
             // Construction du profil UI
             // Note: Branding est pour l'instant statique ou local, 
             // mais on pré-remplit les infos du cabinet avec les données DB
+            const fullName = `${prac.first_name || ''} ${prac.last_name || ''}`.trim();
             const updatedBranding: BrandingConfig = {
                 ...DEFAULT_BRANDING,
-                cabinetName: prac.address_pro ? "Cabinet d'Ergothérapie" : DEFAULT_BRANDING.cabinetName,
-                practitionerName: `${prac.first_name || ''} ${prac.last_name || ''}`.trim(),
+                cabinetName: DEFAULT_BRANDING.cabinetName, // User can override this later
+                practitionerName: fullName,
                 email: prac.email,
                 phone: prac.phone_pro || '',
                 address: prac.address_pro || '',

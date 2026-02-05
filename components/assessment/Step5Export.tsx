@@ -1,9 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
-import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, Maximize2, MousePointerClick, Square, Circle, AlignLeft, AlignCenter, AlignRight, Columns, Rows } from 'lucide-react';
+import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User } from 'lucide-react';
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Props {
   patient: Patient;
@@ -16,6 +17,32 @@ interface Props {
   isPremium: boolean;
   onShowPricing: () => void;
 }
+
+// COMPOSANT LOCAL POUR ÉVITER L'ERREUR REACT #185 (Too many re-renders)
+// Il ne met à jour le parent que sur le onBlur, pas à chaque pixel de drag
+const DebouncedColorInput: React.FC<{
+    value: string;
+    onChange: (val: string) => void;
+}> = ({ value, onChange }) => {
+    const [localValue, setLocalValue] = useState(value);
+
+    // Synchro si la valeur change depuis l'extérieur (reset)
+    useEffect(() => {
+        setLocalValue(value);
+    }, [value]);
+
+    return (
+        <div className="h-10 rounded-lg border border-stone-200 relative overflow-hidden mb-1 shadow-sm group">
+            <input 
+                type="color" 
+                value={localValue} 
+                onChange={(e) => setLocalValue(e.target.value)}
+                onBlur={() => onChange(localValue)} // C'est ICI que la magie opère pour éviter le crash
+                className="absolute -top-2 -left-2 w-20 h-20 cursor-pointer"
+            />
+        </div>
+    );
+};
 
 const BrandingEditor: React.FC<{
     branding: BrandingConfig;
@@ -60,48 +87,104 @@ const BrandingEditor: React.FC<{
                 {branding.isEnabled && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-top-2">
                         
-                        {/* --- EN-TÊTE : CONFIGURATION --- */}
+                        {/* --- TITRE DOCUMENT --- */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><FileType size={14}/> Titre du Document</label>
+                            <input 
+                                value={branding.documentTitle || "Bilan d'Ergothérapie"}
+                                onChange={(e) => onUpdate({ ...branding, documentTitle: e.target.value })}
+                                placeholder="Bilan d'Ergothérapie"
+                                className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B] font-bold"
+                            />
+                        </div>
+
+                        <div className="w-full h-px bg-stone-100"></div>
+
+                        {/* --- EN-TÊTE : LAYOUT SELECTOR --- */}
                         <div>
                             <div className="flex items-center justify-between mb-3">
                                 <label className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2"><Layout size={14}/> Structure En-tête</label>
                             </div>
                             
-                            <div className="flex gap-2 p-1 bg-stone-100 rounded-lg mb-4">
+                            <div className="grid grid-cols-2 gap-3 mb-4">
                                 <button 
-                                    onClick={() => onUpdate({...branding, headerLayout: 'row'})}
-                                    className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-2 transition-all ${branding.headerLayout === 'row' ? 'bg-white shadow-sm text-[#3D405B]' : 'text-stone-400'}`}
+                                    onClick={() => onUpdate({...branding, headerTemplate: 'classic', headerLayout: 'row', headerAlignment: 'left'})}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
-                                    <Columns size={12}/> Classique (Ligne)
+                                    <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center gap-1">
+                                        <div className="w-4 h-4 bg-stone-200 rounded-sm"></div>
+                                        <div className="w-full h-2 bg-stone-100 rounded-sm"></div>
+                                    </div>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'classic' ? 'text-[#E07A5F]' : 'text-stone-500'}`}>Classique</span>
                                 </button>
-                                <button 
-                                    onClick={() => onUpdate({...branding, headerLayout: 'column'})}
-                                    className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-2 transition-all ${branding.headerLayout === 'column' ? 'bg-white shadow-sm text-[#3D405B]' : 'text-stone-400'}`}
-                                >
-                                    <Rows size={12}/> Moderne (Empilé)
-                                </button>
-                            </div>
 
-                            <div className="flex gap-2">
                                 <button 
-                                    onClick={() => onUpdate({...branding, headerAlignment: 'left'})}
-                                    className={`flex-1 py-2 rounded-lg border flex items-center justify-center transition-all ${branding.headerAlignment === 'left' ? 'border-[#E07A5F] bg-[#E07A5F]/10 text-[#E07A5F]' : 'border-stone-200 text-stone-400 hover:bg-stone-50'}`}
+                                    onClick={() => onUpdate({...branding, headerTemplate: 'corporate', headerLayout: 'row', headerAlignment: 'right'})}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
-                                    <AlignLeft size={16} />
+                                    <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center justify-between gap-1">
+                                        <div className="w-1/2 h-2 bg-stone-100 rounded-sm"></div>
+                                        <div className="w-4 h-4 bg-stone-200 rounded-sm"></div>
+                                    </div>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'corporate' ? 'text-[#E07A5F]' : 'text-stone-500'}`}>Corporate</span>
                                 </button>
+
                                 <button 
-                                    onClick={() => onUpdate({...branding, headerAlignment: 'center'})}
-                                    className={`flex-1 py-2 rounded-lg border flex items-center justify-center transition-all ${branding.headerAlignment === 'center' ? 'border-[#E07A5F] bg-[#E07A5F]/10 text-[#E07A5F]' : 'border-stone-200 text-stone-400 hover:bg-stone-50'}`}
+                                    onClick={() => onUpdate({...branding, headerTemplate: 'centered', headerLayout: 'column', headerAlignment: 'center'})}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
-                                    <AlignCenter size={16} />
-                                </button>
-                                <button 
-                                    onClick={() => onUpdate({...branding, headerAlignment: 'right'})}
-                                    className={`flex-1 py-2 rounded-lg border flex items-center justify-center transition-all ${branding.headerAlignment === 'right' ? 'border-[#E07A5F] bg-[#E07A5F]/10 text-[#E07A5F]' : 'border-stone-200 text-stone-400 hover:bg-stone-50'}`}
-                                >
-                                    <AlignRight size={16} />
+                                    <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex flex-col items-center justify-center gap-1">
+                                        <div className="w-4 h-4 bg-stone-200 rounded-sm"></div>
+                                        <div className="w-2/3 h-1.5 bg-stone-100 rounded-sm"></div>
+                                    </div>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'centered' ? 'text-[#E07A5F]' : 'text-stone-500'}`}>Centré</span>
                                 </button>
                             </div>
                         </div>
+
+                        {/* --- STYLE TITRES --- */}
+                        <div>
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Star size={14}/> Style des Titres</label>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { id: 'simple', label: 'Simple' },
+                                    { id: 'underline', label: 'Souligné' },
+                                    { id: 'filled-shape', label: 'Formes', icon: Home },
+                                    { id: 'icon-star', label: 'Étoile', icon: Star },
+                                    { id: 'icon-sparkle', label: 'Sparkle', icon: Sparkles },
+                                ].map((style) => (
+                                    <button 
+                                        key={style.id}
+                                        onClick={() => onUpdate({...branding, titleStyle: style.id as any})}
+                                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${branding.titleStyle === style.id ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                    >
+                                        {style.icon && <style.icon size={12} />}
+                                        {style.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* --- STYLE PATIENT --- */}
+                        <div>
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><User size={14}/> Bloc Patient</label>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => onUpdate({...branding, patientBlockStyle: 'modern'})}
+                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'modern' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+                                >
+                                    Encadré (Défaut)
+                                </button>
+                                <button 
+                                    onClick={() => onUpdate({...branding, patientBlockStyle: 'minimal'})}
+                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'minimal' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+                                >
+                                    Minimaliste (Texte)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="w-full h-px bg-stone-100"></div>
 
                         {/* --- LOGO --- */}
                         <div>
@@ -150,30 +233,22 @@ const BrandingEditor: React.FC<{
 
                         <div className="w-full h-px bg-stone-100"></div>
 
-                        {/* --- COULEURS --- */}
+                        {/* --- COULEURS (FIXED WITH DEBOUNCE) --- */}
                         <div>
                             <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><PaletteIcon size={14}/> Palette</label>
                             <div className="flex gap-4">
                                 <div className="flex-1">
-                                    <div className="h-10 rounded-lg border border-stone-200 relative overflow-hidden mb-1 shadow-sm">
-                                        <input 
-                                            type="color" 
-                                            value={branding.primaryColor} 
-                                            onChange={(e) => onUpdate({ ...branding, primaryColor: e.target.value })}
-                                            className="absolute -top-2 -left-2 w-20 h-20 cursor-pointer"
-                                        />
-                                    </div>
+                                    <DebouncedColorInput 
+                                        value={branding.primaryColor}
+                                        onChange={(val) => onUpdate({ ...branding, primaryColor: val })}
+                                    />
                                     <span className="text-[10px] text-stone-500 font-mono font-bold">Titres</span>
                                 </div>
                                 <div className="flex-1">
-                                    <div className="h-10 rounded-lg border border-stone-200 relative overflow-hidden mb-1 shadow-sm">
-                                        <input 
-                                            type="color" 
-                                            value={branding.secondaryColor} 
-                                            onChange={(e) => onUpdate({ ...branding, secondaryColor: e.target.value })}
-                                            className="absolute -top-2 -left-2 w-20 h-20 cursor-pointer"
-                                        />
-                                    </div>
+                                    <DebouncedColorInput 
+                                        value={branding.secondaryColor}
+                                        onChange={(val) => onUpdate({ ...branding, secondaryColor: val })}
+                                    />
                                     <span className="text-[10px] text-stone-500 font-mono font-bold">Accents</span>
                                 </div>
                             </div>
@@ -198,49 +273,42 @@ const BrandingEditor: React.FC<{
 
                         <div className="w-full h-px bg-stone-100"></div>
 
-                        {/* --- INFOS PRATICIEN --- */}
+                        {/* --- INFOS PRATICIEN (READ-ONLY) --- */}
                         <div className="space-y-3">
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1 block flex items-center gap-2"><Home size={14}/> Coordonnées</label>
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><Home size={14}/> Coordonnées En-tête</label>
+                                <span className="text-[10px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded font-bold uppercase"><Lock size={8} className="inline mr-1"/>Sécurisé</span>
+                            </div>
                             
+                            {/* Nom Cabinet (Modifiable car cosmétique) */}
                             <input 
                                 value={branding.cabinetName}
                                 onChange={(e) => onUpdate({ ...branding, cabinetName: e.target.value })}
-                                placeholder="Nom du Cabinet"
+                                placeholder="Nom Principal (ex: Cabinet... ou Votre Nom)"
                                 className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
                             />
+                            
+                            {/* Sous-titre (Nouveau) */}
                             <input 
-                                value={branding.practitionerName}
-                                onChange={(e) => onUpdate({ ...branding, practitionerName: e.target.value })}
-                                placeholder="Nom du Praticien"
+                                value={branding.brandSubtitle || ''}
+                                onChange={(e) => onUpdate({ ...branding, brandSubtitle: e.target.value })}
+                                placeholder="Sous-titre (ex: Ergothérapeute D.E)"
                                 className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
                             />
-                            <textarea 
-                                value={branding.address}
-                                onChange={(e) => onUpdate({ ...branding, address: e.target.value })}
-                                placeholder="Adresse complète"
-                                rows={2}
-                                className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B] resize-none"
-                            />
-                            <div className="flex gap-2">
-                                <input 
-                                    value={branding.email || ''}
-                                    onChange={(e) => onUpdate({ ...branding, email: e.target.value })}
-                                    placeholder="Email"
-                                    className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
-                                />
-                                <input 
-                                    value={branding.phone || ''}
-                                    onChange={(e) => onUpdate({ ...branding, phone: e.target.value })}
-                                    placeholder="Tel"
-                                    className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
-                                />
+
+                            {/* Données Vérifiées (Read-Only) */}
+                            <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 opacity-80 select-none">
+                                <p className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-1">Détails Légaux (Auto-généré)</p>
+                                <div className="text-xs text-stone-600">
+                                    <p>{branding.address}</p>
+                                    <p>{branding.email} • {branding.phone}</p>
+                                    <p className="font-mono mt-1 text-[10px]">{branding.siret}</p>
+                                </div>
                             </div>
-                            <input 
-                                value={branding.siret || ''}
-                                onChange={(e) => onUpdate({ ...branding, siret: e.target.value })}
-                                placeholder="N° SIRET"
-                                className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] font-mono text-xs text-[#3D405B]"
-                            />
+                            
+                            <p className="text-[10px] text-stone-400 text-center italic">
+                                Pour modifier ces informations, allez dans "Mon Profil".
+                            </p>
                         </div>
 
                         {/* --- PIED DE PAGE --- */}
@@ -270,121 +338,72 @@ const BrandingEditor: React.FC<{
 };
 
 export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing }) => {
-  const [showEditor, setShowEditor] = useState(false);
+  const [showBranding, setShowBranding] = useState(false);
   const toast = useToast();
 
-  const handleDownloadPDF = () => {
-      const reportContent = document.getElementById('printable-report');
-      if (!reportContent) return;
-
-      const printWindow = window.open('', '_blank', 'width=1000,height=1200');
-      if (!printWindow) {
-          toast.error("Veuillez autoriser les popups pour générer le PDF.");
-          return;
-      }
-
-      // Styles
-      const styles = Array.from(document.styleSheets)
-        .map(styleSheet => {
-            try {
-                return Array.from(styleSheet.cssRules).map(rule => rule.cssText).join('');
-            } catch (e) {
-                return '';
-            }
-        }).join('');
-
-        const fontLinks = `
-            <link rel="preconnect" href="https://fonts.googleapis.com">
-            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Roboto:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Open+Sans:wght@400;600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
-        `;
-
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Bilan - ${patient.firstName} ${patient.lastName}</title>
-            ${fontLinks}
-            <style>
-              ${styles}
-              body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-              @page { margin: 0; size: A4; }
-              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            </style>
-          </head>
-          <body>
-            ${reportContent.outerHTML}
-            <script>
-              window.onload = function() {
-                  setTimeout(function() {
-                      window.print();
-                      window.close();
-                  }, 800);
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+  const handlePrint = () => {
+      window.print();
   };
 
-  const toggleEditor = () => {
-      if (isPremium) {
-          setShowEditor(!showEditor);
-      } else {
-          onShowPricing(); 
+  const handleOpenBranding = () => {
+      if (!isPremium) {
+          onShowPricing();
+          return;
       }
+      setShowBranding(true);
   };
 
   return (
-    <div className="min-h-screen bg-[#333333] pb-20 pt-10 relative">
-      
-      {/* Barre d'outils flottante */}
-      <div className="fixed top-24 right-8 flex flex-col gap-3 z-50 no-print animate-in slide-in-from-right duration-500">
+    <div className="max-w-5xl mx-auto pb-32 animate-in fade-in duration-500 relative">
         
-        <button onClick={toggleEditor} className={`w-14 h-14 rounded-full shadow-xl border flex items-center justify-center transition-all hover:scale-110 group tooltip relative ${isPremium ? 'bg-white text-[#3D405B] border-stone-200 hover:text-[#E07A5F] hover:border-[#E07A5F]' : 'bg-stone-100 text-stone-300 border-stone-200 cursor-pointer'}`} title="Personnaliser le thème">
-            <Palette size={24} />
-            {!isPremium && <div className="absolute -top-1 -right-1 bg-[#E07A5F] text-white rounded-full p-1 shadow-sm"><Lock size={10} /></div>}
-            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">{isPremium ? "Personnaliser le Thème" : "Personnalisation (Premium)"}</span>
-        </button>
-
-        <button onClick={handleDownloadPDF} className="w-14 h-14 bg-white text-[#3D405B] rounded-full shadow-xl border border-stone-200 flex items-center justify-center hover:text-[#E07A5F] hover:border-[#E07A5F] transition-all hover:scale-110 group tooltip" title="Télécharger en PDF">
-            <Download size={24} />
-            <span className="absolute right-16 bg-[#3D405B] text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">Télécharger PDF</span>
-        </button>
-
-        <button onClick={onValidate} className="w-14 h-14 bg-[#4a0418] text-white rounded-full shadow-xl shadow-rose-900/30 flex items-center justify-center hover:bg-emerald-600 transition-all hover:scale-110 group tooltip" title="Valider et Archiver">
-            <Check size={24} />
-            <span className="absolute right-16 bg-emerald-600 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-bold">Valider & Terminer</span>
-        </button>
-      </div>
-
-      <div className="max-w-[210mm] mx-auto mb-6 text-center space-y-2 no-print">
-        <h2 className="text-3xl font-serif font-bold text-white">Aperçu Avant Impression</h2>
-        <p className="text-stone-400 text-sm">Vérifiez la mise en page. Utilisez les flèches pour ajuster les sauts de page.</p>
-        
-        {!isPremium && (
-            <div onClick={onShowPricing} className="mt-4 mx-auto max-w-lg bg-white/10 backdrop-blur border border-white/20 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-white/20 transition-colors group">
-                <div className="flex items-center gap-3 text-white">
-                    <Crown size={20} className="text-[#F2CC8F]" />
-                    <div className="text-left"><p className="font-bold text-sm">Passer en Premium</p><p className="text-[10px] opacity-80">Supprimez le logo AutoBilan et mettez le vôtre.</p></div>
-                </div>
-                <button className="bg-[#E07A5F] text-white px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider group-hover:scale-105 transition-transform">Voir l'offre</button>
+        {/* Actions Bar (No Print) */}
+        <div className="flex justify-between items-center mb-8 border-b border-stone-200 pb-6 no-print">
+            <div>
+                <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Export & Impression</h2>
+                <p className="text-stone-500 font-medium mt-2">Personnalisez et finalisez votre document.</p>
             </div>
+            <div className="flex gap-3">
+                <button 
+                    onClick={handleOpenBranding}
+                    className="flex items-center gap-2 px-4 py-3 bg-white border border-stone-200 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all"
+                >
+                    {isPremium ? <Palette size={16} /> : <Lock size={16} />} 
+                    Personnaliser
+                </button>
+                <button 
+                    onClick={handlePrint}
+                    className="flex items-center gap-2 px-6 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"
+                >
+                    <Download size={16} /> Imprimer / PDF
+                </button>
+                <button 
+                    onClick={onValidate}
+                    className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1"
+                >
+                    <Check size={16} /> Terminer & Archiver
+                </button>
+            </div>
+        </div>
+
+        {/* Report Preview */}
+        <div className="bg-white shadow-xl shadow-stone-200/50 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full">
+            <ReportView 
+                patient={patient} 
+                sections={sections} 
+                tests={tests} 
+                branding={branding}
+                onUpdateSection={onUpdateSection}
+            />
+        </div>
+
+        {/* Branding Editor Drawer */}
+        {showBranding && (
+            <BrandingEditor 
+                branding={branding} 
+                onUpdate={onUpdateBranding} 
+                onClose={() => setShowBranding(false)} 
+            />
         )}
-      </div>
-
-      {/* Zone de l'aperçu A4 Centré */}
-      <div className="flex justify-center mb-20 overflow-visible transition-all duration-500" style={{ marginRight: showEditor ? '384px' : '0' }}>
-          <ReportView 
-              patient={patient} 
-              sections={sections} 
-              tests={tests} 
-              onUpdateSection={onUpdateSection}
-              branding={branding}
-          />
-      </div>
-
-      {showEditor && <BrandingEditor branding={branding} onUpdate={onUpdateBranding} onClose={() => setShowEditor(false)} />}
     </div>
   );
 };

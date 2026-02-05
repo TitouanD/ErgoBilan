@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
@@ -37,11 +36,16 @@ const DEFAULT_BRANDING: BrandingConfig = {
     primaryColor: '#3D405B',
     secondaryColor: '#E07A5F',
     fontFamily: 'Merriweather',
+    headerTemplate: 'classic',
+    titleStyle: 'simple',
     headerLayout: 'row',
     headerAlignment: 'left',
     logoSize: 'medium',
     cornerStyle: 'rounded',
     cabinetName: "Cabinet d'Ergothérapie",
+    brandSubtitle: "",
+    documentTitle: "Bilan d'Ergothérapie",
+    patientBlockStyle: 'modern',
     practitionerName: "",
     address: "",
     siret: "",

@@ -39,10 +39,6 @@ export const StorageService = {
         Logger.warn('DB', `Storage Service switched to DEMO MODE: ${active}`);
     },
 
-    init: async (key: CryptoKey): Promise<void> => {
-        // No-op pour Supabase pur
-    },
-
     /**
      * GESTION DES BROUILLONS (Reste chiffré avec SESSION_KEY/PIN car privé)
      */
