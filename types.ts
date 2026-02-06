@@ -6,6 +6,16 @@ export interface Sibling {
   livesWithChild: boolean;
 }
 
+export interface ParamedicalTracking {
+  id: string;
+  type: string; // 'Orthophoniste', 'Psychomotricien', 'Psychologue', 'Kiné', 'Orthoptiste', 'Autre'
+  name: string;
+  frequency: string;
+  since: string;
+  contact?: string;
+  reason?: string; // NOUVEAU : Motif du bilan (ex: "Vision haut/bas")
+}
+
 // ... (Autres interfaces inchangées : Sibling, SharedDocument...)
 
 export interface Organization {
@@ -43,7 +53,8 @@ export interface Patient {
   parentNames: string;
   parentPhone: string;
   parentEmail: string;
-  guardArrangement: string; 
+  guardMode?: 'exclusive' | 'alternate' | 'third' | 'other' | ''; // NOUVEAU : Selecteur graphique
+  guardArrangement: string; // Champ libre précisions
   siblings: Sibling[];
 
   // Scolarité
@@ -52,30 +63,58 @@ export interface Patient {
   teacher: string;
   carePlan: string; 
   avs: 'OUI' | 'NON' | 'EN_COURS' | '';
-  avsDetails: string;
+  avsHours?: string; // NOUVEAU
+  avsMissions?: string; // NOUVEAU (Chips ou texte)
+  avsDetails: string; // Legacy / Précisions
 
-  // Médical
+  // Médical (STRUCTURE MISE À JOUR)
   prescribingDoctor: string;
   medicalDiagnosis: string;
   medicalTreatments: string;
-  medicalFollowup: string;
+  medicalFollowup: string; // Gardé pour rétro-compatibilité (notes libres)
+  medicalTracking?: ParamedicalTracking[]; // NOUVEAU : Tableau structuré
 
   // Motif & Attentes
   reason: string; 
   familyExpectations: string;
+  goals?: string[]; // NOUVEAU : Liste 1-5 (COPM)
 
-  // Développement
+  // Développement (STRUCTURE MISE À JOUR)
   pregnancyBirth: string;
-  developmentMotor: string;
+  developmentMotor: string; // Gardé pour rétro-compatibilité
+  walkingAge?: string; // NOUVEAU
+  crawling?: string; // NOUVEAU : 4 pattes / Ramper
+  cleanliness?: string; // NOUVEAU
+  handDominance?: 'Droitier' | 'Gaucher' | 'Indeterminé' | 'Ambidextre' | ''; // NOUVEAU
+  
   developmentLanguage: string;
+  languageStatus?: string; // NOUVEAU (Chips)
   sleep: string;
+  sleepStatus?: string; // NOUVEAU (Chips)
   sensory: string;
 
-  // Vie Quotidienne
+  // Vie Quotidienne (STRUCTURE MISE À JOUR)
   meals: string;
-  dressing: string;
+  eatingHabits?: string; // NOUVEAU (Chips: "Seul", "Aidé", "Salit")
+  dressing: string; // Gardé pour rétro-compatibilité
+  clothingButtons?: 'acquis' | 'difficile' | 'aide_totale' | ''; // NOUVEAU
+  clothingLaces?: 'acquis' | 'difficile' | 'aide_totale' | ''; // NOUVEAU
+  clothingZippers?: 'acquis' | 'difficile' | 'aide_totale' | ''; // NOUVEAU
+  clothingSensory?: string; // Gêne vêtements
+  
   continence: string;
   timeSpace: string;
+
+  // Outils Scolaires (NOUVEAU BLOC)
+  toolScissors?: 'ok' | 'difficile' | 'non_acquis' | '';
+  toolRuler?: 'ok' | 'difficile' | 'non_acquis' | '';
+  writingPain?: 'non' | 'oui_vite' | 'oui_constante' | '';
+
+  // Comportement & Loisirs (NOUVEAU)
+  screenTime?: string;
+  hobbies?: string;
+  socialBehavior?: string;
+  emotionalRegulation?: string; // Colères, anxiété...
 
   // Vie Scolaire (Observations)
   schoolAttention: string;
@@ -85,7 +124,7 @@ export interface Patient {
 
   // Divers & Privé Praticien
   remarks: string;
-  priorities: string;
+  priorities: string; // Gardé pour rétro-compatibilité (concaténation de goals)
   interviewNotes?: string; 
 }
 

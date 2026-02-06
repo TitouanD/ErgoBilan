@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../../types';
-import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key } from 'lucide-react';
+import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key, FileText } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase } from '../../services/db';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
@@ -286,7 +286,20 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                     mode="family" 
                 />
 
-                <div className="mt-8 flex justify-end">
+                {/* NOTE: RAPPEL DOCUMENTS */}
+                <div className="mt-8 mb-6 p-5 bg-stone-50 border border-stone-200 rounded-2xl flex gap-4 items-start shadow-sm">
+                    <div className="p-2 bg-white rounded-lg text-[#3D405B] shadow-sm">
+                        <FileText size={20} />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-[#3D405B] text-sm mb-1">Documents à apporter</h4>
+                        <p className="text-stone-600 text-xs leading-relaxed">
+                            Veuillez penser à apporter <strong>l'ordonnance médicale</strong>, les <strong>bilans précédents</strong> et les <strong>cahiers scolaires</strong> lors du premier rendez-vous.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex justify-end">
                     <button 
                         onClick={handleSaveData} 
                         className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg"

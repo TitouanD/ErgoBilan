@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
@@ -264,8 +263,26 @@ const AppRouter = () => {
         try {
             const p = assessment.patient;
             const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
-            const rawQ = `Motif: ${p.reason}\nScolarité: ${p.school} ${p.classLevel}\nVie: ${p.meals} ${p.dressing}`;
+            
+            // --- CONSOLIDATION DES NOUVELLES DONNÉES STRUCTURÉES ---
+            const tracking = p.medicalTracking?.map(t => `- ${t.type} (${t.name}): ${t.frequency} depuis ${t.since}`).join('\n') || "Aucun suivi renseigné";
+            const clothing = `Boutons: ${p.clothingButtons || '?'}, Lacets: ${p.clothingLaces || '?'}, Zippers: ${p.clothingZippers || '?'}`;
+            const dev = `Marche: ${p.walkingAge || '?'}, Propreté: ${p.cleanliness || '?'}, Latéralité: ${p.handDominance || '?'}`;
+            const behavior = `Temps écran: ${p.screenTime || '?'}, Emotions: ${p.emotionalRegulation || '?'}, Social: ${p.socialBehavior || '?'}`;
+
+            const rawQ = `
+            Motif: ${p.reason}
+            Scolarité: ${p.school} ${p.classLevel} (Plan: ${p.carePlan})
+            Vie Quotidienne: ${p.meals} ${p.dressing} ${p.continence}
+            Autonomie Habillage: ${clothing}
+            Suivi Médical: ${tracking}
+            Développement: ${dev}
+            Comportement: ${behavior}
+            Attentes: ${p.familyExpectations}
+            `;
+            
             const rawObs = `Anamnèse: ${assessment.observations.anamnese}\nMotricité: ${assessment.observations.motricite}`;
+            
             const payload: GenerationPayload = {
                 safeQuestionnaire: anonymizeData(rawQ, p).text,
                 safeObservations: anonymizeData(rawObs, p).text,
@@ -328,12 +345,10 @@ const AppRouter = () => {
     // --- RENDUS ---
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     
-    // LANDING (Simplified for XML brevity - assuming original landing logic)
+    // LANDING
     if (mode === 'landing') {
-        // ... (Code identique au fichier original pour le landing) ...
         return (
             <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-                {/* ... (Contenu Landing identique) ... */}
                 <div className="absolute inset-0 bg-gradient-to-br from-[#E07A5F]/5 to-[#3D405B]/5 pointer-events-none"></div>
                 <div className="text-center space-y-8 z-10 animate-in fade-in zoom-in-95 duration-700">
                     <div className="flex justify-center">
@@ -476,19 +491,16 @@ const AppRouter = () => {
     );
 };
 
-// --- ROOT COMPONENT ---
-const App = () => {
-  return (
+const App = () => (
     <AuthProvider>
-      <ToastProvider>
         <CatalogProvider>
-          <AssessmentProvider>
-            <AppRouter />
-          </AssessmentProvider>
+            <ToastProvider>
+                <AssessmentProvider>
+                    <AppRouter />
+                </AssessmentProvider>
+            </ToastProvider>
         </CatalogProvider>
-      </ToastProvider>
     </AuthProvider>
-  );
-};
+);
 
 export default App;

@@ -117,6 +117,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       }
   };
 
+  // Check de validation sécurisé (évite le passage si le debounce n'a pas fini de commit)
+  const isFormValid = data.lastName?.trim().length > 0 && data.firstName?.trim().length > 0;
+
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
       
@@ -169,7 +172,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       <div className="flex justify-center pt-12">
         <button 
             onClick={handleNextStep}
-            disabled={!data.lastName || !data.firstName}
+            disabled={!isFormValid}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
             Suivant : Tests & Mesures

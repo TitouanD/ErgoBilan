@@ -24,11 +24,14 @@ const createEmptyPatient = (): Patient => ({
     firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
     parentNames: '', parentPhone: '', parentEmail: '', guardArrangement: '', siblings: [],
     school: '', classLevel: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
-    prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
-    reason: '', familyExpectations: '',
+    prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '', medicalTracking: [],
+    reason: '', familyExpectations: '', goals: [],
     pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
+    walkingAge: '', crawling: '', cleanliness: '', handDominance: '',
     meals: '', dressing: '', continence: '', timeSpace: '',
+    clothingButtons: '', clothingLaces: '', clothingZippers: '', clothingSensory: '',
     schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
+    screenTime: '', hobbies: '', socialBehavior: '', emotionalRegulation: '',
     remarks: '', priorities: ''
 });
 
