@@ -6,7 +6,7 @@ import { User, Lock, AlertTriangle, Database, CheckCircle2 } from 'lucide-react'
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAssessment } from '../../contexts/AssessmentContext';
-import { MOCK_SESSION_DATA } from '../../data/mockSession';
+import { DEMO_PATIENTS } from '../../data/demoData';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
@@ -64,10 +64,14 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       e.stopPropagation();
       
       try {
-          const freshData = JSON.parse(JSON.stringify(MOCK_SESSION_DATA));
+          const freshData = JSON.parse(JSON.stringify({ 
+              patient: DEMO_PATIENTS.LEO.patient, 
+              tests: DEMO_PATIENTS.LEO.tests, 
+              observations: DEMO_PATIENTS.LEO.observations 
+          }));
           
           // On génère un ID frais si besoin
-          if (!freshData.patient.id) freshData.patient.id = crypto.randomUUID();
+          if (!freshData.patient.id || freshData.patient.id === 'demo-leo') freshData.patient.id = crypto.randomUUID();
           
           // Mise à jour du context via loadFromDraft pour écraser proprement
           loadFromDraft(freshData);

@@ -1,8 +1,8 @@
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Observations, TestData } from '../../types';
 import { DebouncedTextarea } from '../shared/DebouncedControls';
-import { Sparkles, Mic, History, Palette, Move, Zap, Activity, ArrowRight, Lightbulb } from 'lucide-react';
+import { Sparkles, Mic, History, Palette, Move, Zap, Activity, ArrowRight, Lightbulb, Keyboard, X } from 'lucide-react';
 
 interface Props {
   obs: Observations;
@@ -135,14 +135,43 @@ const AssistantSidebar = React.memo(({ tests }: { tests: TestData }) => {
 
 export const Step3Observations: React.FC<Props> = ({ obs, updateObs, tests, onNext, onBack, isGenerating }) => {
   
+  const [showLazyTip, setShowLazyTip] = useState(false);
+
   // Wrapper stable pour éviter de casser le React.memo des enfants
   const handleSectionChange = useCallback((name: string, value: string) => {
     updateObs({ [name]: value });
   }, [updateObs]);
 
+  // Déclencheur éducatif une seule fois au montage
+  useEffect(() => {
+      // On montre le tip après 1 seconde
+      const timer = setTimeout(() => setShowLazyTip(true), 1000);
+      return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <div className="max-w-6xl mx-auto pb-32 animate-in fade-in duration-500">
+    <div className="max-w-6xl mx-auto pb-32 animate-in fade-in duration-500 relative">
         
+        {/* Lazy Writing Education Modal/Toast */}
+        {showLazyTip && (
+            <div className="fixed bottom-32 left-1/2 -translate-x-1/2 bg-[#3D405B] text-white p-6 rounded-[32px] shadow-2xl animate-in slide-in-from-bottom-10 flex items-start gap-5 z-[100] max-w-lg border border-white/10">
+                <div className="p-3 bg-white/10 rounded-2xl">
+                    <Keyboard size={24} className="text-[#E07A5F]" />
+                </div>
+                <div className="flex-1">
+                    <h3 className="font-serif font-bold text-lg mb-1 flex items-center gap-2">
+                        Lâchez votre clavier ! <Sparkles size={16} className="text-[#E07A5F]"/>
+                    </h3>
+                    <p className="text-sm text-stone-300 leading-relaxed">
+                        Ne rédigez pas. Notez en vrac (style télégraphique) ou utilisez la dictée vocale. L'IA transformera vos notes en prose professionnelle.
+                    </p>
+                </div>
+                <button onClick={() => setShowLazyTip(false)} className="text-white/50 hover:text-white p-2">
+                    <X size={20} />
+                </button>
+            </div>
+        )}
+
         <div className="flex justify-between items-end mb-10">
             <div>
                 <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Observations Cliniques</h2>
@@ -189,8 +218,8 @@ export const Step3Observations: React.FC<Props> = ({ obs, updateObs, tests, onNe
                         </>
                     ) : (
                         <>
-                            <Sparkles size={20} className="text-[#F2CC8F]" />
-                            <span>Continuer vers Génération</span>
+                            <span>Continuer</span>
+                            <ArrowRight size={20} />
                         </>
                     )}
                 </button>

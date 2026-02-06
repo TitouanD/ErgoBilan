@@ -71,9 +71,10 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     };
 
     /**
-     * SÉCURISATION MAXIMALE DE L'INSCRIPTION (Mode Update-Only)
-     * Cette fonction attend que le Trigger SQL ait créé le squelette du compte,
-     * puis met à jour les informations (Nom, Clés) au lieu d'insérer des doublons.
+     * SÉCURISATION MAXIMALE DE L'INSCRIPTION (Optimistic Update Loop)
+     * 1. On crée le user Auth.
+     * 2. On génère les clés locales.
+     * 3. On tente de mettre à jour la ligne 'practitioners' en boucle jusqu'à ce que le Trigger l'ait créée.
      */
     const handleFinalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -88,7 +89,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
         setIsSubmitting(true);
         setStatusMessage("Initialisation sécurisée...");
-        Logger.info('AUTH', "Starting Update-Only Registration Process");
+        Logger.info('AUTH', "Starting Robust Registration Process");
 
         try {
             let userId = '';
@@ -117,75 +118,67 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             const wrappedOrgKey = await wrapKey(orgKey, masterKey);
             const wrappedOrgKeyStr = `${wrappedOrgKey.iv}:${wrappedOrgKey.content}`;
 
-            // --- ÉTAPE 3 : ATTENTE DU TRIGGER (Server-Side Authority) ---
-            setStatusMessage("Configuration du cabinet (Trigger DB)...");
+            // --- ÉTAPE 3 : BOUCLE DE TENTATIVE DE MISE À JOUR (Profil Praticien) ---
+            setStatusMessage("Synchronisation avec la base de données...");
             
-            // On attend que la DB crée les lignes via le trigger handle_new_user (max 5s)
-            let profileReady = false;
-            for (let i = 0; i < 10; i++) {
-                const { data } = await supabase.from('practitioners').select('id').eq('id', userId).maybeSingle();
-                if (data) {
-                    profileReady = true;
-                    break;
+            let profileUpdated = false;
+            // On essaie pendant 15 secondes max (15 essais de 1s)
+            // C'est l'approche "Optimistic Update" : on essaie d'écrire sur la ligne
+            // Si elle n'existe pas encore (trigger lent), l'update renvoie 0 ligne, on réessaie.
+            for (let i = 0; i < 15; i++) {
+                const { data, error } = await supabase
+                    .from('practitioners')
+                    .update({
+                        first_name: formData.firstName,
+                        last_name: formData.lastName,
+                        phone_pro: formData.phone || '',
+                        siret: formData.siret || '',
+                        address_pro: formData.address || '',
+                        encryption_salt: salt,
+                        encryption_validator: validator
+                    })
+                    .eq('id', userId)
+                    .select(); // IMPORTANT : select() permet de savoir si une ligne a été touchée
+
+                if (error) {
+                    Logger.warn('AUTH', `Tentative Update Practitioner ${i+1}/15 échouée:`, error.message);
+                } else if (data && data.length > 0) {
+                    profileUpdated = true;
+                    Logger.info('AUTH', "Practitioner profile updated successfully.");
+                    break; // SUCCÈS !
                 }
-                await new Promise(r => setTimeout(r, 500)); // Wait 500ms
+
+                // Attente active avant retry
+                await new Promise(r => setTimeout(r, 1000));
             }
 
-            // --- ÉTAPE 4 : MISE À JOUR DES DONNÉES ---
-            setStatusMessage("Finalisation du profil...");
-
-            // A. Practitioner (Update ou Upsert safe)
-            // On utilise upsert ici : Si la ligne existe (Trigger OK), ça update. Sinon ça crée (Fallback).
-            const { error: pracError } = await supabase.from('practitioners').upsert({
-                id: userId,
-                email: formData.email,
-                first_name: formData.firstName,
-                last_name: formData.lastName,
-                phone_pro: formData.phone || '',
-                siret: formData.siret || '',
-                address_pro: formData.address || '',
-                encryption_salt: salt,
-                encryption_validator: validator
-                // Note: On ne touche pas à 'credits' ni 'is_admin', gérés par le serveur.
-            });
-            if (pracError) throw pracError;
-
-            // B. Organization Member (Update Key)
-            let memberReady = false;
-            // On attend que le membre soit créé par le trigger (lié à l'orga par défaut)
-            for (let i = 0; i < 10; i++) {
-                const { data } = await supabase.from('organization_members').select('organization_id').eq('user_id', userId).maybeSingle();
-                if (data) {
-                    memberReady = true;
-                    break;
-                }
-                await new Promise(r => setTimeout(r, 500));
+            if (!profileUpdated) {
+                throw new Error("Délai d'attente dépassé : La création du profil a pris trop de temps. Veuillez contacter le support.");
             }
 
-            if (memberReady) {
-                // Update simple : On injecte la clé dans la ligne existante créée par le trigger
-                const { error: memberError } = await supabase
+            // --- ÉTAPE 4 : BOUCLE DE TENTATIVE DE MISE À JOUR (Membre Organisation) ---
+            setStatusMessage("Configuration des clés du cabinet...");
+            
+            let memberUpdated = false;
+            for (let i = 0; i < 10; i++) {
+                const { data, error } = await supabase
                     .from('organization_members')
                     .update({ encrypted_org_key: wrappedOrgKeyStr })
-                    .eq('user_id', userId);
-                if (memberError) throw memberError;
-            } else {
-                // Fallback (Rare): Le trigger a échoué à créer l'orga/membre
-                Logger.warn('AUTH', "Trigger failed to create Org Member. Manual Fallback.");
-                const { data: newOrg } = await supabase.from('organizations').insert({ name: 'Cabinet ' + formData.lastName }).select().single();
-                if (newOrg) {
-                    await supabase.from('organization_members').insert({
-                        organization_id: newOrg.id,
-                        user_id: userId,
-                        role: 'owner',
-                        encrypted_org_key: wrappedOrgKeyStr
-                    });
+                    .eq('user_id', userId)
+                    .select();
+
+                if (data && data.length > 0) {
+                    memberUpdated = true;
+                    Logger.info('AUTH', "Organization key injected successfully.");
+                    break;
                 }
-                // Subscription fallback (Trigger creates it usually)
-                const { data: sub } = await supabase.from('subscriptions').select('id').eq('user_id', userId).maybeSingle();
-                if (!sub) {
-                    await supabase.from('subscriptions').insert({ user_id: userId, plan_id: 'free', status: 'trialing' });
-                }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            // Note: Si memberUpdated est false, c'est grave mais pas bloquant pour le login immédiat 
+            // (le refreshProfile du AuthContext gèrera le cas 'locked' ou tentera un lazy fix).
+            if (!memberUpdated) {
+                Logger.error('AUTH', "Warning: Organization Member link not updated in time.");
             }
 
             // --- SUCCÈS ---
@@ -209,7 +202,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         } catch (e: any) {
             Logger.error('AUTH', "Registration Error", e);
             let msg = e.message || "Une erreur est survenue.";
-            if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB (RLS).";
+            if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB. Vos droits ne sont pas encore actifs.";
             toast.error(msg);
         } finally {
             setIsSubmitting(false);

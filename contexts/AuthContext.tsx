@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
@@ -170,18 +171,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setPractitioner(mockPractitioner);
 
+      // CONFIGURATION BRANDING DÉMO
+      // On pré-active le branding pour que l'utilisateur voit directement le résultat "Pro"
+      const demoBranding: BrandingConfig = {
+          ...DEFAULT_BRANDING,
+          isEnabled: true,
+          cabinetName: "Cabinet d'Ergothérapie Martin",
+          brandSubtitle: "Pédiatrie & Réadaptation",
+          practitionerName: "Sophie MARTIN",
+          address: "12 Avenue de la République, 75011 Paris",
+          email: "cabinet.martin@sante.fr",
+          phone: "01 44 55 66 77",
+          siret: "800 123 456 00012",
+          // Style par défaut plus "Corporate" pour impressionner
+          headerTemplate: 'corporate',
+          primaryColor: '#264653', // Bleu Canard Profond
+          secondaryColor: '#E9C46A', // Or/Moutarde
+          fontFamily: 'Open Sans',
+          logoUrl: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png' // Puzzle Brain Icon
+      };
+
       const mockUser: UserProfile = {
           id: 'demo-practitioner',
           email: 'demo@autobilan.fr',
           credits: 99, 
-          subscriptionPlan: 'free',
+          subscriptionPlan: 'expert', // On met Expert pour débloquer toutes les features UI
           status: 'active',
           isAdmin: false,
           isTrial: true,
           trialDaysRemaining: 30,
           totalBilansGenerated: 12,
           hasAcceptedResponsibility: false,
-          branding: { ...DEFAULT_BRANDING, cabinetName: "Cabinet de Démonstration", isEnabled: true }
+          branding: demoBranding
       };
       setUserProfile(mockUser);
 

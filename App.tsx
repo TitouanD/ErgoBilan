@@ -16,12 +16,13 @@ import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
 import { anonymizeData } from './utils/anonymizer';
 import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw, FileText } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
+import { DEMO_PATIENTS } from './data/demoData';
 
 // --- LAZY IMPORTS ---
 const Step2Tests = React.lazy(() => import('./components/assessment/Step2Tests').then(module => ({ default: module.Step2Tests })));
@@ -113,12 +114,9 @@ const AppRouter = () => {
     const [generationError, setGenerationError] = useState<string | null>(null);
     const [processingQueueId, setProcessingQueueId] = useState<string | null>(null);
 
-    // ... (Initialisation, Routing Logic, loadData, Realtime Subscription inchangés) ...
-    // Note: Pour abréger, je garde la logique existante mais je me concentre sur la modification du workflow Assessment
-
     useEffect(() => { const init = async () => { const params = new URLSearchParams(window.location.search); if (params.get('q_id') && window.location.hash.includes('key=')) { Logger.info('UI', 'Redirecting to Family Portal via URL'); setMode('portal'); return; } }; init(); }, []);
     useEffect(() => { if (authState === 'unauthenticated') { setMode('landing'); setIsLoggingIn(false); } else if (authState === 'locked') { setShowAuthModal(false); setIsLoggingIn(false); } else if (authState === 'authenticated') { setMode('dashboard'); setShowAuthModal(false); setIsLoggingIn(false); } else if (authState === 'registering') { setMode('landing'); setShowAuthModal(true); setIsLoggingIn(false); } else if (authState === 'subscription_locked') { setIsLoggingIn(false); setShowAuthModal(false); setPricingModalMode('paywall'); } else if (authState === 'error') { setIsLoggingIn(false); toast.error("Problème de connexion."); } }, [authState]);
-    const loadData = useCallback(async () => { if ((sessionKey && orgKey && authState === 'authenticated') || isDemoMode) { Logger.info('DB', 'Refreshing user data...'); const files = await StorageService.loadPatientList(orgKey!); setPatientFiles(files); const draftsMap = await StorageService.getDraftsMetadata(); setDraftsIndex(draftsMap); if (practitioner && !isDemoMode) { const { data } = await supabase.from('pending_questionnaires').select('*').eq('practitioner_id', practitioner.id).order('created_at', { ascending: false }); if (data) setPendingQuestionnaires(data.map((p: any) => ({ ...p, createdAt: p.created_at, practitionerEncryptedKey: p.practitioner_encrypted_key }))); } else if (isDemoMode) { setPendingQuestionnaires([{ id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, { id: 'demo-q2', label: 'Famille DUBOIS (Reçu)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' }]); } } }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);
+    const loadData = useCallback(async () => { if ((sessionKey && orgKey && authState === 'authenticated') || isDemoMode) { Logger.info('DB', 'Refreshing user data...'); const files = await StorageService.loadPatientList(orgKey!); setPatientFiles(files); const draftsMap = await StorageService.getDraftsMetadata(); setDraftsIndex(draftsMap); if (practitioner && !isDemoMode) { const { data } = await supabase.from('pending_questionnaires').select('*').eq('practitioner_id', practitioner.id).order('created_at', { ascending: false }); if (data) setPendingQuestionnaires(data.map((p: any) => ({ ...p, createdAt: p.created_at, practitionerEncryptedKey: p.practitioner_encrypted_key }))); } else if (isDemoMode) { setPendingQuestionnaires([{ id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, { id: 'demo-leo', label: 'Famille MARTIN (Dossier complet)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' }]); } } }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);
     useEffect(() => { loadData(); }, [loadData]);
     const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => { if (!sessionKey || !orgKey || isDemoMode || authState !== 'authenticated') return; const handleRealtimeUpdate = (payload: any) => { if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current); refreshTimeoutRef.current = setTimeout(() => { loadData(); }, 1000); }; const channel = supabase.channel('dashboard-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'pending_questionnaires' }, handleRealtimeUpdate).on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, handleRealtimeUpdate).subscribe(); return () => { supabase.removeChannel(channel); if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current); }; }, [sessionKey, orgKey, authState, isDemoMode, loadData]);
@@ -126,12 +124,77 @@ const AppRouter = () => {
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
     const handleUnlock = (key: CryptoKey) => { unlockSession(key); setMode('dashboard'); };
     
-    // ... (handleGenerateLink, handleCopyLink, handleSaveAndQuit, handleResumeDraft, handleProcessPending inchangés) ...
+    // NOUVEAU : Wrapper pour démarrer la démo avec Onboarding
+    const handleStartDemo = async () => {
+        await startDemo();
+        setShowOnboarding(true);
+    };
+
     const handleGenerateLink = async () => { if (isDemoMode) { setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`); setPendingQuestionnaires(prev => [{ id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, ...prev]); toast.success("Lien sécurisé généré"); return; } if (!practitioner || !sessionKey) return; const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', practitioner.id).maybeSingle(); if (!member?.organization_id) { toast.error("Erreur critique: Organisation introuvable."); return; } const { keyString } = await generateQuestionnaireKey(); const enc = await encryptData(keyString, sessionKey); const label = `Dossier #${pendingQuestionnaires.length + 1} (${new Date().toLocaleDateString()})`; const { data, error } = await supabase.from('pending_questionnaires').insert({ practitioner_id: practitioner.id, organization_id: member.organization_id, label, status: 'pending', practitioner_encrypted_key: `${enc.iv}:${enc.content}` }).select().single(); if (error) { toast.error("Impossible de créer le lien."); return; } if (data) { setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`); setLinkCopiedConfirmed(false); setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]); toast.success("Lien sécurisé généré"); } };
     const handleCopyLink = async (q: PendingQuestionnaire) => { if (isDemoMode) { navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}#key=demo-key`); toast.success("Lien copié !"); return; } if (!sessionKey || !q.practitionerEncryptedKey) return; try { const [iv, content] = q.practitionerEncryptedKey.split(':'); const keyString = await decryptData({ iv, content }, sessionKey); await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}#key=${keyString}`); toast.success("Lien copié"); } catch (e) { toast.error("Erreur déchiffrement lien"); } };
     const handleSaveAndQuit = async () => { if (sessionKey && assessment.patient.id) { try { const draftData = { patient: assessment.patient, tests: assessment.tests, observations: assessment.observations, synthesis: assessment.synthesis, sections: assessment.sections, step: assessment.step, timestamp: new Date().toISOString() }; await StorageService.saveDraft(draftData, sessionKey); toast.success("Brouillon sauvegardé"); } catch(e) { Logger.error('DB', "Save error", e); } } assessment.resetAssessment(); setMode('dashboard'); };
     const handleResumeDraft = async (patientId?: string) => { if (!sessionKey && !isDemoMode) return; const draftContent = await StorageService.getDraft(sessionKey!, patientId); if (draftContent) { assessment.resetAssessment(); assessment.loadFromDraft(draftContent); setMode('assessment'); } else if (isDemoMode) { toast.info("Brouillons désactivés en démo."); } else { toast.error("Impossible de charger ce brouillon."); } };
-    const handleProcessPending = async (q: PendingQuestionnaire) => { if (isDemoMode) { setProcessingQueueId(q.id); setTimeout(async () => { const { MOCK_SESSION_DATA } = await import('./data/mockSession'); const newId = 'demo-patient-imported'; const newPatient = { ...MOCK_SESSION_DATA.patient, id: newId, lastName: 'DUBOIS', firstName: 'Thomas' }; setPatientFiles(prev => [{ id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() }, ...prev]); setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id)); assessment.resetAssessment(); assessment.setPatient(newPatient); setMode('assessment'); setProcessingQueueId(null); toast.success("Dossier importé"); }, 1000); return; } if (!sessionKey || !orgKey) return; setProcessingQueueId(q.id); try { const { data } = await supabase.from('pending_questionnaires').select('family_encrypted_data, practitioner_encrypted_key').eq('id', q.id).single(); if (!data?.family_encrypted_data) return; const [kIv, kContent] = data.practitioner_encrypted_key.split(':'); const keyStr = await decryptData({ iv: kIv, content: kContent }, sessionKey); const qKey = await importQuestionnaireKey(keyStr); const [dIv, dContent] = data.family_encrypted_data.split(':'); const payload = await decryptData({ iv: dIv, content: dContent }, qKey); if (payload?.patient) { const newId = crypto.randomUUID(); const newPatient = { ...payload.patient, id: newId }; const newFile: PatientFile = { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() }; await StorageService.saveFile(newFile, orgKey); const initialDraft = { patient: newPatient, tests: {}, observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' }, synthesis: { diagnosticInput: '', recommendationsInput: '' }, sections: [], step: 1, timestamp: new Date().toISOString() }; await StorageService.saveDraft(initialDraft, sessionKey); loadData(); await supabase.from('pending_questionnaires').delete().eq('id', q.id); assessment.resetAssessment(); assessment.loadFromDraft(initialDraft); setMode('assessment'); toast.success("Dossier importé"); } } catch (e) { Logger.error('CRYPTO', "Import Error", e); toast.error("Erreur importation."); } finally { setProcessingQueueId(null); } };
+    
+    // PROCESS PENDING (DEMO VS REAL)
+    const handleProcessPending = async (q: PendingQuestionnaire) => { 
+        if (isDemoMode) { 
+            setProcessingQueueId(q.id); 
+            setTimeout(async () => { 
+                // Chargement des données LEO pour la démo
+                // IMPORTANT: On utilise l'ID exact 'demo-leo' pour activer le Beacon
+                const newId = 'demo-leo'; 
+                // On utilise les données de Léo Martin pour le scénario "Wow"
+                const newPatient = { ...DEMO_PATIENTS.LEO.patient, id: newId }; 
+                const newTests = { ...DEMO_PATIENTS.LEO.tests };
+                const newObs = { ...DEMO_PATIENTS.LEO.observations };
+
+                setPatientFiles(prev => [{ id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() }, ...prev]); 
+                setPendingQuestionnaires(prev => prev.filter(i => i.id !== q.id)); 
+                
+                assessment.resetAssessment(); 
+                assessment.setPatient(newPatient); 
+                // On pré-remplit les tests et observations pour le scénario
+                assessment.setTests(newTests);
+                assessment.setObservations(newObs);
+                
+                setMode('assessment'); 
+                setProcessingQueueId(null); 
+                toast.success("Dossier importé et déchiffré"); 
+            }, 1500); 
+            return; 
+        } 
+        
+        if (!sessionKey || !orgKey) return; 
+        setProcessingQueueId(q.id); 
+        try { 
+            const { data } = await supabase.from('pending_questionnaires').select('family_encrypted_data, practitioner_encrypted_key').eq('id', q.id).single(); 
+            if (!data?.family_encrypted_data) return; 
+            const [kIv, kContent] = data.practitioner_encrypted_key.split(':'); 
+            const keyStr = await decryptData({ iv: kIv, content: kContent }, sessionKey); 
+            const qKey = await importQuestionnaireKey(keyStr); 
+            const [dIv, dContent] = data.family_encrypted_data.split(':'); 
+            const payload = await decryptData({ iv: dIv, content: dContent }, qKey); 
+            if (payload?.patient) { 
+                const newId = crypto.randomUUID(); 
+                const newPatient = { ...payload.patient, id: newId }; 
+                const newFile: PatientFile = { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() }; 
+                await StorageService.saveFile(newFile, orgKey); 
+                const initialDraft = { patient: newPatient, tests: {}, observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' }, synthesis: { diagnosticInput: '', recommendationsInput: '' }, sections: [], step: 1, timestamp: new Date().toISOString() }; 
+                await StorageService.saveDraft(initialDraft, sessionKey); 
+                loadData(); 
+                await supabase.from('pending_questionnaires').delete().eq('id', q.id); 
+                assessment.resetAssessment(); 
+                assessment.loadFromDraft(initialDraft); 
+                setMode('assessment'); 
+                toast.success("Dossier importé"); 
+            } 
+        } catch (e) { 
+            Logger.error('CRYPTO', "Import Error", e); 
+            toast.error("Erreur importation."); 
+        } finally { 
+            setProcessingQueueId(null); 
+        } 
+    };
 
     // --- MODIFICATION MAJEURE DU WORKFLOW ---
     
@@ -141,12 +204,57 @@ const AppRouter = () => {
             setShowConfirmGeneration(false);
             setIsGenerating(true);
             setTimeout(async () => {
-                const sections = [ { id: 'intro', title: 'Mandat', content: "Contenu démo...", status: 'draft', isAiGenerated: true } ] as any;
+                // Simulation d'une réponse IA riche (Markdown) mais avec LES BONS IDS
+                // IDs attendus par ReportView : mandat_ref, mandat_eval, profil, diagnostic, objectifs, recommandations
+                const sections = [ 
+                    { 
+                        id: 'mandat_ref', 
+                        title: 'Mandat de référencement', 
+                        content: "**Motif de la demande**\nL'évaluation a été sollicitée par Mme Martin et l'équipe enseignante de l'école Jules Ferry suite à des difficultés persistantes dans le domaine scolaire, notamment concernant l'écriture manuscrite et une fatigabilité importante l'après-midi.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    },
+                    { 
+                        id: 'mandat_eval', 
+                        title: "Motif de l'évaluation", 
+                        content: "**Contexte**\nLéo, 9 ans, est scolarisé en CM1. Il bénéficie actuellement d'un PAP. Le bilan vise à objectiver les difficultés graphiques et à proposer des adaptations pour la suite de la scolarité.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    },
+                    { 
+                        id: 'profil', 
+                        title: "Profil occupationnel", 
+                        content: "**Habitudes de vie**\nLéo est un enfant volontaire mais qui exprime une frustration face à ses échecs scolaires. À la maison, l'autonomie est acquise pour l'habillage mais les gestes fins (boutons, lacets) restent coûteux.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    },
+                    { 
+                        id: 'diagnostic', 
+                        title: 'Synthèse Clinique', 
+                        content: "### Analyse du profil\nL'évaluation met en évidence un **Trouble Développemental de la Coordination (TDC)** affectant de manière significative la sphère graphique.\n\n### Points clés\n- **Dysgraphie mixte** : Les scores au BHK (Vitesse à -1.2 ET et Qualité à -2.1 ET) confirment une écriture à la fois lente et coûteuse sur le plan cognitif.\n- **Fatigabilité** : Lenteur d'exécution motrice généralisée, impactant la double tâche (écouter et écrire).\n- **Impact Psychologique** : On note une anxiété de performance importante, majorant les symptômes en situation de classe.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    },
+                    { 
+                        id: 'objectifs', 
+                        title: "Projet d'Intervention", 
+                        content: "### Objectifs à court terme\n- Améliorer le confort graphique pour réduire les douleurs au poignet.\n- Mettre en place l'outil informatique (Clavier caché).\n\n### Objectifs à moyen terme\n- Restaurer l'estime de soi scolaire.\n- Autonomie complète dans la prise de cours informatisée.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    },
+                    { 
+                        id: 'recommandations', 
+                        title: 'Préconisations', 
+                        content: "### À l'école\n- **Allègement de la trace écrite** : Fournir des photocopies de cours ou permettre l'utilisation d'une tablette/ordinateur (GEVA-Sco).\n- **Tiers-temps** : À envisager pour les évaluations longues.\n\n### Suivi thérapeutique\n- Poursuite du suivi en ergothérapie axé sur :\n  - L'apprentissage du clavier caché.\n  - La gestion de la fatigue et l'ergonomie posturale.", 
+                        status: 'draft', 
+                        isAiGenerated: true 
+                    }
+                ] as any;
                 assessment.setSections(sections);
                 assessment.setStep(5); // Vers Validation
                 setIsGenerating(false);
                 toast.success("Rapport généré (Simulation)");
-            }, 2000);
+            }, 3000); // 3s pour l'effet Wow
             return;
         }
 
@@ -247,7 +355,8 @@ const AppRouter = () => {
                         </button>
                     </div>
                     <div className="mt-8 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-500">
-                        <p className="text-stone-400 text-sm">Pas encore de compte ? <button onClick={startDemo} className="font-bold text-[#3D405B] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">Explorer l'interface sans inscription</button></p>
+                        {/* UPDATE : Appel du nouveau handler handleStartDemo */}
+                        <p className="text-stone-400 text-sm">Pas encore de compte ? <button onClick={handleStartDemo} className="font-bold text-[#3D405B] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">Explorer l'interface sans inscription</button></p>
                     </div>
                 </div>
                 {showAuthModal && (
@@ -320,13 +429,13 @@ const AppRouter = () => {
                             {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => assessment.setStep(4)} onBack={() => assessment.setStep(2)} isGenerating={false} />}
                             
                             {/* Step 4 (NEW): Synthèse & Projet - C'est ici qu'on déclenche l'IA */}
-                            {assessment.step === 4 && <Step3BisDiagnostic synthesis={assessment.synthesis} updateSynthesis={assessment.updateSynthesis} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert') setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(3)} isGenerating={isGenerating} />}
+                            {assessment.step === 4 && <Step3BisDiagnostic synthesis={assessment.synthesis} updateSynthesis={assessment.updateSynthesis} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(3)} isGenerating={isGenerating} />}
                             
                             {/* Step 5 (Ex Step 4): Validation */}
-                            {assessment.step === 5 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(6)} onBack={() => setMode('dashboard')} />}
+                            {assessment.step === 5 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(6)} onBack={() => assessment.setStep(4)} />}
                             
                             {/* Step 6 (Ex Step 5): Export */}
-                            {assessment.step === 6 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} />}
+                            {assessment.step === 6 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} onBack={() => assessment.setStep(5)} />}
                         </div>
                     )}
 
@@ -343,16 +452,20 @@ const AppRouter = () => {
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] max-w-md text-center shadow-2xl">
-                        <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]"><Sparkles size={40} /></div>
-                        <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Lancer l'analyse IA ?</h3>
-                        <p className="text-stone-500 text-sm mb-4 font-medium">Cette action consommera <strong className="text-[#E07A5F]">1 crédit</strong>.</p>
+                        <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]"><FileText size={40} /></div>
+                        <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Vérification avant analyse</h3>
+                        <p className="text-stone-500 text-sm mb-4 font-medium leading-relaxed">
+                            La qualité du rapport dépend de la précision de vos observations et du diagnostic posé. Avez-vous tout relu ?
+                        </p>
                         <div className="bg-stone-50 p-3 rounded-xl mb-8 border border-stone-100 flex gap-2 text-left">
                             <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
-                            <div className="space-y-1"><p className="text-[10px] text-stone-500 leading-relaxed"><strong>Confidentialité :</strong> Les données sont anonymisées automatiquement avant l'envoi.</p><p className="text-[10px] text-stone-500 leading-relaxed"><strong>Crowdsourcing :</strong> Les scores anonymes seront ajoutés à la base communautaire pour affiner les normes.</p></div>
+                            <div className="space-y-1"><p className="text-[10px] text-stone-500 leading-relaxed"><strong>Confidentialité :</strong> Les données sont anonymisées automatiquement avant l'envoi.</p></div>
                         </div>
                         <div className="flex gap-4">
-                            <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors">Annuler</button>
-                            <button id="demo-btn-generate" onClick={handleGenerateReport} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">Confirmer</button>
+                            <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-xs uppercase tracking-wider">Retourner ajouter des détails</button>
+                            <button id="demo-btn-generate" onClick={handleGenerateReport} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">
+                                {isDemoMode ? "Générer" : "Générer (1 crédit)"}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -363,6 +476,19 @@ const AppRouter = () => {
     );
 };
 
-// ... (Root Component inchangé) ...
-const App = () => { return <ToastProvider><AuthProvider><CatalogProvider><AssessmentProvider><AppRouter /></AssessmentProvider></CatalogProvider></AuthProvider></ToastProvider>; };
+// --- ROOT COMPONENT ---
+const App = () => {
+  return (
+    <AuthProvider>
+      <ToastProvider>
+        <CatalogProvider>
+          <AssessmentProvider>
+            <AppRouter />
+          </AssessmentProvider>
+        </CatalogProvider>
+      </ToastProvider>
+    </AuthProvider>
+  );
+};
+
 export default App;

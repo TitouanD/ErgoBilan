@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
-import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, RotateCcw } from 'lucide-react';
+import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, RotateCcw, AlertCircle } from 'lucide-react';
+import { ImportAnimation } from '../shared/ImportAnimation';
 
 interface Props {
   userProfile: UserProfile;
@@ -18,7 +19,7 @@ interface Props {
   draftsIndex?: Record<string, string>; 
   onResumeDraft?: (patientId: string) => void;
   isDemoMode?: boolean; 
-  onCopyLink: (q: PendingQuestionnaire) => void; // MODIFIÉ: Nouvelle fonction de copie DB-based
+  onCopyLink: (q: PendingQuestionnaire) => void; 
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -68,7 +69,9 @@ const ReferralCard = () => {
 
 export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [activeTab, setActiveTab] = useState<TabType>(isDemoMode ? 'pending' : 'active');
+  const [showImportAnim, setShowImportAnim] = useState(false);
+  const [targetDemoQ, setTargetDemoQ] = useState<PendingQuestionnaire | null>(null);
 
   const hoursSaved = Math.round(userProfile.totalBilansGenerated * 1.5);
 
@@ -77,7 +80,6 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
     [pendingQuestionnaires, searchQuery]
   );
 
-  // Filtrage intelligent Actifs vs Archivés
   const activeFiles = useMemo(() => 
     patientFiles.filter(f => 
         !f.archived && 
@@ -94,17 +96,34 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
     [patientFiles, searchQuery]
   );
 
-  // Liste à afficher selon l'onglet
   const currentFilesList = activeTab === 'archived' ? archivedFiles : activeFiles;
 
   const handleOpenPatient = (id: string) => {
       onOpenPatient(id);
   };
 
+  const handleProcessClick = (q: PendingQuestionnaire) => {
+      if (isDemoMode) {
+          setTargetDemoQ(q);
+          setShowImportAnim(true);
+      } else {
+          if (onProcessPending) onProcessPending(q);
+      }
+  };
+
   return (
     <div className="animate-in fade-in duration-700 relative">
         
-        {/* BANDEAU STICKY (Masqué en mode démo car remplacé par le bandeau jaune global) */}
+        {/* ANIMATION IMPORT (DEMO SEULEMENT) */}
+        <ImportAnimation 
+            isOpen={showImportAnim} 
+            onComplete={() => {
+                setShowImportAnim(false);
+                if (targetDemoQ && onProcessPending) onProcessPending(targetDemoQ);
+            }} 
+        />
+
+        {/* BANDEAU STICKY */}
         {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
             <div className="bg-[#3D405B] text-white py-3 px-6 sticky top-20 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2">
                 <div className="flex items-center gap-2 text-sm">
@@ -178,44 +197,52 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                 
                 {/* VUE PENDING */}
                 {activeTab === 'pending' && filteredPending.map((q) => (
-                    <div key={q.id} className={`group bg-transparent border-2 border-dashed rounded-[24px] p-6 flex flex-col justify-between h-64 hover:bg-white transition-all ${q.status === 'completed' ? 'border-emerald-300 bg-emerald-50/50' : 'border-stone-300 hover:border-[#E07A5F]'}`}>
-                        <div className="flex justify-between items-start">
+                    <div key={q.id} className={`group bg-transparent border-2 border-dashed rounded-[24px] p-6 flex flex-col justify-between h-auto min-h-[12rem] hover:bg-white transition-all ${q.status === 'completed' ? 'border-emerald-300 bg-emerald-50/50' : 'border-stone-300 hover:border-[#E07A5F]'}`}>
+                        <div className="flex justify-between items-start mb-4">
                             <div className="bg-white p-2 rounded-lg border border-stone-100 shadow-sm text-stone-400">
                                 <Clock size={20} />
                             </div>
                             {q.status === 'completed' ? (
-                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-md uppercase flex items-center gap-1">
+                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-md uppercase flex items-center gap-1 animate-pulse">
                                     <CheckCircle2 size={12}/> Reçu
                                 </span>
                             ) : (
                                 <span className="px-3 py-1 bg-stone-100 text-stone-500 text-[10px] font-bold rounded-md uppercase">Envoyé</span>
                             )}
                         </div>
-                        <div className="text-center">
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B] mb-1 truncate px-2">{q.label}</h3>
+                        <div className="text-center mb-4">
+                            <h3 className="font-serif font-bold text-lg text-[#3D405B] mb-1 truncate px-2">{q.label}</h3>
                             <p className="text-xs text-stone-400">Créé le {new Date(q.createdAt).toLocaleDateString()}</p>
                         </div>
                         
                         {q.status === 'completed' ? (
-                            <button 
-                                onClick={() => onProcessPending && onProcessPending(q)} 
-                                disabled={processingQueueId === q.id}
-                                className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${processingQueueId === q.id ? 'bg-emerald-600 text-white cursor-wait' : 'bg-[#E07A5F] text-white hover:bg-[#d0694e] shadow-orange-200'}`}
-                            >
-                                {processingQueueId === q.id ? (
-                                    <>Sécurisation... <Loader2 size={16} className="animate-spin"/></>
-                                ) : (
-                                    <>Importer & Déchiffrer <FileText size={16}/></>
+                            <div className="mt-auto">
+                                <button 
+                                    onClick={() => handleProcessClick(q)} 
+                                    disabled={processingQueueId === q.id}
+                                    className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg relative overflow-hidden group/btn ${processingQueueId === q.id ? 'bg-emerald-600 text-white cursor-wait' : 'bg-[#E07A5F] text-white hover:bg-[#d0694e] shadow-orange-200'}`}
+                                >
+                                    <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                                    {processingQueueId === q.id ? (
+                                        <>Sécurisation... <Loader2 size={16} className="animate-spin"/></>
+                                    ) : (
+                                        <>Importer & Déchiffrer <FileText size={16}/></>
+                                    )}
+                                </button>
+                                {isDemoMode && (
+                                    <div className="text-[10px] text-center mt-2 text-[#E07A5F] font-bold flex items-center justify-center gap-1">
+                                        <Sparkles size={10} /> Scénario Démo
+                                    </div>
                                 )}
-                            </button>
+                            </div>
                         ) : (
                             <div className="mt-auto pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
-                                <span className="text-xs text-stone-400 italic">En attente...</span>
+                                <span className="text-xs text-stone-400 italic">En attente famille...</span>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onCopyLink(q); }}
                                     className="flex items-center gap-2 px-3 py-2 bg-stone-50 hover:bg-[#E07A5F] hover:text-white text-stone-500 rounded-lg text-xs font-bold transition-all"
                                 >
-                                    <Copy size={14} /> Copier le lien
+                                    <Copy size={14} /> <span className="hidden sm:inline">Lien</span>
                                 </button>
                             </div>
                         )}
@@ -224,7 +251,6 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
 
                 {/* VUE ACTIVE & ARCHIVED */}
                 {(activeTab === 'active' || activeTab === 'archived') && currentFilesList.map((file) => {
-                    // Check dans l'index si un brouillon existe pour ce patient
                     const draftDate = draftsIndex[file.id];
                     const hasDraft = !!draftDate;
                     
@@ -255,7 +281,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                                 </div>
                             </div>
                             
-                            {/* BOUTON DRAFT (Si actif et non archivé) */}
+                            {/* BOUTON DRAFT */}
                             {hasDraft && !file.archived ? (
                                 <div className="mt-4">
                                     <button 
@@ -286,6 +312,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                         </div>
                         <h3 className="font-bold text-stone-500">Aucun résultat</h3>
                         {activeTab === 'active' && <p className="text-xs text-stone-400 mt-2">Créez un nouveau dossier pour commencer.</p>}
+                        {activeTab === 'pending' && isDemoMode && <p className="text-xs text-stone-400 mt-2">Cliquez sur "Nouveau lien Famille" pour simuler un envoi.</p>}
                     </div>
                 )}
             </div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
-import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User } from 'lucide-react';
+import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User, ArrowLeft, Brush } from 'lucide-react';
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,17 +16,16 @@ interface Props {
   onUpdateBranding: (newBranding: BrandingConfig) => void;
   isPremium: boolean;
   onShowPricing: () => void;
+  onBack: () => void; // NOUVEAU
 }
 
 // COMPOSANT LOCAL POUR ÉVITER L'ERREUR REACT #185 (Too many re-renders)
-// Il ne met à jour le parent que sur le onBlur, pas à chaque pixel de drag
 const DebouncedColorInput: React.FC<{
     value: string;
     onChange: (val: string) => void;
 }> = ({ value, onChange }) => {
     const [localValue, setLocalValue] = useState(value);
 
-    // Synchro si la valeur change depuis l'extérieur (reset)
     useEffect(() => {
         setLocalValue(value);
     }, [value]);
@@ -37,9 +36,64 @@ const DebouncedColorInput: React.FC<{
                 type="color" 
                 value={localValue} 
                 onChange={(e) => setLocalValue(e.target.value)}
-                onBlur={() => onChange(localValue)} // C'est ICI que la magie opère pour éviter le crash
+                onBlur={() => onChange(localValue)} 
                 className="absolute -top-2 -left-2 w-20 h-20 cursor-pointer"
             />
+        </div>
+    );
+};
+
+// --- BARRE D'OUTILS STANDARDISÉE ---
+const ReportToolbar: React.FC<{ 
+    currentBranding: BrandingConfig, 
+    onApply: (b: BrandingConfig) => void,
+    onOpenEditor: () => void,
+    isPremium: boolean
+}> = ({ currentBranding, onApply, onOpenEditor, isPremium }) => {
+    
+    const PRESETS = [
+        { name: "Moderne", primary: "#264653", secondary: "#E9C46A", font: "Open Sans", template: "corporate" },
+        { name: "Douceur", primary: "#81B29A", secondary: "#F2CC8F", font: "Quicksand", template: "centered" },
+        { name: "Sérieux", primary: "#1D3557", secondary: "#457B9D", font: "Roboto", template: "classic" }
+    ];
+
+    return (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-700 bg-white rounded-full p-2 pl-6 shadow-2xl border border-stone-100 flex items-center gap-4 print:hidden">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#3D405B]">
+                <Palette size={16} className="text-[#E07A5F]" />
+                <span className="hidden md:inline">Styles Rapides :</span>
+            </div>
+            
+            <div className="flex gap-2">
+                {PRESETS.map((preset, idx) => (
+                    <button
+                        key={idx}
+                        onClick={() => {
+                            if (!isPremium) { onOpenEditor(); return; } // Trigger pricing via editor flow
+                            onApply({
+                                ...currentBranding,
+                                isEnabled: true, // Auto-enable
+                                primaryColor: preset.primary,
+                                secondaryColor: preset.secondary,
+                                fontFamily: preset.font as any,
+                                headerTemplate: preset.template as any
+                            })
+                        }}
+                        className="w-8 h-8 rounded-full border-2 border-white shadow-md hover:scale-110 transition-transform relative overflow-hidden group"
+                        style={{ backgroundColor: preset.primary }}
+                        title={preset.name}
+                    >
+                        <div className="absolute bottom-0 right-0 w-4 h-4 rounded-tl-full" style={{ backgroundColor: preset.secondary }}></div>
+                        {!isPremium && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><Lock size={10} className="text-white"/></div>}
+                    </button>
+                ))}
+            </div>
+            
+            <div className="h-6 w-px bg-stone-200 mx-2"></div>
+            
+            <button onClick={onOpenEditor} className="bg-[#3D405B] text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-[#2c2e42] transition-colors flex items-center gap-2">
+                <Brush size={12} /> <span className="hidden sm:inline">Éditeur Complet</span>
+            </button>
         </div>
     );
 };
@@ -63,7 +117,7 @@ const BrandingEditor: React.FC<{
     };
 
     return (
-        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-[60] animate-in slide-in-from-right duration-300 flex flex-col no-print border-l border-stone-200">
+        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-[150] animate-in slide-in-from-right duration-300 flex flex-col no-print border-l border-stone-200">
             <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
                 <h3 className="font-serif font-bold text-xl text-[#3D405B] flex items-center gap-2">
                     <Palette size={24} className="text-[#E07A5F]" /> Studio Design
@@ -337,8 +391,9 @@ const BrandingEditor: React.FC<{
     );
 };
 
-export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing }) => {
+export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack }) => {
   const [showBranding, setShowBranding] = useState(false);
+  const { isDemoMode } = useAuth(); // Hook Auth
   const toast = useToast();
 
   const handlePrint = () => {
@@ -356,20 +411,30 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
   return (
     <div className="max-w-5xl mx-auto pb-32 animate-in fade-in duration-500 relative">
         
+        {/* BARRE D'OUTILS STANDARDISÉE */}
+        <ReportToolbar 
+            currentBranding={branding} 
+            onApply={onUpdateBranding} 
+            onOpenEditor={handleOpenBranding}
+            isPremium={isPremium}
+        />
+
         {/* Actions Bar (No Print) */}
         <div className="flex justify-between items-center mb-8 border-b border-stone-200 pb-6 no-print">
-            <div>
-                <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Export & Impression</h2>
-                <p className="text-stone-500 font-medium mt-2">Personnalisez et finalisez votre document.</p>
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={onBack}
+                    className="p-2 text-stone-400 hover:text-[#3D405B] rounded-xl hover:bg-stone-100 transition-all"
+                    title="Retour à la validation"
+                >
+                    <ArrowLeft size={20} />
+                </button>
+                <div>
+                    <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Export & Impression</h2>
+                    <p className="text-stone-500 font-medium mt-2">Personnalisez et finalisez votre document.</p>
+                </div>
             </div>
             <div className="flex gap-3">
-                <button 
-                    onClick={handleOpenBranding}
-                    className="flex items-center gap-2 px-4 py-3 bg-white border border-stone-200 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all"
-                >
-                    {isPremium ? <Palette size={16} /> : <Lock size={16} />} 
-                    Personnaliser
-                </button>
                 <button 
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-6 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"

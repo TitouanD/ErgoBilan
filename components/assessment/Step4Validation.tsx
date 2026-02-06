@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home } from 'lucide-react';
+import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft } from 'lucide-react';
 
 interface Props {
   sections: ReportSection[];
@@ -159,21 +159,23 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
 
       <div className="fixed bottom-10 left-0 right-0 z-40 pointer-events-none flex justify-center">
         <div className="bg-white p-3 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3 border border-stone-200">
-            {/* BOUTON "QUITTER" au lieu de Retour (Car crédit consommé) */}
+            
             <button 
                 onClick={onBack} 
                 className="px-6 py-3 rounded-xl flex items-center gap-2 text-stone-400 hover:text-stone-800 hover:bg-stone-50 transition-colors font-bold text-sm uppercase tracking-wider"
             >
-                <Home size={18} /> Sauvegarder & Quitter
+                <ArrowLeft size={18} /> Retour
             </button>
+            
             <div className="h-8 w-px bg-stone-100"></div>
+            
             <button 
                 onClick={onNext}
                 disabled={!allValidated || sections.length === 0}
                 className="flex items-center gap-3 px-8 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm disabled:opacity-40 disabled:grayscale transition-all hover:bg-rose-700 shadow-lg"
             >
                 <Download size={18} />
-                <span className="uppercase tracking-wider">Exporter PDF</span>
+                <span className="uppercase tracking-wider">Visualiser le document</span>
             </button>
         </div>
       </div>

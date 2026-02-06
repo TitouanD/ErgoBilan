@@ -1,13 +1,26 @@
 
 import React, { useState, useEffect } from 'react';
 import { Check, Star, Clock, ArrowRight, Zap, ShieldCheck, FileText, Sparkles, Lock, Key, Copy, Share2, Database, Crown, Layout, LifeBuoy, Gift } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext'; // Import du contexte Auth
 
 interface Props {
     onComplete: () => void;
 }
 
 export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
+    const { isDemoMode } = useAuth(); // Hook pour détecter le mode démo
     const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+    
+    // Si on est en mode démo, on n'a que 3 étapes (Pas de cadeau de crédits)
+    const maxSteps = isDemoMode ? 3 : 4;
+
+    const handleNext = () => {
+        if (step < maxSteps) {
+            setStep(prev => (prev + 1) as any);
+        } else {
+            onComplete();
+        }
+    };
     
     return (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center animate-in fade-in duration-500 font-sans text-[#3D405B]">
@@ -16,7 +29,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
             <div className="absolute top-0 left-0 w-full h-2 bg-stone-100">
                 <div 
                     className="h-full bg-[#E07A5F] transition-all duration-700 ease-out"
-                    style={{ width: `${(step / 4) * 100}%` }}
+                    style={{ width: `${(step / maxSteps) * 100}%` }}
                 ></div>
             </div>
 
@@ -122,21 +135,25 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </svg>
                             </div>
                             <div className="text-center mt-4">
-                                <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200">
-                                    +1 Crédit / Contribution
-                                </div>
+                                {isDemoMode ? (
+                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200">
+                                        Données vérifiées
+                                    </div>
+                                ) : (
+                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200">
+                                        +1 Crédit / Contribution
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
 
-                    {/* VISUEL ÉTAPE 4 : LE CADEAU (3 Crédits) */}
+                    {/* VISUEL ÉTAPE 4 : LE CADEAU (3 Crédits) - SEULEMENT PROD */}
                     {step === 4 && (
                         <div className="relative animate-in slide-in-from-right duration-500 w-full max-w-md flex flex-col items-center">
-                            
                             <div className="relative">
                                 {/* Effet de lueur */}
                                 <div className="absolute inset-0 bg-[#E07A5F]/20 blur-2xl rounded-full"></div>
-                                
                                 {/* Carte Cadeau */}
                                 <div className="bg-white rounded-[32px] p-8 shadow-2xl border border-stone-100 relative z-10 w-80 text-center">
                                     <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 transform -rotate-6">
@@ -146,7 +163,6 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                     <div className="inline-block px-4 py-1 bg-stone-100 rounded-full text-xs font-bold text-stone-500 uppercase tracking-widest mb-6">
                                         Essai Gratuit
                                     </div>
-                                    
                                     <div className="space-y-3 text-left">
                                         <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl">
                                             <div className="p-1.5 bg-white rounded-full shadow-sm text-[#E07A5F]"><Check size={14} strokeWidth={3}/></div>
@@ -191,7 +207,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </div>
                             </div>
                             
-                            <button onClick={() => setStep(2)} className="w-full md:w-auto px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3 mt-4 group">
+                            <button onClick={handleNext} className="w-full md:w-auto px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3 mt-4 group">
                                 C'est parti <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                             </button>
                         </div>
@@ -224,13 +240,13 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </ul>
                             </div>
 
-                            <button onClick={() => setStep(3)} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
+                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
                                 <ShieldCheck size={20} /> J'ai compris
                             </button>
                         </div>
                     )}
 
-                    {/* --- ÉTAPE 3 : COMMUNAUTÉ --- */}
+                    {/* --- ÉTAPE 3 : COMMUNAUTÉ / BASE DE DONNÉES (Adapté Demo) --- */}
                     {step === 3 && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                              <div className="w-16 h-16 bg-[#F2CC8F] text-white rounded-2xl flex items-center justify-center shadow-xl shadow-[#F2CC8F]/20 mb-6">
@@ -238,11 +254,13 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
 
                             <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B]">
-                                L'intelligence collective.
+                                {isDemoMode ? "Base de Données Communautaire" : "L'intelligence collective."}
                             </h2>
 
                             <p className="text-stone-500 leading-relaxed">
-                                Accédez instantanément aux tables de conversion (NS/%) alimentées par la communauté. Gagnez des <strong className="text-[#E07A5F]">crédits bonus</strong> en contribuant à enrichir la base de données anonymisée.
+                                {isDemoMode ? 
+                                    "Plus besoin de chercher. Accédez aux étalonnages partagés par la communauté et vérifiés par nos experts cliniques." : 
+                                    "Accédez instantanément aux tables de conversion alimentées par la communauté. Gagnez des crédits bonus en contribuant à enrichir la base de données."}
                             </p>
 
                             <div className="space-y-3">
@@ -250,26 +268,28 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                     <Database size={20} className="text-[#E07A5F] mt-1 shrink-0" />
                                     <div>
                                         <h4 className="font-bold text-[#3D405B] text-sm">Données à jour</h4>
-                                        <p className="text-xs text-stone-400 leading-relaxed">Plus besoin de chercher dans vos manuels. Les normes sont intégrées.</p>
+                                        <p className="text-xs text-stone-400 leading-relaxed">Plus besoin de chercher dans vos manuels. Les conversions sont intégrées.</p>
                                     </div>
                                 </div>
-                                <div className="flex items-start gap-4 p-4 bg-stone-50 rounded-xl">
-                                    <Zap size={20} className="text-[#E07A5F] mt-1 shrink-0" />
-                                    <div>
-                                        <h4 className="font-bold text-[#3D405B] text-sm">Gagnez des crédits</h4>
-                                        <p className="text-xs text-stone-400 leading-relaxed">1 contribution validée = 1 crédit. Un modèle gagnant-gagnant.</p>
+                                {!isDemoMode && (
+                                    <div className="flex items-start gap-4 p-4 bg-stone-50 rounded-xl">
+                                        <Zap size={20} className="text-[#E07A5F] mt-1 shrink-0" />
+                                        <div>
+                                            <h4 className="font-bold text-[#3D405B] text-sm">Gagnez des crédits</h4>
+                                            <p className="text-xs text-stone-400 leading-relaxed">1 contribution validée = 1 crédit. Un modèle gagnant-gagnant.</p>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
 
-                            <button onClick={() => setStep(4)} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
-                                Suivant <ArrowRight size={20} />
+                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
+                                {isDemoMode ? "Accéder à l'espace démo" : "Suivant"} <ArrowRight size={20} />
                             </button>
                         </div>
                     )}
 
-                    {/* --- ÉTAPE 4 : OFFRE DE BIENVENUE (3 CREDITS) --- */}
-                    {step === 4 && (
+                    {/* --- ÉTAPE 4 : OFFRE DE BIENVENUE (3 CREDITS) - PROD SEULEMENT --- */}
+                    {step === 4 && !isDemoMode && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
                              <div className="mb-4">
                                 <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B] mb-4">

@@ -3,7 +3,7 @@ import { supabase } from './db';
 import { PatientFile, Patient, ReportMetadata, TestSession } from '../types';
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
-import { MOCK_SESSION_DATA } from '../data/mockSession';
+import { DEMO_PATIENTS } from '../data/demoData';
 
 // --- HELPERS CHIFFREMENT ---
 
@@ -273,21 +273,24 @@ export const StorageService = {
 
     loadPatientList: async (orgKey: CryptoKey): Promise<PatientFile[]> => {
         if (_isDemoMode) {
-            const mockFile: PatientFile = {
-                id: 'demo-patient-1',
-                patient: MOCK_SESSION_DATA.patient,
+            const sarahFile: PatientFile = {
+                id: DEMO_PATIENTS.SARAH.id,
+                patient: DEMO_PATIENTS.SARAH.patient,
                 reports: [],
                 sessions: [{
-                    id: 'demo-session-1',
-                    date: new Date().toISOString(),
+                    id: 'demo-session-sarah',
+                    date: new Date(Date.now() - 86400000 * 2).toISOString(),
                     testId: 'multi',
-                    testName: 'Bilan Initial',
-                    results: MOCK_SESSION_DATA.tests as any
+                    testName: 'Bilan Écriture',
+                    results: DEMO_PATIENTS.SARAH.tests as any
                 }],
-                lastInteraction: new Date().toISOString(),
+                lastInteraction: new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false
             };
-            return [mockFile];
+            
+            // Si on a "sauvegardé" Léo en mémoire volatile, on pourrait l'ajouter ici
+            // Pour l'instant, le dashboard gère l'ajout manuel dans son state local
+            return [sarahFile];
         }
 
         const { data: { user } } = await supabase.auth.getUser();
@@ -324,11 +327,6 @@ export const StorageService = {
                     const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
                     // On merge avec un objet vide pour avoir la structure Patient valide (mais vide ailleurs)
                     patientData = { ...createEmptyPatient(), ...preview };
-                    
-                    // Note: Le flag _archived est dans l'identité complète habituellement, 
-                    // mais pour le dashboard, on peut assumer false ou devoir le stocker à part.
-                    // Pour l'instant, on suppose actif si preview existe, ou on check le full si besoin.
-                    // TODO: Ajouter 'is_archived' en colonne claire ou dans preview.
                 } else {
                     // Slow Path (Legacy / Migration) : On déchiffre tout
                     const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as any;
@@ -351,22 +349,32 @@ export const StorageService = {
             }
         }
 
-        // Le tri est déjà fait par la DB, on retourne directement
         return files;
     },
 
     loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[], patient: Patient }> => {
         if (_isDemoMode) {
+            // CORRECTION CRITIQUE : Vérification exacte de l'ID
+            if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
+                return {
+                    reports: [],
+                    sessions: [],
+                    patient: DEMO_PATIENTS.LEO.patient
+                };
+            }
+            if (patientId === DEMO_PATIENTS.SARAH.id) {
+                const history = (DEMO_PATIENTS.SARAH as any).history || [];
+                return {
+                    reports: [],
+                    sessions: history, // On injecte l'historique riche
+                    patient: DEMO_PATIENTS.SARAH.patient
+                };
+            }
+            // Fallback Sarah par sécurité, mais ne devrait pas arriver si les IDs sont bons
             return {
                 reports: [],
-                sessions: [{
-                    id: 'demo-session-1',
-                    date: new Date().toISOString(),
-                    testId: 'multi',
-                    testName: 'Bilan Initial',
-                    results: MOCK_SESSION_DATA.tests as any
-                }],
-                patient: MOCK_SESSION_DATA.patient
+                sessions: [],
+                patient: DEMO_PATIENTS.SARAH.patient
             };
         }
 
