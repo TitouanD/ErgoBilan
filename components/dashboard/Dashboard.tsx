@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo } from 'react';
 import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
-import { Plus, Clock, ArrowRight, UserPlus, Users, Calendar, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, Trash2, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, RotateCcw, AlertCircle } from 'lucide-react';
+import { Plus, Clock, Users, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, ArrowRight, Calendar } from 'lucide-react';
 import { ImportAnimation } from '../shared/ImportAnimation';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Props {
   userProfile: UserProfile;
@@ -72,7 +72,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
   const [activeTab, setActiveTab] = useState<TabType>(isDemoMode ? 'pending' : 'active');
   const [showImportAnim, setShowImportAnim] = useState(false);
   const [targetDemoQ, setTargetDemoQ] = useState<PendingQuestionnaire | null>(null);
-
+  
   const hoursSaved = Math.round(userProfile.totalBilansGenerated * 1.5);
 
   const filteredPending = useMemo(() => 
@@ -138,6 +138,7 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
         )}
 
         <div className="max-w-7xl mx-auto px-6 py-12">
+            
             {/* 1. KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 <StatCard icon={Clock} value={`${hoursSaved}h`} label="Temps Libéré" subtext="~ 2 dimanches récupérés" highlight={true} />

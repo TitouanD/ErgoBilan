@@ -123,6 +123,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           const prompt = `
             ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
             CONTEXT: The filename is "${filename}".
+            IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
 
             TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT data.
 
@@ -150,7 +151,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   "subtest_id": "string (Subtest name)",
                   "rows": [
                     {
-                      "label": "string (Row identifier: Age, Grade)",
+                      "label": "string (Row identifier: Age, Grade. Use filename if needed)",
                       "mean": "string (Only if PARAMETRIC)",
                       "sd": "string (Only if PARAMETRIC)",
                       "raw_range": "string (Only if LOOKUP: Raw Score)",
@@ -351,8 +352,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                       mean: mean,
                       sd: sd,
                       standard_score: tableStructure === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
-                      percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null,
-                      z_score: tableStructure === 'LOOKUP' ? (parseFloat(row.zScore) || null) : null
+                      percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
                   };
               });
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
@@ -18,7 +17,7 @@ import { AIService, GenerationPayload } from './services/ai';
 import { AdminService } from './services/admin'; // NOUVEAU
 import { anonymizeData } from './utils/anonymizer';
 import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw, FileText } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw, FileText, ShieldAlert } from 'lucide-react';
 import { decryptData, generateQuestionnaireKey, encryptData, importQuestionnaireKey } from './utils/crypto';
 import { Logger } from './utils/logger';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -88,7 +87,7 @@ const CriticalErrorModal: React.FC<{ error: string; onRetry: () => void; onClose
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
@@ -130,6 +129,16 @@ const AppRouter = () => {
     const handleStartDemo = async () => {
         await startDemo();
         setShowOnboarding(true);
+    };
+
+    // Gestion Sécurisée Admin
+    const handleAdminAccess = async () => {
+        const allowed = await verifyAdminAccess();
+        if (allowed) {
+            setMode('admin');
+        } else {
+            toast.error("Accès refusé par le serveur.");
+        }
     };
 
     const handleGenerateLink = async () => { if (isDemoMode) { setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`); setPendingQuestionnaires(prev => [{ id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' }, ...prev]); toast.success("Lien sécurisé généré"); return; } if (!practitioner || !sessionKey) return; const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', practitioner.id).maybeSingle(); if (!member?.organization_id) { toast.error("Erreur critique: Organisation introuvable."); return; } const { keyString } = await generateQuestionnaireKey(); const enc = await encryptData(keyString, sessionKey); const label = `Dossier #${pendingQuestionnaires.length + 1} (${new Date().toLocaleDateString()})`; const { data, error } = await supabase.from('pending_questionnaires').insert({ practitioner_id: practitioner.id, organization_id: member.organization_id, label, status: 'pending', practitioner_encrypted_key: `${enc.iv}:${enc.content}` }).select().single(); if (error) { toast.error("Impossible de créer le lien."); return; } if (data) { setCreatedLink(`${window.location.origin}/?q_id=${data.id}#key=${keyString}`); setLinkCopiedConfirmed(false); setPendingQuestionnaires(prev => [{ id: data.id, label: data.label, status: 'pending', createdAt: data.created_at, practitionerEncryptedKey: data.practitioner_encrypted_key }, ...prev]); toast.success("Lien sécurisé généré"); } };
@@ -359,6 +368,15 @@ const AppRouter = () => {
         );
     }
 
+    // MODE ADMIN ISOLÉ (Full Screen)
+    if (mode === 'admin') {
+        return (
+            <Suspense fallback={<AppLoader />}>
+                <AdminPanel userProfile={userProfile} onClose={() => setMode('dashboard')} />
+            </Suspense>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[#F9F9F9] pb-20 font-sans">
             <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
@@ -373,6 +391,14 @@ const AppRouter = () => {
                         </>
                     ) : (
                         <>
+                            {userProfile.isAdmin && (
+                                <button 
+                                    onClick={handleAdminAccess}
+                                    className="hidden md:flex items-center gap-2 px-4 py-2 bg-rose-950/10 hover:bg-rose-950 hover:text-white text-rose-800 rounded-full text-xs font-bold transition-all"
+                                >
+                                    <ShieldAlert size={14} /> Admin
+                                </button>
+                            )}
                             <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Créer un Test</button>
                             <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
                             <div className="h-8 w-px bg-stone-200 mx-1"></div>
@@ -392,8 +418,7 @@ const AppRouter = () => {
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}
-                    {mode === 'admin' && <AdminPanel userProfile={userProfile} onClose={() => setMode('dashboard')} />}
-
+                    
                     {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW) --- */}
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">

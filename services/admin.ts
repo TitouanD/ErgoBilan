@@ -1,213 +1,164 @@
 
 import { supabase } from './db';
-import { Contribution, TestData, Patient } from '../types';
+import { Contribution, Patient, TestData } from '../types';
 import { Logger } from '../utils/logger';
+
+// Données simulées pour le Dashboard Ops
+const MOCK_AI_STATS = {
+    dailyUsage: [
+        { date: '10/01', tokens: 12500, cost: 0.04, errors: 0 },
+        { date: '11/01', tokens: 15000, cost: 0.05, errors: 1 },
+        { date: '12/01', tokens: 42000, cost: 0.14, errors: 0 },
+        { date: '13/01', tokens: 38000, cost: 0.12, errors: 2 },
+        { date: '14/01', tokens: 55000, cost: 0.18, errors: 0 },
+        { date: '15/01', tokens: 48000, cost: 0.15, errors: 0 },
+        { date: '16/01', tokens: 62000, cost: 0.21, errors: 1 },
+    ],
+    failures: [
+        { id: 'err_1', date: '2023-10-13T14:30:00Z', type: 'TIMEOUT_AI', context: 'Anamnèse très longue (> 4000 chars)', user: 'doc.martin@email.com' },
+        { id: 'err_2', date: '2023-10-13T16:15:00Z', type: 'INVALID_JSON', context: 'Structure réponse corrompue (Markdown missing)', user: 'ergo.sophie@email.com' },
+        { id: 'err_3', date: '2023-10-16T09:10:00Z', type: 'SAFETY_BLOCK', context: 'Contenu potentiellement flaggé par Google', user: 'test.user@email.com' }
+    ]
+};
 
 /**
  * Service dédié aux opérations Administrateur.
- * Gère la promotion des contributions (JSON) vers le catalogue officiel (SQL Relational).
+ * ARCHITECTURE "PROMOTION" : Gestion des tests privés (OrganizationID != NULL) vers Public (NULL).
  */
 export const AdminService = {
 
     /**
-     * Récupère la file d'attente des contributions
+     * Récupère la liste des tests candidats à la promotion (Tests privés)
+     * Utilise la vue SQL dédiée.
      */
-    getPendingContributions: async () => {
+    getCandidates: async () => {
         const { data, error } = await supabase
-            .from('contributions_queue')
+            .from('admin_candidates_promotion')
             .select('*')
-            .eq('status', 'pending')
             .order('created_at', { ascending: false });
         
         if (error) throw error;
-        
-        // Parsing robuste du JSON (Gère string, string-in-string, et object)
-        return data.map((item: any) => {
-            let parsed: any = {};
-            try {
-                if (typeof item.raw_data_json === 'string') {
-                    // Premier parse
-                    parsed = JSON.parse(item.raw_data_json);
-                    // Si c'est encore une string (double serialization fréquente avec les CSV/SQL inserts manuels)
-                    if (typeof parsed === 'string') {
-                        parsed = JSON.parse(parsed);
-                    }
-                } else if (typeof item.raw_data_json === 'object' && item.raw_data_json !== null) {
-                    parsed = item.raw_data_json;
-                }
-            } catch (e) {
-                Logger.error('SYSTEM', `Erreur JSON pour contribution ${item.id}:`, e);
-                // On garde un objet vide pour ne pas crasher l'UI, l'ID permettra de l'identifier
-            }
-            
-            return {
-                ...parsed,
-                id: item.id, // L'ID SQL est prioritaire sur celui du JSON
-                submittedAt: item.created_at,
-                // Fallback si le JSON est cassé
-                testName: parsed.testName || "Test Sans Nom (Erreur Format)",
-                userName: parsed.userName || "Inconnu",
-                rows: parsed.rows || []
-            } as Contribution;
-        });
+        return data;
     },
 
     /**
-     * Rejeter une contribution
+     * Récupère le détail complet d'un test candidat pour prévisualisation
+     * Reconstitue la structure JSON-like pour l'affichage UI
      */
-    rejectContribution: async (id: string) => {
-        const { error } = await supabase
-            .from('contributions_queue')
-            .update({ status: 'rejected' })
-            .eq('id', id);
+    getCandidateDetails: async (testId: string) => {
+        // 1. Fetch Test info
+        const { data: test } = await supabase.from('official_tests').select('*').eq('id', testId).single();
+        if (!test) throw new Error("Test introuvable");
+
+        // 2. Fetch Subtests
+        const { data: subtests } = await supabase.from('official_subtests').select('*').eq('test_id', testId);
+        
+        // 3. Fetch Norms
+        const subtestIds = subtests?.map(s => s.id) || [];
+        const { data: norms } = await supabase.from('official_norms').select('*').in('subtest_id', subtestIds);
+
+        // 4. Flatten for UI Preview (Format ExtractedRow like)
+        const rows: any[] = [];
+        
+        subtests?.forEach(sub => {
+            const subNorms = norms?.filter(n => n.subtest_id === sub.id) || [];
+            subNorms.forEach(norm => {
+                // Reconstruction d'un label lisible
+                const ageLabel = norm.age_min_months ? `${Math.floor(norm.age_min_months/12)} ans` : 'Global';
+                
+                rows.push({
+                    id: norm.id,
+                    subtest: sub.name,
+                    label: ageLabel,
+                    raw: norm.raw_min === norm.raw_max ? norm.raw_min : `${norm.raw_min}-${norm.raw_max}`,
+                    standard: norm.standard_score,
+                    percentile: norm.percentile,
+                    mean: norm.mean,
+                    sd: norm.sd
+                });
+            });
+        });
+
+        return {
+            id: test.id,
+            testName: test.name,
+            author: test.author,
+            submittedAt: test.created_at,
+            rows: rows
+        };
+    },
+
+    /**
+     * "Rejeter" = Supprimer le test privé de la base
+     * (L'utilisateur devra le recréer s'il souhaite corriger)
+     */
+    deleteTest: async (testId: string) => {
+        // Grâce au ON DELETE CASCADE défini en SQL (si présent), supprimer le test suffit.
+        // Sinon, on supprime en cascade manuellement par sécurité.
+        
+        // 1. Récupérer les subtests
+        const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
+        const subIds = subtests?.map(s => s.id) || [];
+
+        if (subIds.length > 0) {
+            // 2. Delete Norms
+            await supabase.from('official_norms').delete().in('subtest_id', subIds);
+            // 3. Delete Subtests
+            await supabase.from('official_subtests').delete().eq('test_id', testId);
+        }
+        // 4. Delete Test
+        const { error } = await supabase.from('official_tests').delete().eq('id', testId);
         if (error) throw error;
     },
 
     /**
-     * Valider et Intégrer une contribution dans le catalogue officiel
-     * C'est ici que la magie opère : JSON -> SQL Relationnel
-     * Amélioré pour gérer l'idempotence (évite les doublons si on re-valide).
+     * PROMOUVOIR LE TEST (Validé)
+     * Passe l'organization_id à NULL pour le rendre public.
      */
-    integrateContribution: async (contribution: Contribution) => {
-        
-        // 1. Création ou Récupération du Test (Évite conflit unique constraint sur 'name')
-        let testId = `test_${contribution.testName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${Date.now()}`;
-        
-        // On vérifie d'abord s'il existe déjà
-        const { data: existingTest } = await supabase
-            .from('official_tests')
-            .select('id')
-            .ilike('name', contribution.testName)
-            .maybeSingle();
+    promoteTest: async (testId: string) => {
+        // 1. Identifier les sous-éléments
+        const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
+        const subIds = subtests?.map(s => s.id) || [];
 
-        if (existingTest) {
-            testId = existingTest.id;
-            Logger.info('DB', `Test existant trouvé (${testId}), ajout des données à ce test.`);
-        } else {
-            const { error: testError } = await supabase
-                .from('official_tests')
-                .insert({
-                    id: testId,
-                    name: contribution.testName,
-                    author: contribution.userName, 
-                    version: '1.0',
-                    category_id: 'community' 
-                });
-
-            if (testError) throw new Error(`Erreur création Test: ${testError.message}`);
+        // 2. Update Norms (Public)
+        if (subIds.length > 0) {
+            await supabase.from('official_norms')
+                .update({ organization_id: null })
+                .in('subtest_id', subIds);
         }
 
-        // 2. Groupement des lignes par Sous-test
-        const rowsBySubtest: Record<string, typeof contribution.rows> = {};
-        contribution.rows.forEach(row => {
-            const subKey = row.subtest || "Global";
-            if (!rowsBySubtest[subKey]) rowsBySubtest[subKey] = [];
-            rowsBySubtest[subKey].push(row);
-        });
+        // 3. Update Subtests (Public)
+        await supabase.from('official_subtests')
+            .update({ organization_id: null })
+            .eq('test_id', testId);
 
-        // 3. Création des Sous-tests et des Normes
-        for (const [subtestName, rows] of Object.entries(rowsBySubtest)) {
-            // ID déterministe pour permettre l'upsert
-            const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-            const subtestId = `${testId}_${subtestSlug}`;
-            
-            // A. Insert/Update Subtest
-            const { error: subError } = await supabase
-                .from('official_subtests')
-                .upsert({
-                    id: subtestId,
-                    test_id: testId,
-                    name: subtestName,
-                    unit: 'pts', 
-                    score_type: 'standard', // Pourrait être déduit des données
-                    computation_mode: contribution.structureType || 'LOOKUP' // ICI : Utilisation du type détecté
-                }, { onConflict: 'id' });
-            
-            if (subError) Logger.error('DB', `Erreur Subtest ${subtestName}:`, subError);
+        // 4. Update Test (Public + Move to Official Category if needed)
+        // On le force dans une catégorie "Community" ou on garde celle choisie
+        const { error } = await supabase.from('official_tests')
+            .update({ organization_id: null })
+            .eq('id', testId);
 
-            // B. Insert Norms
-            // On génère des IDs uniques basés sur le temps pour éviter les conflits si on re-importe
-            const normsPayload = rows.map((row, idx) => {
-                const ageMatch = row.label.match(/(\d+)/); 
-                const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
-                
-                // MAPPING CONDITIONNEL CRITIQUE
-                let mean = null;
-                let sd = null;
-                let rawMin = 0;
-                let rawMax = 0;
-
-                if (contribution.structureType === 'PARAMETRIC') {
-                    // Si paramétrique, on utilise les champs mean/sd
-                    mean = parseFloat(row.mean || row.raw); // Fallback row.raw pour rétro-compatibilité
-                    sd = parseFloat(row.sd || row.zScore);  // Fallback row.zScore pour rétro-compatibilité
-                } else {
-                    // Si Lookup, on utilise raw
-                    rawMin = parseFloat(row.raw) || 0;
-                    rawMax = parseFloat(row.raw) || 0; // Si range "10-12", parsing à affiner plus tard
-                }
-
-                return {
-                    id: `${subtestId}_norm_${Date.now()}_${idx}`,
-                    subtest_id: subtestId,
-                    age_min_months: ageYear * 12, 
-                    age_max_months: (ageYear * 12) + 11,
-                    gender: 'Mixed',
-                    // Valeurs conditionnelles
-                    raw_min: rawMin,
-                    raw_max: rawMax,
-                    mean: mean,
-                    sd: sd,
-                    // Scores standards (seulement pour Lookup, sinon calculés à la volée)
-                    standard_score: contribution.structureType === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
-                    percentile: contribution.structureType === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null,
-                    z_score: contribution.structureType === 'LOOKUP' ? (parseFloat(row.zScore) || null) : null
-                };
-            });
-
-            if (normsPayload.length > 0) {
-                const { error: normsError } = await supabase
-                    .from('official_norms')
-                    .insert(normsPayload);
-                
-                if (normsError) Logger.error('DB', "Erreur insertion normes", normsError);
-            }
-        }
-
-        // 4. Marquer la contribution comme validée
-        const { error: finalError } = await supabase
-            .from('contributions_queue')
-            .update({ status: 'validated' })
-            .eq('id', contribution.id);
-
-        if (finalError) throw finalError;
+        if (error) throw error;
     },
 
     /**
      * MODULE C : Télémétrie Passive & Anonyme
-     * Extrait les scores validés, calcule l'âge en mois, et les envoie pour statistiques.
-     * Cette fonction est conçue pour ne jamais bloquer l'interface (Fire & Forget).
      */
     logAnonymousStats: async (tests: TestData, patient: Patient) => {
         try {
-            // 1. Calcul Age en mois précis
             if (!patient.dob) return;
             const birthDate = new Date(patient.dob);
             const now = new Date();
-            // Calcul approximatif suffisant pour des stats globales
             const ageMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
 
-            if (ageMonths < 0) return; // Date futuriste ou invalide
+            if (ageMonths < 0) return;
 
             const payload: any[] = [];
             const sessionHash = 'anon_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 
-            // 2. Extraction des scores validés uniquement
             for (const [testId, subtests] of Object.entries(tests)) {
                 for (const [subtestId, result] of Object.entries(subtests)) {
                     if (result.status === 'validated' && result.raw) {
-                        // Nettoyage valeur brute (on ne garde que le numérique pour l'instant)
-                        // Exemple: "12 pts" -> 12
                         const rawVal = parseFloat(result.raw.replace(',', '.').replace(/[^0-9.-]/g, ''));
                         
                         if (!isNaN(rawVal)) {
@@ -219,7 +170,7 @@ export const AdminService = {
                                 raw_score: rawVal,
                                 computed_standard: result.standard ? parseFloat(result.standard) : null,
                                 computed_percentile: result.percentile ? parseFloat(result.percentile) : null,
-                                source_hash: sessionHash, // Permet de grouper les lignes d'un même patient anonyme
+                                source_hash: sessionHash,
                                 is_clinical: true
                             });
                         }
@@ -228,18 +179,77 @@ export const AdminService = {
             }
 
             if (payload.length > 0) {
-                // Fire & Forget (Pas de await bloquant coté UI, mais on await ici pour le catch)
                 const { error } = await supabase.from('contribution_insights').insert(payload);
-                if (error) {
-                    Logger.warn('DB', "Telemetry insert failed", error.message);
-                } else {
-                    Logger.info('DB', `Telemetry sent: ${payload.length} data points.`);
-                }
+                if (error) Logger.warn('DB', "Telemetry insert failed", error.message);
             }
 
         } catch (e) {
-            // Sécurité absolue : On ne veut jamais faire planter l'app pour des stats
             Logger.warn('DB', "Telemetry error (Silent)", e);
         }
+    },
+
+    // --- PHASE 3 : ANALYTIQUE ---
+
+    getInsightsForSubtest: async (subtestId: string) => {
+        const { data, error } = await supabase
+            .from('contribution_insights')
+            .select('computed_standard')
+            .eq('subtest_id', subtestId)
+            .not('computed_standard', 'is', null);
+        
+        if (error) throw error;
+        return data.map((d: any) => parseFloat(d.computed_standard));
+    },
+
+    getQualityAlerts: async () => {
+        const { data, error } = await supabase
+            .from('contribution_insights')
+            .select('test_id, computed_standard')
+            .not('computed_standard', 'is', null);
+
+        if (error) throw error;
+
+        const stats: Record<string, { total: number, extreme: number }> = {};
+
+        data.forEach((row: any) => {
+            if (!stats[row.test_id]) stats[row.test_id] = { total: 0, extreme: 0 };
+            const score = parseFloat(row.computed_standard);
+            if (score > 145 || score < 55) {
+                stats[row.test_id].extreme++;
+            }
+            stats[row.test_id].total++;
+        });
+
+        return Object.entries(stats)
+            .map(([testId, s]) => ({
+                testId,
+                total: s.total,
+                extremeRate: (s.extreme / s.total) * 100
+            }))
+            .filter(s => s.total > 10 && s.extremeRate > 5);
+    },
+
+    // --- PHASE 4 : OPS & MONITORING (IA) ---
+
+    getAIHealthStats: async () => {
+        return new Promise<{daily: any[], totalCost: number, errorRate: number}>(resolve => {
+            setTimeout(() => {
+                const totalCost = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.cost, 0);
+                const totalErrors = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.errors, 0);
+                const totalRequests = 150; 
+                
+                resolve({
+                    daily: MOCK_AI_STATS.dailyUsage,
+                    totalCost: parseFloat(totalCost.toFixed(2)),
+                    errorRate: parseFloat(((totalErrors / totalRequests) * 100).toFixed(1))
+                });
+            }, 500);
+        });
+    },
+
+    getAIFailures: async () => {
+        return new Promise<any[]>(resolve => {
+            setTimeout(() => resolve(MOCK_AI_STATS.failures), 500);
+        });
     }
 };

@@ -27,6 +27,7 @@ interface AuthContextType {
   updateUserProfile: (update: Partial<UserProfile>) => void;
   setOrgKey: (key: CryptoKey | null) => void; 
   startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
+  verifyAdminAccess: () => Promise<boolean>; // NOUVEAU : Vérification serveur
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -301,6 +302,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   };
 
+  // NOUVEAU : Vérification stricte serveur pour Admin
+  const verifyAdminAccess = async (): Promise<boolean> => {
+      if (isDemoMode) return false;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      // Requête directe qui contourne le state local
+      const { data, error } = await supabase
+          .from('practitioners')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+
+      if (error || !data) {
+          Logger.error('AUTH', "Admin verification failed", error);
+          return false;
+      }
+
+      return data.is_admin === true;
+  };
+
   const unlockSession = async (key: CryptoKey) => {
       if (!practitioner) return;
       Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
@@ -375,7 +397,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{ 
         userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo
+        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess
     }}>
       {children}
     </AuthContext.Provider>
