@@ -23,7 +23,23 @@ export interface CategoryDef {
   tests: TestDef[];
 }
 
+// SNAPSHOT POUR LE MODE DÉMO UNIQUEMENT
+// Pour la production, ces données sont chargées depuis Supabase (official_tests)
 export const TEST_CATALOG: CategoryDef[] = [
+  {
+    id: 'attention-executif',
+    name: 'Attention / Exécutif',
+    iconName: 'Focus',
+    tests: [
+      { 
+        id: 'test-cloches', 
+        name: 'Test des Cloches',
+        subtests: [
+          { id: 'cloches-barrees', name: 'Cloches Barrées (Total)', unit: 'cloches', scoreType: 'standard' },
+        ]
+      }
+    ],
+  },
   {
     id: 'motricite-globale',
     name: 'Motricité Globale',
@@ -38,15 +54,7 @@ export const TEST_CATALOG: CategoryDef[] = [
           { id: 'balance', name: 'Équilibre', unit: 'pts', scoreType: 'scaled' },
           { id: 'total-score', name: 'Score Total', unit: 'pts', scoreType: 'standard' },
         ]
-      },
-      { 
-        id: 'pdms-2', 
-        name: 'PDMS-2',
-        subtests: [
-          { id: 'fine-motor-quotient', name: 'Quotient moteur fin', unit: 'pts', scoreType: 'standard' },
-          { id: 'gross-motor-quotient', name: 'Quotient moteur global', unit: 'pts', scoreType: 'standard' },
-        ]
-      },
+      }
     ],
   },
   {
@@ -58,98 +66,10 @@ export const TEST_CATALOG: CategoryDef[] = [
         id: 'bhk', 
         name: 'BHK (Enfant)',
         subtests: [
-          { id: 'vitesse', name: 'Vitesse', unit: 'car/5min', scoreType: 'standard' }, // Souvent étalonné en écart-type direct, mais simulons standard pour l'UX
+          { id: 'vitesse', name: 'Vitesse', unit: 'car/5min', scoreType: 'standard' }, 
           { id: 'qualite', name: 'Qualité', unit: 'pts', scoreType: 'standard', lowerIsBetter: true },
         ]
-      },
-      { 
-        id: 'bhk-ado', 
-        name: 'BHK Ado',
-        subtests: [
-          { id: 'vitesse', name: 'Vitesse', unit: 'car/5min', scoreType: 'standard' },
-          { id: 'lisibilite', name: 'Lisibilité', unit: 'pts', scoreType: 'standard' },
-        ]
-      },
+      }
     ],
-  },
-  {
-    id: 'visuo-perceptif',
-    name: 'Visuo-perceptif',
-    iconName: 'Eye',
-    tests: [
-      { 
-        id: 'beery-vmi', 
-        name: 'Beery VMI',
-        subtests: [
-          { id: 'integration', name: 'VMI (Intégration)', unit: 'pts', scoreType: 'standard' },
-          { id: 'perception', name: 'Perception Visuelle', unit: 'pts', scoreType: 'standard' },
-          { id: 'coordination', name: 'Coordination Motrice', unit: 'pts', scoreType: 'standard' },
-        ]
-      },
-      { 
-        id: 'dtvp-3', 
-        name: 'DTVP-3',
-        subtests: [
-          { id: 'eye-hand', name: 'Coordination Œil-Main', unit: 'pts', scoreType: 'scaled' },
-          { id: 'copying', name: 'Copie', unit: 'pts', scoreType: 'scaled' },
-          { id: 'figure-ground', name: 'Figure-Fond', unit: 'pts', scoreType: 'scaled' },
-          { id: 'visual-closure', name: 'Complètement Visuel', unit: 'pts', scoreType: 'scaled' },
-          { id: 'form-constancy', name: 'Constance de Forme', unit: 'pts', scoreType: 'scaled' },
-        ]
-      },
-    ],
-  },
-  {
-    id: 'attention-executif',
-    name: 'Attention / Exécutif',
-    iconName: 'Focus',
-    tests: [
-      { 
-        id: 'tea-ch', 
-        name: 'TEA-Ch',
-        subtests: [
-          { id: 'sky-search', name: 'Recherche dans le ciel', unit: 'sec', scoreType: 'scaled', lowerIsBetter: true },
-          { id: 'score-attention', name: 'Coups de fusil', unit: 'pts', scoreType: 'scaled' },
-          { id: 'creature-counting', name: 'Les petits bonhommes', unit: 'sec', scoreType: 'scaled', lowerIsBetter: true },
-        ]
-      },
-      { 
-        id: 'nepsy-2', 
-        name: 'NEPSY-II',
-        subtests: [
-          { id: 'cubes', name: 'Cubes (Visuo-Spatial)', unit: 'pts', scoreType: 'scaled' },
-          { id: 'fleches', name: 'Flèches', unit: 'pts', scoreType: 'scaled' },
-          { id: 'precision-visuomotrice', name: 'Précision Visuomotrice', unit: 'pts', scoreType: 'scaled' },
-          { id: 'attention-visuelle', name: 'Attention Visuelle', unit: 'pts', scoreType: 'scaled' },
-          { id: 'inhibition', name: 'Inhibition', unit: 'sec', scoreType: 'scaled', lowerIsBetter: true },
-        ]
-      },
-      { 
-        id: 'brief-2', 
-        name: 'BRIEF-2',
-        subtests: [
-          { id: 'inhibition', name: 'Inhibition', unit: 'pts', scoreType: 't-score', lowerIsBetter: true }, // T-Score : Moyenne 50, SD 10
-          { id: 'flexibilite', name: 'Flexibilité', unit: 'pts', scoreType: 't-score', lowerIsBetter: true },
-          { id: 'memoire', name: 'Mémoire de travail', unit: 'pts', scoreType: 't-score', lowerIsBetter: true },
-        ]
-      },
-    ],
-  },
-  {
-    id: 'sensoriel',
-    name: 'Sensoriel',
-    iconName: 'Hand',
-    tests: [
-      { 
-        id: 'profil-sensoriel-2', 
-        name: 'Profil Sensoriel 2',
-        subtests: [
-          { id: 'seeking', name: 'Recherche', unit: 'pts', scoreType: 'standard' }, // Simplification
-          { id: 'avoiding', name: 'Évitement', unit: 'pts', scoreType: 'standard' },
-          { id: 'sensitivity', name: 'Sensibilité', unit: 'pts', scoreType: 'standard' },
-          { id: 'registration', name: 'Enregistrement', unit: 'pts', scoreType: 'standard' },
-        ]
-      },
-    ],
-  },
+  }
 ];

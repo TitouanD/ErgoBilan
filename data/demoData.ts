@@ -7,15 +7,15 @@ export const DEMO_PATIENTS = {
     patient: {
       firstName: 'Léo',
       lastName: 'MARTIN',
-      dob: '2016-03-15',
-      age: '9 ans 1 mois',
+      dob: '2014-09-15', // Adapté pour correspondre à un CM1/CM2 (approx 10 ans)
+      age: '10 ans', // CM2 pour coller aux normes du test des cloches
       gender: 'M',
       address: '12 Rue des Lilas, 75000 Paris',
       parentNames: 'Mme Martin',
       parentPhone: '06 00 00 00 00',
       parentEmail: 'famille.martin@email.com',
       school: 'École Jules Ferry',
-      classLevel: 'CM1',
+      classLevel: 'CM2', // Modifié pour le test des cloches
       teacher: 'Mme Dubois',
       carePlan: 'PAP en cours',
       avs: 'NON',
@@ -43,8 +43,11 @@ export const DEMO_PATIENTS = {
       priorities: ''
     } as Patient,
     tests: {
+      'test-cloches': {
+        // LE TEST EST VIDE POUR QUE L'UTILISATEUR LE REMPLISSE ET VOIT LE CALCUL
+        'cloches-barrees': { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' }
+      },
       'mabc-2': {
-        // CLEAN SLATE : Tout est vide pour laisser l'utilisateur jouer
         'manual-dexterity': { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' },
         'ball-skills': { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' },
         'balance': { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' }
@@ -55,7 +58,6 @@ export const DEMO_PATIENTS = {
       }
     } as TestData,
     observations: {
-      // NOTES EN VRAC : Pour justifier l'IA
       anamnese: "enfant volontaire mais vite découragé / conscient diff / anxiété perf ++",
       motricite: "course maladroite, chute cour récré, tonus axial faible",
       coordination: "diff bimanuel (couverts, règle ciseaux)",
@@ -116,29 +118,6 @@ export const DEMO_PATIENTS = {
         spatial: "RAS.",
         graphique: "Prise en poignard parfois. Ne pose pas l'avant-bras."
     } as Observations,
-    // HISTORIQUE DE SESSIONS POUR LE GRAPHIQUE
-    history: [
-        {
-            id: 'session-1',
-            date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 180).toISOString(), // Il y a 6 mois
-            testName: 'Bilan Initial',
-            testId: 'multi',
-            results: { 'global': { raw: '', standard: '5', percentile: '5', zScore: -1.8, status: 'validated' } }
-        },
-        {
-            id: 'session-2',
-            date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString(), // Il y a 3 mois
-            testName: 'Point Étape',
-            testId: 'multi',
-            results: { 'global': { raw: '', standard: '7', percentile: '16', zScore: -1.0, status: 'validated' } }
-        },
-        {
-            id: 'session-3',
-            date: new Date().toISOString(), // Aujourd'hui
-            testName: 'Réévaluation',
-            testId: 'multi',
-            results: { 'global': { raw: '', standard: '9', percentile: '37', zScore: -0.3, status: 'validated' } }
-        }
-    ]
+    history: []
   }
 };

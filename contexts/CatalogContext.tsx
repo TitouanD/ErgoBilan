@@ -3,92 +3,105 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
 import { TEST_CATALOG, CategoryDef, TestDef } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
+import { StorageService } from '../services/storage'; // Pour détecter le mode démo si besoin, ou via AuthContext
+
+// On recrée l'interface de base pour éviter l'import circulaire si AuthContext dépend de CatalogContext
+// Mais ici on va utiliser une variable globale ou un fetch conditionnel.
 
 interface CatalogContextType {
   catalog: CategoryDef[];
   loading: boolean;
-  source: 'db' | 'local' | 'merged';
+  source: 'db' | 'local';
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [catalog, setCatalog] = useState<CategoryDef[]>(TEST_CATALOG);
+  const [catalog, setCatalog] = useState<CategoryDef[]>([]); // Vide par défaut
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<'db' | 'local' | 'merged'>('local');
+  const [source, setSource] = useState<'db' | 'local'>('local');
 
   useEffect(() => {
-    const fetchCatalog = async () => {
-        try {
-            // Check if DB has data
-            const { count } = await supabase.from('official_tests').select('*', { count: 'exact', head: true });
-            
-            if (count && count > 0) {
-                Logger.info('DB', 'Loading extended catalog from Supabase...');
-                
-                // Fetch Tests (RLS will automatically filter Public + My Org's Private)
-                const { data: dbTests, error: testError } = await supabase.from('official_tests').select('*');
-                if (testError) throw testError;
+    let isMounted = true;
 
-                // Fetch Subtests
-                const { data: dbSubtests, error: subError } = await supabase.from('official_subtests').select('*');
-                if (subError) throw subError;
-
-                // STRATÉGIE DE FUSION : On part du catalogue local (Deep Copy)
-                // On ajoute les tests DB dans les catégories correspondantes
-                const mergedCatalog = JSON.parse(JSON.stringify(TEST_CATALOG)) as CategoryDef[];
-
-                dbTests.forEach((t: any) => {
-                    // Trouver la catégorie cible
-                    let category = mergedCatalog.find(c => c.id === t.category_id);
-                    
-                    // Si catégorie inconnue (ex: nouveau tag), on la crée ou on met dans 'Autre'
-                    // Pour simplifier ici, si pas trouvée, on met dans la première catégorie ou on ignore
-                    if (!category) {
-                        // Optionnel : Créer une catégorie dynamique si besoin. Ici on skip pour la sécurité.
-                        return;
-                    }
-
-                    // Vérifier si le test existe déjà (pour éviter les doublons si on migre un jour les tests locaux en DB)
-                    if (category.tests.find(existing => existing.id === t.id)) {
-                        return;
-                    }
-
-                    // Construire l'objet Test
-                    const subtests = dbSubtests
-                        .filter((s: any) => s.test_id === t.id)
-                        .map((s: any) => ({
-                            id: s.id,
-                            name: s.name,
-                            unit: s.unit || 'pts',
-                            scoreType: s.score_type as any,
-                            lowerIsBetter: false 
-                        }));
-
-                    const newTest: TestDef = {
-                        id: t.id,
-                        name: t.name,
-                        subtests: subtests
-                    };
-
-                    // Ajouter le test à la catégorie
-                    category.tests.push(newTest);
-                });
-
-                setCatalog(mergedCatalog);
-                setSource('merged');
-            } else {
-                Logger.info('DB', 'No DB tests found. Using local catalog.');
+    const initCatalog = async () => {
+        // 1. DÉTECTION DU MODE : On vérifie si un utilisateur est connecté
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // Si pas de session (ou mode démo simulé dans l'app), on charge le snapshot local
+        // Note: isDemoMode est géré dans AuthContext, mais ici on fait une vérif simple sur la session
+        if (!session) {
+            Logger.info('DB', 'Demo/Offline Mode: Loading local snapshot.');
+            if (isMounted) {
+                setCatalog(TEST_CATALOG); // Charge le fichier statique
+                setSource('local');
+                setLoading(false);
             }
+            return;
+        }
+
+        // 2. MODE CONNECTÉ : CHARGEMENT DB
+        try {
+            Logger.info('DB', 'Authenticated: Fetching official catalog...');
+            
+            const { data: dbTests, error: testError } = await supabase.from('official_tests').select('*');
+            if (testError) throw testError;
+
+            const { data: dbSubtests, error: subError } = await supabase.from('official_subtests').select('*');
+            if (subError) throw subError;
+
+            // Construction de l'arbre à partir de la DB uniquement
+            // On part d'un squelette de catégories vide ou basique pour l'ordre d'affichage
+            const categoriesMap: Record<string, CategoryDef> = {
+                'motricite-globale': { id: 'motricite-globale', name: 'Motricité Globale', iconName: 'Brain', tests: [] },
+                'ecriture': { id: 'ecriture', name: 'Écriture', iconName: 'Pencil', tests: [] },
+                'visuo-perceptif': { id: 'visuo-perceptif', name: 'Visuo-perceptif', iconName: 'Eye', tests: [] },
+                'attention-executif': { id: 'attention-executif', name: 'Attention / Exécutif', iconName: 'Focus', tests: [] },
+                'sensoriel': { id: 'sensoriel', name: 'Sensoriel', iconName: 'Hand', tests: [] },
+                'autre': { id: 'autre', name: 'Autre', iconName: 'Home', tests: [] }
+            };
+
+            dbTests.forEach((t: any) => {
+                const catId = categoriesMap[t.category_id] ? t.category_id : 'autre';
+                
+                const subtests = dbSubtests
+                    .filter((s: any) => s.test_id === t.id)
+                    .map((s: any) => ({
+                        id: s.id,
+                        name: s.name,
+                        unit: s.unit || 'pts',
+                        scoreType: s.score_type as any,
+                        lowerIsBetter: false 
+                    }));
+
+                categoriesMap[catId].tests.push({
+                    id: t.id,
+                    name: t.name,
+                    subtests: subtests
+                });
+            });
+
+            if (isMounted) {
+                // On transforme la map en array et on filtre les catégories vides
+                const finalCatalog = Object.values(categoriesMap).filter(c => c.tests.length > 0);
+                setCatalog(finalCatalog);
+                setSource('db');
+            }
+
         } catch (e) {
-            Logger.error('DB', 'Failed to load catalog', e);
-            // Fallback silencieux sur le catalogue local déjà initialisé
+            Logger.error('DB', 'Failed to load DB catalog, falling back to local snapshot', e);
+            if (isMounted) {
+                setCatalog(TEST_CATALOG);
+                setSource('local');
+            }
         } finally {
-            setLoading(false);
+            if (isMounted) setLoading(false);
         }
     };
 
-    fetchCatalog();
+    initCatalog();
+
+    return () => { isMounted = false; };
   }, []);
 
   return (
