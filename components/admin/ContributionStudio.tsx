@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight } from 'lucide-react';
+import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan } from 'lucide-react';
 import { Contribution, ExtractedRow } from '../../types';
 import { GoogleGenAI } from "@google/genai";
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
@@ -8,6 +8,7 @@ import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreT
 import { supabase } from '../../services/db';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
+import { TEST_CATALOG } from '../../data/testCatalog';
 
 interface Props {
   onClose: () => void;
@@ -31,11 +32,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
   
   const [testName, setTestName] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(TEST_CATALOG[0]?.id || 'motricite-globale');
   const [testNameError, setTestNameError] = useState(false);
   
   const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
   const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [zoom, setZoom] = useState(1);
+  
+  // LEGAL & MODAL STATE
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [legalConsent, setLegalConsent] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
   const toast = useToast();
 
   // --- HELPER FUNCTIONS ---
@@ -256,14 +264,21 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const handleDeleteRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
   const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(groupedRows).length + 1));
   
-  // --- DIRECT INSERTION LOGIC (NO QUEUE) ---
-  const handleSubmit = async () => {
+  // --- PRE-SAVE CHECK ---
+  const handlePreSave = () => {
       if (!testName.trim()) {
           setTestNameError(true);
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
       }
+      setShowSaveModal(true);
+  };
 
+  // --- FINAL SAVE (DIRECT INSERT) ---
+  const handleFinalSave = async () => {
+      if (!legalConsent) return; // Sécurité frontend supplémentaire
+      
+      setIsSaving(true);
       try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Utilisateur non connecté");
@@ -284,10 +299,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           await supabase.from('official_tests').insert({
               id: testId,
               name: testName,
-              category_id: 'community',
+              category_id: selectedCategory, // Use Selected Category
               version: '1.0',
               author: user.email,
-              organization_id: orgId // Linked to Private Org
+              organization_id: orgId // Linked to Private Org (SILO)
           });
 
           // 3. Prepare Subtests & Norms
@@ -308,7 +323,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
               // Insert Norms
               const normsPayload = subRows.map((row, idx) => {
-                  // Parsing Age/Label
                   const ageMatch = row.label.match(/(\d+)/); 
                   const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
                   
@@ -321,7 +335,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                       mean = parseFloat(row.mean || row.raw) || 0;
                       sd = parseFloat(row.sd || row.zScore) || 0;
                   } else {
-                      // Lookup parsing simplistic
                       rawMin = parseFloat(row.raw) || 0;
                       rawMax = parseFloat(row.raw) || 0;
                   }
@@ -351,7 +364,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           
           Logger.info('DB', "Test privé créé avec succès.");
           
-          // Construire l'objet Contribution pour la callback UI (affichage success)
+          // Contribution object for UI feedback
           const contributionData: Contribution = {
               id: testId,
               userId: user.id,
@@ -365,12 +378,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
               rows: rows
           };
           
+          setShowSaveModal(false);
           onSubmit(contributionData);
           setStep('success');
 
       } catch (e: any) {
           Logger.error('DB', "Erreur sauvegarde test:", e);
-          toast.error("Erreur lors de la création du test : " + e.message);
+          toast.error("Erreur lors de la création : " + e.message);
+      } finally {
+          setIsSaving(false);
       }
   };
 
@@ -385,40 +401,40 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-[#E07A5F]/10 rounded-full blur-3xl"></div>
                     <div className="relative z-10 text-center">
                         <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-8 mx-auto transform -rotate-6">
-                            <Sparkles size={48} className="text-[#E07A5F]" />
+                            <Scan size={48} className="text-[#E07A5F]" />
                         </div>
-                        <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Mes Tests Privés</h2>
-                        <p className="text-stone-500 text-sm font-medium">Numérisez vos propres manuels.</p>
+                        <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Studio de Numérisation</h2>
+                        <p className="text-stone-500 text-sm font-medium">Transformez vos manuels papiers en outils numériques interactifs.</p>
                     </div>
                 </div>
                 <div className="w-full md:w-3/5 p-10 md:p-12">
-                    <h3 className="text-2xl font-bold text-[#3D405B] mb-8">Studio de Création</h3>
+                    <h3 className="text-2xl font-bold text-[#3D405B] mb-8">Comment ça marche ?</h3>
                     <div className="space-y-8">
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">1</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Vos données, votre cabinet</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Les tests créés ici ne sont visibles que par vous et les membres de votre organisation.</p>
+                                <h4 className="font-bold text-[#3D405B]">Usage Personnel & Privé</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Le test est chiffré et stocké dans le silo sécurisé de votre organisation. Il n'est <strong>jamais partagé</strong> avec d'autres utilisateurs.</p>
                             </div>
                         </div>
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">2</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Extraction Intelligente</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Prenez en photo un tableau de normes (Moyenne/ET ou Conversion), l'IA le structure automatiquement.</p>
+                                <h4 className="font-bold text-[#3D405B]">Extraction par IA</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Prenez en photo vos tableaux d'étalonnage. Notre moteur extrait les valeurs et crée une grille de saisie interactive.</p>
                             </div>
                         </div>
                         <div className="flex gap-4">
                             <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">3</div>
                             <div>
-                                <h4 className="font-bold text-[#3D405B]">Utilisation Immédiate</h4>
-                                <p className="text-sm text-stone-500 leading-relaxed">Une fois validé, le test apparaît instantanément dans votre catalogue de saisie.</p>
+                                <h4 className="font-bold text-[#3D405B]">Respect des Droits</h4>
+                                <p className="text-sm text-stone-500 leading-relaxed">Conformément à l'exception d'interopérabilité, vous devez posséder l'original du test numérisé.</p>
                             </div>
                         </div>
                     </div>
                     <div className="mt-10 pt-6 border-t border-stone-100 flex justify-end">
                         <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
-                            Commencer <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                            Numériser un test <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                         </button>
                     </div>
                 </div>
@@ -440,7 +456,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     </div>
                 </div>
                 <h1 className="font-serif text-3xl font-bold text-[#3D405B] mb-4">Scanner un tableau</h1>
-                <p className="text-stone-500 mb-10 max-w-md mx-auto leading-relaxed">Prenez en photo une page de manuel (Moyennes/Ecart-Types ou Table de conversion).</p>
+                <p className="text-stone-500 mb-10 max-w-md mx-auto leading-relaxed">Prenez en photo une page de votre manuel (Tableau des Moyennes/ET ou Table de conversion).</p>
                 {step === 'upload' ? (
                     <div className="space-y-6 max-w-md mx-auto">
                         <div className="text-left">
@@ -457,16 +473,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" />
                             <div className="relative z-10 pointer-events-none">
                                 <Upload size={32} className="text-stone-300 group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
-                                <p className="font-bold text-[#3D405B]">Importer l'image</p>
-                                <p className="text-xs text-stone-400 mt-1">L'IA détectera les données.</p>
+                                <p className="font-bold text-[#3D405B]">Importer la photo</p>
+                                <p className="text-xs text-stone-400 mt-1">L'IA détectera la structure.</p>
                             </div>
                         </div>
                     </div>
                 ) : (
                     <div className="py-12">
                         <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
-                        <p className="font-bold text-[#3D405B]">Analyse en cours...</p>
-                        <p className="text-xs text-stone-400">Structuration des données...</p>
+                        <p className="font-bold text-[#3D405B]">Extraction des données...</p>
+                        <p className="text-xs text-stone-400">Structuration en cours...</p>
                     </div>
                 )}
             </div>
@@ -481,8 +497,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
                     <Check size={48} strokeWidth={4} />
                 </div>
-                <h2 className="font-serif text-4xl font-bold text-[#3D405B] mb-4">Test Créé !</h2>
-                <p className="text-stone-500 text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue (catégorie 'Community').</p>
+                <h2 className="font-serif text-4xl font-bold text-[#3D405B] mb-4">Test Numérisé !</h2>
+                <p className="text-stone-500 text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue personnel.</p>
                 <button onClick={onClose} className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all">Retour au Dashboard</button>
             </div>
         </div>
@@ -508,11 +524,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Organisation)</p>
+                    <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Chiffré)</p>
                 </div>
             </div>
             <div className="flex items-center gap-3">
-                <button onClick={handleSubmit} className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm"><Save size={16} /> Enregistrer le test</button>
+                <button onClick={handlePreSave} className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm"><Save size={16} /> Enregistrer le test</button>
             </div>
         </div>
 
@@ -546,6 +562,26 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     placeholder="Ex: WISC-V"
                                     className="bg-transparent font-bold text-[#3D405B] w-full outline-none placeholder:text-stone-300"
                                 />
+                            </div>
+                        </div>
+
+                        {/* CATEGORY SELECTOR */}
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-stone-400">Catégorie du Test</label>
+                            <div className="flex flex-wrap gap-2">
+                                {TEST_CATALOG.map(cat => (
+                                    <button
+                                        key={cat.id}
+                                        onClick={() => setSelectedCategory(cat.id)}
+                                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                                            selectedCategory === cat.id 
+                                            ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md' 
+                                            : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300'
+                                        }`}
+                                    >
+                                        {cat.name}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
@@ -639,5 +675,52 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 </div>
             </div>
         </div>
-    );
+
+        {/* --- MODAL CONFIRMATION LÉGALE --- */}
+        {showSaveModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="p-6">
+                        <div className="w-16 h-16 bg-[#3D405B] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-stone-300">
+                            <Scale size={32} className="text-white" />
+                        </div>
+                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Certification Légale</h3>
+                        <p className="text-center text-sm text-stone-500 mb-6">Pour valider cette numérisation, votre engagement est requis.</p>
+                        
+                        <div className="bg-stone-50 p-4 rounded-xl border border-stone-100 mb-6">
+                            <label className="flex gap-3 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="mt-1 w-5 h-5 accent-[#E07A5F] shrink-0" 
+                                    checked={legalConsent}
+                                    onChange={(e) => setLegalConsent(e.target.checked)}
+                                />
+                                <span className="text-xs text-stone-600 font-medium leading-relaxed text-justify">
+                                    Je certifie sur l'honneur être en possession de l'original papier de ce test (Manuel + Cahiers). Cette numérisation est effectuée au titre de l'exception d'interopérabilité (Code de la Propriété Intellectuelle) pour mon usage professionnel personnel et exclusif.
+                                </span>
+                            </label>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setShowSaveModal(false)}
+                                className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm"
+                            >
+                                Annuler
+                            </button>
+                            <button 
+                                onClick={handleFinalSave}
+                                disabled={!legalConsent || isSaving}
+                                className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${legalConsent ? 'bg-[#E07A5F] hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-300 cursor-not-allowed'}`}
+                            >
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+                                Confirmer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+    </div>
+  );
 };

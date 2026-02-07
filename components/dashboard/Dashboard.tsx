@@ -67,7 +67,7 @@ const ReferralCard = () => {
     );
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink }) => {
+export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, onContribute, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>(isDemoMode ? 'pending' : 'active');
   const [showImportAnim, setShowImportAnim] = useState(false);

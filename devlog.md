@@ -2,21 +2,22 @@
 # AutoBilanErgo - Journal de Développement & Architecture
 
 > **Architecture :** Cloud Native (Supabase PostgreSQL) + Chiffrement E2EE + Server-Side Authority
-> **Version :** 1.5.2 (SQL Native Hardening)
+> **Version :** 1.6.0 (Experience & Demo)
 
 ## 1. Vue d'ensemble
 AutoBilanErgo est une application web (SPA) conçue pour les ergothérapeutes. Elle permet de générer des bilans cliniques automatisés, assistés par l'IA (Gemini), tout en garantissant une confidentialité totale des données (Privacy by Design).
 
 ## 2. Historique Récent
+*   **v1.6.0 (UX & Onboarding) :**
+    *   **Mode Démo :** Implémentation d'un environnement "bac à sable" complet. Permet de tester l'intégralité du flux (Saisie -> Tests -> IA -> Export) sans inscription ni persistance BDD (State volatile).
+    *   **Onboarding Gamifié :** Nouveau parcours d'accueil (`OnboardingExperience`) expliquant visuellement les piliers de l'app (Gain de temps, Sécurité E2EE, Communauté).
+    *   **UI Polish :** Harmonisation du Design System "Apple-esque" (Arrondis 32px, Glassmorphism, Micro-interactions).
+    *   **Paywall & Credits UI :** Intégration des interfaces de monétisation (Modales Pricing, Gestion des quotas visuelle).
 *   **v1.5.2 (SQL Standardization) :**
     *   **Architecture :** Abandon définitif de l'abstraction NoSQL. Optimisation du code pour tirer parti de la puissance relationnelle de PostgreSQL (Jointures, Intégrité référentielle, Vues).
     *   **Nettoyage :** Suppression de toute dette technique liée à une hypothétique migration Firebase.
 *   **v1.5.1 (Service Layer Hardening) :**
     *   **Refactoring Service Layer :** Centralisation complète des appels Database dans `StorageService`.
-*   **v1.5.0 (Release Candidate) :**
-    *   **Statut :** Feature Complete sur le stack Supabase.
-    *   **Portail Famille :** Finalisation du protocole d'échange sécurisé.
-    *   **IA & OCR :** Module d'ingestion des normes opérationnel.
 
 ## 3. Schéma de Données (Relationnel & Chiffré)
 

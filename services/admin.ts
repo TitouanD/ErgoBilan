@@ -1,6 +1,6 @@
 
 import { supabase } from './db';
-import { Contribution } from '../types';
+import { Contribution, TestData, Patient } from '../types';
 import { Logger } from '../utils/logger';
 
 /**
@@ -181,5 +181,65 @@ export const AdminService = {
             .eq('id', contribution.id);
 
         if (finalError) throw finalError;
+    },
+
+    /**
+     * MODULE C : Télémétrie Passive & Anonyme
+     * Extrait les scores validés, calcule l'âge en mois, et les envoie pour statistiques.
+     * Cette fonction est conçue pour ne jamais bloquer l'interface (Fire & Forget).
+     */
+    logAnonymousStats: async (tests: TestData, patient: Patient) => {
+        try {
+            // 1. Calcul Age en mois précis
+            if (!patient.dob) return;
+            const birthDate = new Date(patient.dob);
+            const now = new Date();
+            // Calcul approximatif suffisant pour des stats globales
+            const ageMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
+
+            if (ageMonths < 0) return; // Date futuriste ou invalide
+
+            const payload: any[] = [];
+            const sessionHash = 'anon_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+
+            // 2. Extraction des scores validés uniquement
+            for (const [testId, subtests] of Object.entries(tests)) {
+                for (const [subtestId, result] of Object.entries(subtests)) {
+                    if (result.status === 'validated' && result.raw) {
+                        // Nettoyage valeur brute (on ne garde que le numérique pour l'instant)
+                        // Exemple: "12 pts" -> 12
+                        const rawVal = parseFloat(result.raw.replace(',', '.').replace(/[^0-9.-]/g, ''));
+                        
+                        if (!isNaN(rawVal)) {
+                            payload.push({
+                                test_id: testId,
+                                subtest_id: subtestId,
+                                age_months: ageMonths,
+                                gender: patient.gender || 'Mixed',
+                                raw_score: rawVal,
+                                computed_standard: result.standard ? parseFloat(result.standard) : null,
+                                computed_percentile: result.percentile ? parseFloat(result.percentile) : null,
+                                source_hash: sessionHash, // Permet de grouper les lignes d'un même patient anonyme
+                                is_clinical: true
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (payload.length > 0) {
+                // Fire & Forget (Pas de await bloquant coté UI, mais on await ici pour le catch)
+                const { error } = await supabase.from('contribution_insights').insert(payload);
+                if (error) {
+                    Logger.warn('DB', "Telemetry insert failed", error.message);
+                } else {
+                    Logger.info('DB', `Telemetry sent: ${payload.length} data points.`);
+                }
+            }
+
+        } catch (e) {
+            // Sécurité absolue : On ne veut jamais faire planter l'app pour des stats
+            Logger.warn('DB', "Telemetry error (Silent)", e);
+        }
     }
 };

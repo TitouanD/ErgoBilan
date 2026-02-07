@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
@@ -165,6 +164,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: 'demo@autobilan.fr',
           firstName: 'Invité',
           lastName: 'Démo',
+          phonePro: '01 02 03 04 05',
+          siret: '123 456 789 00012',
+          addressPro: '10 Rue de la Démo, 75000 Paris',
           encryptionSalt: 'mock-salt',
           encryptionValidator: 'mock-validator',
           organizationRole: 'owner'

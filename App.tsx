@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
@@ -14,6 +15,7 @@ import { AssessmentStepper } from './components/assessment/AssessmentStepper'; /
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
+import { AdminService } from './services/admin'; // NOUVEAU
 import { anonymizeData } from './utils/anonymizer';
 import { PatientFile, PendingQuestionnaire, ScoreResult, TestSession, ReportMetadata } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, PlayCircle, Eye, Rocket, Info, Save, RotateCcw, CheckCircle2, AlertTriangle, RefreshCw, FileText } from 'lucide-react';
@@ -217,6 +219,12 @@ const AppRouter = () => {
         setGenerationError(null);
         setIsGenerating(true); 
         try {
+            // MODULE C : Télémétrie Passive & Anonyme (Fire & Forget)
+            // On le lance avant l'IA pour ne pas ralentir l'UX si ça prend du temps
+            if (!isDemoMode) {
+                AdminService.logAnonymousStats(assessment.tests, assessment.patient);
+            }
+
             const p = assessment.patient;
             const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
             

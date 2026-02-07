@@ -53,8 +53,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                         return {
                             id: t.id,
                             name: t.name,
-                            subtests: subtests,
-                            isPrivate: !!t.organization_id // Flag to identify private tests
+                            subtests: subtests
                         };
                     });
 
