@@ -125,7 +125,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             CONTEXT: The filename is "${filename}".
             IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
 
-            TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT data.
+            TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE data.
 
             --- STEP 1: CLASSIFICATION (structure_type) ---
             A) "PARAMETRIC": Contains statistical constants per group (Mean/Moyenne/M AND SD/Ecart-Type/Sigma).
@@ -142,6 +142,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                - Keep decimals.
                - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
 
+            --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
+            You must calculate specific numeric values for the database:
+            1. AGE NORMALIZATION (age_min_months, age_max_months):
+               - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
+               - Convert range "4;0 - 4;5" -> min: 48, max: 53.
+               - If only grade is available (e.g. "CP"), estimate typical age (CP = 6 years = 72 months).
+            2. RAW SCORE NORMALIZATION (raw_min, raw_max):
+               - "15-16" -> min: 15, max: 16
+               - "7" -> min: 7, max: 7
+               - "<5" -> min: 0, max: 5
+               - ">19" or "19+" -> min: 19, max: 999 (use a high number for infinity)
+
             --- JSON OUTPUT SCHEMA ---
             {
               "test_context": "string (Detected name of the test)",
@@ -151,13 +163,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   "subtest_id": "string (Subtest name)",
                   "rows": [
                     {
-                      "label": "string (Row identifier: Age, Grade. Use filename if needed)",
+                      "label": "string (Display Label, e.g. '4;0 - 4;5')",
                       "mean": "string (Only if PARAMETRIC)",
                       "sd": "string (Only if PARAMETRIC)",
-                      "raw_range": "string (Only if LOOKUP: Raw Score)",
+                      "raw_range": "string (Only if LOOKUP: Raw Score as displayed)",
                       "standard": "string (Only if LOOKUP: Standard Score)",
                       "percentile": "string (Only if LOOKUP: Percentile)",
-                      "z_score": "string (Z-Score if explicit)"
+                      "z_score": "string (Z-Score if explicit)",
+                      
+                      // NORMALIZED FIELDS (MANDATORY)
+                      "age_min_months": number | null,
+                      "age_max_months": number | null,
+                      "raw_min": number | null,
+                      "raw_max": number | null
                     }
                   ]
                 }
@@ -190,7 +208,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                               mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
                               sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
                               zScore: r.z_score ? String(r.z_score) : '',
-                              percentile: r.percentile ? String(r.percentile) : ''
+                              percentile: r.percentile ? String(r.percentile) : '',
+                              
+                              // CAPTURE DES CHAMPS CACHÉS
+                              hidden_age_min: r.age_min_months,
+                              hidden_age_max: r.age_max_months,
+                              hidden_raw_min: r.raw_min,
+                              hidden_raw_max: r.raw_max
                           };
                           flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
                       });
@@ -243,6 +267,25 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       }));
   };
 
+  // NEW: Update label for a whole batch (group)
+  const handleBatchLabelChange = (subtestName: string, oldLabel: string, newLabel: string) => {
+      setRows(prev => prev.map(r => 
+          (r.subtest === subtestName && r.label === oldLabel) 
+              ? { ...r, label: newLabel } 
+              : r
+      ));
+  };
+
+  // NEW: Add row to a specific batch
+  const handleAddRowToBatch = (subtestName: string, label: string) => {
+      setRows(prev => [...prev, { 
+          id: Date.now().toString(), 
+          subtest: subtestName, 
+          label: label, 
+          raw: '', standard: '', zScore: '', percentile: '' 
+      }]);
+  };
+
   const checkConsistency = (row: ExtractedRow): boolean => {
       if (tableStructure === 'PARAMETRIC') return true; 
       const zStr = cleanNumberStr(row.zScore || '');
@@ -277,7 +320,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   // --- FINAL SAVE (DIRECT INSERT) ---
   const handleFinalSave = async () => {
-      if (!legalConsent) return; // Sécurité frontend supplémentaire
+      if (!legalConsent) return; 
       
       setIsSaving(true);
       try {
@@ -295,15 +338,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           const orgId = member.organization_id;
 
           // 2. Prepare Test Object
-          const testId = `priv_${orgId.split('-')[0]}_${Date.now()}`; // Unique ID with prefix
+          const testId = `priv_${orgId.split('-')[0]}_${Date.now()}`; 
           
           await supabase.from('official_tests').insert({
               id: testId,
               name: testName,
-              category_id: selectedCategory, // Use Selected Category
+              category_id: selectedCategory, 
               version: '1.0',
               author: user.email,
-              organization_id: orgId // Linked to Private Org (SILO)
+              organization_id: orgId 
           });
 
           // 3. Prepare Subtests & Norms
@@ -311,7 +354,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
               const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
               const subtestId = `${testId}_${subtestSlug}`;
 
-              // Insert Subtest
               await supabase.from('official_subtests').insert({
                   id: subtestId,
                   test_id: testId,
@@ -322,11 +364,24 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   organization_id: orgId
               });
 
-              // Insert Norms
+              // Insert Norms (ID UUID géré par Postgres)
               const normsPayload = subRows.map((row, idx) => {
-                  const ageMatch = row.label.match(/(\d+)/); 
-                  const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
                   
+                  // --- LOGIQUE HYBRIDE : IA > Fallback JS ---
+                  
+                  // 1. AGE
+                  let ageMin = row.hidden_age_min;
+                  let ageMax = row.hidden_age_max;
+
+                  if (ageMin === undefined || ageMax === undefined) {
+                      // Fallback: Parsing basique du label
+                      const ageMatch = row.label.match(/(\d+)/); 
+                      const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
+                      ageMin = ageYear * 12;
+                      ageMax = (ageYear * 12) + 11;
+                  }
+
+                  // 2. RAW SCORES / STATS
                   let mean = null;
                   let sd = null;
                   let rawMin = 0;
@@ -336,16 +391,34 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                       mean = parseFloat(row.mean || row.raw) || 0;
                       sd = parseFloat(row.sd || row.zScore) || 0;
                   } else {
-                      rawMin = parseFloat(row.raw) || 0;
-                      rawMax = parseFloat(row.raw) || 0;
+                      // Mode LOOKUP
+                      if (row.hidden_raw_min !== undefined && row.hidden_raw_max !== undefined) {
+                          // Valeurs calculées par Gemini (Ex: "19+" -> 19, 999)
+                          rawMin = row.hidden_raw_min;
+                          rawMax = row.hidden_raw_max;
+                      } else {
+                          // Fallback JS si l'IA a raté
+                          const cleanRaw = row.raw.replace(',', '.').replace(/[^\d.-]/g, '');
+                          if (cleanRaw.includes('-')) {
+                              const parts = cleanRaw.split('-');
+                              rawMin = parseFloat(parts[0]);
+                              rawMax = parseFloat(parts[1]);
+                          } else {
+                              const val = parseFloat(cleanRaw);
+                              rawMin = val;
+                              rawMax = val;
+                          }
+                          // Sécurité NaN
+                          if (isNaN(rawMin)) rawMin = 0;
+                          if (isNaN(rawMax)) rawMax = 0;
+                      }
                   }
 
                   return {
-                      id: `${subtestId}_n_${idx}_${Date.now()}`,
                       subtest_id: subtestId,
                       organization_id: orgId,
-                      age_min_months: ageYear * 12, 
-                      age_max_months: (ageYear * 12) + 11,
+                      age_min_months: ageMin, 
+                      age_max_months: ageMax,
                       gender: 'Mixed',
                       raw_min: rawMin,
                       raw_max: rawMax,
@@ -364,7 +437,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           
           Logger.info('DB', "Test privé créé avec succès.");
           
-          // Contribution object for UI feedback
           const contributionData: Contribution = {
               id: testId,
               userId: user.id,
@@ -391,7 +463,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   // --- RENDER ---
-
   if (step === 'intro') { 
       return (
         <div className="fixed inset-0 z-[50] bg-[#3D405B]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
@@ -524,7 +595,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Chiffré)</p>
+                    <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]"/> Test Privé (Chiffré)</p>
                 </div>
             </div>
             <div className="flex items-center gap-3">
@@ -600,69 +671,110 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
 
                                 <div className="p-2">
-                                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 px-3">
-                                        <div className="col-span-3">Âge / Classe</div>
-                                        {tableStructure === 'PARAMETRIC' ? (
-                                            <>
-                                                <div className="col-span-4 text-center" title="Moyenne Statistique">Moyenne (M)</div>
-                                                <div className="col-span-4 text-center" title="Ecart-Type Statistique">Ecart-Type (SD)</div>
-                                                <div className="col-span-1"></div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className="col-span-2 text-center" title="Intervalle Score Brut">Brut (Range)</div>
-                                                <div className="col-span-2 text-center" title="Note Standard">NS</div>
-                                                <div className="col-span-2 text-center" title="Z-Score Calculé">ET / Z</div>
-                                                <div className="col-span-2 text-center" title="Percentile">%</div>
-                                                <div className="col-span-1"></div>
-                                            </>
-                                        )}
-                                    </div>
+                                    {/* HEADERS CONDITIONNELS */}
+                                    {tableStructure === 'PARAMETRIC' && (
+                                        <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 px-3">
+                                            <div className="col-span-3">Âge / Classe</div>
+                                            <div className="col-span-4 text-center" title="Moyenne Statistique">Moyenne (M)</div>
+                                            <div className="col-span-4 text-center" title="Ecart-Type Statistique">Ecart-Type (SD)</div>
+                                            <div className="col-span-1"></div>
+                                        </div>
+                                    )}
 
-                                    {subRows.map((row) => {
-                                        const isConsistent = checkConsistency(row);
-                                        return (
-                                            <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1">
-                                                <div className="col-span-3">
-                                                    <input value={row.label} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-stone-50 rounded-lg border border-transparent focus:bg-white focus:border-[#E07A5F] outline-none text-sm font-bold text-[#3D405B] transition-all" />
+                                    {/* MODE 1 : LOOKUP BATCHED (REGROUPÉ PAR ÂGE) */}
+                                    {tableStructure === 'LOOKUP' ? (
+                                        <div className="space-y-4">
+                                            {Array.from(
+                                                subRows.reduce((entryMap, e) => {
+                                                    const l = e.label || "N/A";
+                                                    if(!entryMap.has(l)) entryMap.set(l, []);
+                                                    entryMap.get(l)!.push(e);
+                                                    return entryMap;
+                                                }, new Map<string, ExtractedRow[]>())
+                                            ).map(([label, batchRows], batchIdx) => (
+                                                <div key={`${subtest}-${batchIdx}`} className="bg-stone-50/50 rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+                                                    
+                                                    {/* BATCH HEADER (L'ÂGE EST ICI UNE SEULE FOIS) */}
+                                                    <div className="bg-stone-100 px-4 py-2 border-b border-stone-200 flex items-center justify-between group/header hover:bg-stone-200/50 transition-colors">
+                                                        <div className="flex items-center gap-3 flex-1">
+                                                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider shrink-0">Groupe :</span>
+                                                            <input 
+                                                                value={label} 
+                                                                onChange={(e) => handleBatchLabelChange(subtest, label, e.target.value)}
+                                                                className="font-bold text-[#3D405B] text-sm bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
+                                                                placeholder="Ex: 4;0 à 4;5 ans"
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider bg-white px-2 py-0.5 rounded border border-stone-200">{batchRows.length} lignes</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* BATCH ROWS (JUSTE LES SCORES) */}
+                                                    <div className="p-2 bg-white">
+                                                        <div className="grid grid-cols-9 gap-2 text-[9px] font-bold text-stone-400 uppercase tracking-wider mb-2 px-2 text-center bg-stone-50/50 py-1 rounded-lg mx-1">
+                                                            <div className="col-span-2">Brut</div>
+                                                            <div className="col-span-2">NS</div>
+                                                            <div className="col-span-2">ET / Z</div>
+                                                            <div className="col-span-2">%</div>
+                                                            <div className="col-span-1"></div>
+                                                        </div>
+
+                                                        {batchRows.map((row) => {
+                                                            const isConsistent = checkConsistency(row);
+                                                            return (
+                                                                <div key={row.id} className="grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row hover:bg-stone-50 rounded-lg p-1 transition-colors">
+                                                                    <div className="col-span-2">
+                                                                        <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-stone-600 transition-all" />
+                                                                    </div>
+                                                                    <div className="col-span-2">
+                                                                        <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[#3D405B] transition-all" />
+                                                                    </div>
+                                                                    <div className="col-span-2">
+                                                                        <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
+                                                                    </div>
+                                                                    <div className="col-span-2">
+                                                                        <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
+                                                                    </div>
+                                                                    <div className="col-span-1 text-center">
+                                                                        <button onClick={() => handleDeleteRow(row.id)} className="text-stone-300 hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14}/></button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        
+                                                        <button onClick={() => handleAddRowToBatch(subtest, label)} className="mt-2 w-full py-2 border border-dashed border-stone-200 rounded-lg text-stone-400 text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
+                                                            <Plus size={12} /> Ajouter une ligne à ce groupe
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                
-                                                {tableStructure === 'PARAMETRIC' ? (
-                                                    <>
-                                                        <div className="col-span-4">
-                                                            <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
-                                                        </div>
-                                                        <div className="col-span-4">
-                                                            <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/50 rounded-lg border border-transparent focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="col-span-2">
-                                                            <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-2 text-center bg-stone-50 rounded-lg border border-transparent focus:bg-white focus:border-[#E07A5F] outline-none text-sm font-medium text-stone-600 transition-all" />
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className={`w-full p-2 text-center bg-stone-50 rounded-lg border border-transparent focus:bg-white focus:border-[#E07A5F] outline-none text-sm font-bold text-[#3D405B] transition-all`} />
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-2 text-center bg-stone-50 rounded-lg border border-transparent focus:bg-white focus:border-[#E07A5F] outline-none text-sm font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-2 text-center bg-stone-50 rounded-lg border border-transparent focus:bg-white focus:border-[#E07A5F] outline-none text-sm font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
-                                                        </div>
-                                                    </>
-                                                )}
-                                                
-                                                <div className="col-span-1 text-center">
-                                                    <button onClick={() => handleDeleteRow(row.id)} className="text-stone-300 hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14}/></button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        // MODE 2 : PARAMETRIC (LISTE PLATE CLASSIQUE)
+                                        <>
+                                            {subRows.map((row) => (
+                                                <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1 hover:bg-stone-50 p-1 rounded-lg transition-colors">
+                                                    <div className="col-span-3">
+                                                        <input value={row.label} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-white rounded-lg border border-stone-200 focus:border-[#E07A5F] outline-none text-sm font-bold text-[#3D405B] transition-all" />
+                                                    </div>
+                                                    <div className="col-span-4">
+                                                        <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
+                                                    </div>
+                                                    <div className="col-span-4">
+                                                        <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
+                                                    </div>
+                                                    <div className="col-span-1 text-center">
+                                                        <button onClick={() => handleDeleteRow(row.id)} className="text-stone-300 hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14}/></button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
-                                    
-                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border dashed border-stone-200 rounded-lg text-stone-400 text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
-                                        <Plus size={12} /> Ajouter une ligne
-                                    </button>
+                                            ))}
+                                            
+                                            <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border dashed border-stone-200 rounded-lg text-stone-400 text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
+                                                <Plus size={12} /> Ajouter une ligne
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ))}

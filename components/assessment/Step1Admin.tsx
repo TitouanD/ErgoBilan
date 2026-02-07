@@ -37,15 +37,13 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   };
 
   /**
-   * Sécurité : On force une sauvegarde explicite au moment de passer à l'étape suivante.
-   * Note : L'ID est normalement déjà généré par le Context dès la saisie.
+   * Sécurité : Sauvegarde explicite avec récupération de l'ID généré par le serveur.
    */
   const ensurePatientPersisted = async (): Promise<void> => {
-      if (!orgKey || !data.id) return;
+      if (!orgKey) return;
 
-      // On s'assure que le fichier patient est bien créé/mis à jour
       const fileWrapper: PatientFile = {
-          id: data.id,
+          id: data.id || '', // Vide si création
           patient: data,
           reports: [],
           sessions: [],
@@ -53,9 +51,15 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           archived: false
       };
 
-      await StorageService.saveFile(fileWrapper, orgKey);
+      // StorageService gère l'INSERT ou UPDATE et renvoie l'ID
+      const newId = await StorageService.saveFile(fileWrapper, orgKey);
       
-      // Le Realtime du Dashboard devrait détecter le changement, mais on appelle le callback au cas où
+      // Si c'était une création, on met à jour le contexte avec le vrai ID
+      if (!data.id) {
+          updateData({ id: newId });
+          Logger.info('DB', "Patient created with ID:", newId);
+      }
+      
       if (onPatientCreated) onPatientCreated();
   };
 
@@ -70,23 +74,22 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
               observations: DEMO_PATIENTS.LEO.observations 
           }));
           
-          // On génère un ID frais si besoin
-          if (!freshData.patient.id || freshData.patient.id === 'demo-leo') freshData.patient.id = crypto.randomUUID();
+          // En mode démo ou test, on laisse l'ID vide pour que le serveur le génère
+          freshData.patient.id = undefined;
           
-          // Mise à jour du context via loadFromDraft pour écraser proprement
           loadFromDraft(freshData);
           
-          // Trigger la sauvegarde immédiate si on a la clé
           if (orgKey) {
               const fileWrapper: PatientFile = {
-                  id: freshData.patient.id,
+                  id: '',
                   patient: freshData.patient,
                   reports: [],
                   sessions: [],
                   lastInteraction: new Date().toISOString(),
                   archived: false
               };
-              await StorageService.saveFile(fileWrapper, orgKey);
+              const newId = await StorageService.saveFile(fileWrapper, orgKey);
+              updateData({ id: newId }); // Mise à jour immédiate
               if (onPatientCreated) onPatientCreated();
           }
           
@@ -112,12 +115,11 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           onNext();
       } catch (e) {
           Logger.error('DB', "Erreur sauvegarde patient:", e);
-          // On ne bloque pas la navigation si erreur réseau, le draft local/session existe
-          onNext();
+          toast.error("Erreur de sauvegarde. Vérifiez votre connexion.");
       }
   };
 
-  // Check de validation sécurisé (évite le passage si le debounce n'a pas fini de commit)
+  // Check de validation sécurisé
   const isFormValid = data.lastName?.trim().length > 0 && data.firstName?.trim().length > 0;
 
   return (

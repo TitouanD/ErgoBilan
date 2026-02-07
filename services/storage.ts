@@ -79,27 +79,47 @@ export const StorageService = {
 
     /**
      * SAUVEGARDE PATIENT (Architecture 3-Level Key)
-     * Utilise OrgKey pour déverrouiller ou créer la FileKey.
+     * Gère INSERT (sans ID) ou UPDATE (avec ID).
+     * Retourne l'ID du patient (nouveau ou existant).
      */
-    saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
-         if (_isDemoMode) return;
+    saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<string> => {
+         if (_isDemoMode) return file.id || 'demo-id';
          
          const { data: { user } } = await supabase.auth.getUser();
-         if (!user) return;
+         if (!user) throw new Error("User not authenticated");
 
          // Get Org ID from session or fetch it (Assumed fetched in AuthContext)
          const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).single();
          if(!member) throw new Error("No organization found");
 
+         // On chiffre le fichier complet
          const encrypted = await encryptData(file, orgKey);
-         
-         await supabase.from('patients').upsert({
-             id: file.id,
-             organization_id: member.organization_id,
-             encrypted_data: `${encrypted.iv}:${encrypted.content}`,
-             last_interaction: file.lastInteraction,
-             archived: file.archived
-         });
+         const encryptedStr = `${encrypted.iv}:${encrypted.content}`;
+
+         if (file.id) {
+             // UPDATE : L'ID existe déjà
+             const { error } = await supabase.from('patients').update({
+                 encrypted_data: encryptedStr,
+                 last_interaction: new Date().toISOString(), // Update timestamp
+                 archived: file.archived
+             }).eq('id', file.id);
+             
+             if (error) throw error;
+             return file.id;
+         } else {
+             // INSERT : Pas d'ID, on laisse Postgres le générer
+             const { data, error } = await supabase.from('patients').insert({
+                 organization_id: member.organization_id,
+                 encrypted_identity: 'pending', // Placeholder pour structure SQL
+                 encrypted_data: encryptedStr,
+                 iv: encrypted.iv, // Redondant avec le blob mais utile pour le schema SQL si requis
+                 last_interaction: new Date().toISOString(),
+                 archived: false
+             }).select('id').single();
+
+             if (error) throw error;
+             return data.id;
+         }
     },
 
     loadPatientList: async (orgKey: CryptoKey): Promise<PatientFile[]> => {
@@ -117,8 +137,10 @@ export const StorageService = {
         const decryptedFiles: PatientFile[] = [];
         for (const row of data) {
             try {
+                // On gère le cas où encrypted_data contient "iv:content"
                 const [iv, content] = row.encrypted_data.split(':');
                 const file = await decryptData({ iv, content }, orgKey);
+                // On s'assure que l'ID local correspond à l'ID DB
                 decryptedFiles.push({ ...file, id: row.id, archived: row.archived });
             } catch (e) {
                 Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
@@ -134,7 +156,8 @@ export const StorageService = {
          if (!data) throw new Error("Patient not found");
 
          const [iv, content] = data.encrypted_data.split(':');
-         return await decryptData({ iv, content }, orgKey);
+         const decrypted = await decryptData({ iv, content }, orgKey);
+         return { ...decrypted, id: data.id }; // Force sync ID
     },
 
     toggleArchive: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {

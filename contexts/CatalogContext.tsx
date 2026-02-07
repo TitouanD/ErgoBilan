@@ -7,7 +7,7 @@ import { Logger } from '../utils/logger';
 interface CatalogContextType {
   catalog: CategoryDef[];
   loading: boolean;
-  source: 'db' | 'local';
+  source: 'db' | 'local' | 'merged';
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -15,7 +15,7 @@ const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [catalog, setCatalog] = useState<CategoryDef[]>(TEST_CATALOG);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<'db' | 'local'>('local');
+  const [source, setSource] = useState<'db' | 'local' | 'merged'>('local');
 
   useEffect(() => {
     const fetchCatalog = async () => {
@@ -24,7 +24,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const { count } = await supabase.from('official_tests').select('*', { count: 'exact', head: true });
             
             if (count && count > 0) {
-                Logger.info('DB', 'Loading catalog from Supabase...');
+                Logger.info('DB', 'Loading extended catalog from Supabase...');
                 
                 // Fetch Tests (RLS will automatically filter Public + My Org's Private)
                 const { data: dbTests, error: testError } = await supabase.from('official_tests').select('*');
@@ -34,39 +34,55 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 const { data: dbSubtests, error: subError } = await supabase.from('official_subtests').select('*');
                 if (subError) throw subError;
 
-                // Map Data to UI Structure using local categories as skeleton
-                const newCatalog = TEST_CATALOG.map(cat => {
-                    // Filter tests for this category
-                    const catTests = dbTests.filter((t: any) => t.category_id === cat.id);
+                // STRATÉGIE DE FUSION : On part du catalogue local (Deep Copy)
+                // On ajoute les tests DB dans les catégories correspondantes
+                const mergedCatalog = JSON.parse(JSON.stringify(TEST_CATALOG)) as CategoryDef[];
+
+                dbTests.forEach((t: any) => {
+                    // Trouver la catégorie cible
+                    let category = mergedCatalog.find(c => c.id === t.category_id);
                     
-                    const mappedTests: TestDef[] = catTests.map((t: any) => {
-                        const subtests = dbSubtests
-                            .filter((s: any) => s.test_id === t.id)
-                            .map((s: any) => ({
-                                id: s.id,
-                                name: s.name,
-                                unit: s.unit || 'pts',
-                                scoreType: s.score_type as any,
-                                lowerIsBetter: false 
-                            }));
+                    // Si catégorie inconnue (ex: nouveau tag), on la crée ou on met dans 'Autre'
+                    // Pour simplifier ici, si pas trouvée, on met dans la première catégorie ou on ignore
+                    if (!category) {
+                        // Optionnel : Créer une catégorie dynamique si besoin. Ici on skip pour la sécurité.
+                        return;
+                    }
 
-                        return {
-                            id: t.id,
-                            name: t.name,
-                            subtests: subtests
-                        };
-                    });
+                    // Vérifier si le test existe déjà (pour éviter les doublons si on migre un jour les tests locaux en DB)
+                    if (category.tests.find(existing => existing.id === t.id)) {
+                        return;
+                    }
 
-                    return { ...cat, tests: mappedTests };
+                    // Construire l'objet Test
+                    const subtests = dbSubtests
+                        .filter((s: any) => s.test_id === t.id)
+                        .map((s: any) => ({
+                            id: s.id,
+                            name: s.name,
+                            unit: s.unit || 'pts',
+                            scoreType: s.score_type as any,
+                            lowerIsBetter: false 
+                        }));
+
+                    const newTest: TestDef = {
+                        id: t.id,
+                        name: t.name,
+                        subtests: subtests
+                    };
+
+                    // Ajouter le test à la catégorie
+                    category.tests.push(newTest);
                 });
 
-                setCatalog(newCatalog);
-                setSource('db');
+                setCatalog(mergedCatalog);
+                setSource('merged');
             } else {
-                Logger.warn('DB', 'Catalog tables empty. Using local fallback.');
+                Logger.info('DB', 'No DB tests found. Using local catalog.');
             }
         } catch (e) {
             Logger.error('DB', 'Failed to load catalog', e);
+            // Fallback silencieux sur le catalogue local déjà initialisé
         } finally {
             setLoading(false);
         }

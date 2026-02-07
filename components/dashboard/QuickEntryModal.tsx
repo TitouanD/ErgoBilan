@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
 import { ScoreResult, TestSession, Patient } from '../../types';
@@ -61,7 +62,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
     const mainTestId = selectedTests[0]?.id || 'multi';
 
     const session: TestSession = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // Utilisation d'un UUID valide même pour le stockage local (JSON Blob)
         date: new Date().toISOString(),
         testId: mainTestId,
         testName: sessionName,

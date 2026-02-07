@@ -9,7 +9,7 @@ interface AssessmentContextType {
   patient: Patient;
   tests: TestData;
   observations: Observations;
-  synthesis: ClinicalSynthesis; // NOUVEAU
+  synthesis: ClinicalSynthesis; 
   sections: ReportSection[];
   step: number;
   isAutoSaving: boolean;
@@ -23,8 +23,8 @@ interface AssessmentContextType {
   setObservations: (o: Observations) => void;
   updateObservations: (o: Partial<Observations>) => void;
   
-  setSynthesis: (s: ClinicalSynthesis) => void; // NOUVEAU
-  updateSynthesis: (s: Partial<ClinicalSynthesis>) => void; // NOUVEAU
+  setSynthesis: (s: ClinicalSynthesis) => void;
+  updateSynthesis: (s: Partial<ClinicalSynthesis>) => void;
 
   setSections: (s: ReportSection[]) => void;
   updateSection: (id: string, update: Partial<ReportSection>) => void;
@@ -63,7 +63,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [patient, setPatient] = useState<Patient>(initialPatient);
   const [tests, setTests] = useState<TestData>({});
   const [observations, setObservations] = useState<Observations>(initialObs);
-  const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis); // NOUVEAU
+  const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis);
   const [sections, setSections] = useState<ReportSection[]>([]);
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -97,6 +97,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                       lastInteraction: new Date().toISOString(),
                       archived: false
                   };
+                  // En autosave, on ne sauvegarde que si l'ID existe déjà pour ne pas créer de doublons accidentels
+                  // La création explicite se fait via Step1Admin
                   await StorageService.saveFile(fileWrapper, orgKey);
               }
 
@@ -113,17 +115,14 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updatePatient = (data: Partial<Patient>) => {
       setPatient(prev => {
           const newData = { ...prev, ...data };
-          if (!newData.id) {
-              newData.id = crypto.randomUUID();
-              Logger.info('UI', "Generated new Patient ID locally:", newData.id);
-          }
+          // SUPPRESSION DE LA GÉNÉRATION D'ID CLIENT
           return newData;
       });
   };
 
   const updateTests = (data: Partial<TestData>) => setTests(prev => ({ ...prev, ...data }));
   const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
-  const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data })); // NOUVEAU
+  const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
   
   const updateSection = (id: string, update: Partial<ReportSection>) => {
       setSections(prev => prev.map(s => s.id === id ? { ...s, ...update } : s));
@@ -143,7 +142,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (draft.patient) setPatient({ ...draft.patient });
       if (draft.tests) setTests({ ...draft.tests });
       if (draft.observations) setObservations({ ...draft.observations });
-      if (draft.synthesis) setSynthesis({ ...draft.synthesis }); // NOUVEAU
+      if (draft.synthesis) setSynthesis({ ...draft.synthesis });
       if (draft.sections) setSections([...draft.sections]);
       if (draft.step) setStep(draft.step);
   };

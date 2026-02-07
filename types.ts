@@ -223,6 +223,11 @@ export interface ExtractedRow {
     percentile: string;
     mean?: string;
     sd?: string;
+    // NOUVEAUX CHAMPS CALCULÉS (IA -> DB)
+    hidden_age_min?: number;
+    hidden_age_max?: number;
+    hidden_raw_min?: number;
+    hidden_raw_max?: number;
 }
 
 export interface Contribution {
