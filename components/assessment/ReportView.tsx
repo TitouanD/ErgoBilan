@@ -1,10 +1,10 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
 import { GaussianChart } from '../shared/GaussianChart';
 import { SCALES } from '../../utils/scoring';
-import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move, Home, Star, Sparkles } from 'lucide-react';
+import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move, Home, Star, Sparkles, PieChart } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface Props {
   patient: Patient;
@@ -44,6 +44,84 @@ const CaptionEditor: React.FC<{
             rows={4}
             placeholder="Ajoutez une légende..."
         />
+    );
+};
+
+// --- COMPOSANT GRAPHIQUE RADAR ---
+const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }> = ({ tests, branding }) => {
+    const { catalog } = useCatalog();
+    
+    // Calcul des moyennes par catégorie
+    const data = useMemo(() => {
+        const stats: Record<string, { sum: number, count: number, name: string }> = {};
+
+        // Initialisation des catégories connues pour l'ordre
+        catalog.forEach(cat => {
+            stats[cat.id] = { sum: 0, count: 0, name: cat.name };
+        });
+
+        Object.entries(tests).forEach(([testId, subtests]) => {
+            // Trouver la catégorie du test
+            const catDef = catalog.find(c => c.tests.some(t => t.id === testId));
+            if (!catDef) return;
+
+            Object.values(subtests).forEach(res => {
+                if (res.status === 'validated') {
+                    // On inverse le score si lowerIsBetter ? Non, Z-Score est déjà normalisé par le moteur.
+                    // On clamp les valeurs extrêmes pour le graphique (-3 à +2)
+                    let z = res.zScore;
+                    if (z < -3) z = -3;
+                    if (z > 2) z = 2;
+                    
+                    stats[catDef.id].sum += z;
+                    stats[catDef.id].count += 1;
+                }
+            });
+        });
+
+        // Transformation pour Recharts
+        return Object.values(stats)
+            .filter(s => s.count > 0) // On ne montre que les catégories testées
+            .map(s => ({
+                subject: s.name,
+                A: parseFloat((s.sum / s.count).toFixed(2)),
+                fullMark: 2 // Max visual range
+            }));
+    }, [tests, catalog]);
+
+    if (data.length < 3) return null; // Pas assez de données pour un Radar
+
+    const primaryColor = branding?.primaryColor || '#3D405B';
+    const secondaryColor = branding?.secondaryColor || '#E07A5F';
+
+    return (
+        <div className="w-full h-[300px] mb-8 bg-stone-50 rounded-2xl border border-stone-200 relative break-inside-avoid">
+            <div className="absolute top-3 left-4 text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
+                <PieChart size={14} /> Profil Psychomoteur
+            </div>
+            <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
+                    <PolarGrid stroke="#e5e7eb" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#3D405B', fontSize: 10, fontWeight: 700 }} />
+                    <PolarRadiusAxis angle={30} domain={[-3, 2]} tick={false} axisLine={false} />
+                    <Radar
+                        name="Profil"
+                        dataKey="A"
+                        stroke={secondaryColor}
+                        strokeWidth={3}
+                        fill={secondaryColor}
+                        fillOpacity={0.4}
+                    />
+                    <Tooltip 
+                        formatter={(value: number) => [`${value} ET`, 'Moyenne']}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}
+                    />
+                </RadarChart>
+            </ResponsiveContainer>
+            <div className="absolute bottom-3 right-4 text-[9px] text-stone-400 italic">
+                0 = Moyenne • -2 = Seuil Pathologique
+            </div>
+        </div>
     );
 };
 
@@ -272,6 +350,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 <div style={accentStyle}><ClipboardList size={24} /></div>
                 <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats Chiffrés</h2>
             </div>
+            
+            {/* GRAPHIQUE GLOBAL (NOUVEAU) */}
+            <ProfileRadarChart tests={tests} branding={branding} />
+
             <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass}`}>
                 <p className="font-bold mb-2">Guide de lecture :</p>
                 <ul className="list-disc ml-4 space-y-1">

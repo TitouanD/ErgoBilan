@@ -10,6 +10,7 @@ import { PinUnlock } from './components/auth/PinUnlock';
 // Step 1 reste statique pour un démarrage rapide du bilan
 import { Step1Admin } from './components/assessment/Step1Admin';
 import { GenerationLoader } from './components/shared/GenerationLoader';
+import { AssessmentStepper } from './components/assessment/AssessmentStepper'; // Import du Stepper
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import { AIService, GenerationPayload } from './services/ai';
@@ -25,8 +26,8 @@ import { DEMO_PATIENTS } from './data/demoData';
 
 // --- LAZY IMPORTS ---
 const Step2Tests = React.lazy(() => import('./components/assessment/Step2Tests').then(module => ({ default: module.Step2Tests })));
-const Step3Observations = React.lazy(() => import('./components/assessment/Step3Observations').then(module => ({ default: module.Step3Observations })));
-const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step3BisDiagnostic').then(module => ({ default: module.Step3BisDiagnostic }))); // NOUVEAU
+// Step 3 Observations est supprimé du flux principal (fusionné dans Step 2)
+const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step3BisDiagnostic').then(module => ({ default: module.Step3BisDiagnostic }))); 
 const Step4Validation = React.lazy(() => import('./components/assessment/Step4Validation').then(module => ({ default: module.Step4Validation })));
 const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
 
@@ -139,10 +140,7 @@ const AppRouter = () => {
         if (isDemoMode) { 
             setProcessingQueueId(q.id); 
             setTimeout(async () => { 
-                // Chargement des données LEO pour la démo
-                // IMPORTANT: On utilise l'ID exact 'demo-leo' pour activer le Beacon
                 const newId = 'demo-leo'; 
-                // On utilise les données de Léo Martin pour le scénario "Wow"
                 const newPatient = { ...DEMO_PATIENTS.LEO.patient, id: newId }; 
                 const newTests = { ...DEMO_PATIENTS.LEO.tests };
                 const newObs = { ...DEMO_PATIENTS.LEO.observations };
@@ -152,7 +150,6 @@ const AppRouter = () => {
                 
                 assessment.resetAssessment(); 
                 assessment.setPatient(newPatient); 
-                // On pré-remplit les tests et observations pour le scénario
                 assessment.setTests(newTests);
                 assessment.setObservations(newObs);
                 
@@ -195,65 +192,24 @@ const AppRouter = () => {
         } 
     };
 
-    // --- MODIFICATION MAJEURE DU WORKFLOW ---
-    
-    // Le bouton "Générer" se trouve désormais sur Step 3.5 (Step 4 logique)
     const handleGenerateReport = async () => {
         if (isDemoMode) {
             setShowConfirmGeneration(false);
             setIsGenerating(true);
             setTimeout(async () => {
-                // Simulation d'une réponse IA riche (Markdown) mais avec LES BONS IDS
-                // IDs attendus par ReportView : mandat_ref, mandat_eval, profil, diagnostic, objectifs, recommandations
                 const sections = [ 
-                    { 
-                        id: 'mandat_ref', 
-                        title: 'Mandat de référencement', 
-                        content: "**Motif de la demande**\nL'évaluation a été sollicitée par Mme Martin et l'équipe enseignante de l'école Jules Ferry suite à des difficultés persistantes dans le domaine scolaire, notamment concernant l'écriture manuscrite et une fatigabilité importante l'après-midi.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    },
-                    { 
-                        id: 'mandat_eval', 
-                        title: "Motif de l'évaluation", 
-                        content: "**Contexte**\nLéo, 9 ans, est scolarisé en CM1. Il bénéficie actuellement d'un PAP. Le bilan vise à objectiver les difficultés graphiques et à proposer des adaptations pour la suite de la scolarité.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    },
-                    { 
-                        id: 'profil', 
-                        title: "Profil occupationnel", 
-                        content: "**Habitudes de vie**\nLéo est un enfant volontaire mais qui exprime une frustration face à ses échecs scolaires. À la maison, l'autonomie est acquise pour l'habillage mais les gestes fins (boutons, lacets) restent coûteux.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    },
-                    { 
-                        id: 'diagnostic', 
-                        title: 'Synthèse Clinique', 
-                        content: "### Analyse du profil\nL'évaluation met en évidence un **Trouble Développemental de la Coordination (TDC)** affectant de manière significative la sphère graphique.\n\n### Points clés\n- **Dysgraphie mixte** : Les scores au BHK (Vitesse à -1.2 ET et Qualité à -2.1 ET) confirment une écriture à la fois lente et coûteuse sur le plan cognitif.\n- **Fatigabilité** : Lenteur d'exécution motrice généralisée, impactant la double tâche (écouter et écrire).\n- **Impact Psychologique** : On note une anxiété de performance importante, majorant les symptômes en situation de classe.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    },
-                    { 
-                        id: 'objectifs', 
-                        title: "Projet d'Intervention", 
-                        content: "### Objectifs à court terme\n- Améliorer le confort graphique pour réduire les douleurs au poignet.\n- Mettre en place l'outil informatique (Clavier caché).\n\n### Objectifs à moyen terme\n- Restaurer l'estime de soi scolaire.\n- Autonomie complète dans la prise de cours informatisée.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    },
-                    { 
-                        id: 'recommandations', 
-                        title: 'Préconisations', 
-                        content: "### À l'école\n- **Allègement de la trace écrite** : Fournir des photocopies de cours ou permettre l'utilisation d'une tablette/ordinateur (GEVA-Sco).\n- **Tiers-temps** : À envisager pour les évaluations longues.\n\n### Suivi thérapeutique\n- Poursuite du suivi en ergothérapie axé sur :\n  - L'apprentissage du clavier caché.\n  - La gestion de la fatigue et l'ergonomie posturale.", 
-                        status: 'draft', 
-                        isAiGenerated: true 
-                    }
+                    { id: 'mandat_ref', title: 'Mandat de référencement', content: "**Motif de la demande**\nL'évaluation a été sollicitée par Mme Martin et l'équipe enseignante de l'école Jules Ferry suite à des difficultés persistantes dans le domaine scolaire, notamment concernant l'écriture manuscrite et une fatigabilité importante l'après-midi.", status: 'draft', isAiGenerated: true },
+                    { id: 'mandat_eval', title: "Motif de l'évaluation", content: "**Contexte**\nLéo, 9 ans, est scolarisé en CM1. Il bénéficie actuellement d'un PAP. Le bilan vise à objectiver les difficultés graphiques et à proposer des adaptations pour la suite de la scolarité.", status: 'draft', isAiGenerated: true },
+                    { id: 'profil', title: "Profil occupationnel", content: "**Habitudes de vie**\nLéo est un enfant volontaire mais qui exprime une frustration face à ses échecs scolaires. À la maison, l'autonomie est acquise pour l'habillage mais les gestes fins (boutons, lacets) restent coûteux.", status: 'draft', isAiGenerated: true },
+                    { id: 'diagnostic', title: 'Synthèse Clinique', content: "### Analyse du profil\nL'évaluation met en évidence un **Trouble Développemental de la Coordination (TDC)** affectant de manière significative la sphère graphique.\n\n### Points clés\n- **Dysgraphie mixte** : Les scores au BHK (Vitesse à -1.2 ET et Qualité à -2.1 ET) confirment une écriture à la fois lente et coûteuse sur le plan cognitif.\n- **Fatigabilité** : Lenteur d'exécution motrice généralisée, impactant la double tâche (écouter et écrire).\n- **Impact Psychologique** : On note une anxiété de performance importante, majorant les symptômes en situation de classe.", status: 'draft', isAiGenerated: true },
+                    { id: 'objectifs', title: "Projet d'Intervention", content: "### Objectifs à court terme\n- Améliorer le confort graphique pour réduire les douleurs au poignet.\n- Mettre en place l'outil informatique (Clavier caché).\n\n### Objectifs à moyen terme\n- Restaurer l'estime de soi scolaire.\n- Autonomie complète dans la prise de cours informatisée.", status: 'draft', isAiGenerated: true },
+                    { id: 'recommandations', title: 'Préconisations', content: "### À l'école\n- **Allègement de la trace écrite** : Fournir des photocopies de cours ou permettre l'utilisation d'une tablette/ordinateur (GEVA-Sco).\n- **Tiers-temps** : À envisager pour les évaluations longues.\n\n### Suivi thérapeutique\n- Poursuite du suivi en ergothérapie axé sur :\n  - L'apprentissage du clavier caché.\n  - La gestion de la fatigue et l'ergonomie posturale.", status: 'draft', isAiGenerated: true }
                 ] as any;
                 assessment.setSections(sections);
-                assessment.setStep(5); // Vers Validation
+                assessment.setStep(4); // VERS VALIDATION (NOUVEAU FLUX : 3 -> 4)
                 setIsGenerating(false);
                 toast.success("Rapport généré (Simulation)");
-            }, 3000); // 3s pour l'effet Wow
+            }, 3000); 
             return;
         }
 
@@ -264,7 +220,6 @@ const AppRouter = () => {
             const p = assessment.patient;
             const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
             
-            // --- CONSOLIDATION DES NOUVELLES DONNÉES STRUCTURÉES ---
             const tracking = p.medicalTracking?.map(t => `- ${t.type} (${t.name}): ${t.frequency} depuis ${t.since}`).join('\n') || "Aucun suivi renseigné";
             const clothing = `Boutons: ${p.clothingButtons || '?'}, Lacets: ${p.clothingLaces || '?'}, Zippers: ${p.clothingZippers || '?'}`;
             const dev = `Marche: ${p.walkingAge || '?'}, Propreté: ${p.cleanliness || '?'}, Latéralité: ${p.handDominance || '?'}`;
@@ -288,11 +243,11 @@ const AppRouter = () => {
                 safeObservations: anonymizeData(rawObs, p).text,
                 scoresRaw: JSON.stringify(assessment.tests, null, 2),
                 childContext: `L'enfant est ${genderString} de ${p.age}.`,
-                synthesis: assessment.synthesis // NOUVEAU: Injection du diagnostic
+                synthesis: assessment.synthesis
             };
             const sections = await AIService.generateFullReport(payload, assessment.patient);
             assessment.setSections(sections);
-            assessment.setStep(5); // Vers Validation (Step 4 -> 5)
+            assessment.setStep(4); // VERS VALIDATION (NOUVEAU FLUX : 3 -> 4)
             refreshProfile(); 
             toast.success("Rapport généré avec succès");
         } catch (e: any) {
@@ -431,26 +386,48 @@ const AppRouter = () => {
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}
                     {mode === 'admin' && <AdminPanel userProfile={userProfile} onClose={() => setMode('dashboard')} />}
 
-                    {/* --- WORKFLOW ASSESSMENT MISE À JOUR --- */}
+                    {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW) --- */}
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">
+                            {/* Navigation Stepper (NOUVEAU) */}
+                            <AssessmentStepper currentStep={assessment.step} onStepClick={(s) => assessment.setStep(s)} />
+
                             {/* Step 1: Admin */}
                             {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
                             
-                            {/* Step 2: Tests */}
-                            {assessment.step === 2 && <Step2Tests patient={assessment.patient} tests={assessment.tests} updateTests={assessment.updateTests} onNext={() => assessment.setStep(3)} onBack={() => assessment.setStep(1)} onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} onContribute={handleContributionAccess} userProfile={userProfile} />}
+                            {/* Step 2: Tests & Observations (FUSIONNÉ) */}
+                            {assessment.step === 2 && (
+                                <Step2Tests 
+                                    patient={assessment.patient} 
+                                    tests={assessment.tests} 
+                                    updateTests={assessment.updateTests} 
+                                    observations={assessment.observations} // NOUVEAU: Passé au composant
+                                    updateObservations={assessment.updateObservations} // NOUVEAU
+                                    onNext={() => assessment.setStep(3)} // Va vers Synthèse
+                                    onBack={() => assessment.setStep(1)} 
+                                    onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} 
+                                    onContribute={handleContributionAccess} 
+                                    userProfile={userProfile} 
+                                />
+                            )}
                             
-                            {/* Step 3: Observations */}
-                            {assessment.step === 3 && <Step3Observations obs={assessment.observations} updateObs={assessment.updateObservations} tests={assessment.tests} onNext={() => assessment.setStep(4)} onBack={() => assessment.setStep(2)} isGenerating={false} />}
+                            {/* Step 3 (Ex Step 4): Synthèse & Projet - C'est ici qu'on déclenche l'IA */}
+                            {assessment.step === 3 && (
+                                <Step3BisDiagnostic 
+                                    synthesis={assessment.synthesis} 
+                                    updateSynthesis={assessment.updateSynthesis} 
+                                    tests={assessment.tests} 
+                                    onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} 
+                                    onBack={() => assessment.setStep(2)} // Retourne aux Tests
+                                    isGenerating={isGenerating} 
+                                />
+                            )}
                             
-                            {/* Step 4 (NEW): Synthèse & Projet - C'est ici qu'on déclenche l'IA */}
-                            {assessment.step === 4 && <Step3BisDiagnostic synthesis={assessment.synthesis} updateSynthesis={assessment.updateSynthesis} tests={assessment.tests} onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} onBack={() => assessment.setStep(3)} isGenerating={isGenerating} />}
+                            {/* Step 4 (Ex Step 5): Validation */}
+                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
                             
-                            {/* Step 5 (Ex Step 4): Validation */}
-                            {assessment.step === 5 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(6)} onBack={() => assessment.setStep(4)} />}
-                            
-                            {/* Step 6 (Ex Step 5): Export */}
-                            {assessment.step === 6 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} onBack={() => assessment.setStep(5)} />}
+                            {/* Step 5 (Ex Step 6): Export */}
+                            {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} onBack={() => assessment.setStep(4)} />}
                         </div>
                     )}
 
@@ -463,7 +440,7 @@ const AppRouter = () => {
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); handleGenerateReport(); }} onClose={() => setGenerationError(null)} />}
             
-            {/* POPUP CONFIRMATION IA (Déplacé ici pour être déclenché depuis Step 3.5) */}
+            {/* POPUP CONFIRMATION IA (Déplacé ici pour être déclenché depuis Step 3) */}
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] max-w-md text-center shadow-2xl">

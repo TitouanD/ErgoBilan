@@ -1,7 +1,6 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft } from 'lucide-react';
+import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info } from 'lucide-react';
 
 interface Props {
   sections: ReportSection[];
@@ -47,16 +46,81 @@ const renderMarkdown = (text: string) => {
     });
 };
 
+// --- COMPOSANT TOOLBAR (NOUVEAU) ---
+const EditorToolbar = ({ onAction }: { onAction: (action: string) => void }) => {
+    const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white";
+    
+    return (
+        <div className="flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 absolute -top-12 left-0 animate-in slide-in-from-bottom-2 fade-in duration-200 z-10">
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('bold'); }} className={btnClass} title="Gras">
+                <Bold size={16} strokeWidth={3} />
+            </button>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('italic'); }} className={btnClass} title="Italique">
+                <Italic size={16} />
+            </button>
+            <div className="w-px h-4 bg-white/20 mx-1"></div>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('h3'); }} className={btnClass} title="Sous-titre">
+                <Heading size={16} />
+            </button>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('list'); }} className={btnClass} title="Liste à puces">
+                <List size={16} />
+            </button>
+            <div className="w-px h-4 bg-white/20 mx-1"></div>
+            <div className="px-2 text-[10px] font-medium text-white/50 select-none">Markdown</div>
+        </div>
+    );
+};
+
 const SectionCard: React.FC<{
     section: ReportSection;
     onValidate: (id: string, content?: string) => void;
 }> = ({ section, onValidate }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState(section.content);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const handleSave = () => {
         onValidate(section.id, editContent);
         setIsEditing(false);
+    };
+
+    // Logique d'insertion Markdown intelligente
+    const handleFormat = (type: string) => {
+        if (!textareaRef.current) return;
+        const field = textareaRef.current;
+        const start = field.selectionStart;
+        const end = field.selectionEnd;
+        const text = editContent;
+        const selection = text.substring(start, end);
+        
+        let newText = text;
+        let newCursor = end;
+
+        if (type === 'bold') {
+            newText = text.substring(0, start) + `**${selection}**` + text.substring(end);
+            newCursor = end + 4; // ** + **
+        } else if (type === 'italic') {
+            newText = text.substring(0, start) + `*${selection}*` + text.substring(end);
+            newCursor = end + 2; // * + *
+        } else if (type === 'h3') {
+            // Ajoute ### au début de la ligne courante
+            const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+            newText = text.substring(0, lineStart) + "### " + text.substring(lineStart);
+            newCursor = end + 4;
+        } else if (type === 'list') {
+            // Ajoute - au début de la ligne courante
+            const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+            newText = text.substring(0, lineStart) + "- " + text.substring(lineStart);
+            newCursor = end + 2;
+        }
+
+        setEditContent(newText);
+        
+        // Restore focus
+        setTimeout(() => {
+            field.focus();
+            field.setSelectionRange(newCursor, newCursor);
+        }, 0);
     };
 
     const isValidated = section.status === 'validated';
@@ -86,18 +150,31 @@ const SectionCard: React.FC<{
             </div>
 
             {isEditing ? (
-                <div className="space-y-6">
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-xs text-blue-800 mb-2">
-                        Mode édition Markdown actif.
+                <div className="space-y-6 relative">
+                    {/* Toolbar flottante au-dessus */}
+                    <div className="relative">
+                        <EditorToolbar onAction={handleFormat} />
+                        <textarea 
+                            ref={textareaRef}
+                            className="w-full p-6 bg-stone-50 rounded-xl border border-stone-200 focus:bg-white focus:ring-4 focus:ring-rose-50 focus:border-rose-300 outline-none text-stone-900 leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            placeholder="Rédigez votre contenu ici..."
+                        />
                     </div>
-                    <textarea 
-                        className="w-full p-6 bg-stone-50 rounded-xl border border-stone-200 focus:bg-white focus:ring-4 focus:ring-rose-50 focus:border-rose-300 outline-none text-stone-900 leading-relaxed min-h-[400px] text-base font-mono resize-y"
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                    />
-                    <div className="flex justify-end gap-3">
+                    
+                    <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <div className="flex items-center gap-2 text-xs text-blue-800">
+                            <Info size={14} />
+                            <span>Utilisez la barre d'outils pour mettre en forme.</span>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
                         <button onClick={() => setIsEditing(false)} className="px-5 py-2 text-stone-400 font-bold text-xs uppercase tracking-wider hover:text-stone-700">Annuler</button>
-                        <button onClick={handleSave} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-colors shadow-md">Enregistrer</button>
+                        <button onClick={handleSave} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-colors shadow-md flex items-center gap-2">
+                            <Check size={16} /> Enregistrer
+                        </button>
                     </div>
                 </div>
             ) : (
@@ -115,7 +192,6 @@ const SectionCard: React.FC<{
                         </button>
                         {!isValidated && (
                             <button 
-                                // FIX: Passer 'section.content' explicitement pour éviter undefined
                                 onClick={() => onValidate(section.id, section.content)}
                                 className="flex items-center gap-2 bg-stone-900 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-600 transition-all font-bold text-xs uppercase tracking-wider shadow-md"
                             >

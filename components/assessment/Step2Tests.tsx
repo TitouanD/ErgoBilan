@@ -1,25 +1,78 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
-import { TestData, ScoreResult, UserProfile, Patient } from '../../types';
+import { TestData, ScoreResult, UserProfile, Patient, Observations } from '../../types';
 import { SubtestDef } from '../../data/testCatalog';
 import { SCALES, calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { GaussianChart } from '../shared/GaussianChart';
-import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus, Loader2, MousePointer2, Sparkles } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus, Loader2, MousePointer2, Sparkles, PenTool, Layout, History, Palette, Move, Zap, Mic } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { DEMO_PATIENTS } from '../../data/demoData';
 import { useToast } from '../../contexts/ToastContext';
+import { DebouncedTextarea } from '../shared/DebouncedControls';
 
 interface Props {
   patient: Patient; 
   tests: TestData;
   updateTests: (data: Partial<TestData>) => void;
+  observations: Observations; // NOUVEAU
+  updateObservations: (data: Partial<Observations>) => void; // NOUVEAU
   onNext: () => void;
   onBack: () => void;
   userProfile?: UserProfile;
   onAcceptResponsibility?: () => void;
   onContribute?: () => void;
 }
+
+// --- CONSTANTS OBSERVATIONS ---
+const OBS_TAGS: Record<string, string[]> = {
+    anamnese: ["Coopérant", "Fatigabilité", "Impulsivité", "Anxiété de performance", "Bonne humeur"],
+    graphique: ["Crispation", "Lenteur", "Douleurs", "Illisible", "Refus d'écrire", "Tenue de crayon immature"],
+    motricite: ["Maladresses", "Chutes fréquentes", "Tonus faible", "Agile"],
+    coordination: ["Lenteur", "Précision", "Tremblements", "Bimanuel difficile"],
+    spatial: ["Perdu dans la page", "Sauts de lignes", "Confusion gauche/droite"]
+};
+
+// --- COMPOSANTS INTERNES ---
+
+const ObsSection = React.memo(({ title, icon: Icon, name, value, onChange, tags }: any) => {
+    const addTag = (tag: string) => {
+        const newValue = value ? `${value} ${tag}.` : `${tag}.`;
+        onChange(name, newValue);
+    };
+
+    return (
+        <div className="bg-white p-6 rounded-2xl border border-stone-100 shadow-sm mb-4">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-[#F9F9F9] rounded-lg text-[#E07A5F]">
+                        <Icon size={18} />
+                    </div>
+                    <h3 className="font-bold text-sm text-[#3D405B]">{title}</h3>
+                </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+                {tags.map((tag: string) => (
+                    <button 
+                        key={tag} 
+                        onClick={() => addTag(tag)}
+                        className="px-2 py-1 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold text-stone-500 hover:bg-[#E07A5F] hover:text-white hover:border-[#E07A5F] transition-all"
+                    >
+                        {tag}
+                    </button>
+                ))}
+            </div>
+
+            <DebouncedTextarea 
+                name={name} 
+                value={value} 
+                onChange={(val) => onChange(name, val)}
+                className="w-full p-3 bg-[#F9F9F9] rounded-xl border border-transparent outline-none h-24 resize-none text-xs font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-[#E07A5F] transition-all leading-relaxed"
+                placeholder="Notes..."
+            />
+        </div>
+    );
+});
 
 // ... (TestCatalogModal inchangé) ...
 // --- CATALOGUE MODAL (EXPORTÉ) ---
@@ -126,7 +179,7 @@ export const SubtestRowCheck = React.memo(({
     onErrorPulse,
     hasAcceptedResponsibility = false,
     onAcceptResponsibility,
-    highlightMode = false // NOUVEAU : Prop pour le mode démo
+    highlightMode = false
 }: {
     testId: string; 
     patient: Patient;
@@ -445,11 +498,14 @@ export const SubtestRowCheck = React.memo(({
     );
 });
 
-export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
+export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
   const { catalog } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
   const [triggerErrorPulse, setTriggerErrorPulse] = useState(false);
+  
+  // NOUVEAU : État pour le drawer d'observations globales
+  const [isObsDrawerOpen, setIsObsDrawerOpen] = useState(false);
   
   // DEMO STATE
   const [showDemoToast, setShowDemoToast] = useState(false);
@@ -536,14 +592,55 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
     }
   };
 
+  const handleObsChange = useCallback((name: string, value: string) => {
+    updateObservations({ [name]: value });
+  }, [updateObservations]);
+
   const activeTestsList = Object.keys(tests);
 
   return (
     <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 pb-32 relative">
+      
+      {/* DRAWER DES OBSERVATIONS GLOBALES */}
+      <div 
+        className={`fixed inset-y-0 right-0 w-[400px] bg-white shadow-2xl z-[60] transform transition-transform duration-300 border-l border-stone-100 flex flex-col ${isObsDrawerOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+          <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+              <h3 className="font-serif font-bold text-lg text-[#3D405B] flex items-center gap-2">
+                  <PenTool size={18} className="text-[#E07A5F]" /> Observations
+              </h3>
+              <button onClick={() => setIsObsDrawerOpen(false)} className="p-2 hover:bg-stone-200 rounded-full text-stone-400 hover:text-stone-600 transition-colors">
+                  <X size={20} />
+              </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-2 bg-[#F9F9F9]">
+              <p className="text-xs text-stone-400 mb-4 px-2">Notez ici les éléments transversaux (comportement, ambiance) qui ne sont pas liés à un test spécifique.</p>
+              <ObsSection icon={History} title="Anamnèse & Comportement" name="anamnese" value={observations.anamnese} onChange={handleObsChange} tags={OBS_TAGS.anamnese} />
+              <ObsSection icon={Move} title="Motricité Globale" name="motricite" value={observations.motricite} onChange={handleObsChange} tags={OBS_TAGS.motricite} />
+              <ObsSection icon={Zap} title="Coordination Fine" name="coordination" value={observations.coordination} onChange={handleObsChange} tags={OBS_TAGS.coordination} />
+              <ObsSection icon={Activity} title="Visuo-Spatial" name="spatial" value={observations.spatial} onChange={handleObsChange} tags={OBS_TAGS.spatial} />
+              <ObsSection icon={Palette} title="Graphisme" name="graphique" value={observations.graphique} onChange={handleObsChange} tags={OBS_TAGS.graphique} />
+          </div>
+      </div>
+
+      {/* BOUTON FLOTTANT D'OUVERTURE DU DRAWER (Visible seulement si fermé) */}
+      {!isObsDrawerOpen && (
+          <button 
+            onClick={() => setIsObsDrawerOpen(true)}
+            className="fixed bottom-32 right-8 z-50 bg-white border border-[#E07A5F]/20 text-[#3D405B] px-5 py-3 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center gap-3 group animate-in slide-in-from-right-10"
+          >
+              <div className="bg-[#fff5f2] p-2 rounded-full text-[#E07A5F] group-hover:rotate-12 transition-transform">
+                  <PenTool size={20} />
+              </div>
+              <span className="font-bold text-sm pr-2">Notes Globales</span>
+          </button>
+      )}
+
+      {/* HEADER SECTION TESTS */}
       <div className="flex justify-between items-end mb-6 border-b border-stone-200 pb-6">
         <div>
             <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Tests & Mesures</h2>
-            <p className="text-stone-500 font-medium mt-2">Saisissez les résultats. Les scores NS, ET et % sont calculés automatiquement.</p>
+            <p className="text-stone-500 font-medium mt-2">Saisissez les résultats et ajoutez vos micro-observations par épreuve.</p>
         </div>
         <button onClick={() => setShowCatalog(true)} className="flex items-center gap-2 bg-[#3D405B] text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all"><Plus size={18} /> Ajouter un test</button>
       </div>
@@ -625,7 +722,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, onNex
              <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">Retour</button>
             <div className="flex flex-col items-end">
                 {triggerErrorPulse && <span className="text-xs font-bold text-rose-500 animate-bounce mb-2">Veuillez certifier les scores en bleu avant de continuer.</span>}
-                <button onClick={handleNext} className={`flex items-center gap-3 px-8 py-4 text-white rounded-2xl font-bold shadow-xl transition-all hover:-translate-y-1 ${triggerErrorPulse ? 'bg-rose-500 shadow-rose-200 animate-shake' : 'bg-[#E07A5F] shadow-orange-200 hover:bg-[#d0694e]'}`}><span>Passer aux Observations</span><ArrowRight size={20} /></button>
+                <button onClick={handleNext} className={`flex items-center gap-3 px-8 py-4 text-white rounded-2xl font-bold shadow-xl transition-all hover:-translate-y-1 ${triggerErrorPulse ? 'bg-rose-500 shadow-rose-200 animate-shake' : 'bg-[#E07A5F] shadow-orange-200 hover:bg-[#d0694e]'}`}><span>Passer à la Synthèse</span><ArrowRight size={20} /></button>
             </div>
         </div>
       </div>
