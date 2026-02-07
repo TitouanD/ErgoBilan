@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
-import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye } from 'lucide-react';
+import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone } from 'lucide-react';
 
 interface Props {
   data: Patient;
@@ -272,71 +272,104 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                     {isOpen && (
                         <div className="p-6 border-t border-stone-50 animate-in slide-in-from-top-2 space-y-6">
                             
-                            {/* --- 1. IDENTITÉ --- */}
+                            {/* --- 1. IDENTITÉ (ENCART BLEU ARDOISE) --- */}
                             {section.id === 'identity' && (
                                 <>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        <div><label className={labelClass}>Nom</label><DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" /></div>
-                                        <div><label className={labelClass}>Prénom</label><DebouncedInput name="firstName" value={data.firstName || ''} onChange={(v) => handleFieldChange('firstName', v)} className={inputClass} placeholder="Prénom" /></div>
-                                        <div><label className={labelClass}>Date de naissance</label><input type="date" name="dob" value={data.dob || ''} onChange={handleChange} className={inputClass} /></div>
-                                        <div>
-                                            <label className={labelClass}>Genre</label>
-                                            <div className="flex gap-4 pt-2">
-                                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="gender" value="M" checked={data.gender === 'M'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Garçon</label>
-                                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="gender" value="F" checked={data.gender === 'F'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Fille</label>
+                                    <div className="bg-[#f8fafc] border border-slate-200 p-5 rounded-2xl relative overflow-hidden">
+                                        <div className="flex items-center gap-2 mb-4 text-slate-500">
+                                            <User size={16} />
+                                            <h4 className="text-xs font-bold uppercase tracking-wider">État Civil</h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
+                                            <div><label className={labelClass}>Nom</label><DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" /></div>
+                                            <div><label className={labelClass}>Prénom</label><DebouncedInput name="firstName" value={data.firstName || ''} onChange={(v) => handleFieldChange('firstName', v)} className={inputClass} placeholder="Prénom" /></div>
+                                            <div><label className={labelClass}>Date de naissance</label><input type="date" name="dob" value={data.dob || ''} onChange={handleChange} className={inputClass} /></div>
+                                            <div>
+                                                <label className={labelClass}>Genre</label>
+                                                <div className="flex gap-4 pt-2">
+                                                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="gender" value="M" checked={data.gender === 'M'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Garçon</label>
+                                                    <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="gender" value="F" checked={data.gender === 'F'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Fille</label>
+                                                </div>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <label className={labelClass}>Adresse</label>
+                                                <div className="relative">
+                                                    <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"/>
+                                                    <DebouncedInput name="address" value={data.address || ''} onChange={(v) => handleFieldChange('address', v)} className={`${inputClass} pl-10`} placeholder="Adresse complète" />
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="md:col-span-2"><label className={labelClass}>Adresse</label><DebouncedInput name="address" value={data.address || ''} onChange={(v) => handleFieldChange('address', v)} className={inputClass} placeholder="Adresse complète" /></div>
                                     </div>
                                     <FamilyNextButton sectionId={section.id} />
                                 </>
                             )}
 
-                            {/* --- 2. SITUATION FAMILIALE (REFONTE UX) --- */}
+                            {/* --- 2. SITUATION FAMILIALE (ENCART BLEU ARDOISE) --- */}
                             {section.id === 'parents' && (
                                 <div className="space-y-6">
-                                    <div className="space-y-4">
-                                        <label className={labelClass}>Mode de Garde</label>
-                                        <div className="flex flex-col md:flex-row gap-3">
-                                            <SelectCard 
-                                                selected={data.guardMode === 'exclusive'} 
-                                                onClick={() => handleFieldChange('guardMode', 'exclusive')}
-                                                label="Garde Exclusive" 
-                                                value="exclusive" 
-                                                icon={Home} 
-                                            />
-                                            <SelectCard 
-                                                selected={data.guardMode === 'alternate'} 
-                                                onClick={() => handleFieldChange('guardMode', 'alternate')}
-                                                label="Garde Alternée" 
-                                                value="alternate" 
-                                                icon={Scale} 
-                                            />
-                                            <SelectCard 
-                                                selected={data.guardMode === 'third'} 
-                                                onClick={() => handleFieldChange('guardMode', 'third')}
-                                                label="Tiers / Foyer" 
-                                                value="third" 
-                                                icon={HelpingHand} 
-                                            />
+                                    <div className="bg-[#f8fafc] border border-slate-200 p-5 rounded-2xl">
+                                        <div className="flex items-center gap-2 mb-4 text-slate-500">
+                                            <Users size={16} />
+                                            <h4 className="text-xs font-bold uppercase tracking-wider">Responsables Légaux</h4>
+                                        </div>
+                                        
+                                        <div className="space-y-5">
+                                            <div className="space-y-2">
+                                                <label className={labelClass}>Mode de Garde</label>
+                                                <div className="flex flex-col md:flex-row gap-3">
+                                                    <SelectCard 
+                                                        selected={data.guardMode === 'exclusive'} 
+                                                        onClick={() => handleFieldChange('guardMode', 'exclusive')}
+                                                        label="Garde Exclusive" 
+                                                        value="exclusive" 
+                                                        icon={Home} 
+                                                    />
+                                                    <SelectCard 
+                                                        selected={data.guardMode === 'alternate'} 
+                                                        onClick={() => handleFieldChange('guardMode', 'alternate')}
+                                                        label="Garde Alternée" 
+                                                        value="alternate" 
+                                                        icon={Scale} 
+                                                    />
+                                                    <SelectCard 
+                                                        selected={data.guardMode === 'third'} 
+                                                        onClick={() => handleFieldChange('guardMode', 'third')}
+                                                        label="Tiers / Foyer" 
+                                                        value="third" 
+                                                        icon={HelpingHand} 
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div><label className={labelClass}>Noms des responsables</label><DebouncedInput name="parentNames" value={data.parentNames || ''} onChange={(v) => handleFieldChange('parentNames', v)} className={inputClass} placeholder="Mme X et M. Y" /></div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                                <div>
+                                                    <label className={labelClass}>Téléphone</label>
+                                                    <div className="relative">
+                                                        <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"/>
+                                                        <DebouncedInput name="parentPhone" type="tel" value={data.parentPhone || ''} onChange={(v) => handleFieldChange('parentPhone', v)} className={`${inputClass} pl-10`} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className={labelClass}>Email</label>
+                                                    <div className="relative">
+                                                        <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"/>
+                                                        <DebouncedInput name="parentEmail" type="email" value={data.parentEmail || ''} onChange={(v) => handleFieldChange('parentEmail', v)} className={`${inputClass} pl-10`} />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-
-                                    <div><label className={labelClass}>Noms des responsables</label><DebouncedInput name="parentNames" value={data.parentNames || ''} onChange={(v) => handleFieldChange('parentNames', v)} className={inputClass} placeholder="Mme X et M. Y" /></div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        <div><label className={labelClass}>Téléphone</label><DebouncedInput name="parentPhone" type="tel" value={data.parentPhone || ''} onChange={(v) => handleFieldChange('parentPhone', v)} className={inputClass} /></div>
-                                        <div><label className={labelClass}>Email</label><DebouncedInput name="parentEmail" type="email" value={data.parentEmail || ''} onChange={(v) => handleFieldChange('parentEmail', v)} className={inputClass} /></div>
-                                    </div>
                                     
-                                    {/* FRATRIE */}
+                                    {/* FRATRIE (Reste en Stone pour différencier) */}
                                     <div className="bg-stone-50 p-4 rounded-2xl border border-stone-100">
                                         <div className="flex justify-between items-center mb-3">
-                                            <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Fratrie</span>
+                                            <span className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center gap-2"><HeartHandshake size={14}/> Fratrie</span>
                                             <button onClick={addSibling} className="text-[10px] bg-white border border-stone-200 px-3 py-1.5 rounded-full uppercase font-bold tracking-wider hover:bg-[#3D405B] hover:text-white transition-all flex items-center gap-1"><Plus size={12}/> Ajouter</button>
                                         </div>
                                         <div className="space-y-2">
                                             {(data.siblings || []).map((sib, idx) => (
-                                                <div key={idx} className="flex gap-2 items-center">
+                                                <div key={idx} className="flex gap-2 items-center animate-in slide-in-from-left-2">
                                                     <input placeholder="Prénom" value={sib.firstName} onChange={e => updateSibling(idx, 'firstName', e.target.value)} className="flex-1 p-2 bg-white rounded-lg text-sm border border-stone-200 outline-none focus:border-[#E07A5F]" />
                                                     <input placeholder="Âge" value={sib.age} onChange={e => updateSibling(idx, 'age', e.target.value)} className="w-16 p-2 bg-white rounded-lg text-sm border border-stone-200 outline-none focus:border-[#E07A5F]" />
                                                     

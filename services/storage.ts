@@ -4,6 +4,7 @@ import { PatientFile, Patient, ReportMetadata, TestSession } from '../types';
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 import { DEMO_PATIENTS } from '../data/demoData';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 // --- HELPERS CHIFFREMENT ---
 
@@ -40,6 +41,23 @@ export const StorageService = {
     setDemoMode: (active: boolean) => {
         _isDemoMode = active;
         Logger.warn('DB', `Storage Service switched to DEMO MODE: ${active}`);
+    },
+
+    // --- REALTIME SUBSCRIPTIONS ---
+    subscribeToChanges: (callback: () => void): { unsubscribe: () => void } => {
+        if (_isDemoMode) return { unsubscribe: () => {} };
+
+        // Abonnement aux changements PostgreSQL (CDC)
+        const channel = supabase.channel('global-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_questionnaires' }, callback)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, callback)
+            .subscribe();
+
+        return {
+            unsubscribe: () => {
+                supabase.removeChannel(channel);
+            }
+        };
     },
 
     /**
@@ -290,9 +308,6 @@ export const StorageService = {
                 lastInteraction: new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false
             };
-            
-            // Si on a "sauvegardé" Léo en mémoire volatile, on pourrait l'ajouter ici
-            // Pour l'instant, le dashboard gère l'ajout manuel dans son state local
             return [sarahFile];
         }
 
@@ -328,10 +343,9 @@ export const StorageService = {
                 if (row.encrypted_preview && row.preview_iv) {
                     // Fast Path : On ne déchiffre que le preview
                     const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
-                    // On merge avec un objet vide pour avoir la structure Patient valide (mais vide ailleurs)
                     patientData = { ...createEmptyPatient(), ...preview };
                 } else {
-                    // Slow Path (Legacy / Migration) : On déchiffre tout
+                    // Slow Path : On déchiffre tout
                     const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as any;
                     isArchived = fullData._archived === true;
                     delete fullData._archived;
@@ -357,7 +371,6 @@ export const StorageService = {
 
     loadPatientDetails: async (patientId: string, orgKey: CryptoKey): Promise<{ reports: ReportMetadata[], sessions: TestSession[], patient: Patient }> => {
         if (_isDemoMode) {
-            // CORRECTION CRITIQUE : Vérification exacte de l'ID
             if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
                 return {
                     reports: [],
@@ -369,11 +382,10 @@ export const StorageService = {
                 const history = (DEMO_PATIENTS.SARAH as any).history || [];
                 return {
                     reports: [],
-                    sessions: history, // On injecte l'historique riche
+                    sessions: history,
                     patient: DEMO_PATIENTS.SARAH.patient
                 };
             }
-            // Fallback Sarah par sécurité, mais ne devrait pas arriver si les IDs sont bons
             return {
                 reports: [],
                 sessions: [],
@@ -384,7 +396,6 @@ export const StorageService = {
         const { data: { user } } = await supabase.auth.getUser();
         if(!user) throw new Error("Non connecté");
 
-        // 1. Récupérer le dossier complet (Clés + Identité FULL)
         const { data: patientRow, error: pError } = await supabase
             .from('patients')
             .select('encrypted_file_key, encrypted_identity, iv, organization_id')
@@ -400,12 +411,10 @@ export const StorageService = {
 
         Logger.debug('DB', 'Loading FULL patient identity & details', { patientId });
 
-        // 2. Déchiffrer l'identité COMPLÈTE (Obligatoire pour l'écran de détail)
         const decryptedIdentity = await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey) as any;
         delete decryptedIdentity._archived;
         const patientFull = { ...decryptedIdentity, id: patientId, organizationId: patientRow.organization_id } as Patient;
 
-        // 3. Charger Reports
         const { data: reportsData } = await supabase
             .from('reports')
             .select('*')
@@ -416,7 +425,6 @@ export const StorageService = {
             return { ...decrypted, id: r.id, date: r.created_at, type: r.type, status: r.status } as ReportMetadata;
         }));
 
-        // 4. Charger Sessions
         const { data: sessionsData } = await supabase
             .from('sessions')
             .select('*')
@@ -449,5 +457,43 @@ export const StorageService = {
         if (_isDemoMode) return;
         const newFile = { ...file, archived: !file.archived };
         await StorageService.saveFile(newFile, orgKey);
+    },
+
+    // --- PORTAL SERVICES (FAMILY) ---
+    getPendingQuestionnaire: async (id: string): Promise<{ status: string; family_encrypted_data: string | null } | null> => {
+        if (_isDemoMode) {
+            // Mock response for demo
+            if (id === 'demo-q1') return { status: 'pending', family_encrypted_data: null };
+            return null;
+        }
+
+        const { data, error } = await supabase
+            .from('pending_questionnaires')
+            .select('status, family_encrypted_data')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            Logger.error('DB', "Error fetching questionnaire", error);
+            throw error;
+        }
+        return data;
+    },
+
+    submitQuestionnaire: async (id: string, encryptedData: string): Promise<void> => {
+        if (_isDemoMode) return;
+
+        const { error } = await supabase
+            .from('pending_questionnaires')
+            .update({
+                family_encrypted_data: encryptedData,
+                status: 'completed'
+            })
+            .eq('id', id);
+
+        if (error) {
+            Logger.error('DB', "Error submitting questionnaire", error);
+            throw error;
+        }
     }
 };
