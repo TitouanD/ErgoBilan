@@ -1,99 +1,97 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/db';
-import { TEST_CATALOG, CategoryDef, TestDef } from '../data/testCatalog';
+import { CategoryDef, TestDef, SubtestDef } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
-import { StorageService } from '../services/storage'; // Pour détecter le mode démo si besoin, ou via AuthContext
-
-// On recrée l'interface de base pour éviter l'import circulaire si AuthContext dépend de CatalogContext
-// Mais ici on va utiliser une variable globale ou un fetch conditionnel.
 
 interface CatalogContextType {
   catalog: CategoryDef[];
   loading: boolean;
-  source: 'db' | 'local';
+  searchTests: (query: string) => TestDef[]; // Recherche globale optimisée
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [catalog, setCatalog] = useState<CategoryDef[]>([]); // Vide par défaut
+  const [catalog, setCatalog] = useState<CategoryDef[]>([]);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<'db' | 'local'>('local');
+  const [flatTests, setFlatTests] = useState<TestDef[]>([]); // Cache pour la recherche
 
   useEffect(() => {
     let isMounted = true;
 
     const initCatalog = async () => {
-        // 1. DÉTECTION DU MODE : On vérifie si un utilisateur est connecté
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        // Si pas de session (ou mode démo simulé dans l'app), on charge le snapshot local
-        // Note: isDemoMode est géré dans AuthContext, mais ici on fait une vérif simple sur la session
-        if (!session) {
-            Logger.info('DB', 'Demo/Offline Mode: Loading local snapshot.');
-            if (isMounted) {
-                setCatalog(TEST_CATALOG); // Charge le fichier statique
-                setSource('local');
-                setLoading(false);
-            }
-            return;
-        }
-
-        // 2. MODE CONNECTÉ : CHARGEMENT DB
         try {
-            Logger.info('DB', 'Authenticated: Fetching official catalog...');
+            Logger.info('DB', 'Initializing Unified Catalog (Black Box Strategy)...');
             
-            const { data: dbTests, error: testError } = await supabase.from('official_tests').select('*');
-            if (testError) throw testError;
+            // 1. Récupération de la structure via la VUE SÉCURISÉE
+            // Cette vue filtre déjà les tests privés/publics côté serveur.
+            // On ne reçoit JAMAIS 'organization_id' ou 'author'.
+            const { data: viewRows, error: viewError } = await supabase
+                .from('view_unified_catalog')
+                .select('*')
+                .order('sort_order', { ascending: true });
 
-            const { data: dbSubtests, error: subError } = await supabase.from('official_subtests').select('*');
+            if (viewError) throw viewError;
+
+            // 2. Récupération des sous-tests (Inputs)
+            // On ne sélectionne QUE les champs techniques nécessaires au calcul.
+            const { data: subtestsData, error: subError } = await supabase
+                .from('official_subtests')
+                .select('id, test_id, name, unit, score_type');
+
             if (subError) throw subError;
 
-            // Construction de l'arbre à partir de la DB uniquement
-            // On part d'un squelette de catégories vide ou basique pour l'ordre d'affichage
-            const categoriesMap: Record<string, CategoryDef> = {
-                'motricite-globale': { id: 'motricite-globale', name: 'Motricité Globale', iconName: 'Brain', tests: [] },
-                'ecriture': { id: 'ecriture', name: 'Écriture', iconName: 'Pencil', tests: [] },
-                'visuo-perceptif': { id: 'visuo-perceptif', name: 'Visuo-perceptif', iconName: 'Eye', tests: [] },
-                'attention-executif': { id: 'attention-executif', name: 'Attention / Exécutif', iconName: 'Focus', tests: [] },
-                'sensoriel': { id: 'sensoriel', name: 'Sensoriel', iconName: 'Hand', tests: [] },
-                'autre': { id: 'autre', name: 'Autre', iconName: 'Home', tests: [] }
-            };
+            if (!isMounted) return;
 
-            dbTests.forEach((t: any) => {
-                const catId = categoriesMap[t.category_id] ? t.category_id : 'autre';
-                
-                const subtests = dbSubtests
-                    .filter((s: any) => s.test_id === t.id)
+            // 3. Construction de l'arbre (Mapping)
+            const categoryMap: Record<string, CategoryDef> = {};
+            const allTests: TestDef[] = [];
+
+            // A. Initialisation des catégories basées sur la vue
+            viewRows?.forEach((row: any) => {
+                if (!categoryMap[row.category_id]) {
+                    categoryMap[row.category_id] = {
+                        id: row.category_id,
+                        name: row.category_label,
+                        iconKey: row.icon_key || 'Box',
+                        sortOrder: row.sort_order || 99,
+                        tests: []
+                    };
+                }
+
+                // B. Assemblage du Test
+                const testSubtests: SubtestDef[] = subtestsData
+                    ?.filter((s: any) => s.test_id === row.id)
                     .map((s: any) => ({
                         id: s.id,
                         name: s.name,
                         unit: s.unit || 'pts',
                         scoreType: s.score_type as any,
-                        lowerIsBetter: false 
-                    }));
+                        lowerIsBetter: false // Défaut, ajusté si besoin par DB future
+                    })) || [];
 
-                categoriesMap[catId].tests.push({
-                    id: t.id,
-                    name: t.name,
-                    subtests: subtests
-                });
+                const testDef: TestDef = {
+                    id: row.id,
+                    name: row.label, // 'name' dans la table, 'label' dans la vue
+                    subtests: testSubtests
+                };
+
+                categoryMap[row.category_id].tests.push(testDef);
+                allTests.push(testDef);
             });
 
-            if (isMounted) {
-                // On transforme la map en array et on filtre les catégories vides
-                const finalCatalog = Object.values(categoriesMap).filter(c => c.tests.length > 0);
-                setCatalog(finalCatalog);
-                setSource('db');
-            }
+            // Conversion en Array trié
+            const finalCatalog = Object.values(categoryMap).sort((a, b) => a.sortOrder - b.sortOrder);
+            
+            setCatalog(finalCatalog);
+            setFlatTests(allTests);
+            Logger.info('DB', `Catalog loaded: ${allTests.length} tests in ${finalCatalog.length} categories.`);
 
         } catch (e) {
-            Logger.error('DB', 'Failed to load DB catalog, falling back to local snapshot', e);
-            if (isMounted) {
-                setCatalog(TEST_CATALOG);
-                setSource('local');
-            }
+            Logger.error('DB', 'Catalog Load Error', e);
+            // Fallback vide silencieux (ou gestion d'erreur UI)
+            setCatalog([]); 
         } finally {
             if (isMounted) setLoading(false);
         }
@@ -104,8 +102,18 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => { isMounted = false; };
   }, []);
 
+  // Moteur de recherche en mémoire (rapide)
+  const searchTests = (query: string): TestDef[] => {
+      if (!query.trim()) return [];
+      const lowerQ = query.toLowerCase();
+      return flatTests.filter(t => 
+          t.name.toLowerCase().includes(lowerQ) || 
+          t.subtests.some(s => s.name.toLowerCase().includes(lowerQ))
+      );
+  };
+
   return (
-    <CatalogContext.Provider value={{ catalog, loading, source }}>
+    <CatalogContext.Provider value={{ catalog, loading, searchTests }}>
       {children}
     </CatalogContext.Provider>
   );

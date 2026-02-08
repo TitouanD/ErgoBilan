@@ -1,19 +1,17 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { TestData, ScoreResult, UserProfile, Patient, Observations } from '../../types';
-import { SubtestDef } from '../../data/testCatalog';
-import { SCALES, calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
+import { SubtestDef, TestDef, ICON_MAP } from '../../data/testCatalog';
+import { calculateFromStandard, calculateFromZ, calculateFromPercentile } from '../../utils/scoring';
 import { ScoringEngine } from '../../services/scoringEngine';
-import { GaussianChart } from '../shared/GaussianChart';
-import { Plus, Trash2, ArrowRight, MessageSquarePlus, X, Check, Layers, ChevronDown, Activity, Search, ShieldCheck, Lock, FlaskConical, FilePlus, Loader2, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, MessageSquare, X, Check, Layers, Search, FilePlus, Loader2, Activity, Brain, GripVertical, CheckCircle2 } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
-import { DebouncedTextarea } from '../shared/DebouncedControls';
 
 interface Props {
   patient: Patient; 
   tests: TestData;
   updateTests: (data: Partial<TestData>) => void;
-  observations: Observations;
+  observations: Observations; 
   updateObservations: (data: Partial<Observations>) => void;
   onNext: () => void;
   onBack: () => void;
@@ -22,228 +20,57 @@ interface Props {
   onContribute?: () => void;
 }
 
-// --- CATALOGUE MODAL (EXPORTÉ) ---
-export const TestCatalogModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    existingTests: TestData;
-    onAddTests: (testIds: string[]) => void;
-    onContribute?: () => void;
-}> = ({ isOpen, onClose, existingTests, onAddTests, onContribute }) => {
-    const { catalog } = useCatalog();
-    const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [activeCategory, setActiveCategory] = useState(catalog[0]?.id || '');
-    const [searchQuery, setSearchQuery] = useState('');
-
-    if (!isOpen) return null;
-
-    const toggleSelection = (id: string) => {
-        if (selectedIds.includes(id)) {
-            setSelectedIds(selectedIds.filter(tid => tid !== id));
-        } else {
-            setSelectedIds([...selectedIds, id]);
-        }
-    };
-
-    const handleValidate = () => {
-        onAddTests(selectedIds);
-        setSelectedIds([]);
-        onClose();
-    };
+// --- JAUGE FINE ---
+const CompactGauge: React.FC<{ zScore: number }> = ({ zScore }) => {
+    const clamped = Math.max(-3.5, Math.min(3.5, zScore));
+    const percent = ((clamped + 3.5) / 7) * 100;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-4xl h-[700px] rounded-[32px] shadow-2xl flex overflow-hidden flex-col md:flex-row">
-                {/* Sidebar Catégories */}
-                <div className="w-full md:w-1/3 bg-stone-50 p-6 md:p-8 border-b md:border-r border-stone-100 flex flex-col gap-2">
-                    <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-4 hidden md:block">Catalogue</h3>
-                    
-                    {/* Barre de recherche simulée */}
-                    <div className="relative mb-4">
-                        <Search className="absolute left-3 top-1/2 -translate-x-1/2 text-stone-400" size={16} />
-                        <input 
-                            type="text" 
-                            placeholder="Rechercher..." 
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-sm outline-none focus:border-[#E07A5F]"
-                        />
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
-                        {catalog.map(cat => (
-                            <button
-                                key={cat.id}
-                                onClick={() => setActiveCategory(cat.id)}
-                                className={`w-full text-left px-5 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-3 ${activeCategory === cat.id ? 'bg-white shadow-md text-[#E07A5F] ring-1 ring-stone-100' : 'text-stone-500 hover:bg-stone-100'}`}
-                            >
-                                {cat.name}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* CTA CONTRIBUTION INTÉGRÉ */}
-                    {onContribute && (
-                        <div className="mt-4 pt-4 border-t border-stone-200">
-                            <button 
-                                onClick={() => { onClose(); onContribute(); }}
-                                className="w-full p-3 bg-[#E07A5F]/10 text-[#E07A5F] rounded-xl text-xs font-bold hover:bg-[#E07A5F]/20 transition-all text-left flex items-center gap-2 group"
-                            >
-                                <div className="p-1.5 bg-white rounded-lg shadow-sm group-hover:scale-110 transition-transform">
-                                    <FilePlus size={14} />
-                                </div>
-                                <div>
-                                    <span className="block">Test manquant ?</span>
-                                    <span className="text-[10px] font-medium opacity-80">Gagnez des crédits !</span>
-                                </div>
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Zone de Sélection */}
-                <div className="flex-1 p-6 md:p-10 bg-white flex flex-col relative">
-                     <div className="flex justify-between items-center mb-6">
-                         <div>
-                            <h4 className="font-bold text-xl text-[#3D405B]">Choisir les épreuves</h4>
-                            <p className="text-stone-400 text-sm">Sélectionnez plusieurs tests si nécessaire.</p>
-                         </div>
-                         <button onClick={onClose} className="p-3 bg-stone-50 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors"><X size={20}/></button>
-                     </div>
-
-                     <div className="flex-1 overflow-y-auto grid grid-cols-1 gap-4 pb-20">
-                        {catalog.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).map((test, index) => {
-                             const isAlreadyAdded = !!existingTests[test.id];
-                             const isSelected = selectedIds.includes(test.id);
-                             
-                             return (
-                                 <button 
-                                    key={test.id}
-                                    onClick={() => !isAlreadyAdded && toggleSelection(test.id)}
-                                    disabled={isAlreadyAdded}
-                                    className={`text-left p-5 rounded-2xl border-2 transition-all flex justify-between items-center group ${
-                                        isAlreadyAdded 
-                                            ? 'bg-stone-50 border-stone-100 opacity-60 cursor-default' 
-                                            : isSelected
-                                                ? 'bg-[#E07A5F]/5 border-[#E07A5F] shadow-sm'
-                                                : 'bg-white border-stone-100 hover:border-stone-300'
-                                    }`}
-                                 >
-                                    <div>
-                                        <span className={`font-bold text-lg block mb-1 ${isAlreadyAdded ? 'text-stone-400' : 'text-[#3D405B]'}`}>{test.name}</span>
-                                        <span className="text-xs text-stone-400 font-medium">{test.subtests.length} sous-tests inclus</span>
-                                    </div>
-                                    
-                                    {isAlreadyAdded ? (
-                                        <span className="flex items-center gap-1 text-xs font-bold text-[#81B29A] uppercase bg-[#81B29A]/10 px-3 py-1.5 rounded-full">
-                                            <Check size={12} strokeWidth={3}/> Ajouté
-                                        </span>
-                                    ) : (
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-[#E07A5F] text-white' : 'bg-stone-100 text-stone-300 group-hover:bg-[#E07A5F]/20'}`}>
-                                            {isSelected ? <Check size={16} strokeWidth={3} /> : <Plus size={16} />}
-                                        </div>
-                                    )}
-                                 </button>
-                             )
-                        })}
-                        {/* Empty State Search */}
-                        {catalog.find(c => c.id === activeCategory)?.tests.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
-                             <div className="text-center py-10">
-                                 <p className="text-stone-400 text-sm">Aucun résultat.</p>
-                             </div>
-                        )}
-                     </div>
-
-                     {/* Footer Validation */}
-                     <div className="absolute bottom-0 left-0 right-0 p-6 bg-white border-t border-stone-100 flex justify-between items-center">
-                        <span className="text-sm font-bold text-stone-500">
-                            {selectedIds.length} test{selectedIds.length > 1 ? 's' : ''} sélectionné{selectedIds.length > 1 ? 's' : ''}
-                        </span>
-                        <button 
-                            onClick={handleValidate}
-                            disabled={selectedIds.length === 0}
-                            className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#2c2e42] transition-colors shadow-lg"
-                        >
-                            Valider la sélection
-                        </button>
-                     </div>
-                </div>
-            </div>
+        <div className="h-1.5 w-full bg-stone-200 rounded-full relative overflow-hidden mt-3 mb-1">
+            <div className="absolute inset-y-0 left-0 w-[21.4%] bg-rose-300 opacity-50"></div>
+            <div className="absolute inset-y-0 left-[21.4%] w-[14.3%] bg-amber-300 opacity-50"></div>
+            <div className="absolute inset-y-0 left-[35.7%] right-0 bg-emerald-300 opacity-50"></div>
+            <div className="absolute top-0 bottom-0 w-px bg-white/80 left-[21.4%]"></div>
+            <div className="absolute top-0 bottom-0 w-px bg-white/80 left-[35.7%]"></div>
+            <div className="absolute top-0 bottom-0 w-px bg-white/80 left-[50%]"></div>
+            <div className="absolute top-0 bottom-0 w-2 h-2 -mt-[1px] bg-[#3D405B] rounded-full shadow-sm transition-all duration-700 ease-out transform -translate-x-1/2 ring-2 ring-white" style={{ left: `${percent}%` }}></div>
         </div>
     );
-}
-
-// Helper pour l'interprétation textuelle
-const getInterpretation = (z: number) => {
-    if (z <= -2) return { text: "Difficulté significative (Zone Pathologique)", color: "text-[#D62828]" };
-    if (z <= -1) return { text: "Fragilité à surveiller (Zone Limite)", color: "text-[#E07A5F]" };
-    if (z >= 1) return { text: "Performance supérieure à la moyenne", color: "text-[#81B29A]" };
-    return { text: "Performance dans la moyenne attendue", color: "text-[#81B29A]" };
 };
 
-// --- SOUS-COMPOSANT EXPORTÉ ET MÉMOISÉ : Smart Test Row (Accordéon) ---
-// La clé du succès : React.memo avec comparaison stricte des valeurs
-export const SubtestRowCheck = React.memo(({
-    testId, 
-    patient,
-    subtest,
-    result,
-    onChange,
-    readOnly = false,
-    isExpanded: controlledExpanded,
-    onToggleExpand,
-    onFocus,
-    onErrorPulse,
-    hasAcceptedResponsibility = false,
-    onAcceptResponsibility
+// --- LIGNE SOUS-TEST ---
+const CompactSubtestRow = React.memo(({
+    testId, patient, subtest, result, onChange, readOnly = false, onFocus
 }: {
-    testId: string; 
-    patient: Patient;
-    subtest: SubtestDef;
-    result: ScoreResult;
-    onChange: (res: Partial<ScoreResult>) => void;
-    readOnly?: boolean;
-    isExpanded?: boolean;
-    onToggleExpand?: () => void;
-    onFocus?: () => void;
-    onErrorPulse?: boolean;
-    hasAcceptedResponsibility?: boolean;
-    onAcceptResponsibility?: () => void;
+    testId: string; patient: Patient; subtest: SubtestDef; result: ScoreResult;
+    onChange: (res: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void;
+    isExpanded?: boolean; onToggleExpand?: () => void;
 }) => {
     
-    const [localExpanded, setLocalExpanded] = useState(false);
-    const [showConfirmModal, setShowConfirmModal] = useState(false);
-    const [isComputing, setIsComputing] = useState(false); // État de chargement DB
+    const [isComputing, setIsComputing] = useState(false);
 
-    const isExpanded = controlledExpanded !== undefined ? controlledExpanded : localExpanded;
-    
-    const handleToggle = () => {
-        if (onToggleExpand) onToggleExpand();
-        else setLocalExpanded(!localExpanded);
-    };
-
-    // 1. Logique Saisie RAW (via Moteur DB)
     const handleRawInput = async (val: string) => {
-        if (readOnly || result.status === 'validated') return;
-        if (onFocus) onFocus();
-
-        const num = parseFloat(val);
-        
-        // Mise à jour immédiate du statut
-        onChange({ raw: val, status: 'empty' });
-
+        if (readOnly) return;
+        const num = parseFloat(val.replace(',', '.'));
+        onChange({ raw: val, status: 'estimated' }); 
         if (isNaN(num)) return;
 
-        // Calcul Async
         setIsComputing(true);
         try {
-            const ageInMonths = 96; // TODO: Vrai calcul d'âge depuis patient.dob
-            const dbSubtestId = `${testId}_${subtest.id}`;
-            const computed = await ScoringEngine.compute(dbSubtestId, num, ageInMonths, patient.gender === 'F' ? 'F' : 'M');
+            // Estimation par défaut 8 ans si pas d'âge précis, juste pour la démo technique
+            // En prod, ScoringEngine utilise la vraie date de naissance
+            const ageInMonths = 96; 
+            const dbSubtestId = `${testId}_${subtest.id}`; // Pattern ID DB
+            // On essaie avec l'ID complet (si test officiel) ou l'ID court (si démo)
+            // Note: ScoringEngine gère les cas démo
+            const computed = await ScoringEngine.compute(
+                subtest.id.includes('_') ? subtest.id : dbSubtestId, 
+                num, ageInMonths, patient.gender === 'F' ? 'F' : 'M', patient.classLevel
+            );
             
             if (computed) {
                 onChange({
-                    raw: val, // Garde le string saisi
+                    raw: val,
                     standard: computed.standard,
                     percentile: computed.percentile,
                     zScore: computed.zScore,
@@ -257,361 +84,260 @@ export const SubtestRowCheck = React.memo(({
         }
     };
 
-    // 2. Logique Édition Manuelle (Calcul Bidirectionnel Purement Mathématique - Pas de DB)
-    const handleCalculatedEdit = (field: 'standard' | 'zScore' | 'percentile', val: string) => {
-        if (readOnly || result.status === 'validated') return;
-        if (onFocus) onFocus();
-
-        const num = parseFloat(val);
-        if (isNaN(num)) {
-            onChange({ [field === 'zScore' ? 'zScore' : field]: field === 'zScore' ? 0 : val });
-            return;
-        }
-
-        let calculated: any = {};
-        if (field === 'standard') {
-            calculated = calculateFromStandard(num, subtest.scoreType);
-        } else if (field === 'zScore') {
-            calculated = calculateFromZ(num, subtest.scoreType);
-        } else if (field === 'percentile') {
-            calculated = calculateFromPercentile(num, subtest.scoreType);
-        }
-
-        onChange({
-            ...calculated,
-            status: 'estimated'
-        });
+    const handleStandardChange = (val: string) => {
+        const num = parseFloat(val.replace(',', '.'));
+        if (isNaN(num)) { onChange({ standard: val, status: 'estimated' }); return; }
+        const calculated = calculateFromStandard(num, subtest.scoreType);
+        onChange({ ...calculated, standard: val, raw: result.raw, status: 'estimated' });
     };
 
-    // 3. Validation
-    const handleActionClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleValidate = () => {
         if (readOnly) return;
-
-        if (result.status === 'estimated') {
-            if (!hasAcceptedResponsibility) setShowConfirmModal(true);
-            else confirmValidation();
-        } else if (result.status === 'validated') {
-            onChange({ status: 'estimated', validatedAt: undefined });
-        }
+        onChange({ status: result.status === 'validated' ? 'estimated' : 'validated' });
     };
 
-    const confirmValidation = () => {
-        onChange({ status: 'validated', validatedAt: new Date().toISOString() });
-        setShowConfirmModal(false);
-        if (!isExpanded && onToggleExpand) onToggleExpand();
-        else if (!isExpanded) setLocalExpanded(true);
-    };
-
-    const handleConfirmFirstTime = () => {
-        if (onAcceptResponsibility) onAcceptResponsibility();
-        confirmValidation();
-    };
-
-    const handleObservation = (txt: string) => {
-        if (readOnly) return;
-        onChange({ observation: txt });
-    };
-
-    // États visuels
-    const isEstimated = result.status === 'estimated';
     const isValidated = result.status === 'validated';
-    const isEmpty = result.status === 'empty' || result.raw === '';
-    const z = result.zScore || 0;
-
-    let semanticColor = "#81B29A"; 
-    if (z <= -2) semanticColor = "#D62828";
-    else if (z <= -1) semanticColor = "#E07A5F";
-    
-    const PROPOSAL_COLOR = "#6366F1"; // Indigo
-    
-    const getCalculatedInputStyle = () => {
-        if (isValidated) {
-            return {
-                borderColor: semanticColor,
-                color: semanticColor,
-                backgroundColor: '#FFFFFF',
-                borderStyle: 'solid',
-                borderWidth: '2px',
-                fontWeight: '800'
-            };
-        } else if (isEstimated) {
-            return {
-                borderColor: '#A5B4FC',
-                color: PROPOSAL_COLOR,
-                backgroundColor: '#EEF2FF',
-                borderStyle: 'dashed',
-                borderWidth: '2px',
-                fontStyle: 'italic'
-            };
-        }
-        return { 
-            borderColor: 'transparent',
-            backgroundColor: '#F9FAFB',
-            color: '#3D405B'
-        };
-    };
-
-    const calcStyle = getCalculatedInputStyle();
-    const inputBaseClass = "text-center rounded-xl text-lg outline-none transition-all duration-300 font-bold shadow-sm";
-    const interpretation = getInterpretation(z);
+    let zColor = "text-stone-400";
+    if (result.raw) {
+        if (result.zScore <= -2) zColor = "text-[#E07A5F]";
+        else if (result.zScore <= -1) zColor = "text-[#F2CC8F]";
+        else zColor = "text-[#81B29A]";
+    }
 
     return (
-        <>
-            <div className={`relative bg-white rounded-2xl shadow-sm border transition-all duration-300 mb-4 group 
-                ${isExpanded ? 'shadow-md ring-1 ring-stone-100' : 'hover:shadow'}
-                ${onErrorPulse && isEstimated ? 'animate-pulse ring-2 ring-indigo-300 shadow-indigo-100' : 'border-stone-100'}
-            `}>
-                
-                <div 
-                    className="absolute left-0 top-0 bottom-0 w-[6px] rounded-l-2xl transition-colors duration-500 z-10"
-                    style={{ backgroundColor: isValidated ? semanticColor : (isEstimated ? PROPOSAL_COLOR : '#F5F5F4') }}
-                />
-
-                <div 
-                    onClick={() => (isValidated || readOnly) && handleToggle()}
-                    className={`flex items-center gap-4 p-4 pl-8 transition-colors ${(isValidated || readOnly) ? 'cursor-pointer' : ''}`}
-                >
-                    {/* 1. Label */}
-                    <div className="w-1/4 min-w-[120px]">
-                        <h4 className="font-bold text-sm text-[#3D405B] group-hover:text-[#E07A5F] transition-colors">{subtest.name}</h4>
-                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{subtest.unit}</span>
+        <div className={`border-b border-stone-100 last:border-0 transition-colors ${isValidated ? 'bg-emerald-50/10' : 'bg-white'}`}>
+            <div className="flex flex-col md:flex-row">
+                <div className="flex-1 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="text-stone-300"><GripVertical size={16}/></div>
+                            <div>
+                                <h4 className="font-bold text-[#3D405B] text-sm leading-tight">{subtest.name}</h4>
+                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">{subtest.unit}</span>
+                            </div>
+                        </div>
                     </div>
-
-                    {/* 2. Inputs GRID (Brut | NS | ET | %) */}
-                    <div className="flex-1 flex items-center justify-start gap-2 md:gap-4 overflow-x-auto no-scrollbar">
-                        
-                        {/* BRUT (Source) */}
-                        <div className="flex flex-col items-center min-w-[60px]">
-                            <span className="text-[9px] font-bold text-stone-300 uppercase mb-1">Brut</span>
+                    <div className="grid grid-cols-4 gap-4 items-center bg-stone-50/50 p-2 rounded-xl border border-stone-100">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-stone-400 uppercase text-center">Brut</label>
                             <div className="relative">
-                                <input 
-                                    type="text" 
-                                    value={result.raw}
-                                    onChange={(e) => handleRawInput(e.target.value)}
-                                    onFocus={onFocus}
-                                    onClick={(e) => e.stopPropagation()}
-                                    placeholder="-"
-                                    disabled={readOnly || isValidated}
-                                    className={`w-16 h-12 ${inputBaseClass}`}
-                                    style={{ 
-                                        backgroundColor: isValidated ? '#F9FAFB' : '#FFFFFF',
-                                        border: isValidated ? '1px solid transparent' : '1px solid #E5E7EB',
-                                        color: '#3D405B',
-                                        paddingRight: isComputing ? '20px' : '0'
-                                    }}
-                                />
-                                {isValidated && <Lock size={10} className="absolute top-1 right-1 text-stone-300" />}
-                                {isComputing && (
-                                    <div className="absolute top-1/2 right-1 -translate-y-1/2 text-[#E07A5F]">
-                                        <Loader2 size={12} className="animate-spin" />
-                                    </div>
-                                )}
+                                <input value={result.raw} onChange={(e) => handleRawInput(e.target.value)} onFocus={onFocus} className="w-full p-2 text-center bg-white border border-stone-200 rounded-lg font-bold text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none text-sm" />
+                                {isComputing && <Loader2 size={12} className="absolute right-1 top-2.5 animate-spin text-[#E07A5F]"/>}
                             </div>
                         </div>
-
-                        <div className="h-8 w-px bg-stone-100 hidden sm:block"></div>
-
-                        {/* NS (Calculé) */}
-                        <div className="flex flex-col items-center min-w-[60px] relative">
-                            <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>NS</span>
-                            <input
-                                type="text"
-                                value={result.standard}
-                                onChange={(e) => handleCalculatedEdit('standard', e.target.value)}
-                                onFocus={onFocus}
-                                onClick={(e) => e.stopPropagation()}
-                                disabled={readOnly || isValidated}
-                                placeholder="-"
-                                className={`w-14 h-10 text-sm ${inputBaseClass}`}
-                                style={calcStyle}
-                            />
-                            {isEstimated && !isValidated && <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full text-white text-[8px] flex items-center justify-center font-bold pointer-events-none">?</div>}
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-stone-400 uppercase text-center">NS</label>
+                            <input value={result.standard} onChange={(e) => handleStandardChange(e.target.value)} onFocus={onFocus} className="w-full p-2 text-center bg-transparent border-b border-stone-200 rounded-none text-sm font-bold text-stone-600 focus:bg-white focus:border-[#E07A5F] outline-none" />
                         </div>
-
-                        {/* ET / Z-Score (Calculé) */}
-                        <div className="flex flex-col items-center min-w-[60px]">
-                            <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>ET</span>
-                            <input
-                                type="text"
-                                value={result.zScore || 0}
-                                onChange={(e) => handleCalculatedEdit('zScore', e.target.value)}
-                                onFocus={onFocus}
-                                onClick={(e) => e.stopPropagation()}
-                                disabled={readOnly || isValidated}
-                                placeholder="-"
-                                className={`w-14 h-10 text-sm ${inputBaseClass}`}
-                                style={calcStyle}
-                            />
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-stone-400 uppercase text-center">ET</label>
+                            <div className={`w-full p-2 text-center text-sm font-bold bg-transparent border-b border-stone-200 ${zColor}`}>
+                                {result.zScore ? (result.zScore > 0 ? '+' : '') + result.zScore : '-'}
+                            </div>
                         </div>
-
-                        {/* % (Calculé) */}
-                        <div className="flex flex-col items-center min-w-[60px]">
-                            <span className={`text-[9px] font-bold uppercase mb-1 ${isEstimated && !isValidated ? 'text-indigo-400' : 'text-stone-300'}`}>%</span>
-                            <input 
-                                type="text"
-                                value={result.percentile}
-                                onChange={(e) => handleCalculatedEdit('percentile', e.target.value)}
-                                onFocus={onFocus}
-                                onClick={(e) => e.stopPropagation()}
-                                disabled={readOnly || isValidated}
-                                placeholder="-"
-                                className={`w-14 h-10 text-sm ${inputBaseClass}`}
-                                style={calcStyle}
-                            />
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-stone-400 uppercase text-center">%</label>
+                            <input value={result.percentile} readOnly className="w-full p-2 text-center bg-transparent border-b border-stone-200 text-sm font-bold text-stone-400 outline-none" />
                         </div>
                     </div>
-
-                    {/* 3. Action */}
-                    <div className="flex justify-end items-center gap-4 pl-4 border-l border-transparent sm:border-stone-50 ml-4">
-                        {!readOnly && (
-                            <div className="relative group/btn">
-                                <button 
-                                    onClick={handleActionClick}
-                                    disabled={isEmpty}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 relative ${
-                                        isValidated 
-                                            ? `bg-white shadow-none border-2 scale-90 hover:bg-stone-50` 
-                                            : isEstimated
-                                                ? "bg-[#4F46E5] text-white shadow-lg shadow-indigo-200 hover:scale-110 hover:shadow-indigo-300 animate-pulse" 
-                                                : "bg-stone-100 text-stone-300 cursor-not-allowed" 
-                                    }`}
-                                    style={{ 
-                                        borderColor: isValidated ? semanticColor : 'transparent', 
-                                        color: isValidated ? semanticColor : 'white' 
-                                    }}
-                                >
-                                    {isValidated ? <ShieldCheck size={18} /> : <Check size={20} strokeWidth={3} />}
-                                </button>
-                                {isEstimated && !isValidated && (
-                                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-[#3D405B] text-white text-[10px] px-3 py-2 rounded-lg opacity-0 group-hover/btn:opacity-100 transition-opacity pointer-events-none text-center leading-tight z-50">
-                                        Validation & Contribution anonyme <br/> aux statistiques <FlaskConical size={10} className="inline ml-1"/>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {readOnly && isValidated && (
-                            <div className={`text-stone-300 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
-                                 <ChevronDown size={20} />
-                            </div>
-                        )}
+                    <div className="mt-3 px-1">
+                        {result.raw && <CompactGauge zScore={result.zScore || 0} />}
+                        <div className="relative mt-3">
+                            <textarea value={result.observation || ''} onChange={(e) => !readOnly && onChange({ observation: e.target.value })} onFocus={onFocus} placeholder="Observations cliniques..." className="w-full p-3 pl-9 bg-stone-50 border border-stone-100 rounded-xl text-xs text-[#3D405B] focus:border-[#E07A5F] focus:bg-white outline-none resize-none transition-all placeholder:text-stone-300" rows={2} />
+                            <MessageSquare size={14} className="absolute top-3 left-3 text-stone-300" />
+                        </div>
                     </div>
                 </div>
-
-                {/* CONTENU ÉTENDU */}
-                <div 
-                    className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)] ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
-                >
-                    <div className="overflow-hidden">
-                        <div className="p-6 pt-0 border-t border-stone-50 bg-stone-50/30 rounded-b-2xl">
-                            
-                            {/* Timestamp */}
-                            {isValidated && result.validatedAt && (
-                                <div className="flex justify-end mt-2 mb-2">
-                                    <span className="text-[9px] text-stone-400 font-medium flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-stone-100 shadow-sm">
-                                        <ShieldCheck size={10} className="text-emerald-500" />
-                                        Vérifié le {new Date(result.validatedAt).toLocaleDateString()}
-                                    </span>
-                                </div>
-                            )}
-
-                            <div className="flex flex-col md:flex-row gap-8 items-center mt-2">
-                                 <div className="w-full md:flex-1 h-40 bg-white rounded-xl border border-stone-100 p-4 shadow-sm relative">
-                                     <div className="absolute top-2 left-3 z-10 bg-stone-100 px-2 py-1 rounded text-[10px] font-bold text-stone-500 uppercase">
-                                         Distribution Normale
-                                     </div>
-                                     <GaussianChart 
-                                         mean={SCALES[subtest.scoreType].mean} 
-                                         sd={SCALES[subtest.scoreType].sd} 
-                                         userScore={parseFloat(result.standard)} 
-                                         label=""
-                                         isActive={isExpanded}
-                                     />
-                                 </div>
-
-                                 <div className="w-full md:w-1/3 space-y-4">
-                                     <div>
-                                         <h5 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Interprétation</h5>
-                                         <p className={`text-sm font-bold flex items-center gap-2 ${interpretation.color}`}>
-                                             <Activity size={16} /> {interpretation.text}
-                                         </p>
-                                     </div>
-
-                                     <div>
-                                         <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                                             <MessageSquarePlus size={12}/> Notes Cliniques
-                                         </label>
-                                         <textarea 
-                                             value={result.observation || ''}
-                                             onChange={(e) => handleObservation(e.target.value)}
-                                             placeholder="Notez ici les éléments qualitatifs..."
-                                             disabled={readOnly}
-                                             rows={2}
-                                             className="w-full text-sm p-3 rounded-xl bg-white border border-stone-200 focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none resize-none transition-all placeholder:text-stone-300 text-stone-700"
-                                         />
-                                     </div>
-                                 </div>
-                            </div>
-                        </div>
-                    </div>
+                <div className="w-full md:w-20 flex md:border-l border-stone-100">
+                    <button onClick={handleValidate} disabled={!result.raw} className={`w-full h-full flex flex-col items-center justify-center gap-1 transition-all duration-300 p-2 md:p-0 min-h-[60px] md:min-h-auto ${isValidated ? 'bg-emerald-500 text-white' : !result.raw ? 'bg-stone-50 text-stone-300 cursor-not-allowed' : 'bg-white hover:bg-stone-50 text-[#3D405B] group'}`}>
+                        {isValidated ? (
+                            <><div className="p-1 bg-white/20 rounded-full animate-in zoom-in duration-300"><CheckCircle2 size={24} strokeWidth={2.5} /></div><span className="text-[9px] font-bold uppercase tracking-wider hidden md:block">Validé</span></>
+                        ) : (
+                            <><div className={`p-2 rounded-full border-2 border-current transition-transform ${result.raw ? 'group-hover:scale-110 text-[#3D405B] border-[#3D405B] animate-pulse' : 'border-stone-200'}`}><Check size={18} strokeWidth={3} /></div><span className={`text-[9px] font-bold uppercase tracking-wider hidden md:block ${result.raw ? 'text-[#3D405B]' : 'text-stone-300'}`}>Valider</span></>
+                        )}
+                    </button>
                 </div>
             </div>
-
-            {/* MODALE CONFIRMATION (Smart Gate) */}
-            {showConfirmModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden p-6 animate-in zoom-in-95 duration-200 border-t-4 border-[#4F46E5]">
-                        <div className="flex items-center gap-3 mb-4 text-[#4F46E5]">
-                            <div className="p-2 bg-indigo-50 rounded-full">
-                                <ShieldCheck size={28} />
-                            </div>
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B]">Certification Requise</h3>
-                        </div>
-                        
-                        <p className="text-stone-600 text-sm leading-relaxed mb-6">
-                            Les valeurs <strong>NS ({result.standard})</strong>, <strong>ET ({result.zScore})</strong> et <strong>% ({result.percentile})</strong> sont liées mathématiquement.
-                            <br/><br/>
-                            En tant que professionnel, confirmez-vous que ces résultats sont cohérents ?
-                        </p>
-
-                        <div className="flex gap-3 justify-end">
-                            <button 
-                                onClick={() => setShowConfirmModal(false)}
-                                className="px-4 py-2 text-stone-400 font-bold text-sm hover:text-stone-600"
-                            >
-                                Annuler
-                            </button>
-                            <button 
-                                onClick={handleConfirmFirstTime}
-                                className="px-6 py-3 bg-[#4F46E5] text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center gap-2"
-                            >
-                                <Check size={16} strokeWidth={3} />
-                                Je certifie
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-}, (prev, next) => {
-    // COMPARATEUR CUSTOM POUR MEMO
-    return (
-        prev.result === next.result && 
-        prev.isExpanded === next.isExpanded &&
-        prev.onErrorPulse === next.onErrorPulse &&
-        prev.readOnly === next.readOnly &&
-        prev.subtest.id === next.subtest.id &&
-        prev.testId === next.testId
+        </div>
     );
 });
 
+// --- CATALOG MODAL (REVISITED) ---
+export const TestCatalogModal = ({ 
+    isOpen, onClose, existingTests, onAddTests, onContribute
+}: { 
+    isOpen: boolean; onClose: () => void; existingTests: TestData; onAddTests: (ids: string[]) => void; onContribute?: () => void;
+}) => {
+    const { catalog, searchTests } = useCatalog();
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    if (!isOpen) return null;
+
+    const handleToggle = (id: string) => {
+        if (selectedIds.includes(id)) setSelectedIds(prev => prev.filter(i => i !== id));
+        else setSelectedIds(prev => [...prev, id]);
+    };
+
+    const handleAdd = () => {
+        onAddTests(selectedIds);
+        setSelectedIds([]);
+        onClose();
+    };
+
+    // LOGIQUE DE FILTRAGE
+    // Si recherche active : Liste plate des résultats
+    // Sinon : Affichage par catégories
+    const searchResults = searchTerm ? searchTests(searchTerm) : [];
+    
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[32px] shadow-2xl overflow-hidden flex flex-col relative">
+                
+                {/* Header avec Search Bar intégrée */}
+                <div className="p-6 border-b border-stone-100 bg-stone-50 flex flex-col gap-4 sticky top-0 z-20">
+                    <div className="flex justify-between items-center">
+                        <h2 className="font-serif font-bold text-2xl text-[#3D405B] flex items-center gap-3">
+                            <Layers size={24} className="text-[#E07A5F]" /> Catalogue Unifié
+                        </h2>
+                        <button onClick={onClose} className="p-2 hover:bg-stone-200 rounded-full transition-colors text-stone-400"><X size={20}/></button>
+                    </div>
+                    
+                    <div className="relative">
+                        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
+                        <input 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Rechercher un test (ex: MABC, NEPSY...)"
+                            className="w-full pl-12 pr-4 py-3 bg-white border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-[#E07A5F]/20 font-medium text-[#3D405B] shadow-sm transition-all"
+                            autoFocus
+                        />
+                    </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar bg-[#F9F9F9]">
+                    
+                    {searchTerm ? (
+                        // VUE RECHERCHE
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {searchResults.map(test => {
+                                const isAdded = !!existingTests[test.id];
+                                const isSelected = selectedIds.includes(test.id);
+                                return (
+                                    <div 
+                                        key={test.id}
+                                        onClick={() => !isAdded && handleToggle(test.id)}
+                                        className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group flex flex-col justify-between min-h-[100px] ${isAdded ? 'border-stone-100 bg-stone-50 opacity-60 cursor-not-allowed' : isSelected ? 'border-[#E07A5F] bg-[#fff5f2] shadow-md' : 'border-stone-100 bg-white hover:border-[#E07A5F]/50 hover:shadow-sm'}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`font-bold text-sm ${isSelected ? 'text-[#E07A5F]' : 'text-[#3D405B]'}`}>{test.name}</span>
+                                            {isAdded && <Check size={16} className="text-stone-400"/>}
+                                            {isSelected && !isAdded && <div className="w-6 h-6 bg-[#E07A5F] rounded-full flex items-center justify-center shadow-lg shadow-orange-200"><Check size={14} className="text-white"/></div>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {searchResults.length === 0 && (
+                                <p className="col-span-full text-center text-stone-400 py-10">Aucun test trouvé.</p>
+                            )}
+                        </div>
+                    ) : (
+                        // VUE CATÉGORIES
+                        catalog.map(cat => {
+                            // Résolution dynamique de l'icône via ICON_MAP
+                            const CatIcon = ICON_MAP[cat.iconKey] || ICON_MAP['Box'];
+                            
+                            return (
+                                <div key={cat.id} className="animate-in slide-in-from-bottom-2">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider mb-4 flex items-center gap-2 text-stone-500">
+                                        <div className="p-1 bg-stone-200 rounded text-stone-600"><CatIcon size={14} /></div>
+                                        {cat.name}
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {cat.tests.map(test => {
+                                            const isAdded = !!existingTests[test.id];
+                                            const isSelected = selectedIds.includes(test.id);
+                                            
+                                            return (
+                                                <div 
+                                                    key={test.id}
+                                                    onClick={() => !isAdded && handleToggle(test.id)}
+                                                    className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group flex flex-col justify-between min-h-[100px] ${
+                                                        isAdded ? 'border-stone-100 bg-stone-50 opacity-60 cursor-not-allowed' :
+                                                        isSelected ? 'border-[#E07A5F] bg-[#fff5f2] shadow-md' :
+                                                        'border-stone-100 bg-white hover:border-[#E07A5F]/50 hover:shadow-sm'
+                                                    }`}
+                                                >
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <span className={`font-bold text-sm ${isSelected ? 'text-[#E07A5F]' : 'text-[#3D405B]'}`}>{test.name}</span>
+                                                        {isAdded && <Check size={16} className="text-stone-400"/>}
+                                                        {isSelected && !isAdded && <div className="w-6 h-6 bg-[#E07A5F] rounded-full flex items-center justify-center shadow-lg shadow-orange-200"><Check size={14} className="text-white"/></div>}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <span className="text-[10px] font-bold text-stone-400 bg-stone-50 px-2 py-1 rounded">{test.subtests.length} épreuves</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+
+                    {/* Contribution Banner */}
+                    <div className="bg-white border border-stone-200 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 mt-8 shadow-sm">
+                        <div>
+                            <h3 className="font-bold text-[#3D405B] flex items-center gap-2"><FilePlus size={18} /> Test manquant ?</h3>
+                            <p className="text-xs text-stone-500 mt-1">Numérisez vos propres tests pour les ajouter à votre catalogue personnel.</p>
+                        </div>
+                        {onContribute && (
+                            <button onClick={() => { onClose(); onContribute(); }} className="bg-stone-50 text-[#3D405B] border border-stone-200 hover:border-[#3D405B] px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap">
+                                Numériser un test
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-stone-100 bg-white flex justify-end gap-3 z-20">
+                    <button onClick={onClose} className="px-6 py-3 font-bold text-stone-400 hover:text-stone-600 transition-colors">Annuler</button>
+                    <button 
+                        onClick={handleAdd}
+                        disabled={selectedIds.length === 0}
+                        className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        Ajouter {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- COMPOSANT PRINCIPAL ---
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, updateObservations, observations, onNext, onBack, userProfile, onAcceptResponsibility, onContribute }) => {
   const { catalog } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
-  const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
-  const [triggerErrorPulse, setTriggerErrorPulse] = useState(false);
+
+  // Group tests by Category for Display
+  const groupedActiveTests = useMemo(() => {
+      const groups: Record<string, TestDef[]> = {};
+      Object.keys(tests).forEach(testId => {
+          // On cherche le test dans toutes les catégories du catalogue
+          const cat = catalog.find(c => c.tests.some(t => t.id === testId));
+          if (cat) {
+              if (!groups[cat.id]) groups[cat.id] = [];
+              const testDef = cat.tests.find(t => t.id === testId);
+              if (testDef) groups[cat.id].push(testDef);
+          } else {
+              // Fallback si test non trouvé (ex: test supprimé ou orphelin)
+              if (!groups['autre']) groups['autre'] = [];
+              // On crée une définition mock pour l'affichage
+              groups['autre'].push({ id: testId, name: "Test inconnu", subtests: [] });
+          }
+      });
+      return groups;
+  }, [tests, catalog]);
 
   const addTests = useCallback((testIds: string[]) => {
     const newTests = { ...tests };
@@ -640,93 +366,83 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, updat
     const newTests = { ...tests };
     if(!newTests[testId]) newTests[testId] = {};
     const currentSub = newTests[testId][subtestId] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
-    
     newTests[testId][subtestId] = { ...currentSub, ...result };
     updateTests(newTests);
   }, [tests, updateTests]);
 
-  const handleNext = () => {
-    let hasPendingEstimations = false;
-    Object.values(tests).forEach(subtests => {
-        Object.values(subtests).forEach(res => {
-            if (res.status === 'estimated') hasPendingEstimations = true;
-        });
-    });
-
-    if (hasPendingEstimations) {
-        setTriggerErrorPulse(true);
-        setTimeout(() => setTriggerErrorPulse(false), 1000);
-        const firstError = document.querySelector('.animate-pulse');
-        firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-        onNext();
-    }
-  };
-
   const activeTestsList = Object.keys(tests);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
-      <div className="flex justify-between items-end mb-6 border-b border-stone-200 pb-6">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-32">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-[32px] shadow-sm border border-stone-100">
         <div>
-            <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Tests & Mesures</h2>
-            <p className="text-stone-500 font-medium mt-2">Saisissez les résultats. Les scores NS, ET et % sont calculés automatiquement.</p>
+            <h2 className="text-2xl font-serif font-bold text-[#3D405B] flex items-center gap-3">
+                <Activity size={24} className="text-[#E07A5F]" /> Tests & Mesures
+            </h2>
+            <p className="text-stone-500 text-sm font-medium mt-1">Saisie interactive avec visualisation temps réel.</p>
         </div>
-        <button 
-            onClick={() => setShowCatalog(true)}
-            className="flex items-center gap-2 bg-[#3D405B] text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all"
-        >
-            <Plus size={18} /> Ajouter un test
+        <button onClick={() => setShowCatalog(true)} className="flex items-center gap-2 bg-[#3D405B] text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all text-sm group">
+            <Plus size={18} className="group-hover:rotate-90 transition-transform" /> Ajouter une épreuve
         </button>
       </div>
 
-      <div className="space-y-16">
+      <div className="space-y-12">
         {activeTestsList.length === 0 ? (
-            <div onClick={() => setShowCatalog(true)} className="group cursor-pointer border-2 border-dashed border-stone-200 bg-white rounded-[32px] p-20 text-center hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all duration-300">
-                <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto text-stone-300 group-hover:text-[#E07A5F] group-hover:scale-110 transition-all mb-6">
+            <div onClick={() => setShowCatalog(true)} className="group cursor-pointer border-3 border-dashed border-stone-200 bg-stone-50/50 rounded-[40px] p-20 text-center hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all duration-300">
+                <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto text-stone-300 group-hover:text-[#E07A5F] group-hover:scale-110 transition-all mb-6 shadow-sm border border-stone-100">
                     <Layers size={40} />
                 </div>
                 <h3 className="text-2xl font-bold text-stone-600 mb-2">Aucun test sélectionné</h3>
-                <p className="text-stone-400 font-medium">Commencez par ajouter une épreuve depuis le catalogue.</p>
+                <p className="text-stone-400 font-medium max-w-md mx-auto">Accédez au catalogue unifié pour sélectionner vos outils d'évaluation.</p>
             </div>
         ) : (
-            activeTestsList.map(testId => {
-                const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
-                if (!def) return null;
-
+            Object.entries(groupedActiveTests).map(([catId, categoryTests]) => {
+                const catDef = catalog.find(c => c.id === catId);
+                const CatIcon = ICON_MAP[catDef?.iconKey || 'Box'];
+                
                 return (
-                    <div key={testId} className="animate-in slide-in-from-bottom-4 duration-500 bg-white/50 rounded-[32px] p-2 md:p-6 border border-transparent hover:border-stone-100 transition-colors">
-                        <div className="flex items-center justify-between mb-8 px-2 border-b border-stone-100 pb-4">
-                            <h3 className="font-serif font-bold text-2xl text-[#3D405B] flex items-center gap-3">
-                                <span className="w-2 h-8 bg-[#F2CC8F] rounded-full"></span>
-                                {def.name}
+                    <div key={catId} className="animate-in slide-in-from-bottom-4 duration-700">
+                        <div className="flex items-center gap-3 mb-6 px-2">
+                            <div className="p-2 rounded-xl bg-white border border-stone-200 text-stone-600 shadow-sm">
+                                <CatIcon size={20} />
+                            </div>
+                            <h3 className="font-serif font-bold text-xl uppercase tracking-wide text-stone-600">
+                                {catDef?.name || "Tests Divers"}
                             </h3>
-                            <button onClick={() => removeTest(testId)} className="text-stone-300 hover:text-[#E07A5F] hover:bg-rose-50 p-3 rounded-xl transition-all" title="Supprimer ce test">
-                                <Trash2 size={20} />
-                            </button>
+                            <div className="h-px bg-stone-200 flex-1 ml-4 opacity-50"></div>
                         </div>
 
                         <div>
-                            {def.subtests.map(st => {
-                                const res = tests[testId]?.[st.id] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
-                                const uniqueId = `${testId}-${st.id}`;
-                                return (
-                                    <SubtestRowCheck 
-                                        key={st.id}
-                                        testId={testId}
-                                        patient={patient}
-                                        subtest={st}
-                                        result={res}
-                                        onChange={(val) => handleSubtestChange(testId, st.id, val)}
-                                        isExpanded={expandedSubtestId === uniqueId}
-                                        onToggleExpand={() => setExpandedSubtestId(expandedSubtestId === uniqueId ? null : uniqueId)}
-                                        onFocus={() => setExpandedSubtestId(null)}
-                                        onErrorPulse={triggerErrorPulse}
-                                        hasAcceptedResponsibility={userProfile?.hasAcceptedResponsibility}
-                                        onAcceptResponsibility={onAcceptResponsibility}
-                                    />
-                                );
-                            })}
+                            {categoryTests.map(testDef => (
+                                <div key={testDef.id} className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden mb-8 transition-all hover:shadow-md">
+                                    <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                                        <div className="flex items-center gap-3">
+                                            <h3 className="font-bold text-lg text-[#3D405B]">{testDef.name}</h3>
+                                            <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded-full text-stone-400 uppercase tracking-wide border border-stone-100">
+                                                {testDef.subtests.length} Épreuves
+                                            </span>
+                                        </div>
+                                        <button onClick={() => removeTest(testDef.id)} className="text-stone-400 hover:text-rose-500 p-2 hover:bg-white/50 rounded-lg transition-all">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                    <div className="bg-white">
+                                        {testDef.subtests.map(st => {
+                                            const res = tests[testDef.id]?.[st.id] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
+                                            return (
+                                                <CompactSubtestRow 
+                                                    key={st.id}
+                                                    testId={testDef.id}
+                                                    patient={patient}
+                                                    subtest={st}
+                                                    result={res}
+                                                    onChange={(val) => handleSubtestChange(testDef.id, st.id, val)}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 );
@@ -734,44 +450,13 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, updat
         )}
       </div>
 
-      {/* ZONE D'OBSERVATIONS GÉNÉRALES (NOUVEAU PHASE 2) */}
-      <div className="bg-white rounded-[32px] p-8 border border-stone-100 shadow-sm mt-8 animate-in slide-in-from-bottom-4">
-          <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-[#F9F9F9] rounded-xl text-[#E07A5F]">
-                  <MessageSquare size={24} />
-              </div>
-              <h3 className="font-serif font-bold text-xl text-[#3D405B]">Observations Générales & Comportement</h3>
-          </div>
-          <p className="text-stone-500 text-sm mb-4 leading-relaxed">
-              Notez ici les éléments transversaux non couverts par les tests spécifiques : attitude, fatigabilité, coopération, contexte de passation...
-          </p>
-          <DebouncedTextarea
-              value={observations.anamnese}
-              onChange={(val) => updateObservations({ anamnese: val })}
-              className="w-full p-4 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none h-32 resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-[#E07A5F] transition-all leading-relaxed"
-              placeholder="Ex: Enfant volontaire mais vite découragé. Bonne participation initiale puis fatigabilité marquée..."
-          />
-      </div>
-
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 backdrop-blur-md border-t border-stone-100 flex justify-center z-50">
         <div className="max-w-4xl w-full flex justify-between items-center">
-             <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">
-                Retour
+             <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">Retour</button>
+            <button onClick={onNext} className="flex items-center gap-3 px-8 py-4 bg-[#E07A5F] text-white rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">
+                <span>Passer au Diagnostic</span>
+                <ArrowRight size={20} />
             </button>
-            <div className="flex flex-col items-end">
-                {triggerErrorPulse && (
-                    <span className="text-xs font-bold text-rose-500 animate-bounce mb-2">
-                        Veuillez certifier les scores en bleu avant de continuer.
-                    </span>
-                )}
-                <button 
-                    onClick={handleNext} 
-                    className={`flex items-center gap-3 px-8 py-4 text-white rounded-2xl font-bold shadow-xl transition-all hover:-translate-y-1 ${triggerErrorPulse ? 'bg-rose-500 shadow-rose-200 animate-shake' : 'bg-[#E07A5F] shadow-orange-200 hover:bg-[#d0694e]'}`}
-                >
-                    <span>Passer au Diagnostic</span>
-                    <ArrowRight size={20} />
-                </button>
-            </div>
         </div>
       </div>
 
@@ -785,3 +470,5 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, updat
     </div>
   );
 };
+
+export const SubtestRowCheck = CompactSubtestRow;
