@@ -247,6 +247,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               
               setPractitioner(profile);
 
+              const needsRegistration = !profile.encryptionSalt || !profile.encryptionValidator || profile.encryptionValidator === 'pending';
+              if (needsRegistration) {
+                  Logger.warn('AUTH', 'Incomplete crypto setup detected. Redirecting to wizard.');
+                  setTempEmail(email);
+                  setAuthState('registering');
+                  return;
+              }
+
+              // Ensure org + membership + subscription exist (repair if trigger failed)
+              const { error: bootstrapError } = await supabase.rpc('bootstrap_org_for_user', { p_user_id: userId, p_org_name: 'Mon Cabinet' });
+              if (bootstrapError) {
+                  Logger.warn('AUTH', 'Bootstrap RPC failed during loadUser', bootstrapError);
+              }
+
               // 2. CHECK ABONNEMENT (SANS TIMEOUT)
               Logger.info('AUTH', "Fetching full profile from SubscriptionService...");
               
@@ -261,13 +275,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       setUserProfile(prev => ({ ...prev, credits: newCredits })); 
                   });
 
-                  const hasValidAccess = fullProfile.status === 'active' || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
+                  const hasValidAccess = fullProfile.status === 'active' 
+                      || fullProfile.status === 'trialing' 
+                      || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
 
                   if (!hasValidAccess) {
                       setAuthState('subscription_locked'); 
-                  } else if (profile.encryptionValidator === 'pending') {
-                      setTempEmail(email); 
-                      setAuthState('registering'); 
                   } else {
                       setAuthState('locked'); 
                   }
@@ -347,24 +360,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
               let orgId = memberData?.organization_id;
               if (!orgId) {
-                  const { data: newOrg } = await supabase.from('organizations').insert({ name: 'Mon Cabinet' }).select().single();
-                  orgId = newOrg.id;
+                  // Use SECURITY DEFINER RPC to bypass RLS on organizations table
+                  const { data: newOrgId, error: orgErr } = await supabase.rpc('bootstrap_org_for_user', { p_user_id: practitioner.id, p_org_name: 'Mon Cabinet' });
+                  if (orgErr || !newOrgId) throw orgErr || new Error('Failed to bootstrap organization');
+                  orgId = newOrgId;
               }
 
               const newOrgKey = await generateSymetricKey();
               const wrapped = await wrapKey(newOrgKey, key);
               const wrappedStr = `${wrapped.iv}:${wrapped.content}`;
               
-              const { error: upsertError } = await supabase
+              const { error: updateError } = await supabase
                   .from('organization_members')
-                  .upsert({ 
-                      organization_id: orgId,
-                      user_id: practitioner.id,
-                      role: 'owner',
-                      encrypted_org_key: wrappedStr
-                  });
+                  .update({ encrypted_org_key: wrappedStr })
+                  .eq('user_id', practitioner.id);
 
-              if (upsertError) throw upsertError;
+              if (updateError) throw updateError;
                   
               setSessionKey(key);
               setOrgKey(newOrgKey);

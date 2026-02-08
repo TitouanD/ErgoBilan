@@ -19,54 +19,45 @@ const CLOCHES_NORMS: Record<string, { mean: number, sd: number }> = {
     'CM1': { mean: 29.8, sd: 3.8 },
     'CM2': { mean: 31.4, sd: 3.3 },
     '5EME': { mean: 32.3, sd: 2.6 },
-    // Mapping Age -> Classe approx pour la démo si classe non fournie
-    '7': { mean: 26.8, sd: 4.2 }, // ~CE1
-    '8': { mean: 29.0, sd: 4.1 }, // ~CE2
-    '9': { mean: 29.8, sd: 3.8 }, // ~CM1
-    '10': { mean: 31.4, sd: 3.3 }, // ~CM2
-    '11': { mean: 32.3, sd: 2.6 }, // ~5eme
-    '12': { mean: 32.3, sd: 2.6 }  // ~5eme+
+    '7': { mean: 26.8, sd: 4.2 },
+    '8': { mean: 29.0, sd: 4.1 },
+    '9': { mean: 29.8, sd: 3.8 },
+    '10': { mean: 31.4, sd: 3.3 },
+    '11': { mean: 32.3, sd: 2.6 },
+    '12': { mean: 32.3, sd: 2.6 }
 };
 
 export const ScoringEngine = {
     /**
-     * Calcule les scores normés à partir du brut, de l'âge et du sexe via Supabase.
+     * Calcule les scores normés via la RPC server-side compute_score.
+     * Les normes propriétaires ne sont JAMAIS exposées au client.
+     * Fallback local uniquement pour le test démo (cloches-barrees).
      */
     compute: async (
         subtestId: string, 
         rawScore: number, 
         ageInMonths: number, 
         gender: 'M' | 'F' | 'Mixed' = 'Mixed',
-        classLevel?: string // Paramètre optionnel ajouté pour le test des cloches
+        classLevel?: string
     ): Promise<ComputationResult | null> => {
         
         // --- 0. DÉMO : TEST DES CLOCHES (HARDCODÉ) ---
         if (subtestId === 'cloches-barrees') {
             Logger.info('SYSTEM', 'Computing Demo Test: Cloches');
             
-            // Déterminer la norme à utiliser (Classe > Âge)
             let norm = null;
-            
-            // 1. Essai par Classe (Normalisation string)
             if (classLevel) {
                 const normalizedClass = classLevel.toUpperCase().replace('ÈME', 'EME').replace('È', 'E');
-                // Cherche correspondance exacte ou partielle (ex: "CM1" dans "CM1 A")
                 const key = Object.keys(CLOCHES_NORMS).find(k => normalizedClass.includes(k));
                 if (key) norm = CLOCHES_NORMS[key];
             }
-
-            // 2. Essai par Âge (si pas de classe ou pas de match)
             if (!norm) {
                 const ageYears = Math.floor(ageInMonths / 12);
                 norm = CLOCHES_NORMS[ageYears.toString()];
             }
-
-            // Défaut si rien ne matche (CM1 par défaut pour la démo Léo)
             if (!norm) norm = CLOCHES_NORMS['CM1'];
 
             const z = (rawScore - norm.mean) / norm.sd;
-            // Note: Le test des cloches utilise souvent des scores standards ou simplement le Z-Score.
-            // On va simuler un score standard (100 +/- 15) pour l'affichage unifié.
             const converted = calculateFromZ(z, 'standard');
 
             return {
@@ -78,74 +69,33 @@ export const ScoringEngine = {
             };
         }
 
-        // --- 1. SUPABASE (PRODUCTION) ---
-        
-        // Récupérer la définition du sous-test
-        const { data: subtest } = await supabase
-            .from('official_subtests')
-            .select('*')
-            .eq('id', subtestId)
-            .maybeSingle();
+        // --- 1. PRODUCTION : RPC SERVER-SIDE (normes jamais exposées) ---
+        try {
+            const { data, error } = await supabase.rpc('compute_score', {
+                p_subtest_id: subtestId,
+                p_raw_score: rawScore,
+                p_age_months: ageInMonths,
+                p_gender: gender,
+                p_class_level: classLevel || null
+            });
 
-        if (!subtest) {
-            // Si pas trouvé en DB et pas cloches, c'est peut-être un autre test démo ou une erreur
+            if (error) {
+                Logger.error('SYSTEM', 'Server-side compute_score failed', error);
+                return null;
+            }
+
+            if (!data) return null;
+
+            return {
+                raw: data.raw,
+                standard: String(data.standard ?? ''),
+                percentile: String(data.percentile ?? ''),
+                zScore: data.zScore ?? 0,
+                method: data.method as 'PARAMETRIC' | 'LOOKUP'
+            };
+        } catch (e) {
+            Logger.error('SYSTEM', 'Unexpected scoring error', e);
             return null;
         }
-
-        // Chercher la norme
-        const { data: norms } = await supabase
-            .from('official_norms')
-            .select('*')
-            .eq('subtest_id', subtestId)
-            .lte('age_min_months', ageInMonths)
-            .gte('age_max_months', ageInMonths);
-
-        if (!norms || norms.length === 0) return null;
-
-        // Filtrage priorité genre en JS (M/F > Mixed)
-        const specificNorm = norms.find((n: any) => n.gender === gender);
-        let activeNorm = specificNorm || norms.find((n: any) => n.gender === 'Mixed');
-
-        if (!activeNorm) return null;
-
-        // --- BRANCHE A : MODE PARAMÉTRIQUE ---
-        if (activeNorm.mean !== null && activeNorm.sd !== null) {
-            const mean = activeNorm.mean;
-            const sd = activeNorm.sd;
-            
-            const z = (rawScore - mean) / sd; 
-            const converted = calculateFromZ(z, subtest.score_type as any);
-
-            return {
-                raw: rawScore,
-                standard: converted.standard,
-                percentile: converted.percentile,
-                zScore: converted.zScore,
-                method: 'PARAMETRIC'
-            };
-        }
-
-        // --- BRANCHE B : MODE LOOKUP ---
-        const { data: lookupMatch } = await supabase
-            .from('official_norms')
-            .select('*')
-            .eq('subtest_id', subtestId)
-            .lte('age_min_months', ageInMonths)
-            .gte('age_max_months', ageInMonths)
-            .lte('raw_min', rawScore)
-            .gte('raw_max', rawScore)
-            .maybeSingle();
-
-        if (lookupMatch) {
-            return {
-                raw: rawScore,
-                standard: lookupMatch.standard_score?.toString() || '',
-                percentile: lookupMatch.percentile?.toString() || '',
-                zScore: 0, 
-                method: 'LOOKUP'
-            };
-        }
-
-        return null;
     }
 };

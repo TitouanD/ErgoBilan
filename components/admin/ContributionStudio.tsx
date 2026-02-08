@@ -1,14 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan } from 'lucide-react';
-import { Contribution, ExtractedRow } from '../../types';
-import { GoogleGenAI } from "@google/genai";
+import { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow } from '../../types';
+import { callAIProxy } from '../../services/aiProxy';
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
+import { normalizeTestName } from '../../utils';
 
 interface Props {
   onClose: () => void;
@@ -44,7 +45,23 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [legalConsent, setLegalConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // MERGE STATE
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ id: string; name: string; subtestCount: number } | null>(null);
+  const [mergeNewAgeRanges, setMergeNewAgeRanges] = useState(0);
+  const [mergeNewSubtests, setMergeNewSubtests] = useState(0);
+
   const toast = useToast();
+
+  // Stable object URL for current file preview — revoke on change to prevent memory leaks
+  const currentFileUrl = useMemo(() => {
+      if (files.length === 0 || currentFileIndex >= files.length) return null;
+      return URL.createObjectURL(files[currentFileIndex]);
+  }, [files, currentFileIndex]);
+
+  useEffect(() => {
+      return () => { if (currentFileUrl) URL.revokeObjectURL(currentFileUrl); };
+  }, [currentFileUrl]);
 
   // --- HELPER FUNCTIONS ---
 
@@ -115,8 +132,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   const processRealExtraction = async (inputFiles: File[]) => {
       try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const model = "gemini-3-flash-preview"; 
           const imagePart = await fileToGenerativePart(inputFiles[0]);
           const filename = inputFiles[0].name;
 
@@ -183,12 +198,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
           `;
 
-          const response = await ai.models.generateContent({
-              model: model,
+          const response = await callAIProxy({
               contents: [{ role: "user", parts: [imagePart, { text: prompt }] }]
           });
 
-          const extractedData = cleanAndParseJson(response.text);
+          const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
           const flatRows: ExtractedRow[] = [];
           let globalIdCounter = 0;
           
@@ -196,12 +210,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           setTableStructure(detectedStructure);
 
           if (extractedData && Array.isArray(extractedData.tables)) {
-              extractedData.tables.forEach((table: any) => {
+              extractedData.tables.forEach((table: AIExtractedTable) => {
                   if (Array.isArray(table.rows)) {
-                      table.rows.forEach((r: any) => {
+                      table.rows.forEach((r: AIExtractedNormRow) => {
                           const rawRow: ExtractedRow = {
                               id: (globalIdCounter++).toString(),
-                              subtest: table.subtest_id || extractedData.test_context || "Global",
+                              subtest: table.subtest_id || extractedData?.test_context || "Global",
                               label: r.label || '',
                               raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
                               standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
@@ -279,7 +293,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   // NEW: Add row to a specific batch
   const handleAddRowToBatch = (subtestName: string, label: string) => {
       setRows(prev => [...prev, { 
-          id: Date.now().toString(), 
+          id: crypto.randomUUID(), 
           subtest: subtestName, 
           label: label, 
           raw: '', standard: '', zScore: '', percentile: '' 
@@ -302,7 +316,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   const handleAddRowToSubtest = (subtestName: string) => {
-      setRows(prev => [...prev, { id: Date.now().toString(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '' }]);
+      setRows(prev => [...prev, { id: crypto.randomUUID(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '' }]);
   };
 
   const handleDeleteRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
@@ -318,16 +332,71 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       setShowSaveModal(true);
   };
 
-  // --- FINAL SAVE (DIRECT INSERT) ---
+  // --- HELPER: Build norm payload from an ExtractedRow ---
+  const buildNormPayload = (row: ExtractedRow, subtestId: string, orgId: string) => {
+      // AGE: AI values first, JS fallback
+      let ageMin = row.hidden_age_min;
+      let ageMax = row.hidden_age_max;
+      if (ageMin === undefined || ageMax === undefined) {
+          const ageMatch = row.label.match(/(\d+)/);
+          const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
+          ageMin = ageYear * 12;
+          ageMax = (ageYear * 12) + 11;
+      }
+
+      // RAW SCORES / STATS
+      let mean: number | null = null;
+      let sd: number | null = null;
+      let rawMin = 0;
+      let rawMax = 0;
+
+      if (tableStructure === 'PARAMETRIC') {
+          mean = parseFloat(row.mean || row.raw) || 0;
+          sd = parseFloat(row.sd || row.zScore) || 0;
+      } else {
+          if (row.hidden_raw_min !== undefined && row.hidden_raw_max !== undefined) {
+              rawMin = row.hidden_raw_min;
+              rawMax = row.hidden_raw_max;
+          } else {
+              const cleanRaw = row.raw.replace(',', '.').replace(/[^\d.-]/g, '');
+              if (cleanRaw.includes('-')) {
+                  const parts = cleanRaw.split('-');
+                  rawMin = parseFloat(parts[0]);
+                  rawMax = parseFloat(parts[1]);
+              } else {
+                  const val = parseFloat(cleanRaw);
+                  rawMin = val;
+                  rawMax = val;
+              }
+              if (isNaN(rawMin)) rawMin = 0;
+              if (isNaN(rawMax)) rawMax = 0;
+          }
+      }
+
+      return {
+          subtest_id: subtestId,
+          organization_id: orgId,
+          age_min_months: ageMin,
+          age_max_months: ageMax,
+          gender: 'Mixed',
+          raw_min: rawMin,
+          raw_max: rawMax,
+          mean,
+          sd,
+          standard_score: tableStructure === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
+          percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
+      };
+  };
+
+  // --- DETECT DUPLICATE & ASK USER ---
   const handleFinalSave = async () => {
-      if (!legalConsent) return; 
-      
+      if (!legalConsent) return;
+
       setIsSaving(true);
       try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Utilisateur non connecté");
 
-          // 1. Get Organization ID
           const { data: member } = await supabase
               .from('organization_members')
               .select('organization_id')
@@ -337,129 +406,219 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           if (!member?.organization_id) throw new Error("Aucune organisation trouvée pour ce compte.");
           const orgId = member.organization_id;
 
-          // 2. Prepare Test Object
-          const testId = `priv_${orgId.split('-')[0]}_${Date.now()}`; 
-          
-          await supabase.from('official_tests').insert({
-              id: testId,
-              name: testName,
-              category_id: selectedCategory, 
-              version: '1.0',
-              author: user.email,
-              organization_id: orgId 
-          });
+          // --- DEDUP CHECK: Look for existing test with same normalized name in same scope ---
+          const normalizedInput = normalizeTestName(testName);
+          const { data: existingTests } = await supabase
+              .from('official_tests')
+              .select('id, name')
+              .eq('organization_id', orgId);
 
-          // 3. Prepare Subtests & Norms
-          for (const [subtestName, subRows] of Object.entries(groupedRows)) {
-              const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
-              const subtestId = `${testId}_${subtestSlug}`;
+          const match = (existingTests || []).find(t => normalizeTestName(t.name) === normalizedInput);
 
-              await supabase.from('official_subtests').insert({
-                  id: subtestId,
-                  test_id: testId,
-                  name: subtestName,
-                  unit: 'pts',
-                  score_type: 'standard',
-                  computation_mode: tableStructure,
-                  organization_id: orgId
-              });
+          if (match) {
+              // Count existing subtests for info display
+              const { count: subCount } = await supabase
+                  .from('official_subtests')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('test_id', match.id);
 
-              // Insert Norms (ID UUID géré par Postgres)
-              const normsPayload = subRows.map((row, idx) => {
-                  
-                  // --- LOGIQUE HYBRIDE : IA > Fallback JS ---
-                  
-                  // 1. AGE
-                  let ageMin = row.hidden_age_min;
-                  let ageMax = row.hidden_age_max;
+              // Count how many new age ranges would be added (rough estimate)
+              const { data: existingSubs } = await supabase
+                  .from('official_subtests')
+                  .select('id, name')
+                  .eq('test_id', match.id);
+              const existingSubNames = new Set((existingSubs || []).map(s => normalizeTestName(s.name)));
+              const newSubtests = Object.keys(groupedRows).filter(name => !existingSubNames.has(normalizeTestName(name)));
 
-                  if (ageMin === undefined || ageMax === undefined) {
-                      // Fallback: Parsing basique du label
-                      const ageMatch = row.label.match(/(\d+)/); 
-                      const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
-                      ageMin = ageYear * 12;
-                      ageMax = (ageYear * 12) + 11;
-                  }
-
-                  // 2. RAW SCORES / STATS
-                  let mean = null;
-                  let sd = null;
-                  let rawMin = 0;
-                  let rawMax = 0;
-
-                  if (tableStructure === 'PARAMETRIC') {
-                      mean = parseFloat(row.mean || row.raw) || 0;
-                      sd = parseFloat(row.sd || row.zScore) || 0;
-                  } else {
-                      // Mode LOOKUP
-                      if (row.hidden_raw_min !== undefined && row.hidden_raw_max !== undefined) {
-                          // Valeurs calculées par Gemini (Ex: "19+" -> 19, 999)
-                          rawMin = row.hidden_raw_min;
-                          rawMax = row.hidden_raw_max;
-                      } else {
-                          // Fallback JS si l'IA a raté
-                          const cleanRaw = row.raw.replace(',', '.').replace(/[^\d.-]/g, '');
-                          if (cleanRaw.includes('-')) {
-                              const parts = cleanRaw.split('-');
-                              rawMin = parseFloat(parts[0]);
-                              rawMax = parseFloat(parts[1]);
-                          } else {
-                              const val = parseFloat(cleanRaw);
-                              rawMin = val;
-                              rawMax = val;
-                          }
-                          // Sécurité NaN
-                          if (isNaN(rawMin)) rawMin = 0;
-                          if (isNaN(rawMax)) rawMax = 0;
-                      }
-                  }
-
-                  return {
-                      subtest_id: subtestId,
-                      organization_id: orgId,
-                      age_min_months: ageMin, 
-                      age_max_months: ageMax,
-                      gender: 'Mixed',
-                      raw_min: rawMin,
-                      raw_max: rawMax,
-                      mean: mean,
-                      sd: sd,
-                      standard_score: tableStructure === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
-                      percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
-                  };
-              });
-
-              if (normsPayload.length > 0) {
-                  const { error: normsError } = await supabase.from('official_norms').insert(normsPayload);
-                  if (normsError) throw normsError;
-              }
+              setMergeTarget({ id: match.id, name: match.name, subtestCount: subCount || 0 });
+              setMergeNewSubtests(newSubtests.length);
+              setMergeNewAgeRanges(rows.length); // approximate: all rows are potential new norms
+              setShowSaveModal(false);
+              setShowMergeModal(true);
+              return;
           }
-          
-          Logger.info('DB', "Test privé créé avec succès.");
-          
-          const contributionData: Contribution = {
-              id: testId,
-              userId: user.id,
-              userName: 'Moi',
-              testName: testName,
-              docType: 'image',
-              status: 'validated',
-              vigilanceScore: 'pass',
-              submittedAt: new Date().toISOString(),
-              structureType: tableStructure,
-              rows: rows
-          };
-          
-          setShowSaveModal(false);
-          onSubmit(contributionData);
-          setStep('success');
 
-      } catch (e: any) {
+          // No duplicate → create normally
+          await performCreate(orgId, user.email || '');
+
+      } catch (e: unknown) {
           Logger.error('DB', "Erreur sauvegarde test:", e);
-          toast.error("Erreur lors de la création : " + e.message);
+          toast.error("Erreur lors de la création : " + (e instanceof Error ? e.message : String(e)));
       } finally {
           setIsSaving(false);
       }
+  };
+
+  // --- CREATE NEW TEST (original flow) ---
+  const performCreate = async (orgId: string, authorEmail: string) => {
+      const testId = `priv_${orgId.split('-')[0]}_${crypto.randomUUID().slice(0, 8)}`;
+
+      await supabase.from('official_tests').insert({
+          id: testId,
+          name: testName,
+          category_id: selectedCategory,
+          version: '1.0',
+          author: authorEmail,
+          organization_id: orgId
+      });
+
+      for (const [subtestName, subRows] of Object.entries(groupedRows)) {
+          const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+          const subtestId = `${testId}_${subtestSlug}`;
+
+          await supabase.from('official_subtests').insert({
+              id: subtestId,
+              test_id: testId,
+              name: subtestName,
+              unit: 'pts',
+              score_type: 'standard',
+              computation_mode: tableStructure,
+              organization_id: orgId
+          });
+
+          const normsPayload = subRows.map(row => buildNormPayload(row, subtestId, orgId));
+          if (normsPayload.length > 0) {
+              const { error: normsError } = await supabase.from('official_norms').insert(normsPayload);
+              if (normsError) throw normsError;
+          }
+      }
+
+      Logger.info('DB', "Test privé créé avec succès.");
+      finishSuccess(testId, orgId);
+  };
+
+  // --- MERGE INTO EXISTING TEST ---
+  const performMerge = async () => {
+      if (!mergeTarget) return;
+      setIsSaving(true);
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error("Utilisateur non connecté");
+
+          const { data: member } = await supabase
+              .from('organization_members')
+              .select('organization_id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+          if (!member?.organization_id) throw new Error("Aucune organisation trouvée.");
+          const orgId = member.organization_id;
+          const existingTestId = mergeTarget.id;
+
+          // Load existing subtests for matching
+          const { data: existingSubs } = await supabase
+              .from('official_subtests')
+              .select('id, name')
+              .eq('test_id', existingTestId);
+
+          // Build lookup: normalizedName → subtest_id
+          const subLookup = new Map<string, string>();
+          (existingSubs || []).forEach(s => subLookup.set(normalizeTestName(s.name), s.id));
+
+          let mergedNormsCount = 0;
+          let newSubtestsCount = 0;
+
+          for (const [subtestName, subRows] of Object.entries(groupedRows)) {
+              const normalizedSub = normalizeTestName(subtestName);
+              let subtestId = subLookup.get(normalizedSub);
+
+              if (!subtestId) {
+                  // New subtest → insert it attached to the EXISTING test
+                  const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+                  subtestId = `${existingTestId}_${subtestSlug}`;
+
+                  const { error: subErr } = await supabase.from('official_subtests').insert({
+                      id: subtestId,
+                      test_id: existingTestId,
+                      name: subtestName,
+                      unit: 'pts',
+                      score_type: 'standard',
+                      computation_mode: tableStructure,
+                      organization_id: orgId
+                  });
+                  if (subErr) throw subErr;
+                  newSubtestsCount++;
+                  subLookup.set(normalizedSub, subtestId);
+              }
+
+              // Load existing norms for this subtest to detect duplicates by (age_min, age_max, gender)
+              const { data: existingNorms } = await supabase
+                  .from('official_norms')
+                  .select('age_min_months, age_max_months, gender')
+                  .eq('subtest_id', subtestId);
+
+              const existingKeys = new Set(
+                  (existingNorms || []).map(n => `${n.age_min_months}_${n.age_max_months}_${n.gender}`)
+              );
+
+              // Only insert norms whose (age_min, age_max, gender) triplet doesn't exist yet
+              const newNorms = subRows
+                  .map(row => buildNormPayload(row, subtestId!, orgId))
+                  .filter(norm => {
+                      const key = `${norm.age_min_months}_${norm.age_max_months}_${norm.gender}`;
+                      return !existingKeys.has(key);
+                  });
+
+              if (newNorms.length > 0) {
+                  const { error: normsError } = await supabase.from('official_norms').insert(newNorms);
+                  if (normsError) throw normsError;
+                  mergedNormsCount += newNorms.length;
+              }
+          }
+
+          Logger.info('DB', `Merge réussi: +${newSubtestsCount} sous-tests, +${mergedNormsCount} normes dans ${existingTestId}`);
+          toast.success(`Fusion réussie ! ${mergedNormsCount} nouvelles entrées ajoutées.`);
+
+          setShowMergeModal(false);
+          finishSuccess(existingTestId, orgId);
+
+      } catch (e: unknown) {
+          Logger.error('DB', "Erreur merge test:", e);
+          toast.error("Erreur lors de la fusion : " + (e instanceof Error ? e.message : String(e)));
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // --- FORCE CREATE (user chose "Créer séparé" from merge modal) ---
+  const handleForceCreate = async () => {
+      setIsSaving(true);
+      setShowMergeModal(false);
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error("Utilisateur non connecté");
+          const { data: member } = await supabase
+              .from('organization_members')
+              .select('organization_id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+          if (!member?.organization_id) throw new Error("Aucune organisation trouvée.");
+          await performCreate(member.organization_id, user.email || '');
+      } catch (e: unknown) {
+          Logger.error('DB', "Erreur création forcée:", e);
+          toast.error("Erreur : " + (e instanceof Error ? e.message : String(e)));
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // --- SHARED SUCCESS CALLBACK ---
+  const finishSuccess = (testId: string, orgId: string) => {
+      const { data: { user } } = { data: { user: null as any } }; // ID already captured by caller
+      const contributionData: Contribution = {
+          id: testId,
+          userId: orgId,
+          userName: 'Moi',
+          testName: testName,
+          docType: 'image',
+          status: 'validated',
+          vigilanceScore: 'pass',
+          submittedAt: new Date().toISOString(),
+          structureType: tableStructure,
+          rows: rows
+      };
+      setShowSaveModal(false);
+      onSubmit(contributionData);
+      setStep('success');
   };
 
   // --- RENDER ---
@@ -612,7 +771,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 </div>
                 <div className="flex-1 overflow-auto flex items-center justify-center p-10 cursor-grab active:cursor-grabbing">
                     <div className="bg-white shadow-2xl transition-transform duration-200 ease-out origin-center relative" style={{ width: 'auto', height: 'auto', transform: `scale(${zoom})` }}>
-                         {files.length > 0 ? <img src={URL.createObjectURL(files[currentFileIndex])} alt="Source" className="max-w-full max-h-[80vh] object-contain" /> : null}
+                         {currentFileUrl ? <img src={currentFileUrl} alt="Source" className="max-w-full max-h-[80vh] object-contain" /> : null}
                     </div>
                 </div>
             </div>
@@ -827,6 +986,54 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             >
                                 {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
                                 Confirmer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- MODAL MERGE CONFIRMATION --- */}
+        {showMergeModal && mergeTarget && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="p-6">
+                        <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-amber-100">
+                            <Database size={32} className="text-amber-600" />
+                        </div>
+                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Test existant détecté</h3>
+                        <p className="text-center text-sm text-stone-500 mb-6">
+                            Le test <strong className="text-[#3D405B]">« {mergeTarget.name} »</strong> existe déjà avec {mergeTarget.subtestCount} sous-test{mergeTarget.subtestCount > 1 ? 's' : ''}.
+                        </p>
+
+                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 space-y-2">
+                            <div className="flex items-center gap-2 text-sm">
+                                <Layers size={14} className="text-amber-600 shrink-0" />
+                                <span className="text-stone-600">
+                                    <strong className="text-[#3D405B]">{rows.length}</strong> entrée{rows.length > 1 ? 's' : ''} à fusionner
+                                    {mergeNewSubtests > 0 && <> dont <strong className="text-[#3D405B]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
+                                </span>
+                            </div>
+                            <p className="text-xs text-amber-700 leading-relaxed">
+                                Seules les tranches d'âge manquantes seront ajoutées. Les données existantes ne seront pas modifiées.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={handleForceCreate}
+                                disabled={isSaving}
+                                className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                            >
+                                Créer séparé
+                            </button>
+                            <button 
+                                onClick={performMerge}
+                                disabled={isSaving}
+                                className="flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 hover:-translate-y-1"
+                            >
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                                Fusionner
                             </button>
                         </div>
                     </div>

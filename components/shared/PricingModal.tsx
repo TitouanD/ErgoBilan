@@ -272,5 +272,6 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                 </div>
             </div>
         </div>
+    </div>
     );
 };

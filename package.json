@@ -6,19 +6,33 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint . --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,css,md}\""
   },
   "dependencies": {
-    "lucide-react": "^0.563.0",
-    "recharts": "^3.7.0",
-    "react-dom": "^19.2.4",
-    "react": "^19.2.4",
     "@google/genai": "^1.38.0",
-    "@supabase/supabase-js": "2.39.7"
+    "@supabase/supabase-js": "2.39.7",
+    "html2pdf.js": "^0.14.0",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.28.0",
     "@types/node": "^22.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.33.0",
+    "@typescript-eslint/parser": "^8.33.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^9.28.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.1.0",
+    "prettier": "^3.5.3",
+    "supabase": "^2.76.4",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

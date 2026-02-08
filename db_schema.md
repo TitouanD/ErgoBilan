@@ -6,6 +6,8 @@
 
 Ce document référence la structure exacte de la base de données telle qu'elle est déployée et utilisée par l'application.
 
+detail dans :  Supabase.csv
+
 ## 1. Tables & Vues (Structure)
 
 ### `admin_candidates_promotion` (Table/Vue)
@@ -18,6 +20,16 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `organization_id` | uuid | Org source |
 | `subtest_count` | bigint | Nombre d'épreuves |
 | `created_at` | timestamp | |
+
+### `official_categories`
+*Catégories pour le catalogue des tests.*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | text | PK |
+| `label` | text | |
+| `description` | text | |
+| `icon_key` | text | Défaut `'Box'` |
+| `sort_order` | integer | Défaut `99` |
 
 ### `contribution_insights`
 *Stockage des données anonymisées pour les statistiques.*
@@ -47,6 +59,16 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `encrypted_data` | text | Blob complet (JSON) |
 | `updated_at` | timestamp | |
 
+### `generation_log`
+*Journal des consommations de crédits IA.*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | uuid | PK |
+| `user_id` | uuid | FK -> auth.users |
+| `status` | text | Défaut `'consumed'` |
+| `created_at` | timestamp | |
+| `refunded_at` | timestamp | Nullable |
+
 ### `official_norms`
 *Étalonnages (Moyennes/ET ou Tables).*
 | Colonne | Type | Notes |
@@ -75,6 +97,7 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `score_type` | text | 'standard', 'scaled', etc. |
 | `computation_mode` | text | 'PARAMETRIC' ou 'LOOKUP' |
 | `organization_id` | uuid | |
+| `created_at` | timestamp | |
 
 ### `official_tests`
 *Catalogue des tests.*
@@ -93,6 +116,7 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `id` | uuid | PK |
 | `name` | text | 'Mon Cabinet' |
 | `stripe_customer_id` | text | |
+| `created_at` | timestamp | `now()` |
 
 ### `organization_members`
 | Colonne | Type | Notes |
@@ -129,6 +153,8 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `status` | text | 'pending' |
 | `practitioner_encrypted_key` | text | Clé transmise |
 | `family_encrypted_data` | text | Réponse famille |
+| `access_token` | text | Token d'accès anonyme |
+| `created_at` | timestamp | `now()` |
 
 ### `practitioners`
 *Profil métier.*
@@ -145,6 +171,7 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `siret` | text | |
 | `address_pro` | text | |
 | `phone_pro` | text | |
+| `created_at` | timestamp | `now()` |
 
 ### `reports`
 *Textes générés (Architecture Relationnelle).*
@@ -157,6 +184,7 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `status` | text | |
 | `encrypted_content` | text | Blob Sections |
 | `iv` | text | |
+| `created_at` | timestamp | `now()` |
 
 ### `sessions`
 *Données brutes des tests (Architecture Relationnelle).*
@@ -179,9 +207,21 @@ Ce document référence la structure exacte de la base de données telle qu'elle
 | `plan_id` | text | 'free', 'essential', etc. |
 | `status` | text | 'active', 'trialing' |
 | `trial_ends_at` | timestamp | |
+| `current_period_end` | timestamp | |
+| `created_at` | timestamp | `now()` |
 
 ### `view_unified_catalog` (Vue)
 *Vue agrégée des tests publics et privés de l'utilisateur courant.*
+
+### `view_unified_subtests` (Vue)
+*Vue sécurisée des épreuves (subtests). Hérite la visibilité du test parent via `official_tests.organization_id`. N'expose pas `organization_id` au client.*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | text | PK |
+| `test_id` | text | FK → `official_tests` |
+| `name` | text | |
+| `unit` | text | |
+| `score_type` | text | 'standard', 'scaled', etc. |
 
 ---
 

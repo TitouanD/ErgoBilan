@@ -394,10 +394,46 @@ const BrandingEditor: React.FC<{
 export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack }) => {
   const [showBranding, setShowBranding] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const toast = useToast();
 
   const handlePrint = () => {
       window.print();
+  };
+
+  const handleExportPDF = async () => {
+      setIsExporting(true);
+      try {
+          const html2pdf = (await import('html2pdf.js')).default;
+          const element = document.getElementById('printable-report');
+          if (!element) {
+              toast.show('Erreur: rapport introuvable', 'error');
+              return;
+          }
+          
+          const fileName = `Bilan_${patient.lastName}_${patient.firstName}_${new Date().toISOString().split('T')[0]}.pdf`;
+          
+          await html2pdf().set({
+              margin: [10, 10, 15, 10],
+              filename: fileName,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { 
+                  scale: 2, 
+                  useCORS: true,
+                  letterRendering: true,
+                  scrollY: 0,
+              },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+              pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+          }).from(element).save();
+          
+          toast.show('PDF exporté avec succès ✓', 'success');
+      } catch (err) {
+          console.error('PDF export error:', err);
+          toast.show('Erreur lors de l\'export PDF', 'error');
+      } finally {
+          setIsExporting(false);
+      }
   };
 
   const handleOpenBranding = () => {
@@ -446,9 +482,17 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
             <div className="flex gap-3">
                 <button 
                     onClick={handlePrint}
-                    className="flex items-center gap-2 px-6 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"
+                    className="flex items-center gap-2 px-5 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"
                 >
-                    <Download size={16} /> Imprimer / PDF
+                    <Download size={16} /> Imprimer
+                </button>
+                <button 
+                    onClick={handleExportPDF}
+                    disabled={isExporting}
+                    className="flex items-center gap-2 px-5 py-3 bg-[#3D405B] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#2c2e42] transition-all disabled:opacity-70"
+                >
+                    {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
+                    {isExporting ? 'Export...' : 'Télécharger PDF'}
                 </button>
                 <button 
                     onClick={handleFinalValidate}

@@ -2,9 +2,11 @@
 // Module de Cryptographie Avancée (Web Crypto API)
 
 const VALIDATION_TOKEN = "AUTOBILAN_VALID_TOKEN";
+const CURRENT_ITERATIONS = 600_000; // OWASP 2024 recommendation for PBKDF2-SHA256
+const LEGACY_ITERATIONS = 100_000; // Previous iteration count — used for migration only
 
 // 1. Génération de la Master Key via PBKDF2
-export const deriveMasterKey = async (password: string, salt: string): Promise<CryptoKey> => {
+export const deriveMasterKey = async (password: string, salt: string, iterations = CURRENT_ITERATIONS): Promise<CryptoKey> => {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     "raw",
@@ -18,7 +20,7 @@ export const deriveMasterKey = async (password: string, salt: string): Promise<C
     {
       name: "PBKDF2",
       salt: enc.encode(salt),
-      iterations: 100000,
+      iterations,
       hash: "SHA-256",
     },
     keyMaterial,
@@ -29,7 +31,7 @@ export const deriveMasterKey = async (password: string, salt: string): Promise<C
 };
 
 // 2. Chiffrement Symétrique (AES-GCM) pour les Données
-export const encryptData = async (data: any, key: CryptoKey): Promise<{ iv: string; content: string }> => {
+export const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: string; content: string }> => {
   const enc = new TextEncoder();
   const encoded = enc.encode(JSON.stringify(data));
   const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Vecteur d'initialisation unique
@@ -47,7 +49,7 @@ export const encryptData = async (data: any, key: CryptoKey): Promise<{ iv: stri
 };
 
 // 3. Déchiffrement
-export const decryptData = async (encryptedObj: { iv: string; content: string }, key: CryptoKey): Promise<any> => {
+export const decryptData = async (encryptedObj: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
   const dec = new TextDecoder();
   
   // Conversion hex string -> Uint8Array pour l'IV
@@ -78,17 +80,39 @@ export const setupPin = async (pin: string): Promise<{ key: CryptoKey, salt: str
     return { key, salt, validator };
 };
 
-export const verifyPin = async (pin: string, salt: string, validatorStr: string): Promise<CryptoKey | null> => {
+/** Result of PIN verification, includes migration info when upgrading from legacy PBKDF2 iterations */
+export interface PinVerifyResult {
+    key: CryptoKey;
+    /** If set, the caller should persist this new validator to replace the legacy one */
+    migratedValidator?: string;
+}
+
+export const verifyPin = async (pin: string, salt: string, validatorStr: string): Promise<PinVerifyResult | null> => {
+    const [iv, content] = validatorStr.split(':');
+    if (!iv || !content) return null;
+
+    // 1. Try current iterations (600k)
     try {
-        const [iv, content] = validatorStr.split(':');
-        if (!iv || !content) return null;
-        const key = await deriveMasterKey(pin, salt);
+        const key = await deriveMasterKey(pin, salt, CURRENT_ITERATIONS);
         const decrypted = await decryptData({ iv, content }, key);
-        if (decrypted === VALIDATION_TOKEN) {
-            return key;
-        }
-        return null;
-    } catch (e) {
+        if (decrypted === VALIDATION_TOKEN) return { key };
+    } catch {
+        // Decryption failed — may be using legacy iteration count
+    }
+
+    // 2. Fallback to legacy iterations (100k) for accounts created before upgrade
+    try {
+        const legacyKey = await deriveMasterKey(pin, salt, LEGACY_ITERATIONS);
+        const decrypted = await decryptData({ iv, content }, legacyKey);
+        if (decrypted !== VALIDATION_TOKEN) return null;
+
+        // Legacy key worked → re-derive with current iterations and produce a new validator
+        const newKey = await deriveMasterKey(pin, salt, CURRENT_ITERATIONS);
+        const newValidation = await encryptData(VALIDATION_TOKEN, newKey);
+        const migratedValidator = `${newValidation.iv}:${newValidation.content}`;
+
+        return { key: newKey, migratedValidator };
+    } catch {
         return null;
     }
 };

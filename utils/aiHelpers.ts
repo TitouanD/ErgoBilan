@@ -26,7 +26,7 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
 /**
  * Nettoie et parse le JSON retourné par un LLM, même s'il contient des blocs Markdown ```json ... ```
  */
-export const cleanAndParseJson = (text: string | undefined): any => {
+export const cleanAndParseJson = (text: string | undefined): unknown => {
     if (!text) return null;
     let clean = text.trim();
     

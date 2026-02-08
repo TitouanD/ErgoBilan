@@ -66,7 +66,7 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
             if (!catDef) return;
 
             Object.values(subtests).forEach(res => {
-                if (res.status === 'validated') {
+                if (res.status === 'validated' || res.status === 'certified') {
                     // On inverse le score si lowerIsBetter ? Non, Z-Score est déjà normalisé par le moteur.
                     // On clamp les valeurs extrêmes pour le graphique (-3 à +2)
                     let z = res.zScore;
@@ -126,6 +126,10 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
 };
 
 export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding }) => {
+    const { ensureCatalogLoaded } = useCatalog();
+    useEffect(() => {
+        ensureCatalogLoaded();
+    }, [ensureCatalogLoaded]);
   const { catalog } = useCatalog();
   const getSection = (id: string) => sections.find(s => s.id === id);
 
@@ -271,9 +275,9 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
       const handleTextClick = (index: number, text: string) => { if (!onUpdateSection) return; setEditingIndex(index); setTempText(text); };
       const saveText = (index: number) => { if (!onUpdateSection) return; const newParagraphs = [...paragraphs]; newParagraphs[index] = tempText; onUpdateSection(section.id, { content: newParagraphs.join('\n\n') }); setEditingIndex(null); };
       const triggerFileSelect = (type: 'image-full' | 'image-text') => { setInsertType(type); fileInputRef.current?.click(); };
-      const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0] && insertIndex !== null && onUpdateSection) { const file = e.target.files[0]; const url = URL.createObjectURL(file); const newAttachment: ReportAttachment = { id: Date.now().toString(), type: insertType, url: url, caption: insertType === 'image-text' ? "Notez ici vos observations..." : undefined, positionIndex: insertIndex }; const currentAttachments = section.attachments || []; onUpdateSection(section.id, { attachments: [...currentAttachments, newAttachment] }); setInsertIndex(null); if (fileInputRef.current) fileInputRef.current.value = ''; } };
+      const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0] && insertIndex !== null && onUpdateSection) { const file = e.target.files[0]; const url = URL.createObjectURL(file); const newAttachment: ReportAttachment = { id: crypto.randomUUID(), type: insertType, url: url, caption: insertType === 'image-text' ? "Notez ici vos observations..." : undefined, positionIndex: insertIndex }; const currentAttachments = section.attachments || []; onUpdateSection(section.id, { attachments: [...currentAttachments, newAttachment] }); setInsertIndex(null); if (fileInputRef.current) fileInputRef.current.value = ''; } };
       const updateCaption = (aid: string, val: string) => { if (!onUpdateSection) return; onUpdateSection(section.id, { attachments: (section.attachments || []).map(a => a.id === aid ? { ...a, caption: val } : a) }); };
-      const removeAttachment = (aid: string) => { if (!onUpdateSection) return; onUpdateSection(section.id, { attachments: (section.attachments || []).filter(a => a.id !== aid) }); };
+      const removeAttachment = (aid: string) => { if (!onUpdateSection) return; const att = (section.attachments || []).find(a => a.id === aid); if (att?.url?.startsWith('blob:')) URL.revokeObjectURL(att.url); onUpdateSection(section.id, { attachments: (section.attachments || []).filter(a => a.id !== aid) }); };
 
       return (
           <div className="mb-8 relative group">
@@ -351,8 +355,51 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats Chiffrés</h2>
             </div>
             
-            {/* GRAPHIQUE GLOBAL (NOUVEAU) */}
+            {/* GRAPHIQUE GLOBAL (Radar) */}
             <ProfileRadarChart tests={tests} branding={branding} />
+
+            {/* HORIZONTAL BAR CHART PROFILE */}
+            <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
+                <div className="bg-stone-100 p-4 border-b border-stone-200" style={{ backgroundColor: isCustom ? primaryColor + '08' : undefined }}>
+                    <h3 className="font-bold text-sm uppercase tracking-wide" style={titleStyleCss}>Profil des scores (Écarts-types)</h3>
+                </div>
+                <div className="p-4 space-y-2">
+                    {Object.entries(tests).flatMap(([testId, subtests]) => {
+                        const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+                        return Object.entries(subtests)
+                            .filter(([, val]) => val.raw && (val.status === 'validated' || val.status === 'certified'))
+                            .map(([subId, result]) => {
+                                const subDef = def?.subtests.find(s => s.id === subId);
+                                const z = result.zScore || 0;
+                                const clamped = Math.max(-3.5, Math.min(3.5, z));
+                                const left = ((clamped + 3.5) / 7) * 100;
+                                let color = '#81B29A';
+                                if (z <= -2) color = '#E07A5F';
+                                else if (z <= -1) color = '#F2CC8F';
+                                return (
+                                    <div key={`${testId}_${subId}`} className="flex items-center gap-3 text-xs">
+                                        <span className="w-32 text-right text-stone-600 font-medium truncate shrink-0" title={subDef?.name}>{subDef?.name || subId}</span>
+                                        <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
+                                            <div className="absolute inset-y-0 left-0 w-[21.4%] bg-rose-100"></div>
+                                            <div className="absolute inset-y-0 left-[21.4%] w-[14.3%] bg-amber-100"></div>
+                                            <div className="absolute inset-y-0 left-[35.7%] right-0 bg-emerald-100"></div>
+                                            <div className="absolute top-0 bottom-0 w-px bg-stone-300 left-[50%]"></div>
+                                            <div className="absolute top-0.5 bottom-0.5 w-3 rounded-full shadow-sm transition-all" style={{ left: `calc(${left}% - 6px)`, backgroundColor: color }}></div>
+                                        </div>
+                                        <span className="w-10 text-right font-bold shrink-0" style={{ color }}>{z > 0 ? '+' : ''}{z}</span>
+                                    </div>
+                                );
+                            });
+                    })}
+                    <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
+                        <span className="w-32"></span>
+                        <div className="flex-1 flex justify-between px-1">
+                            <span>-3.5 ET</span><span>-2 ET</span><span>-1 ET</span><span className="font-bold">0</span><span>+1 ET</span><span>+2 ET</span><span>+3.5 ET</span>
+                        </div>
+                        <span className="w-10"></span>
+                    </div>
+                </div>
+            </div>
 
             <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass}`}>
                 <p className="font-bold mb-2">Guide de lecture :</p>
@@ -366,7 +413,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 {Object.entries(tests).map(([testId, subtests]) => {
                     const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                     if (!def) return null;
-                    const validSubtests = Object.entries(subtests).filter(([, val]) => val.status === 'validated');
+                    const validSubtests = Object.entries(subtests).filter(([, val]) => val.raw && (val.status === 'validated' || val.status === 'certified'));
                     if (validSubtests.length === 0) return null;
                     return (
                         <div key={testId} className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
@@ -376,22 +423,48 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             </div>
                             <div className="p-6">
                                 <div className="overflow-x-auto w-full">
-                                    <table className="w-full border-collapse text-sm mb-8 min-w-[500px]">
-                                        <thead><tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider"><th className="pb-3 w-1/3">Épreuves</th><th className="pb-3 w-1/4 text-center">Note Standard / ET</th><th className="pb-3 w-1/3 pl-6">Observations</th></tr></thead>
+                                    <table className="w-full border-collapse text-sm mb-8 min-w-[600px]">
+                                        <thead>
+                                            <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
+                                                <th className="pb-3 w-[25%]">Épreuves</th>
+                                                <th className="pb-3 w-[10%] text-center">Brut</th>
+                                                <th className="pb-3 w-[10%] text-center">NS</th>
+                                                <th className="pb-3 w-[10%] text-center">ET</th>
+                                                <th className="pb-3 w-[10%] text-center">%</th>
+                                                <th className="pb-3 w-[25%] pl-4">Observations</th>
+                                                <th className="pb-3 w-[10%] text-center">Statut</th>
+                                            </tr>
+                                        </thead>
                                         <tbody className="text-stone-700">
                                             {validSubtests.map(([subId, result]) => {
                                                 const subDef = def.subtests.find(s => s.id === subId);
                                                 const isPathological = result.zScore <= -2;
                                                 const isFragile = result.zScore <= -1 && result.zScore > -2;
                                                 const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
-                                                let scoreDisplay = (subDef?.scoreType === 'standard' || subDef?.scoreType === 'scaled') ? `NS = ${result.standard}` : `ET = ${result.zScore > 0 ? '+' : ''}${result.zScore}`;
-                                                return <tr key={subId} className="border-b border-stone-50 last:border-0 align-top"><td className="py-3 pr-4 font-medium">• {subDef?.name}</td><td className={`py-3 text-center ${colorClass}`}>{scoreDisplay}</td><td className="py-3 pl-6 italic text-xs text-stone-500">{result.observation || "-"}</td></tr>;
+                                                const isCertified = result.status === 'certified';
+                                                return (
+                                                    <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
+                                                        <td className="py-3 pr-4 font-medium">• {subDef?.name}</td>
+                                                        <td className="py-3 text-center text-stone-500">{result.raw}</td>
+                                                        <td className={`py-3 text-center ${colorClass}`}>{result.standard || '-'}</td>
+                                                        <td className={`py-3 text-center ${colorClass}`}>{result.zScore ? (result.zScore > 0 ? '+' : '') + result.zScore : '-'}</td>
+                                                        <td className="py-3 text-center text-stone-500">{result.percentile ? `P${result.percentile}` : '-'}</td>
+                                                        <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "-"}</td>
+                                                        <td className="py-3 text-center">
+                                                            {isCertified ? (
+                                                                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">✓</span>
+                                                            ) : (
+                                                                <span className="text-[9px] font-bold text-stone-400 bg-stone-50 px-1.5 py-0.5 rounded">—</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
                                             })}
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-stone-100">
-                                    {validSubtests.slice(0, 4).map(([subId, result]) => { 
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t border-stone-100">
+                                    {validSubtests.map(([subId, result]) => { 
                                         const subDef = def.subtests.find(s => s.id === subId);
                                         const scale = SCALES[subDef?.scoreType || 'standard'];
                                         return <div key={subId} className={`h-24 bg-stone-50 border border-stone-100 p-2 relative ${roundedClass}`}><div className="absolute top-2 left-2 text-[10px] font-bold text-stone-400 uppercase truncate max-w-[150px]">{subDef?.name}</div><GaussianChart mean={scale.mean} sd={scale.sd} userScore={parseFloat(result.standard)} label="" isActive={true} /></div>;
@@ -551,7 +624,13 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                   );
               })}
               <div className="absolute bottom-10 left-[15mm] right-[15mm] border-t border-stone-200 pt-4 flex justify-between items-end text-xs text-stone-400">
-                  <div><p>{branding?.footerText || "Document confidentiel"}</p><p className="mt-1">Profession inscrite au code de la santé publique.</p></div>
+                  <div>
+                      <p>{branding?.footerText || "Document confidentiel"}</p>
+                      <p className="mt-1">Profession inscrite au code de la santé publique.</p>
+                      {pageIdx === pages.length - 1 && (
+                          <p className="mt-1 text-[9px] italic">Scores certifiés par le praticien. Calculs vérifiés et validés individuellement.</p>
+                      )}
+                  </div>
                   {branding?.showPageNumbers && <div className="font-mono">Page {pageIdx + 1}/{pages.length}</div>}
               </div>
           </div>

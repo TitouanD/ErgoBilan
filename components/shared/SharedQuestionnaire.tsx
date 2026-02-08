@@ -185,7 +185,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   const addMedicalTracking = () => {
       const newItem: ParamedicalTracking = { 
-          id: Date.now().toString(), type: 'Orthophoniste', name: '', frequency: '1x/semaine', since: '', contact: '', reason: '' 
+          id: crypto.randomUUID(), type: 'Orthophoniste', name: '', frequency: '1x/semaine', since: '', contact: '', reason: '' 
       };
       onChange({ medicalTracking: [...(data.medicalTracking || []), newItem] });
   };

@@ -59,8 +59,8 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
     const handleStep2Submit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (formData.password.length < 6) {
-            toast.error("Le mot de passe doit contenir au moins 6 caractères.");
+        if (formData.password.length < 8) {
+            toast.error("Le mot de passe doit contenir au moins 8 caractères.");
             return;
         }
         if (formData.password !== formData.confirmPassword) {
@@ -118,67 +118,67 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             const wrappedOrgKey = await wrapKey(orgKey, masterKey);
             const wrappedOrgKeyStr = `${wrappedOrgKey.iv}:${wrappedOrgKey.content}`;
 
-            // --- ÉTAPE 3 : BOUCLE DE TENTATIVE DE MISE À JOUR (Profil Praticien) ---
+            // --- ÉTAPE 3 : CRÉATION / MISE À JOUR ROBUSTE (Profil Praticien) ---
             setStatusMessage("Synchronisation avec la base de données...");
-            
+
+            const practitionerPayload = {
+                id: userId,
+                email: formData.email,
+                first_name: formData.firstName,
+                last_name: formData.lastName,
+                phone_pro: formData.phone || '',
+                siret: formData.siret || '',
+                address_pro: formData.address || '',
+                encryption_salt: salt,
+                encryption_validator: validator
+            };
+
             let profileUpdated = false;
-            // On essaie pendant 15 secondes max (15 essais de 1s)
-            // C'est l'approche "Optimistic Update" : on essaie d'écrire sur la ligne
-            // Si elle n'existe pas encore (trigger lent), l'update renvoie 0 ligne, on réessaie.
-            for (let i = 0; i < 15; i++) {
+            for (let i = 0; i < 5; i++) {
                 const { data, error } = await supabase
                     .from('practitioners')
-                    .update({
-                        first_name: formData.firstName,
-                        last_name: formData.lastName,
-                        phone_pro: formData.phone || '',
-                        siret: formData.siret || '',
-                        address_pro: formData.address || '',
-                        encryption_salt: salt,
-                        encryption_validator: validator
-                    })
-                    .eq('id', userId)
-                    .select(); // IMPORTANT : select() permet de savoir si une ligne a été touchée
+                    .upsert(practitionerPayload, { onConflict: 'id' })
+                    .select();
 
                 if (error) {
-                    Logger.warn('AUTH', `Tentative Update Practitioner ${i+1}/15 échouée:`, error.message);
+                    Logger.warn('AUTH', `Tentative Upsert Practitioner ${i + 1}/5 échouée:`, error.message);
                 } else if (data && data.length > 0) {
                     profileUpdated = true;
-                    Logger.info('AUTH', "Practitioner profile updated successfully.");
-                    break; // SUCCÈS !
+                    Logger.info('AUTH', "Practitioner profile upserted successfully.");
+                    break;
                 }
 
-                // Attente active avant retry
                 await new Promise(r => setTimeout(r, 1000));
             }
 
             if (!profileUpdated) {
-                throw new Error("Délai d'attente dépassé : La création du profil a pris trop de temps. Veuillez contacter le support.");
+                throw new Error("Délai d'attente dépassé : La création ou mise à jour du profil a échoué. Veuillez contacter le support.");
             }
 
-            // --- ÉTAPE 4 : BOUCLE DE TENTATIVE DE MISE À JOUR (Membre Organisation) ---
+            // --- ÉTAPE 4 : CRÉATION / MISE À JOUR ROBUSTE (Membre Organisation + Subscription) ---
             setStatusMessage("Configuration des clés du cabinet...");
-            
-            let memberUpdated = false;
-            for (let i = 0; i < 10; i++) {
-                const { data, error } = await supabase
+
+            // Always call bootstrap to ensure org + membership + subscription exist
+            const { data: bootstrappedOrgId, error: bootstrapError } = await supabase
+                .rpc('bootstrap_org_for_user', { p_user_id: userId, p_org_name: 'Mon Cabinet' });
+
+            if (bootstrapError) {
+                Logger.warn('AUTH', 'Bootstrap RPC failed, trying fallback...', bootstrapError.message);
+            }
+
+            const orgId = bootstrappedOrgId || null;
+
+            if (!orgId) {
+                throw new Error('Failed to create or retrieve organization.');
+            }
+
+            {
+                const { error: memberUpdateError } = await supabase
                     .from('organization_members')
                     .update({ encrypted_org_key: wrappedOrgKeyStr })
-                    .eq('user_id', userId)
-                    .select();
+                    .eq('user_id', userId);
 
-                if (data && data.length > 0) {
-                    memberUpdated = true;
-                    Logger.info('AUTH', "Organization key injected successfully.");
-                    break;
-                }
-                await new Promise(r => setTimeout(r, 1000));
-            }
-
-            // Note: Si memberUpdated est false, c'est grave mais pas bloquant pour le login immédiat 
-            // (le refreshProfile du AuthContext gèrera le cas 'locked' ou tentera un lazy fix).
-            if (!memberUpdated) {
-                Logger.error('AUTH', "Warning: Organization Member link not updated in time.");
+                if (memberUpdateError) throw memberUpdateError;
             }
 
             // --- SUCCÈS ---
@@ -199,9 +199,9 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
             onComplete(newPractitioner, masterKey);
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             Logger.error('AUTH', "Registration Error", e);
-            let msg = e.message || "Une erreur est survenue.";
+            let msg = e instanceof Error ? e.message : "Une erreur est survenue.";
             if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB. Vos droits ne sont pas encore actifs.";
             toast.error(msg);
         } finally {

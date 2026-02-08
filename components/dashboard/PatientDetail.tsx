@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PatientFile, TestSession, Patient, ScoreResult } from '../../types';
 import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
 import { CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, XAxis, YAxis } from 'recharts';
@@ -184,16 +184,30 @@ const DeleteConfirmationModal: React.FC<{
 };
 
 export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
+    const { ensureCatalogLoaded } = useCatalog();
+    useEffect(() => {
+        ensureCatalogLoaded();
+    }, [ensureCatalogLoaded]);
   const { orgKey } = useAuth(); // utilise orgKey pour gérer le dossier
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const toast = useToast();
 
-  const chartData = file.sessions ? file.sessions.map(s => ({
-      date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
-      score: 10 + (Math.random() * 4 - 2), 
-      label: s.testName
-  })) : [];
+  const chartData = React.useMemo(() => {
+      if (!file.sessions || file.sessions.length === 0) return [];
+      return file.sessions.map(s => {
+          const scores = Object.values(s.results) as ScoreResult[];
+          const validated = scores.filter(r => r.status === 'validated');
+          const avgNote = validated.length > 0
+              ? validated.reduce((sum, r) => sum + (r.standardScore ?? r.raw ?? 0), 0) / validated.length
+              : null;
+          return {
+              date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
+              score: avgNote !== null ? Math.round(avgNote * 10) / 10 : null,
+              label: s.testName
+          };
+      }).filter(d => d.score !== null);
+  }, [file.sessions]);
 
   const handleArchive = async () => {
       if (!orgKey) return;

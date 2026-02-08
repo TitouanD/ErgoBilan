@@ -1,0 +1,1352 @@
+section,table_schema,table_name,column_name,data_type,is_nullable,column_default,extra_1,extra_2,definition
+COLUMNS,public,admin_candidates_promotion,author,text,YES,null,3,null,null
+COLUMNS,public,admin_candidates_promotion,created_at,timestamp with time zone,YES,null,5,null,null
+COLUMNS,public,admin_candidates_promotion,id,text,YES,null,1,null,null
+COLUMNS,public,admin_candidates_promotion,name,text,YES,null,2,null,null
+COLUMNS,public,admin_candidates_promotion,organization_id,uuid,YES,null,4,null,null
+COLUMNS,public,admin_candidates_promotion,subtest_count,bigint,YES,null,6,null,null
+COLUMNS,public,contribution_insights,age_months,integer,NO,null,4,null,null
+COLUMNS,public,contribution_insights,computed_percentile,numeric,YES,null,12,null,null
+COLUMNS,public,contribution_insights,computed_standard,numeric,YES,null,11,null,null
+COLUMNS,public,contribution_insights,created_at,timestamp with time zone,YES,now(),2,null,null
+COLUMNS,public,contribution_insights,diagnostic_tag,text,YES,null,7,null,null
+COLUMNS,public,contribution_insights,gender,text,YES,null,5,null,null
+COLUMNS,public,contribution_insights,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,contribution_insights,is_clinical,boolean,YES,false,6,null,null
+COLUMNS,public,contribution_insights,raw_score,numeric,YES,null,10,null,null
+COLUMNS,public,contribution_insights,source_hash,text,NO,null,3,null,null
+COLUMNS,public,contribution_insights,subtest_id,text,NO,null,9,null,null
+COLUMNS,public,contribution_insights,test_id,text,NO,null,8,null,null
+COLUMNS,public,drafts,encrypted_data,text,NO,null,6,null,null
+COLUMNS,public,drafts,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,drafts,iv,text,NO,null,5,null,null
+COLUMNS,public,drafts,patient_id,uuid,YES,null,3,null,null
+COLUMNS,public,drafts,updated_at,timestamp with time zone,YES,now(),4,null,null
+COLUMNS,public,drafts,user_id,uuid,NO,null,2,null,null
+COLUMNS,public,generation_log,created_at,timestamp with time zone,NO,now(),4,null,null
+COLUMNS,public,generation_log,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,generation_log,refunded_at,timestamp with time zone,YES,null,5,null,null
+COLUMNS,public,generation_log,status,text,NO,'consumed'::text,3,null,null
+COLUMNS,public,generation_log,user_id,uuid,NO,null,2,null,null
+COLUMNS,public,official_categories,description,text,YES,null,5,null,null
+COLUMNS,public,official_categories,icon_key,text,NO,'Box'::text,3,null,null
+COLUMNS,public,official_categories,id,text,NO,null,1,null,null
+COLUMNS,public,official_categories,label,text,NO,null,2,null,null
+COLUMNS,public,official_categories,sort_order,integer,YES,99,4,null,null
+COLUMNS,public,official_norms,age_max_months,integer,YES,null,4,null,null
+COLUMNS,public,official_norms,age_min_months,integer,YES,null,3,null,null
+COLUMNS,public,official_norms,gender,text,YES,null,5,null,null
+COLUMNS,public,official_norms,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,official_norms,mean,real,YES,null,6,null,null
+COLUMNS,public,official_norms,organization_id,uuid,YES,null,12,null,null
+COLUMNS,public,official_norms,percentile,real,YES,null,11,null,null
+COLUMNS,public,official_norms,raw_max,real,YES,null,9,null,null
+COLUMNS,public,official_norms,raw_min,real,YES,null,8,null,null
+COLUMNS,public,official_norms,sd,real,YES,null,7,null,null
+COLUMNS,public,official_norms,standard_score,real,YES,null,10,null,null
+COLUMNS,public,official_norms,subtest_id,text,NO,null,2,null,null
+COLUMNS,public,official_subtests,computation_mode,text,YES,'PARAMETRIC'::text,6,null,null
+COLUMNS,public,official_subtests,created_at,timestamp with time zone,YES,now(),7,null,null
+COLUMNS,public,official_subtests,id,text,NO,null,1,null,null
+COLUMNS,public,official_subtests,name,text,NO,null,3,null,null
+COLUMNS,public,official_subtests,score_type,text,NO,null,5,null,null
+COLUMNS,public,official_subtests,test_id,text,NO,null,2,null,null
+COLUMNS,public,official_subtests,unit,text,YES,null,4,null,null
+COLUMNS,public,official_tests,author,text,YES,null,4,null,null
+COLUMNS,public,official_tests,category_id,text,NO,null,3,null,null
+COLUMNS,public,official_tests,created_at,timestamp with time zone,YES,now(),6,null,null
+COLUMNS,public,official_tests,id,text,NO,null,1,null,null
+COLUMNS,public,official_tests,name,text,NO,null,2,null,null
+COLUMNS,public,official_tests,organization_id,uuid,YES,null,7,null,null
+COLUMNS,public,official_tests,version,text,YES,null,5,null,null
+COLUMNS,public,organization_members,encrypted_org_key,text,YES,null,4,null,null
+COLUMNS,public,organization_members,joined_at,timestamp with time zone,YES,now(),5,null,null
+COLUMNS,public,organization_members,organization_id,uuid,NO,null,1,null,null
+COLUMNS,public,organization_members,role,text,YES,'owner'::text,3,null,null
+COLUMNS,public,organization_members,user_id,uuid,NO,null,2,null,null
+COLUMNS,public,organizations,created_at,timestamp with time zone,YES,now(),4,null,null
+COLUMNS,public,organizations,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,organizations,name,text,NO,'Mon Cabinet'::text,2,null,null
+COLUMNS,public,organizations,stripe_customer_id,text,YES,null,3,null,null
+COLUMNS,public,patients,created_at,timestamp with time zone,YES,now(),3,null,null
+COLUMNS,public,patients,encrypted_file_key,text,YES,null,8,null,null
+COLUMNS,public,patients,encrypted_identity,text,NO,null,7,null,null
+COLUMNS,public,patients,encrypted_preview,text,YES,null,9,null,null
+COLUMNS,public,patients,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,patients,iv,text,NO,null,6,null,null
+COLUMNS,public,patients,last_interaction,timestamp with time zone,YES,now(),5,null,null
+COLUMNS,public,patients,organization_id,uuid,NO,null,2,null,null
+COLUMNS,public,patients,preview_iv,text,YES,null,10,null,null
+COLUMNS,public,patients,updated_at,timestamp with time zone,YES,now(),4,null,null
+COLUMNS,public,pending_questionnaires,access_token,text,YES,null,9,null,null
+COLUMNS,public,pending_questionnaires,created_at,timestamp with time zone,YES,now(),5,null,null
+COLUMNS,public,pending_questionnaires,family_encrypted_data,text,YES,null,7,null,null
+COLUMNS,public,pending_questionnaires,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,pending_questionnaires,label,text,YES,null,3,null,null
+COLUMNS,public,pending_questionnaires,organization_id,uuid,YES,null,8,null,null
+COLUMNS,public,pending_questionnaires,practitioner_encrypted_key,text,NO,null,6,null,null
+COLUMNS,public,pending_questionnaires,practitioner_id,uuid,NO,null,2,null,null
+COLUMNS,public,pending_questionnaires,status,text,YES,'pending'::text,4,null,null
+COLUMNS,public,practitioners,address_pro,text,YES,null,7,null,null
+COLUMNS,public,practitioners,created_at,timestamp with time zone,YES,now(),12,null,null
+COLUMNS,public,practitioners,credits,integer,YES,3,10,null,null
+COLUMNS,public,practitioners,email,text,NO,null,2,null,null
+COLUMNS,public,practitioners,encryption_salt,text,NO,'pending'::text,8,null,null
+COLUMNS,public,practitioners,encryption_validator,text,NO,'pending'::text,9,null,null
+COLUMNS,public,practitioners,first_name,text,YES,null,3,null,null
+COLUMNS,public,practitioners,id,uuid,NO,null,1,null,null
+COLUMNS,public,practitioners,is_admin,boolean,YES,false,11,null,null
+COLUMNS,public,practitioners,last_name,text,YES,null,4,null,null
+COLUMNS,public,practitioners,phone_pro,text,YES,null,5,null,null
+COLUMNS,public,practitioners,siret,text,YES,null,6,null,null
+COLUMNS,public,reports,created_at,timestamp with time zone,YES,now(),6,null,null
+COLUMNS,public,reports,encrypted_content,text,NO,null,8,null,null
+COLUMNS,public,reports,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,reports,iv,text,NO,null,7,null,null
+COLUMNS,public,reports,patient_id,uuid,NO,null,2,null,null
+COLUMNS,public,reports,status,text,NO,null,5,null,null
+COLUMNS,public,reports,type,text,NO,null,4,null,null
+COLUMNS,public,reports,user_id,uuid,NO,null,3,null,null
+COLUMNS,public,sessions,date,timestamp with time zone,YES,now(),4,null,null
+COLUMNS,public,sessions,encrypted_results,text,NO,null,8,null,null
+COLUMNS,public,sessions,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,sessions,iv,text,NO,null,7,null,null
+COLUMNS,public,sessions,patient_id,uuid,NO,null,2,null,null
+COLUMNS,public,sessions,test_id,text,NO,null,5,null,null
+COLUMNS,public,sessions,test_name,text,YES,null,6,null,null
+COLUMNS,public,sessions,user_id,uuid,NO,null,3,null,null
+COLUMNS,public,subscriptions,created_at,timestamp with time zone,YES,now(),6,null,null
+COLUMNS,public,subscriptions,current_period_end,timestamp with time zone,YES,null,7,null,null
+COLUMNS,public,subscriptions,id,uuid,NO,gen_random_uuid(),1,null,null
+COLUMNS,public,subscriptions,plan_id,text,NO,'free'::text,3,null,null
+COLUMNS,public,subscriptions,status,text,NO,'trialing'::text,4,null,null
+COLUMNS,public,subscriptions,trial_ends_at,timestamp with time zone,YES,(now() + '30 days'::interval),5,null,null
+COLUMNS,public,subscriptions,user_id,uuid,NO,null,2,null,null
+COLUMNS,public,view_unified_catalog,category_id,text,YES,null,3,null,null
+COLUMNS,public,view_unified_catalog,category_label,text,YES,null,4,null,null
+COLUMNS,public,view_unified_catalog,icon_key,text,YES,null,5,null,null
+COLUMNS,public,view_unified_catalog,id,text,YES,null,1,null,null
+COLUMNS,public,view_unified_catalog,label,text,YES,null,2,null,null
+COLUMNS,public,view_unified_catalog,sort_order,integer,YES,null,6,null,null
+COLUMNS,public,view_unified_catalog,subtests_count,bigint,YES,null,7,null,null
+COLUMNS,public,view_unified_subtests,id,text,YES,null,1,null,null
+COLUMNS,public,view_unified_subtests,name,text,YES,null,3,null,null
+COLUMNS,public,view_unified_subtests,score_type,text,YES,null,5,null,null
+COLUMNS,public,view_unified_subtests,test_id,text,YES,null,2,null,null
+COLUMNS,public,view_unified_subtests,unit,text,YES,null,4,null,null
+CONSTRAINTS,public,contribution_insights,contribution_insights_gender_check,c,null,null,null,null,"CHECK ((gender = ANY (ARRAY['M'::text, 'F'::text, 'Mixed'::text])))"
+CONSTRAINTS,public,contribution_insights,contribution_insights_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,drafts,drafts_patient_fkey,f,null,null,null,null,FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL
+CONSTRAINTS,public,drafts,drafts_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,drafts,drafts_user_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES practitioners(id) ON DELETE CASCADE
+CONSTRAINTS,public,generation_log,generation_log_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,generation_log,generation_log_user_id_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES auth.users(id)
+CONSTRAINTS,public,official_categories,official_categories_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,official_norms,official_norms_organization_id_fkey,f,null,null,null,null,FOREIGN KEY (organization_id) REFERENCES organizations(id)
+CONSTRAINTS,public,official_norms,official_norms_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,official_norms,official_norms_subtest_id_fkey,f,null,null,null,null,FOREIGN KEY (subtest_id) REFERENCES official_subtests(id) ON DELETE CASCADE
+CONSTRAINTS,public,official_subtests,official_subtests_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,official_subtests,official_subtests_test_id_fkey,f,null,null,null,null,FOREIGN KEY (test_id) REFERENCES official_tests(id) ON DELETE CASCADE
+CONSTRAINTS,public,official_tests,fk_official_tests_category,f,null,null,null,null,FOREIGN KEY (category_id) REFERENCES official_categories(id) ON DELETE SET DEFAULT
+CONSTRAINTS,public,official_tests,official_tests_organization_id_fkey,f,null,null,null,null,FOREIGN KEY (organization_id) REFERENCES organizations(id)
+CONSTRAINTS,public,official_tests,official_tests_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,organization_members,members_org_fkey,f,null,null,null,null,FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+CONSTRAINTS,public,organization_members,members_user_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES practitioners(id) ON DELETE CASCADE
+CONSTRAINTS,public,organization_members,org_members_pkey,p,null,null,null,null,"PRIMARY KEY (organization_id, user_id)"
+CONSTRAINTS,public,organizations,organizations_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,patients,patients_org_fkey,f,null,null,null,null,FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+CONSTRAINTS,public,patients,patients_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,pending_questionnaires,pending_q_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,pending_questionnaires,pending_q_prac_fkey,f,null,null,null,null,FOREIGN KEY (practitioner_id) REFERENCES practitioners(id) ON DELETE CASCADE
+CONSTRAINTS,public,pending_questionnaires,pending_questionnaires_organization_id_fkey,f,null,null,null,null,FOREIGN KEY (organization_id) REFERENCES organizations(id)
+CONSTRAINTS,public,practitioners,practitioners_auth_fkey,f,null,null,null,null,FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINTS,public,practitioners,practitioners_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,reports,reports_author_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES practitioners(id)
+CONSTRAINTS,public,reports,reports_patient_fkey,f,null,null,null,null,FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+CONSTRAINTS,public,reports,reports_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,sessions,sessions_author_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES practitioners(id)
+CONSTRAINTS,public,sessions,sessions_patient_fkey,f,null,null,null,null,FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+CONSTRAINTS,public,sessions,sessions_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,subscriptions,subscriptions_pkey,p,null,null,null,null,PRIMARY KEY (id)
+CONSTRAINTS,public,subscriptions,subscriptions_user_fkey,f,null,null,null,null,FOREIGN KEY (user_id) REFERENCES practitioners(id) ON DELETE CASCADE
+FUNCTIONS,public,bootstrap_org_for_user,null,"p_user_id uuid, p_org_name text",null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.bootstrap_org_for_user(p_user_id uuid, p_org_name text DEFAULT 'Mon Cabinet'::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_org_id uuid;
+    v_has_sub boolean;
+BEGIN
+    -- Guard: caller must be the same user
+    IF auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'Forbidden: you can only bootstrap your own organisation';
+    END IF;
+
+    -- 1. Organisation + Membership
+    SELECT organization_id INTO v_org_id
+    FROM organization_members
+    WHERE user_id = p_user_id
+    LIMIT 1;
+
+    IF v_org_id IS NULL THEN
+        INSERT INTO organizations (name)
+        VALUES (p_org_name)
+        RETURNING id INTO v_org_id;
+
+        INSERT INTO organization_members (organization_id, user_id, role)
+        VALUES (v_org_id, p_user_id, 'owner');
+    END IF;
+
+    -- 2. Subscription (trial 14 days if missing)
+    SELECT EXISTS(
+        SELECT 1 FROM subscriptions WHERE user_id = p_user_id
+    ) INTO v_has_sub;
+
+    IF NOT v_has_sub THEN
+        INSERT INTO subscriptions (user_id, plan_id, status, trial_ends_at)
+        VALUES (
+            p_user_id,
+            'free',
+            'trialing',
+            now() + interval '14 days'
+        );
+    END IF;
+
+    RETURN v_org_id;
+END;
+$function$
+"
+FUNCTIONS,public,check_is_admin,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.check_is_admin()
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.practitioners
+    WHERE id = auth.uid() AND is_admin = true
+  );
+END;
+$function$
+"
+FUNCTIONS,public,check_is_member_of,null,org_id uuid,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.check_is_member_of(org_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE user_id = auth.uid() AND organization_id = org_id
+  );
+END;
+$function$
+"
+FUNCTIONS,public,check_paid_access,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.check_paid_access()
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  sub record;
+BEGIN
+  SELECT * INTO sub FROM public.subscriptions WHERE user_id = auth.uid();
+  
+  -- Si pas d'abonnement trouvé, bloquer par sécurité
+  IF sub IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- CAS 1 : Abonnement Payant Actif ('essential', 'performance', 'expert')
+  -- Note: On accepte 'expert' comme payant, mais il consommera des crédits via consume_credit
+  IF sub.plan_id != 'free' AND sub.status = 'active' THEN
+    RETURN TRUE;
+  END IF;
+
+  -- CAS 2 : Essai Gratuit (Free Trial)
+  -- Autorisé SEULEMENT si la date d'essai n'est pas expirée
+  IF sub.plan_id = 'free' AND (sub.trial_ends_at > now()) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Sinon (Essai expiré ou abonnement annulé) -> BLOQUÉ
+  RETURN FALSE;
+END;
+$function$
+"
+FUNCTIONS,public,check_rate_limit,null,p_max_per_hour integer,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.check_rate_limit(p_max_per_hour integer DEFAULT 10)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_count integer;
+BEGIN
+  SELECT count(*) INTO v_count
+  FROM public.generation_log
+  WHERE user_id = auth.uid()
+    AND created_at > now() - interval '1 hour';
+  
+  RETURN v_count < p_max_per_hour;
+END;
+$function$
+"
+FUNCTIONS,public,compute_score,null,"p_subtest_id text, p_raw_score real, p_age_months integer, p_gender text, p_class_level text",null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.compute_score(p_subtest_id text, p_raw_score real, p_age_months integer, p_gender text DEFAULT 'Mixed'::text, p_class_level text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_subtest       record;
+  v_norm          record;
+  v_lookup        record;
+  v_z             real;
+  v_standard      real;
+  v_percentile    real;
+BEGIN
+  -- 1. Récupérer la définition du sous-test
+  SELECT * INTO v_subtest
+  FROM public.official_subtests
+  WHERE id = p_subtest_id
+  LIMIT 1;
+
+  IF v_subtest IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- 2. Chercher la norme applicable (priorité genre spécifique > Mixed)
+  SELECT * INTO v_norm
+  FROM public.official_norms
+  WHERE subtest_id = p_subtest_id
+    AND age_min_months <= p_age_months
+    AND age_max_months >= p_age_months
+    AND (gender = p_gender OR gender = 'Mixed')
+  ORDER BY 
+    CASE WHEN gender = p_gender THEN 0 ELSE 1 END  -- Priorité genre spécifique
+  LIMIT 1;
+
+  IF v_norm IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- 3. BRANCHE A : MODE PARAMÉTRIQUE
+  IF v_norm.mean IS NOT NULL AND v_norm.sd IS NOT NULL AND v_norm.sd > 0 THEN
+    v_z := (p_raw_score - v_norm.mean) / v_norm.sd;
+
+    -- Conversion selon score_type du sous-test
+    IF v_subtest.score_type = 'standard' THEN
+      v_standard := 100 + (v_z * 15);
+      v_percentile := (0.5 * (1.0 + erf(v_z / sqrt(2.0)))) * 100;
+    ELSIF v_subtest.score_type = 'scaled' THEN
+      v_standard := 10 + (v_z * 3);
+      v_percentile := (0.5 * (1.0 + erf(v_z / sqrt(2.0)))) * 100;
+    ELSIF v_subtest.score_type = 'sten' THEN
+      v_standard := 5.5 + (v_z * 2);
+      v_percentile := (0.5 * (1.0 + erf(v_z / sqrt(2.0)))) * 100;
+    ELSIF v_subtest.score_type = 't_score' THEN
+      v_standard := 50 + (v_z * 10);
+      v_percentile := (0.5 * (1.0 + erf(v_z / sqrt(2.0)))) * 100;
+    ELSE
+      -- Défaut: note standard (100/15)
+      v_standard := 100 + (v_z * 15);
+      v_percentile := (0.5 * (1.0 + erf(v_z / sqrt(2.0)))) * 100;
+    END IF;
+
+    RETURN jsonb_build_object(
+      'raw', p_raw_score,
+      'standard', round(v_standard::numeric, 1),
+      'percentile', round(v_percentile::numeric, 1),
+      'zScore', round(v_z::numeric, 2),
+      'method', 'PARAMETRIC'
+    );
+  END IF;
+
+  -- 4. BRANCHE B : MODE LOOKUP
+  SELECT * INTO v_lookup
+  FROM public.official_norms
+  WHERE subtest_id = p_subtest_id
+    AND age_min_months <= p_age_months
+    AND age_max_months >= p_age_months
+    AND raw_min <= p_raw_score
+    AND raw_max >= p_raw_score
+    AND (gender = p_gender OR gender = 'Mixed')
+  ORDER BY 
+    CASE WHEN gender = p_gender THEN 0 ELSE 1 END
+  LIMIT 1;
+
+  IF v_lookup IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'raw', p_raw_score,
+      'standard', COALESCE(v_lookup.standard_score, 0),
+      'percentile', COALESCE(v_lookup.percentile, 0),
+      'zScore', 0,
+      'method', 'LOOKUP'
+    );
+  END IF;
+
+  RETURN NULL;
+END;
+$function$
+"
+FUNCTIONS,public,consume_credit,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.consume_credit()
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_credits      integer;
+  v_is_admin     boolean;
+  v_plan_id      text;
+  v_status       text;
+  v_gen_id       uuid;
+BEGIN
+  -- 1. Récupérer infos praticien
+  SELECT credits, is_admin INTO v_credits, v_is_admin
+  FROM public.practitioners 
+  WHERE id = auth.uid();
+
+  -- 2. Récupérer abonnement
+  SELECT plan_id, status INTO v_plan_id, v_status
+  FROM public.subscriptions
+  WHERE user_id = auth.uid();
+
+  -- CAS 1 : Admin → illimité (log quand même)
+  IF v_is_admin = true THEN
+    INSERT INTO public.generation_log (user_id, status)
+    VALUES (auth.uid(), 'consumed')
+    RETURNING id INTO v_gen_id;
+    RETURN v_gen_id;
+  END IF;
+
+  -- CAS 2 : Plan Expert actif → illimité
+  IF v_plan_id = 'expert' AND v_status = 'active' THEN
+    INSERT INTO public.generation_log (user_id, status)
+    VALUES (auth.uid(), 'consumed')
+    RETURNING id INTO v_gen_id;
+    RETURN v_gen_id;
+  END IF;
+
+  -- CAS 3 : Vérifier accès payant ou trial valide
+  IF NOT public.check_paid_access() THEN
+    RETURN NULL;
+  END IF;
+
+  -- CAS 4 : Crédits classiques
+  IF v_credits > 0 THEN
+    PERFORM set_config('app.internal_operation', 'true', true);
+    
+    UPDATE public.practitioners 
+    SET credits = credits - 1 
+    WHERE id = auth.uid();
+    
+    PERFORM set_config('app.internal_operation', 'false', true);
+
+    INSERT INTO public.generation_log (user_id, status)
+    VALUES (auth.uid(), 'consumed')
+    RETURNING id INTO v_gen_id;
+
+    RETURN v_gen_id;
+  ELSE
+    RETURN NULL;  -- Pas assez de crédits
+  END IF;
+END;
+$function$
+"
+FUNCTIONS,public,enforce_practitioner_defaults,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.enforce_practitioner_defaults()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        NEW.credits := 3; 
+        NEW.is_admin := false; 
+    ELSIF (TG_OP = 'UPDATE') THEN
+        -- Autoriser les RPC internes (consume_credit, refund_credit)
+        IF current_setting('app.internal_operation', true) = 'true' THEN
+            RETURN NEW;
+        END IF;
+        -- Bloquer les modifications directes par les users authentifiés
+        IF auth.role() = 'authenticated' THEN
+            IF NEW.credits <> OLD.credits THEN
+                NEW.credits := OLD.credits;
+            END IF;
+            IF NEW.is_admin <> OLD.is_admin THEN
+                NEW.is_admin := OLD.is_admin;
+            END IF;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$function$
+"
+FUNCTIONS,public,enforce_subscription_defaults,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.enforce_subscription_defaults()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    NEW.plan_id := 'free';
+    NEW.status := 'trialing';
+    NEW.trial_ends_at := (NOW() + INTERVAL '30 days');
+    NEW.current_period_end := (NOW() + INTERVAL '30 days');
+    RETURN NEW;
+END;
+$function$
+"
+FUNCTIONS,public,handle_new_user,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  new_org_id uuid;
+BEGIN
+  -- 1. Créer le profil Praticien
+  INSERT INTO public.practitioners (id, email, credits, encryption_salt, encryption_validator)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    3, 
+    'pending', 'pending'
+  );
+
+  -- 2. Créer l'Organisation par défaut
+  INSERT INTO public.organizations (name)
+  VALUES ('Cabinet ' || NEW.email)
+  RETURNING id INTO new_org_id;
+
+  -- 3. Ajouter le Praticien comme Owner
+  INSERT INTO public.organization_members (organization_id, user_id, role, encrypted_org_key)
+  VALUES (new_org_id, NEW.id, 'owner', NULL);
+
+  -- 4. Créer l'abonnement Trial (avec date de fin !)
+  INSERT INTO public.subscriptions (user_id, plan_id, status, trial_ends_at)
+  VALUES (NEW.id, 'free', 'trialing', now() + interval '14 days');
+
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  -- Log l'erreur mais ne bloque pas la création Auth
+  RAISE WARNING 'handle_new_user partial failure for %: %', NEW.id, SQLERRM;
+  RETURN NEW;
+END;
+$function$
+"
+FUNCTIONS,public,norm_name,null,input text,null,null,sql,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.norm_name(input text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+    SELECT regexp_replace(lower(public.unaccent(trim(COALESCE(input, '')))), '[^a-z0-9]', '', 'g')
+$function$
+"
+FUNCTIONS,public,prevent_sensitive_updates,null,,null,null,plpgsql,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.prevent_sensitive_updates()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  -- Si l'utilisateur tente de changer ses crédits ou son statut admin via un UPDATE classique
+  IF (NEW.credits IS DISTINCT FROM OLD.credits) OR (NEW.is_admin IS DISTINCT FROM OLD.is_admin) THEN
+    -- On autorise seulement si c'est un ""super admin"" ou une fonction serveur (auth.role() = 'service_role')
+    -- Mais ici, pour simplifier, on rejette tout update direct venant du contexte utilisateur
+    IF auth.uid() = NEW.id THEN 
+        RAISE EXCEPTION 'Vous ne pouvez pas modifier vos crédits manuellement.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+"
+FUNCTIONS,public,protect_practitioner_sensitive_data,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.protect_practitioner_sensitive_data()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    -- Bypass pour service_role et opérations internes (RPC)
+    IF (auth.role() = 'service_role') THEN
+        RETURN NEW;
+    END IF;
+    
+    IF current_setting('app.internal_operation', true) = 'true' THEN
+        RETURN NEW;
+    END IF;
+
+    IF (NEW.credits IS DISTINCT FROM OLD.credits) THEN
+        RAISE EXCEPTION 'SECURITY_VIOLATION: Vous ne pouvez pas modifier vos crédits manuellement.';
+    END IF;
+
+    IF (NEW.is_admin IS DISTINCT FROM OLD.is_admin) THEN
+        RAISE EXCEPTION 'SECURITY_VIOLATION: Tentative de modification de privilèges bloquée.';
+    END IF;
+
+    IF (OLD.encryption_validator IS NOT NULL AND OLD.encryption_validator != 'pending') AND 
+       (NEW.encryption_validator IS DISTINCT FROM OLD.encryption_validator) THEN
+        RAISE EXCEPTION 'SECURITY_VIOLATION: Impossible de modifier les clés de chiffrement existantes.';
+    END IF;
+
+    RETURN NEW;
+END;
+$function$
+"
+FUNCTIONS,public,refund_credit,null,p_generation_id uuid,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.refund_credit(p_generation_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_log    record;
+  v_plan   text;
+  v_status text;
+BEGIN
+  -- 1. Vérifier que le log existe, appartient au user, et est en statut 'consumed'
+  SELECT * INTO v_log
+  FROM public.generation_log
+  WHERE id = p_generation_id
+    AND user_id = auth.uid()
+    AND status = 'consumed';
+
+  IF v_log IS NULL THEN
+    RETURN FALSE;  -- Log invalide, déjà remboursé, ou pas le bon user
+  END IF;
+
+  -- 2. Vérifier que le log date de moins de 5 minutes (protection anti-abus)
+  IF v_log.created_at < now() - interval '5 minutes' THEN
+    RETURN FALSE;
+  END IF;
+
+  -- 3. Marquer comme remboursé
+  UPDATE public.generation_log
+  SET status = 'refunded', refunded_at = now()
+  WHERE id = p_generation_id;
+
+  -- 4. Ne rembourser le crédit que pour les plans non-illimités
+  SELECT plan_id, status INTO v_plan, v_status
+  FROM public.subscriptions
+  WHERE user_id = auth.uid();
+
+  IF (v_plan = 'expert' AND v_status = 'active') THEN
+    RETURN TRUE;  -- Expert n'a pas perdu de crédit → rien à rembourser
+  END IF;
+
+  -- Vérifier admin
+  IF (SELECT is_admin FROM practitioners WHERE id = auth.uid()) = true THEN
+    RETURN TRUE;  -- Admin non plus
+  END IF;
+
+  -- 5. Rembourser effectivement le crédit
+  PERFORM set_config('app.internal_operation', 'true', true);
+
+  UPDATE public.practitioners
+  SET credits = credits + 1
+  WHERE id = auth.uid();
+
+  PERFORM set_config('app.internal_operation', 'false', true);
+
+  RETURN TRUE;
+END;
+$function$
+"
+FUNCTIONS,public,rls_auto_enable,null,,null,null,plpgsql,SECURITY DEFINER,"CREATE OR REPLACE FUNCTION public.rls_auto_enable()
+ RETURNS event_trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+DECLARE
+  cmd record;
+BEGIN
+  FOR cmd IN
+    SELECT *
+    FROM pg_event_trigger_ddl_commands()
+    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      AND object_type IN ('table','partitioned table')
+  LOOP
+     IF cmd.schema_name IS NOT NULL AND cmd.schema_name IN ('public') AND cmd.schema_name NOT IN ('pg_catalog','information_schema') AND cmd.schema_name NOT LIKE 'pg_toast%' AND cmd.schema_name NOT LIKE 'pg_temp%' THEN
+      BEGIN
+        EXECUTE format('alter table if exists %s enable row level security', cmd.object_identity);
+        RAISE LOG 'rls_auto_enable: enabled RLS on %', cmd.object_identity;
+      EXCEPTION
+        WHEN OTHERS THEN
+          RAISE LOG 'rls_auto_enable: failed to enable RLS on %', cmd.object_identity;
+      END;
+     ELSE
+        RAISE LOG 'rls_auto_enable: skip % (either system schema or not in enforced list: %.)', cmd.object_identity, cmd.schema_name;
+     END IF;
+  END LOOP;
+END;
+$function$
+"
+FUNCTIONS,public,unaccent,null,text,null,null,c,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.unaccent(text)
+ RETURNS text
+ LANGUAGE c
+ STABLE PARALLEL SAFE STRICT
+AS '$libdir/unaccent', $function$unaccent_dict$function$
+"
+FUNCTIONS,public,unaccent,null,"regdictionary, text",null,null,c,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.unaccent(regdictionary, text)
+ RETURNS text
+ LANGUAGE c
+ STABLE PARALLEL SAFE STRICT
+AS '$libdir/unaccent', $function$unaccent_dict$function$
+"
+FUNCTIONS,public,unaccent_init,null,internal,null,null,c,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.unaccent_init(internal)
+ RETURNS internal
+ LANGUAGE c
+ PARALLEL SAFE
+AS '$libdir/unaccent', $function$unaccent_init$function$
+"
+FUNCTIONS,public,unaccent_lexize,null,"internal, internal, internal, internal",null,null,c,SECURITY INVOKER,"CREATE OR REPLACE FUNCTION public.unaccent_lexize(internal, internal, internal, internal)
+ RETURNS internal
+ LANGUAGE c
+ PARALLEL SAFE
+AS '$libdir/unaccent', $function$unaccent_lexize$function$
+"
+GRANTS,public,admin_candidates_promotion,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,INSERT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,SELECT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,DELETE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,admin_candidates_promotion,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,DELETE,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,SELECT,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,INSERT,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,contribution_insights,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,contribution_insights,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,contribution_insights,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,contribution_insights,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,contribution_insights,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,drafts,anon,INSERT,NO,null,null,null,null
+GRANTS,public,drafts,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,drafts,anon,DELETE,NO,null,null,null,null
+GRANTS,public,drafts,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,drafts,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,drafts,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,drafts,anon,SELECT,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,drafts,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,drafts,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,drafts,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,drafts,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,drafts,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,drafts,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,drafts,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,drafts,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,drafts,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,drafts,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,drafts,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,drafts,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,drafts,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,drafts,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,drafts,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,generation_log,anon,INSERT,NO,null,null,null,null
+GRANTS,public,generation_log,anon,SELECT,NO,null,null,null,null
+GRANTS,public,generation_log,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,generation_log,anon,DELETE,NO,null,null,null,null
+GRANTS,public,generation_log,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,generation_log,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,generation_log,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,generation_log,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,generation_log,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,generation_log,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,generation_log,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,generation_log,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,official_categories,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_categories,anon,INSERT,NO,null,null,null,null
+GRANTS,public,official_categories,anon,SELECT,NO,null,null,null,null
+GRANTS,public,official_categories,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,official_categories,anon,DELETE,NO,null,null,null,null
+GRANTS,public,official_categories,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_categories,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_categories,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_categories,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,official_categories,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,official_categories,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_categories,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_norms,anon,SELECT,NO,null,null,null,null
+GRANTS,public,official_norms,anon,INSERT,NO,null,null,null,null
+GRANTS,public,official_norms,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,official_norms,anon,DELETE,NO,null,null,null,null
+GRANTS,public,official_norms,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_norms,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_norms,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,official_norms,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,official_norms,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,official_norms,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,official_norms,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_norms,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,DELETE,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,INSERT,NO,null,null,null,null
+GRANTS,public,official_subtests,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_subtests,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_subtests,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,official_subtests,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,official_subtests,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,official_subtests,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,official_tests,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_tests,anon,INSERT,NO,null,null,null,null
+GRANTS,public,official_tests,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,official_tests,anon,DELETE,NO,null,null,null,null
+GRANTS,public,official_tests,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_tests,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_tests,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_tests,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,official_tests,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,official_tests,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,official_tests,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,organization_members,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,organization_members,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,organization_members,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organization_members,anon,DELETE,NO,null,null,null,null
+GRANTS,public,organization_members,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,organization_members,anon,SELECT,NO,null,null,null,null
+GRANTS,public,organization_members,anon,INSERT,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,organization_members,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,organization_members,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,organization_members,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,organization_members,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,organization_members,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,organizations,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,organizations,anon,INSERT,NO,null,null,null,null
+GRANTS,public,organizations,anon,SELECT,NO,null,null,null,null
+GRANTS,public,organizations,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,organizations,anon,DELETE,NO,null,null,null,null
+GRANTS,public,organizations,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organizations,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,organizations,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organizations,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,organizations,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,organizations,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,organizations,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,organizations,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,organizations,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,organizations,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,organizations,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,organizations,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,organizations,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,organizations,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,organizations,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,organizations,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,organizations,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,patients,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,patients,anon,INSERT,NO,null,null,null,null
+GRANTS,public,patients,anon,SELECT,NO,null,null,null,null
+GRANTS,public,patients,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,patients,anon,DELETE,NO,null,null,null,null
+GRANTS,public,patients,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,patients,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,patients,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,patients,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,patients,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,patients,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,patients,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,patients,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,patients,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,patients,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,patients,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,patients,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,patients,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,patients,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,patients,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,patients,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,patients,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,patients,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,patients,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,patients,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,patients,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,patients,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,patients,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,DELETE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,SELECT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,anon,INSERT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,pending_questionnaires,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,practitioners,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,practitioners,anon,INSERT,NO,null,null,null,null
+GRANTS,public,practitioners,anon,SELECT,NO,null,null,null,null
+GRANTS,public,practitioners,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,practitioners,anon,DELETE,NO,null,null,null,null
+GRANTS,public,practitioners,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,practitioners,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,practitioners,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,practitioners,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,practitioners,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,practitioners,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,practitioners,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,reports,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,reports,anon,INSERT,NO,null,null,null,null
+GRANTS,public,reports,anon,SELECT,NO,null,null,null,null
+GRANTS,public,reports,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,reports,anon,DELETE,NO,null,null,null,null
+GRANTS,public,reports,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,reports,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,reports,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,reports,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,reports,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,reports,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,reports,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,reports,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,reports,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,reports,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,reports,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,reports,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,reports,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,reports,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,reports,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,reports,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,reports,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,reports,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,reports,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,reports,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,reports,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,reports,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,reports,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,sessions,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,sessions,anon,INSERT,NO,null,null,null,null
+GRANTS,public,sessions,anon,SELECT,NO,null,null,null,null
+GRANTS,public,sessions,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,sessions,anon,DELETE,NO,null,null,null,null
+GRANTS,public,sessions,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,sessions,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,sessions,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,sessions,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,sessions,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,sessions,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,sessions,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,sessions,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,sessions,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,sessions,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,sessions,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,sessions,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,sessions,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,sessions,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,sessions,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,sessions,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,sessions,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,SELECT,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,DELETE,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,INSERT,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,subscriptions,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,subscriptions,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,subscriptions,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,subscriptions,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,subscriptions,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,subscriptions,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,subscriptions,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,subscriptions,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,subscriptions,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,SELECT,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_catalog,service_role,SELECT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,SELECT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,anon,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,SELECT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,authenticated,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,INSERT,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,TRIGGER,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,REFERENCES,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,TRUNCATE,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,DELETE,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,UPDATE,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,postgres,SELECT,YES,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,INSERT,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,TRIGGER,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,REFERENCES,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,TRUNCATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,DELETE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,UPDATE,NO,null,null,null,null
+GRANTS,public,view_unified_subtests,service_role,SELECT,NO,null,null,null,null
+INDEXES,public,contribution_insights,contribution_insights_pkey,null,null,null,null,null,CREATE UNIQUE INDEX contribution_insights_pkey ON public.contribution_insights USING btree (id)
+INDEXES,public,contribution_insights,idx_insights_source,null,null,null,null,null,CREATE INDEX idx_insights_source ON public.contribution_insights USING btree (source_hash)
+INDEXES,public,contribution_insights,idx_insights_target,null,null,null,null,null,"CREATE INDEX idx_insights_target ON public.contribution_insights USING btree (subtest_id, age_months)"
+INDEXES,public,drafts,drafts_pkey,null,null,null,null,null,CREATE UNIQUE INDEX drafts_pkey ON public.drafts USING btree (id)
+INDEXES,public,generation_log,generation_log_pkey,null,null,null,null,null,CREATE UNIQUE INDEX generation_log_pkey ON public.generation_log USING btree (id)
+INDEXES,public,official_categories,official_categories_pkey,null,null,null,null,null,CREATE UNIQUE INDEX official_categories_pkey ON public.official_categories USING btree (id)
+INDEXES,public,official_norms,idx_official_norms_org,null,null,null,null,null,CREATE INDEX idx_official_norms_org ON public.official_norms USING btree (organization_id)
+INDEXES,public,official_norms,official_norms_pkey,null,null,null,null,null,CREATE UNIQUE INDEX official_norms_pkey ON public.official_norms USING btree (id)
+INDEXES,public,official_subtests,official_subtests_pkey,null,null,null,null,null,CREATE UNIQUE INDEX official_subtests_pkey ON public.official_subtests USING btree (id)
+INDEXES,public,official_tests,idx_official_tests_category,null,null,null,null,null,CREATE INDEX idx_official_tests_category ON public.official_tests USING btree (category_id)
+INDEXES,public,official_tests,idx_official_tests_name_scope,null,null,null,null,null,"CREATE UNIQUE INDEX idx_official_tests_name_scope ON public.official_tests USING btree (lower(regexp_replace(TRIM(BOTH FROM name), '[^a-z0-9]'::text, ''::text, 'g'::text)), COALESCE(organization_id, '00000000-0000-0000-0000-000000000000'::uuid))"
+INDEXES,public,official_tests,idx_official_tests_org,null,null,null,null,null,CREATE INDEX idx_official_tests_org ON public.official_tests USING btree (organization_id)
+INDEXES,public,official_tests,official_tests_pkey,null,null,null,null,null,CREATE UNIQUE INDEX official_tests_pkey ON public.official_tests USING btree (id)
+INDEXES,public,organization_members,org_members_pkey,null,null,null,null,null,"CREATE UNIQUE INDEX org_members_pkey ON public.organization_members USING btree (organization_id, user_id)"
+INDEXES,public,organizations,organizations_pkey,null,null,null,null,null,CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)
+INDEXES,public,patients,patients_pkey,null,null,null,null,null,CREATE UNIQUE INDEX patients_pkey ON public.patients USING btree (id)
+INDEXES,public,pending_questionnaires,idx_pending_questionnaires_org,null,null,null,null,null,CREATE INDEX idx_pending_questionnaires_org ON public.pending_questionnaires USING btree (organization_id)
+INDEXES,public,pending_questionnaires,pending_q_pkey,null,null,null,null,null,CREATE UNIQUE INDEX pending_q_pkey ON public.pending_questionnaires USING btree (id)
+INDEXES,public,practitioners,practitioners_pkey,null,null,null,null,null,CREATE UNIQUE INDEX practitioners_pkey ON public.practitioners USING btree (id)
+INDEXES,public,reports,reports_pkey,null,null,null,null,null,CREATE UNIQUE INDEX reports_pkey ON public.reports USING btree (id)
+INDEXES,public,sessions,sessions_pkey,null,null,null,null,null,CREATE UNIQUE INDEX sessions_pkey ON public.sessions USING btree (id)
+INDEXES,public,subscriptions,subscriptions_pkey,null,null,null,null,null,CREATE UNIQUE INDEX subscriptions_pkey ON public.subscriptions USING btree (id)
+POLICIES,public,contribution_insights,Admin Read Insights,SELECT,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,contribution_insights,Admins analyze insights,SELECT,PERMISSIVE,public,"(EXISTS ( SELECT 1
+   FROM practitioners
+  WHERE ((practitioners.id = auth.uid()) AND (practitioners.is_admin = true))))",null,null
+POLICIES,public,contribution_insights,Deposit anonymous insights,INSERT,PERMISSIVE,authenticated,null,((age_months > 0) AND (test_id IS NOT NULL) AND (subtest_id IS NOT NULL)),null
+POLICIES,public,contribution_insights,Log Insights,INSERT,PERMISSIVE,public,null,(auth.role() = 'authenticated'::text),null
+POLICIES,public,drafts,Drafts are private,ALL,PERMISSIVE,public,(user_id = auth.uid()),null,null
+POLICIES,public,generation_log,own_generation_logs,ALL,PERMISSIVE,authenticated,(user_id = auth.uid()),(user_id = auth.uid()),null
+POLICIES,public,official_categories,read_categories,SELECT,PERMISSIVE,authenticated,true,null,null
+POLICIES,public,official_norms,Admin Delete Norms,DELETE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_norms,Admin Update Norms,UPDATE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_norms,Insert Private Norms,INSERT,PERMISSIVE,public,null,((organization_id IS NOT NULL) AND check_is_member_of(organization_id)),null
+POLICIES,public,official_norms,admin_read_all_norms,SELECT,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_norms,manage_own_norms,ALL,PERMISSIVE,public,"(organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,official_norms,view_own_org_norms,SELECT,PERMISSIVE,public,((organization_id IS NOT NULL) AND check_is_member_of(organization_id)),null,null
+POLICIES,public,official_subtests,Admin Delete Subtests,DELETE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_subtests,Admin Update Subtests,UPDATE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_tests,Admin Delete Only,DELETE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_tests,Admin Update Only,UPDATE,PERMISSIVE,public,check_is_admin(),null,null
+POLICIES,public,official_tests,Admins can view all tests,SELECT,PERMISSIVE,authenticated,check_is_admin(),null,null
+POLICIES,public,official_tests,Insert Private Only,INSERT,PERMISSIVE,public,null,((organization_id IS NOT NULL) AND check_is_member_of(organization_id)),null
+POLICIES,public,official_tests,Unified View: Public + My Private,SELECT,PERMISSIVE,public,((organization_id IS NULL) OR check_is_member_of(organization_id)),null,null
+POLICIES,public,official_tests,manage_own_tests,ALL,PERMISSIVE,public,"(organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,official_tests,view_mixed_tests,SELECT,PERMISSIVE,public,"((organization_id IS NULL) OR (organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid()))))",null,null
+POLICIES,public,organization_members,leave_non_owner_membership,DELETE,PERMISSIVE,authenticated,((user_id = auth.uid()) AND (role <> 'owner'::text)),null,null
+POLICIES,public,organization_members,update_own_key,UPDATE,PERMISSIVE,authenticated,(user_id = auth.uid()),(user_id = auth.uid()),null
+POLICIES,public,organization_members,view_own_membership,SELECT,PERMISSIVE,authenticated,(user_id = auth.uid()),null,null
+POLICIES,public,organizations,access_own_orgs,ALL,PERMISSIVE,authenticated,"(id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,organizations,view_own_organizations,SELECT,PERMISSIVE,authenticated,"(id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,patients,Access patients via organization,ALL,PERMISSIVE,public,"(organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,pending_questionnaires,family_read_by_token,SELECT,PERMISSIVE,anon,"(access_token = ((current_setting('request.headers'::text, true))::json ->> 'x-questionnaire-token'::text))",null,null
+POLICIES,public,pending_questionnaires,family_update_by_token,UPDATE,PERMISSIVE,anon,"((status = 'pending'::text) AND (access_token = ((current_setting('request.headers'::text, true))::json ->> 'x-questionnaire-token'::text)))",(family_encrypted_data IS NOT NULL),null
+POLICIES,public,pending_questionnaires,practitioner_insert_pending,INSERT,PERMISSIVE,authenticated,null,"((practitioner_id = auth.uid()) AND (organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid()))))",null
+POLICIES,public,pending_questionnaires,practitioner_manage_pending,ALL,PERMISSIVE,authenticated,"(organization_id IN ( SELECT organization_members.organization_id
+   FROM organization_members
+  WHERE (organization_members.user_id = auth.uid())))",null,null
+POLICIES,public,practitioners,Users can manage own profile,ALL,PERMISSIVE,public,(auth.uid() = id),null,null
+POLICIES,public,reports,Access reports via patient org,ALL,PERMISSIVE,public,"(patient_id IN ( SELECT patients.id
+   FROM patients
+  WHERE (patients.organization_id IN ( SELECT organization_members.organization_id
+           FROM organization_members
+          WHERE (organization_members.user_id = auth.uid())))))",null,null
+POLICIES,public,sessions,Access sessions via patient org,ALL,PERMISSIVE,public,"(patient_id IN ( SELECT patients.id
+   FROM patients
+  WHERE (patients.organization_id IN ( SELECT organization_members.organization_id
+           FROM organization_members
+          WHERE (organization_members.user_id = auth.uid())))))",null,null
+POLICIES,public,subscriptions,Users can read own subscription,SELECT,PERMISSIVE,authenticated,(auth.uid() = user_id),null,null
+TABLES,public,admin_candidates_promotion,null,VIEW,null,null,null,null,null
+TABLES,public,contribution_insights,null,BASE TABLE,null,null,null,null,null
+TABLES,public,drafts,null,BASE TABLE,null,null,null,null,null
+TABLES,public,generation_log,null,BASE TABLE,null,null,null,null,null
+TABLES,public,official_categories,null,BASE TABLE,null,null,null,null,null
+TABLES,public,official_norms,null,BASE TABLE,null,null,null,null,null
+TABLES,public,official_subtests,null,BASE TABLE,null,null,null,null,null
+TABLES,public,official_tests,null,BASE TABLE,null,null,null,null,null
+TABLES,public,organization_members,null,BASE TABLE,null,null,null,null,null
+TABLES,public,organizations,null,BASE TABLE,null,null,null,null,null
+TABLES,public,patients,null,BASE TABLE,null,null,null,null,null
+TABLES,public,pending_questionnaires,null,BASE TABLE,null,null,null,null,null
+TABLES,public,practitioners,null,BASE TABLE,null,null,null,null,null
+TABLES,public,reports,null,BASE TABLE,null,null,null,null,null
+TABLES,public,sessions,null,BASE TABLE,null,null,null,null,null
+TABLES,public,subscriptions,null,BASE TABLE,null,null,null,null,null
+TABLES,public,view_unified_catalog,null,VIEW,null,null,null,null,null
+TABLES,public,view_unified_subtests,null,VIEW,null,null,null,null,null
+TRIGGERS,public,practitioners,on_practitioner_save,null,null,null,ENABLED,null,CREATE TRIGGER on_practitioner_save BEFORE INSERT OR UPDATE ON public.practitioners FOR EACH ROW EXECUTE FUNCTION enforce_practitioner_defaults()
+TRIGGERS,public,practitioners,tr_protect_practitioner_data,null,null,null,ENABLED,null,CREATE TRIGGER tr_protect_practitioner_data BEFORE UPDATE ON public.practitioners FOR EACH ROW EXECUTE FUNCTION protect_practitioner_sensitive_data()
+TRIGGERS,public,subscriptions,on_subscription_insert,null,null,null,ENABLED,null,CREATE TRIGGER on_subscription_insert BEFORE INSERT ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION enforce_subscription_defaults()
+VIEWS,public,admin_candidates_promotion,null,null,null,null,null,null," SELECT id,
+    name,
+    author,
+    organization_id,
+    created_at,
+    ( SELECT count(*) AS count
+           FROM official_subtests s
+          WHERE (s.test_id = t.id)) AS subtest_count
+   FROM official_tests t
+  WHERE (organization_id IS NOT NULL)
+  ORDER BY created_at DESC;"
+VIEWS,public,view_unified_catalog,null,null,null,null,null,null," SELECT t.id,
+    t.name AS label,
+    t.category_id,
+    c.label AS category_label,
+    c.icon_key,
+    c.sort_order,
+    count(s.id) AS subtests_count
+   FROM ((official_tests t
+     JOIN official_categories c ON ((t.category_id = c.id)))
+     LEFT JOIN official_subtests s ON ((t.id = s.test_id)))
+  WHERE ((t.organization_id IS NULL) OR (t.organization_id IN ( SELECT organization_members.organization_id
+           FROM organization_members
+          WHERE (organization_members.user_id = auth.uid()))))
+  GROUP BY t.id, t.name, t.category_id, c.label, c.icon_key, c.sort_order;"
+VIEWS,public,view_unified_subtests,null,null,null,null,null,null," SELECT s.id,
+    s.test_id,
+    s.name,
+    s.unit,
+    s.score_type
+   FROM (official_subtests s
+     JOIN official_tests t ON ((t.id = s.test_id)))
+  WHERE ((t.organization_id IS NULL) OR check_is_member_of(t.organization_id));"

@@ -38,3 +38,9 @@ export interface CategoryDef {
   sortOrder: number;
   tests: TestDef[];
 }
+
+/**
+ * Legacy static catalog — kept as empty array for backward compatibility.
+ * Real catalog is loaded from Supabase via CatalogContext.
+ */
+export const TEST_CATALOG: CategoryDef[] = [];

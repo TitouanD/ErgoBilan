@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
 import { ScoreResult, TestSession, Patient } from '../../types';
 import { SubtestRowCheck, TestCatalogModal } from '../assessment/Step2Tests';
+import { TestDef } from '../../data/testCatalog';
 import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
@@ -12,11 +13,19 @@ interface Props {
 }
 
 export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) => {
-  const { catalog } = useCatalog();
+    const { catalog, ensureCatalogLoaded } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
-  // On prend le premier test du premier catalogue s'il existe, sinon vide
-  const initialTests = catalog.length > 0 && catalog[0].tests.length > 0 ? [catalog[0].tests[0]] : [];
-  const [selectedTests, setSelectedTests] = useState(initialTests);
+    const [selectedTests, setSelectedTests] = useState<TestDef[]>([]);
+
+    useEffect(() => {
+            ensureCatalogLoaded();
+    }, [ensureCatalogLoaded]);
+
+    useEffect(() => {
+            if (selectedTests.length === 0 && catalog.length > 0 && catalog[0].tests.length > 0) {
+                    setSelectedTests([catalog[0].tests[0]]);
+            }
+    }, [catalog, selectedTests.length]);
   
   const [allResults, setAllResults] = useState<Record<string, Record<string, ScoreResult>>>({});
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);

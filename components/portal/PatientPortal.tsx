@@ -1,12 +1,22 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Patient } from '../../types';
 import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key, FileText } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase } from '../../services/db';
+import { createClient } from '@supabase/supabase-js';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
+
+/** Crée un client Supabase anonyme avec le header x-questionnaire-token pour les policies RLS. */
+const createPortalClient = (accessToken: string) => {
+  const url = import.meta.env.VITE_SUPABASE_URL || 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
+  return createClient(url, anonKey, {
+    global: { headers: { 'x-questionnaire-token': accessToken } },
+  });
+};
 
 interface Props {
   onBack: () => void;
@@ -24,6 +34,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   const [questionnaireId, setQuestionnaireId] = useState<string | null>(null);
   const [encryptionKey, setEncryptionKey] = useState<CryptoKey | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const portalClientRef = useRef<ReturnType<typeof createPortalClient> | null>(null);
 
   const [localPatient, setLocalPatient] = useState<Patient>({
       firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
@@ -59,6 +70,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           }
 
           const qId = fullUrl.searchParams.get('q_id');
+          const accessToken = fullUrl.searchParams.get('t') || ''; // Token d'accès pour la policy RLS
           // Extraction clé: peut être dans hash (#key=...) ou query (si mal copié)
           let keyString = '';
           if (fullUrl.hash.includes('key=')) {
@@ -78,9 +90,13 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           setEncryptionKey(key);
           setQuestionnaireId(qId);
 
-          // 2. Récupération Supabase
+          // 2. Créer un client Supabase dédié avec le token d'accès
+          const portalClient = accessToken ? createPortalClient(accessToken) : supabase;
+          portalClientRef.current = portalClient;
+
+          // 3. Récupération Supabase (avec token d'accès en header pour RLS anon)
           setLoadingStep('loading');
-          const { data, error } = await supabase
+          const { data, error } = await portalClient
               .from('pending_questionnaires')
               .select('status, family_encrypted_data')
               .eq('id', qId)
@@ -97,19 +113,19 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               Logger.info('CRYPTO', 'Decrypting existing family data...');
               const [iv, content] = data.family_encrypted_data.split(':');
               if (iv && content) {
-                  const decrypted = await decryptData({ iv, content }, key);
+                  const decrypted = await decryptData({ iv, content }, key) as { patient?: Patient } | null;
                   if (decrypted && decrypted.patient) {
-                      setLocalPatient(prev => ({ ...prev, ...decrypted.patient }));
+                      setLocalPatient(prev => ({ ...prev, ...decrypted.patient as Patient }));
                   }
               }
           }
 
           setLoadingStep('ready');
 
-      } catch (e: any) {
+      } catch (e: unknown) {
           Logger.error('AUTH', "Portal Login Error", e);
           setLoadingStep('idle'); // Retour au formulaire
-          setErrorMessage(e.message || "Erreur de connexion.");
+          setErrorMessage(e instanceof Error ? e.message : "Erreur de connexion.");
       }
   };
 
@@ -143,7 +159,9 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           const encrypted = await encryptData(payload, encryptionKey);
           const encryptedString = `${encrypted.iv}:${encrypted.content}`;
 
-          const { error } = await supabase
+          // Utiliser le client portail (avec header token) pour l'update anon
+          const client = portalClientRef.current || supabase;
+          const { error } = await client
               .from('pending_questionnaires')
               .update({
                   family_encrypted_data: encryptedString,

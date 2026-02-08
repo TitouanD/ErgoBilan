@@ -16,7 +16,7 @@ const generateGaussianPoints = (mean = 100, sd = 15) => {
 };
 
 export const ClinicalInsights: React.FC = () => {
-    const { catalog } = useCatalog();
+    const { catalog, ensureCatalogLoaded } = useCatalog();
     const [selectedTestId, setSelectedTestId] = useState<string>('');
     const [selectedSubtestId, setSelectedSubtestId] = useState<string>('');
     
@@ -25,6 +25,10 @@ export const ClinicalInsights: React.FC = () => {
     const [isLoadingData, setIsLoadingData] = useState(false);
 
     // Initialisation par défaut
+    useEffect(() => {
+        ensureCatalogLoaded();
+    }, [ensureCatalogLoaded]);
+
     useEffect(() => {
         if (catalog.length > 0 && catalog[0].tests.length > 0) {
             setSelectedTestId(catalog[0].tests[0].id);

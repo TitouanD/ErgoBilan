@@ -1,6 +1,6 @@
 
 import { supabase } from './db';
-import { PatientFile, Patient, ReportMetadata, TestSession } from '../types';
+import { PatientFile, Patient, ReportMetadata, TestSession, DraftPayload } from '../types';
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 import { DEMO_PATIENTS } from '../data/demoData';
@@ -8,7 +8,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 // --- HELPERS CHIFFREMENT ---
 
-const encryptBlob = async (data: any, key: CryptoKey) => {
+const encryptBlob = async (data: unknown, key: CryptoKey) => {
     const res = await encryptData(data, key);
     return { iv: res.iv, content: res.content };
 };
@@ -66,7 +66,7 @@ export const StorageService = {
      * Appelé automatiquement dès que Nom/Prénom sont saisis.
      */
     createPatient: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
-        if (_isDemoMode) return 'demo-new-' + Date.now();
+        if (_isDemoMode) return 'demo-new-' + crypto.randomUUID();
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Utilisateur non connecté");
@@ -121,7 +121,7 @@ export const StorageService = {
      * GESTION DES BROUILLONS
      * Sécurisé : Ne sauvegarde QUE si patient_id est présent (pour éviter les orphelins).
      */
-    saveDraft: async (draftData: any, sessionKey: CryptoKey): Promise<void> => {
+    saveDraft: async (draftData: DraftPayload, sessionKey: CryptoKey): Promise<void> => {
         if (_isDemoMode) {
             return;
         }
@@ -149,7 +149,7 @@ export const StorageService = {
             .eq('patient_id', patientId)
             .maybeSingle();
 
-        const payload: any = {
+        const payload: Record<string, string> = {
             user_id: user.id,
             updated_at: new Date().toISOString(),
             iv: enc.iv,
@@ -178,7 +178,7 @@ export const StorageService = {
         if (error || !data) return {};
 
         const map: Record<string, string> = {};
-        data.forEach((row: any) => {
+        data.forEach((row: { patient_id: string | null; updated_at: string }) => {
             if (row.patient_id) {
                 map[row.patient_id] = row.updated_at;
             }
@@ -186,7 +186,7 @@ export const StorageService = {
         return map;
     },
 
-    getDraft: async (sessionKey: CryptoKey, patientId?: string): Promise<any | null> => {
+    getDraft: async (sessionKey: CryptoKey, patientId?: string): Promise<DraftPayload | null> => {
         if (_isDemoMode) return null;
 
         const { data: { user } } = await supabase.auth.getUser();
@@ -227,7 +227,9 @@ export const StorageService = {
         await query;
     },
 
-    clearDraft: async (): Promise<void> => {},
+    clearDraft: async (patientId?: string): Promise<void> => {
+        return StorageService.deleteDraft(patientId);
+    },
 
     /**
      * MISE À JOUR PATIENT (UPDATE)
@@ -336,7 +338,7 @@ export const StorageService = {
                     date: new Date(Date.now() - 86400000 * 2).toISOString(),
                     testId: 'multi',
                     testName: 'Bilan Écriture',
-                    results: DEMO_PATIENTS.SARAH.tests as any
+                    results: DEMO_PATIENTS.SARAH.tests as Record<string, import('../types').ScoreResult>
                 }],
                 lastInteraction: new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false
@@ -350,7 +352,8 @@ export const StorageService = {
         const { data: patients, error } = await supabase
             .from('patients')
             .select('id, updated_at, last_interaction, encrypted_preview, preview_iv, encrypted_file_key, organization_id, iv, encrypted_identity')
-            .order('last_interaction', { ascending: false });
+            .order('last_interaction', { ascending: false })
+            .limit(50); // Pagination: charger par batch de 50 (performance)
 
         if (error) {
             Logger.error('DB', "Error loading patient list", error);
@@ -359,9 +362,11 @@ export const StorageService = {
 
         const files: PatientFile[] = [];
 
-        for (const row of patients) {
+        // Parallelize crypto operations with batching to avoid overwhelming Web Crypto
+        const BATCH_SIZE = 10;
+        const decryptPatient = async (row: typeof patients[number]): Promise<PatientFile | null> => {
             try {
-                if (!row.encrypted_file_key) continue;
+                if (!row.encrypted_file_key) return null;
 
                 const [kIv, kContent] = row.encrypted_file_key.split(':');
                 const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
@@ -373,13 +378,13 @@ export const StorageService = {
                     const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
                     patientData = { ...createEmptyPatient(), ...preview };
                 } else {
-                    const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as any;
+                    const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
                     isArchived = fullData._archived === true;
                     delete fullData._archived;
                     patientData = fullData as Patient;
                 }
 
-                files.push({
+                return {
                     id: row.id,
                     patient: { ...patientData, organizationId: row.organization_id },
                     reports: [], 
@@ -387,9 +392,21 @@ export const StorageService = {
                     lastInteraction: row.last_interaction,
                     archived: isArchived,
                     encryptedFileKey: row.encrypted_file_key
-                });
+                };
             } catch (e) {
                 Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
+                return null;
+            }
+        };
+
+        // Process in batches of BATCH_SIZE for controlled parallelism
+        for (let i = 0; i < patients.length; i += BATCH_SIZE) {
+            const batch = patients.slice(i, i + BATCH_SIZE);
+            const results = await Promise.allSettled(batch.map(decryptPatient));
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value) {
+                    files.push(result.value);
+                }
             }
         }
 
@@ -406,7 +423,8 @@ export const StorageService = {
                 };
             }
             if (patientId === DEMO_PATIENTS.SARAH.id) {
-                const history = (DEMO_PATIENTS.SARAH as any).history || [];
+                const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[] };
+                const history = sarahDemo.history || [];
                 return {
                     reports: [],
                     sessions: history,
@@ -436,18 +454,18 @@ export const StorageService = {
         const [kIv, kContent] = patientRow.encrypted_file_key.split(':');
         const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
-        const decryptedIdentity = await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey) as any;
-        delete decryptedIdentity._archived;
-        const patientFull = { ...decryptedIdentity, id: patientId, organizationId: patientRow.organization_id } as Patient;
+        const decryptedIdentity = await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
+        const { _archived, ...identityWithoutArchived } = decryptedIdentity;
+        const patientFull = { ...identityWithoutArchived, id: patientId, organizationId: patientRow.organization_id } as Patient;
 
         const { data: reportsData } = await supabase
             .from('reports')
             .select('*')
             .eq('patient_id', patientId);
 
-        const reports = await Promise.all((reportsData || []).map(async (r: any) => {
+        const reports = await Promise.all((reportsData || []).map(async (r: Record<string, string>) => {
             const decrypted = await decryptBlob(r.iv, r.encrypted_content, fileKey);
-            return { ...decrypted, id: r.id, date: r.created_at, type: r.type, status: r.status } as ReportMetadata;
+            return { ...(decrypted as Record<string, unknown>), id: r.id, date: r.created_at, type: r.type, status: r.status } as ReportMetadata;
         }));
 
         const { data: sessionsData } = await supabase
@@ -455,7 +473,7 @@ export const StorageService = {
             .select('*')
             .eq('patient_id', patientId);
 
-        const sessions = await Promise.all((sessionsData || []).map(async (s: any) => {
+        const sessions = await Promise.all((sessionsData || []).map(async (s: Record<string, string>) => {
             const decryptedResults = await decryptBlob(s.iv, s.encrypted_results, fileKey);
             return {
                 id: s.id,

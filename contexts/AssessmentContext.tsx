@@ -133,7 +133,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           } finally { 
               setIsAutoSaving(false); 
           }
-      }, 2000); // Délai de 2s
+      }, 8000); // Délai de 8s (réduit la charge réseau/crypto vs 2s)
 
       return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [patient, tests, observations, synthesis, sections, step, sessionKey, orgKey, isDemoMode]);

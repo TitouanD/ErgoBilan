@@ -62,6 +62,9 @@ export const SubscriptionService = {
                 }
             }
 
+            // No subscription row => force locked access
+            const hasSubscription = !!sub;
+
             // Construction du profil UI
             // Note: Branding est pour l'instant statique ou local, 
             // mais on pré-remplit les infos du cabinet avec les données DB
@@ -82,7 +85,7 @@ export const SubscriptionService = {
                 credits: prac.credits || 0,
                 isAdmin: prac.is_admin || false,
                 subscriptionPlan: (sub?.plan_id as any) || 'free',
-                status: (sub?.status as any) || 'active',
+                status: (sub?.status as any) || (hasSubscription ? 'active' : 'inactive'),
                 isTrial,
                 trialDaysRemaining: trialDays,
                 totalBilansGenerated: 0, // À implémenter avec une table stats
@@ -97,15 +100,41 @@ export const SubscriptionService = {
     },
 
     /**
-     * Tente de consommer un crédit via la fonction sécurisée RPC (Server-Side)
+     * Tente de consommer un crédit via la fonction sécurisée RPC (Server-Side).
+     * Retourne un generation_id (uuid) en cas de succès, null sinon.
+     * NOTE: En production (mode edge), la consommation est faite par l'Edge Function.
+     * Cette méthode reste utile pour le mode direct (dev) et les checks UI.
      */
-    consumeCredit: async (): Promise<boolean> => {
+    consumeCredit: async (): Promise<string | null> => {
         try {
             const { data, error } = await supabase.rpc('consume_credit');
             if (error) throw error;
-            return data === true; // Retourne true si succès, false si pas assez de crédits
+            return data || null; // uuid string or null
         } catch (e) {
             Logger.error('DB', "Erreur consommation crédit:", e);
+            return null;
+        }
+    },
+
+    /**
+     * Rembourse un crédit en cas d'échec de génération.
+     * Nécessite le generation_id retourné par consumeCredit.
+     * Protégé contre le farming : limité à 5 min après consommation.
+     */
+    refundCredit: async (generationId?: string): Promise<boolean> => {
+        try {
+            if (!generationId) {
+                Logger.warn('DB', 'Refund skipped — no generation_id provided');
+                return false;
+            }
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return false;
+            const { error } = await supabase.rpc('refund_credit', { p_generation_id: generationId });
+            if (error) throw error;
+            Logger.info('DB', 'Credit refunded for generation', generationId);
+            return true;
+        } catch (e) {
+            Logger.error('DB', 'Credit refund error:', e);
             return false;
         }
     },

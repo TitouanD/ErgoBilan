@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Contribution, UserProfile } from '../../types';
+import { Contribution, UserProfile, CandidateRow, CandidateDetails, ExtractedRow } from '../../types';
 import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights'; 
 import { OpsMonitoring } from './OpsMonitoring';
@@ -16,13 +16,16 @@ interface Props {
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
   const [activeTab, setActiveTab] = useState<'validation' | 'library' | 'insights' | 'ops'>('validation');
   
-  // Utilisation de 'any' ici car l'objet retourné par la vue SQL est plat, différent du type Contribution
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
+  const [candidates, setCandidates] = useState<CandidateRow[]>([]);
+  const [selectedDetails, setSelectedDetails] = useState<CandidateDetails | null>(null);
   
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const toast = useToast();
+
+  useEffect(() => {
+      if (userProfile.isAdmin && activeTab === 'validation') loadCandidates();
+  }, [activeTab, userProfile.isAdmin]);
 
   if (!userProfile.isAdmin) {
       return (
@@ -34,10 +37,6 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
           </div>
       );
   }
-
-  useEffect(() => {
-      if (activeTab === 'validation') loadCandidates();
-  }, [activeTab]);
 
   const loadCandidates = async () => {
       setIsLoading(true);
@@ -52,7 +51,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
       }
   };
 
-  const handleSelectCandidate = async (candidate: any) => {
+  const handleSelectCandidate = async (candidate: CandidateRow) => {
       setSelectedDetails(null); // Reset UI
       try {
           const details = await AdminService.getCandidateDetails(candidate.id);
@@ -70,8 +69,12 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
               await AdminService.deleteTest(selectedDetails.id);
               toast.success("Test supprimé (Rejeté).");
           } else {
-              await AdminService.promoteTest(selectedDetails.id);
-              toast.success("Test promu en Public !");
+              const result = await AdminService.promoteTest(selectedDetails.id);
+              if (result.merged) {
+                  toast.success(`Fusionné dans le test public « ${result.targetName} » !`);
+              } else {
+                  toast.success("Test promu en Public !");
+              }
           }
           await loadCandidates();
       } catch (e) {
@@ -246,7 +249,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-white/5">
-                                                        {selectedDetails.rows?.map((row: any, idx: number) => (
+                                                        {selectedDetails.rows?.map((row: ExtractedRow, idx: number) => (
                                                             <tr key={idx} className="hover:bg-white/5">
                                                                 <td className="p-2 pl-4 text-emerald-400 font-medium">{row.subtest}</td>
                                                                 <td className="p-2">{row.label}</td>

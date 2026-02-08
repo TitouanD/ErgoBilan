@@ -1,44 +1,110 @@
 
-import React, { useState, useCallback } from 'react';
-import { ClinicalSynthesis, TestData, Observations } from '../../types';
-import { DebouncedTextarea } from '../shared/DebouncedControls';
-import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote } from 'lucide-react';
+import React, { useState, useCallback, useMemo } from 'react';
+import { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
+import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
+import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 
 interface Props {
   synthesis: ClinicalSynthesis;
   updateSynthesis: (data: Partial<ClinicalSynthesis>) => void;
   tests: TestData;
-  observations?: Observations; // Ajout prop
+  observations?: Observations;
+  patient?: Patient;
   onNext: () => void;
   onBack: () => void;
   isGenerating: boolean;
 }
 
-// Sidebar pour rappel des scores significatifs
-const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
-    const alerts = [];
-    Object.entries(tests).forEach(([testId, subtests]) => {
-        Object.entries(subtests).forEach(([subId, res]) => {
-            if (res.status === 'validated' && res.zScore <= -1.5) {
-                alerts.push({ subId, z: res.zScore, standard: res.standard });
-            }
-        });
+// --- VOICE TEXTAREA (local version) ---
+const VoiceArea: React.FC<{
+    value: string;
+    onChange: (val: string) => void;
+    placeholder: string;
+    className?: string;
+    rows?: number;
+}> = ({ value, onChange, placeholder, className = '', rows = 4 }) => {
+    const handleTranscript = useCallback((text: string) => {
+        onChange(value ? `${value} ${text}` : text);
+    }, [value, onChange]);
+    
+    const { isListening, isSupported, interimText, toggleListening } = useVoiceDictation({
+        onTranscript: handleTranscript,
     });
+    
+    return (
+        <div className="relative">
+            <textarea 
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                className={className}
+                rows={rows}
+            />
+            {isSupported && (
+                <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${
+                        isListening 
+                            ? 'bg-red-100 text-red-500 animate-pulse shadow-sm' 
+                            : 'text-stone-300 hover:text-[#E07A5F] hover:bg-stone-100'
+                    }`}
+                    title="Dictée vocale"
+                >
+                    {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                </button>
+            )}
+            {isListening && interimText && (
+                <div className="mt-1.5 px-3 py-1.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-500 italic">
+                    🎙️ {interimText}...
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- SIGNIFICANT SCORES (improved with certification status) ---
+const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
+    const alerts = useMemo(() => {
+        const items: { subId: string; z: number; standard: string; certified: boolean; observation?: string }[] = [];
+        Object.entries(tests).forEach(([testId, subtests]) => {
+            Object.entries(subtests).forEach(([subId, res]) => {
+                if (res.raw && res.zScore <= -1.5) {
+                    items.push({ 
+                        subId, 
+                        z: res.zScore, 
+                        standard: res.standard, 
+                        certified: res.status === 'certified' || res.status === 'validated',
+                        observation: res.observation
+                    });
+                }
+            });
+        });
+        return items.sort((a, b) => a.z - b.z);
+    }, [tests]);
 
     if (alerts.length === 0) return null;
 
     return (
         <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-6 shadow-sm">
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Activity size={14}/> Points d'appel (Scores)
+                <Activity size={14}/> Points d'appel ({alerts.length})
             </h4>
             <div className="space-y-2">
                 {alerts.map((a, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-sm border-b border-stone-50 pb-2 last:border-0">
-                        <span className="font-medium text-stone-600 truncate max-w-[150px]" title={a.subId}>{a.subId}</span>
-                        <span className={`font-bold px-2 py-0.5 rounded text-white text-xs ${a.z <= -2 ? 'bg-[#E07A5F]' : 'bg-[#F2CC8F]'}`}>
-                            {a.z} ET
-                        </span>
+                    <div key={idx} className="border-b border-stone-50 pb-2 last:border-0">
+                        <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-1.5">
+                                {a.certified && <ShieldCheck size={10} className="text-emerald-500" />}
+                                <span className="font-medium text-stone-600 truncate max-w-[130px]" title={a.subId}>{a.subId}</span>
+                            </div>
+                            <span className={`font-bold px-2 py-0.5 rounded text-white text-xs ${a.z <= -2 ? 'bg-[#E07A5F]' : 'bg-[#F2CC8F]'}`}>
+                                {a.z} ET
+                            </span>
+                        </div>
+                        {a.observation && (
+                            <p className="text-[10px] text-stone-400 italic mt-1 pl-4 truncate">{a.observation}</p>
+                        )}
                     </div>
                 ))}
             </div>
@@ -46,32 +112,144 @@ const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
     );
 };
 
-// Suggestions cliquables
+// --- TOGGLEABLE SUGGESTIONS ---
 const DIAG_SUGGESTIONS = [
-    "Trouble Développemental de la Coordination (TDC)",
-    "Dysgraphie fonctionnelle",
-    "Trouble de l'attention (TDAH) impactant l'occupation",
-    "Retard de développement psychomoteur",
-    "Pas de trouble avéré - Fragilités isolées"
+    { label: "Trouble Développemental de la Coordination (TDC)", category: "moteur" },
+    { label: "TDC type mixte", category: "moteur" },
+    { label: "Dysgraphie fonctionnelle", category: "graphique" },
+    { label: "Dyspraxie visuo-constructive", category: "moteur" },
+    { label: "Trouble de l'attention (TDAH)", category: "cognitif" },
+    { label: "Retard de développement psychomoteur", category: "moteur" },
+    { label: "Trouble du traitement visuo-spatial", category: "cognitif" },
+    { label: "Pas de trouble avéré - Fragilités isolées", category: "autre" },
 ];
 
 const RECO_SUGGESTIONS = [
-    "Suivi hebdomadaire 45min",
-    "Mise en place de l'outil informatique",
-    "Aménagements scolaires (PAP/PPS)",
-    "Guidance parentale",
-    "Bilan de contrôle dans 6 mois"
+    { label: "Suivi hebdomadaire 45min", category: "suivi" },
+    { label: "Suivi bi-hebdomadaire 45min", category: "suivi" },
+    { label: "Mise en place de l'outil informatique", category: "outil" },
+    { label: "Aménagements scolaires (PAP)", category: "scolaire" },
+    { label: "Aménagements scolaires (PPS)", category: "scolaire" },
+    { label: "Guidance parentale", category: "famille" },
+    { label: "Bilan de contrôle dans 6 mois", category: "suivi" },
+    { label: "Coordination pluridisciplinaire", category: "suivi" },
+    { label: "Tiers-temps aux examens", category: "scolaire" },
 ];
 
-export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, observations, onNext, onBack, isGenerating }) => {
+const ToggleChips: React.FC<{
+    suggestions: { label: string; category: string }[];
+    currentValue: string;
+    onToggle: (val: string) => void;
+    colorScheme: 'indigo' | 'emerald';
+}> = ({ suggestions, currentValue, onToggle, colorScheme }) => {
+    const activeLabels = currentValue.split(' - ').map(s => s.trim()).filter(Boolean);
+    
+    const handleToggle = (label: string) => {
+        if (activeLabels.includes(label)) {
+            const newLabels = activeLabels.filter(l => l !== label);
+            onToggle(newLabels.join(' - '));
+        } else {
+            onToggle([...activeLabels, label].join(' - '));
+        }
+    };
+    
+    const colors = colorScheme === 'indigo' 
+        ? { active: 'bg-indigo-100 text-indigo-700 border-indigo-200', hover: 'hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100' }
+        : { active: 'bg-emerald-100 text-emerald-700 border-emerald-200', hover: 'hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-100' };
+
+    // Group by category
+    const categories = [...new Set(suggestions.map(s => s.category))];
+
+    return (
+        <div className="space-y-3">
+            {categories.map(cat => (
+                <div key={cat} className="flex flex-wrap gap-2">
+                    {suggestions.filter(s => s.category === cat).map(({ label }) => {
+                        const isActive = activeLabels.includes(label);
+                        return (
+                            <button 
+                                key={label}
+                                onClick={() => handleToggle(label)}
+                                className={`px-3 py-1.5 border rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                    isActive 
+                                        ? `${colors.active} shadow-sm` 
+                                        : `bg-stone-50 border-stone-100 text-stone-500 ${colors.hover}`
+                                }`}
+                            >
+                                {isActive && <Check size={10} strokeWidth={3} />}
+                                {label}
+                            </button>
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    );
+};
+
+// --- OBSERVATION SUMMARY from per-subtest observations ---
+const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
+    const observations = useMemo(() => {
+        const items: { subId: string; text: string }[] = [];
+        Object.entries(tests).forEach(([testId, subtests]) => {
+            Object.entries(subtests).forEach(([subId, res]) => {
+                if (res.observation && res.observation.trim()) {
+                    items.push({ subId, text: res.observation });
+                }
+            });
+        });
+        return items;
+    }, [tests]);
+
+    if (observations.length === 0 && !interviewNotes) return null;
+
+    return (
+        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm">
+            <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <MessageSquare size={14}/> Observations cliniques
+            </h4>
+            
+            {interviewNotes && (
+                <div className="bg-stone-50 p-3 rounded-xl mb-3">
+                    <span className="text-[9px] font-bold text-stone-400 uppercase">Entretien</span>
+                    <p className="text-xs text-stone-600 italic leading-relaxed mt-1">
+                        {interviewNotes.length > 150 ? interviewNotes.substring(0, 150) + '…' : interviewNotes}
+                    </p>
+                </div>
+            )}
+            
+            {observations.length > 0 && (
+                <div className="space-y-2">
+                    {observations.slice(0, 5).map((obs, i) => (
+                        <div key={i} className="flex gap-2 text-xs">
+                            <span className="text-stone-400 font-bold shrink-0">{obs.subId}:</span>
+                            <span className="text-stone-600 italic truncate">{obs.text}</span>
+                        </div>
+                    ))}
+                    {observations.length > 5 && (
+                        <span className="text-[10px] text-stone-400">+{observations.length - 5} autres…</span>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, observations, patient, onNext, onBack, isGenerating }) => {
     
     const handleDiagChange = (val: string) => updateSynthesis({ diagnosticInput: val });
     const handleRecoChange = (val: string) => updateSynthesis({ recommendationsInput: val });
 
-    const addSuggestion = (current: string, add: string, updater: (v: string) => void) => {
-        if (!current) updater(add);
-        else if (!current.includes(add)) updater(current + " - " + add);
-    };
+    // Certification stats
+    const certStats = useMemo(() => {
+        let total = 0, certified = 0;
+        Object.values(tests).forEach(subtests => {
+            Object.values(subtests).forEach((res: any) => {
+                if (res.raw) { total++; if (res.status === 'certified' || res.status === 'validated') certified++; }
+            });
+        });
+        return { total, certified, allCertified: total > 0 && certified === total };
+    }, [tests]);
 
     return (
         <div className="max-w-6xl mx-auto pb-32 animate-in fade-in duration-500">
@@ -81,89 +259,81 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Synthèse & Projet</h2>
                     <p className="text-stone-500 font-medium mt-2">Posez votre diagnostic. L'IA se chargera de l'argumenter.</p>
                 </div>
+                {certStats.total > 0 && (
+                    <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${
+                        certStats.allCertified ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+                    }`}>
+                        {certStats.allCertified 
+                            ? <><ShieldCheck size={14} /> {certStats.certified}/{certStats.total} scores certifiés</>
+                            : <><AlertTriangle size={14} /> {certStats.certified}/{certStats.total} certifiés</>
+                        }
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
-                {/* COLONNE GAUCHE (SAISIE) */}
+                {/* LEFT COLUMN (INPUT) */}
                 <div className="lg:col-span-2 space-y-8">
                     
-                    {/* BLOC DIAGNOSTIC */}
-                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-[#E07A5F]/30 transition-all">
+                    {/* DIAGNOSTIC BLOCK */}
+                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-indigo-200/50 transition-all">
                         <div className="flex items-center gap-3 mb-4 text-[#3D405B]">
                             <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Brain size={24}/></div>
-                            <h3 className="font-bold text-xl">Conclusion Diagnostique</h3>
+                            <div>
+                                <h3 className="font-bold text-xl">Conclusion Diagnostique</h3>
+                                <p className="text-xs text-stone-400 mt-0.5">Cliquez pour ajouter/retirer · Dictée vocale · Texte libre</p>
+                            </div>
                         </div>
                         
-                        <DebouncedTextarea 
+                        <VoiceArea 
                             value={synthesis.diagnosticInput}
                             onChange={handleDiagChange}
                             placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
-                            className="w-full p-4 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none h-32 resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-indigo-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-indigo-200 transition-all leading-relaxed mb-4"
+                            rows={4}
                         />
 
-                        {/* Suggestions */}
-                        <div className="flex flex-wrap gap-2">
-                            {DIAG_SUGGESTIONS.map(tag => (
-                                <button 
-                                    key={tag}
-                                    onClick={() => addSuggestion(synthesis.diagnosticInput, tag, handleDiagChange)}
-                                    className="px-3 py-1 bg-stone-50 border border-stone-100 rounded-full text-xs font-bold text-stone-500 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-all flex items-center gap-1"
-                                >
-                                    <PlusIcon /> {tag}
-                                </button>
-                            ))}
-                        </div>
+                        <ToggleChips 
+                            suggestions={DIAG_SUGGESTIONS} 
+                            currentValue={synthesis.diagnosticInput} 
+                            onToggle={handleDiagChange}
+                            colorScheme="indigo"
+                        />
                     </div>
 
-                    {/* BLOC PROJET */}
-                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-[#E07A5F]/30 transition-all">
+                    {/* PROJECT/RECOMMENDATIONS BLOCK */}
+                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-emerald-200/50 transition-all">
                         <div className="flex items-center gap-3 mb-4 text-[#3D405B]">
                             <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl"><Target size={24}/></div>
-                            <h3 className="font-bold text-xl">Projet & Préconisations</h3>
+                            <div>
+                                <h3 className="font-bold text-xl">Projet & Préconisations</h3>
+                                <p className="text-xs text-stone-400 mt-0.5">Sélectionnez puis personnalisez librement</p>
+                            </div>
                         </div>
                         
-                        <DebouncedTextarea 
+                        <VoiceArea 
                             value={synthesis.recommendationsInput}
                             onChange={handleRecoChange}
                             placeholder="Ex: Suivi hebdo. Apprentissage du clavier caché. Mise en place tiers-temps."
-                            className="w-full p-4 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none h-32 resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            rows={4}
                         />
 
-                        {/* Suggestions */}
-                        <div className="flex flex-wrap gap-2">
-                            {RECO_SUGGESTIONS.map(tag => (
-                                <button 
-                                    key={tag}
-                                    onClick={() => addSuggestion(synthesis.recommendationsInput, tag, handleRecoChange)}
-                                    className="px-3 py-1 bg-stone-50 border border-stone-100 rounded-full text-xs font-bold text-stone-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-100 transition-all flex items-center gap-1"
-                                >
-                                    <PlusIcon /> {tag}
-                                </button>
-                            ))}
-                        </div>
+                        <ToggleChips 
+                            suggestions={RECO_SUGGESTIONS} 
+                            currentValue={synthesis.recommendationsInput} 
+                            onToggle={handleRecoChange}
+                            colorScheme="emerald"
+                        />
                     </div>
 
                 </div>
 
-                {/* COLONNE DROITE (AIDE & RAPPEL) */}
+                {/* RIGHT COLUMN (CONTEXT) */}
                 <div className="space-y-6">
                     <SignificantScores tests={tests} />
-                    
-                    {/* RAPPEL OBSERVATIONS (NOUVEAU) */}
-                    {observations?.anamnese && (
-                        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm">
-                            <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <MessageSquare size={14}/> Rappel Observations
-                            </h4>
-                            <div className="bg-stone-50 p-3 rounded-xl relative">
-                                <Quote size={16} className="absolute top-2 left-2 text-stone-300 transform rotate-180" />
-                                <p className="text-xs text-stone-600 italic leading-relaxed pl-6 pt-1">
-                                    {observations.anamnese.length > 200 ? observations.anamnese.substring(0, 200) + '...' : observations.anamnese}
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                    <ObservationsSummary tests={tests} interviewNotes={patient?.interviewNotes} />
 
                     <div className="bg-[#fffdf5] border border-[#F2CC8F]/50 p-6 rounded-2xl">
                         <h4 className="font-bold text-[#d97706] mb-3 flex items-center gap-2 text-sm">
@@ -211,10 +381,3 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
         </div>
     );
 };
-
-const PlusIcon = () => (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-    </svg>
-);

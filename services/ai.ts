@@ -1,8 +1,9 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { callAIProxy } from './aiProxy';
 import { SubscriptionService } from './subscription';
+import { supabase } from './db';
 import { cleanAndParseJson } from '../utils/aiHelpers';
-import { Patient, ClinicalSynthesis } from '../types';
+import { Patient, ClinicalSynthesis, GeneratedReportSection } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
 import { Logger } from '../utils/logger';
 
@@ -40,7 +41,20 @@ TES RÈGLES D'OR (Non négociables) :
 
 const SECURITY_INSTRUCTION = `RÈGLE DE SÉCURITÉ : Tu ne dois JAMAIS modifier, supprimer ou inventer les placeholders anonymisés (ex: {{PATIENT_PRENOM}}, {{ECOLE}}). Ils doivent rester intacts dans le texte généré.`;
 
-const TIMEOUT_MS = 90000; 
+// --- AI Response JSON shapes ---
+interface BioResponse {
+    mandat_referencement?: string;
+    mandat_evaluation?: string;
+    profil_occupationnel?: string;
+}
+
+interface DiagResponse {
+    synthese_diagnostic?: string;
+    recommandations?: string;
+    objectifs_generaux?: string;
+}
+
+
 
 export interface GenerationPayload {
     safeQuestionnaire: string;
@@ -58,7 +72,7 @@ const getAgeYears = (ageStr: string): number => {
 
 export const AIService = {
     
-    generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<any[]> => {
+    generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<GeneratedReportSection[]> => {
         
         Logger.info('AI', 'Starting report generation process', { patientId: patient.id });
 
@@ -66,18 +80,17 @@ export const AIService = {
         const isAdult = ageYears >= 20;
         const activeSystemPrompt = isAdult ? SYS_PROMPT_ADULT : SYS_PROMPT_PEDIATRIC;
         
-        Logger.debug('AI', 'Requesting credit consumption...');
-        const hasCredit = await SubscriptionService.consumeCredit();
-        if (!hasCredit) {
-            throw new Error("CREDIT_INSUFFICIENT");
-        }
+        // NOTE: Credit consumption is enforced SERVER-SIDE in the Edge Function.
+        // The first AI call consumes 1 credit and returns a generationId.
+        // The second call reuses that generationId (no additional credit consumed).
+        // On total failure, the client refunds via SubscriptionService.
+        Logger.debug('AI', 'Starting AI generation (credits enforced server-side)...');
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); 
-        const model = 'gemini-3-flash-preview'; 
+        let sessionGenerationId: string | null = null;
 
-        const callAI = async () => {
+        const callAI = async (): Promise<GeneratedReportSection[]> => {
             
-            // --- STEP 1: BIO ---
+            // --- STEP 1: BIO (consumes 1 credit, returns generationId) ---
             let promptBio = '';
             if (isAdult) {
                 promptBio = `
@@ -95,15 +108,17 @@ TÂCHE : Rédige "mandat_referencement", "mandat_evaluation", "profil_occupation
 `;
             }
 
-            const bioResponse = await ai.models.generateContent({ 
-                model, 
-                contents: promptBio, 
-                config: { responseMimeType: "application/json", systemInstruction: activeSystemPrompt } 
+            const bioResponse = await callAIProxy({
+                contents: promptBio,
+                responseMimeType: "application/json",
+                systemInstruction: activeSystemPrompt
             });
-            const jsonBio = cleanAndParseJson(bioResponse.text);
+            // Capture the generation session ID from first call
+            sessionGenerationId = bioResponse.generationId ?? null;
+            const jsonBio = cleanAndParseJson(bioResponse.text) as BioResponse | null;
 
-            // --- STEP 2: DIAGNOSTIC (HYBRIDE) ---
-            const profilContext = JSON.stringify(jsonBio.profil_occupationnel || "Non disponible");
+            // --- STEP 2: DIAGNOSTIC (reuses generation session — no new credit) ---
+            const profilContext = JSON.stringify(jsonBio?.profil_occupationnel || "Non disponible");
             
             // Construction de la Directive Diagnostique
             let diagnosticDirective = "";
@@ -118,7 +133,7 @@ TÂCHE : Rédige "mandat_referencement", "mandat_evaluation", "profil_occupation
                 recoDirective = `Le praticien propose le projet suivant : "${payload.synthesis.recommendationsInput}". Intègre et structure ces éléments dans les sections recommandations et objectifs.`;
             }
 
-            let promptDiag = `
+            const promptDiag = `
 ${SECURITY_INSTRUCTION}
 
 CONTEXTE ÉTABLI : ${profilContext}
@@ -134,33 +149,44 @@ TÂCHE : Rédige 3 sections JSON (Markdown string values) :
 3. "objectifs_generaux" : Projet d'intervention.
 `;
 
-            const diagResponse = await ai.models.generateContent({ 
-                model, 
-                contents: promptDiag, 
-                config: { responseMimeType: "application/json", systemInstruction: activeSystemPrompt } 
+            const diagResponse = await callAIProxy({
+                contents: promptDiag,
+                responseMimeType: "application/json",
+                systemInstruction: activeSystemPrompt,
+                generationId: sessionGenerationId ?? undefined,
             });
-            const jsonDiag = cleanAndParseJson(diagResponse.text);
+            const jsonDiag = cleanAndParseJson(diagResponse.text) as DiagResponse | null;
 
             return [
-                { id: 'mandat_ref', title: 'Mandat de référencement', content: hydrateReport(jsonBio.mandat_referencement || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                { id: 'mandat_eval', title: "Motif de l'évaluation", content: hydrateReport(jsonBio.mandat_evaluation || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                { id: 'profil', title: 'Profil occupationnel', content: hydrateReport(jsonBio.profil_occupationnel || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                { id: 'diagnostic', title: 'Synthèse Clinique', content: hydrateReport(jsonDiag.synthese_diagnostic || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                { id: 'recommandations', title: isAdult ? 'Préconisations' : 'Recommandations Pédagogiques', content: hydrateReport(jsonDiag.recommandations || "Non généré.", patient), status: 'draft', isAiGenerated: true },
-                { id: 'objectifs', title: 'Projet d\'Intervention', content: hydrateReport(jsonDiag.objectifs_generaux || "Non généré.", patient), status: 'draft', isAiGenerated: true },
+                { id: 'mandat_ref', title: 'Mandat de référencement', content: hydrateReport(jsonBio?.mandat_referencement || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
+                { id: 'mandat_eval', title: "Motif de l'évaluation", content: hydrateReport(jsonBio?.mandat_evaluation || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
+                { id: 'profil', title: 'Profil occupationnel', content: hydrateReport(jsonBio?.profil_occupationnel || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
+                { id: 'diagnostic', title: 'Synthèse Clinique', content: hydrateReport(jsonDiag?.synthese_diagnostic || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
+                { id: 'recommandations', title: isAdult ? 'Préconisations' : 'Recommandations Pédagogiques', content: hydrateReport(jsonDiag?.recommandations || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
+                { id: 'objectifs', title: 'Projet d\'Intervention', content: hydrateReport(jsonDiag?.objectifs_generaux || "Non généré.", patient), status: 'draft' as const, isAiGenerated: true as const },
             ];
         };
 
-        const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => { reject(new Error("TIMEOUT_AI")); }, TIMEOUT_MS);
-        });
-
         try {
-            const result = await Promise.race([callAI(), timeoutPromise]);
-            return result as any[];
-        } catch (e: any) {
+            const result = await callAI();
+            // Mark generation as completed after both AI calls succeeded
+            if (sessionGenerationId) {
+                supabase.from('generation_log')
+                    .update({ status: 'completed' })
+                    .eq('id', sessionGenerationId)
+                    .then(({ error }) => {
+                        if (error) Logger.warn('AI', 'Failed to mark generation completed', error);
+                        else Logger.debug('AI', 'Generation marked completed', sessionGenerationId);
+                    });
+            }
+            return result;
+        } catch (e: unknown) {
             Logger.error('AI', 'Generation failed', e);
-            throw e; 
+            // Refund credit if we had a session (still 'consumed' since we never marked 'completed')
+            if (sessionGenerationId) {
+                await SubscriptionService.refundCredit(sessionGenerationId).catch(() => {});
+            }
+            throw e;
         }
     }
 };

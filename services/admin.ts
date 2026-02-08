@@ -2,6 +2,7 @@
 import { supabase } from './db';
 import { Contribution, Patient, TestData } from '../types';
 import { Logger } from '../utils/logger';
+import { normalizeTestName } from '../utils';
 
 // Données simulées pour le Dashboard Ops
 const MOCK_AI_STATS = {
@@ -114,31 +115,143 @@ export const AdminService = {
     /**
      * PROMOUVOIR LE TEST (Validé)
      * Passe l'organization_id à NULL pour le rendre public.
+     * Si un test public homonyme (même nom normalisé) existe déjà,
+     * fusionne automatiquement les sous-tests et normes dans le test public existant,
+     * puis supprime la coquille privée.
      */
-    promoteTest: async (testId: string) => {
-        // 1. Identifier les sous-éléments
-        const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
-        const subIds = subtests?.map(s => s.id) || [];
+    promoteTest: async (testId: string): Promise<{ merged: boolean; targetName: string }> => {
+        // 1. Fetch the private test being promoted
+        const { data: privateTest } = await supabase
+            .from('official_tests')
+            .select('id, name')
+            .eq('id', testId)
+            .single();
 
-        // 2. Update Norms (Public)
-        if (subIds.length > 0) {
-            await supabase.from('official_norms')
+        if (!privateTest) throw new Error("Test introuvable");
+
+        // 2. Check if a public test with the same normalized name exists
+        const normalizedName = normalizeTestName(privateTest.name);
+        const { data: publicTests } = await supabase
+            .from('official_tests')
+            .select('id, name')
+            .is('organization_id', null);
+
+        const publicMatch = (publicTests || []).find(t => normalizeTestName(t.name) === normalizedName);
+
+        if (!publicMatch) {
+            // --- SIMPLE PROMOTION (no homonym) ---
+            const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
+            const subIds = subtests?.map(s => s.id) || [];
+
+            if (subIds.length > 0) {
+                await supabase.from('official_norms')
+                    .update({ organization_id: null })
+                    .in('subtest_id', subIds);
+            }
+            await supabase.from('official_subtests')
                 .update({ organization_id: null })
-                .in('subtest_id', subIds);
+                .eq('test_id', testId);
+
+            const { error } = await supabase.from('official_tests')
+                .update({ organization_id: null })
+                .eq('id', testId);
+            if (error) throw error;
+
+            return { merged: false, targetName: privateTest.name };
         }
 
-        // 3. Update Subtests (Public)
-        await supabase.from('official_subtests')
-            .update({ organization_id: null })
+        // --- MERGE-ON-PROMOTE: Fuse private into existing public ---
+        const publicTestId = publicMatch.id;
+
+        // Load public subtests
+        const { data: publicSubs } = await supabase
+            .from('official_subtests')
+            .select('id, name')
+            .eq('test_id', publicTestId);
+
+        const publicSubLookup = new Map<string, string>();
+        (publicSubs || []).forEach(s => publicSubLookup.set(normalizeTestName(s.name), s.id));
+
+        // Load private subtests + their norms
+        const { data: privateSubs } = await supabase
+            .from('official_subtests')
+            .select('id, name, unit, score_type, computation_mode')
             .eq('test_id', testId);
 
-        // 4. Update Test (Public + Move to Official Category if needed)
-        // On le force dans une catégorie "Community" ou on garde celle choisie
-        const { error } = await supabase.from('official_tests')
-            .update({ organization_id: null })
-            .eq('id', testId);
+        let mergedNormsCount = 0;
+        let newSubtestsCount = 0;
+        const privateSubIds: string[] = [];
 
-        if (error) throw error;
+        for (const privSub of (privateSubs || [])) {
+            privateSubIds.push(privSub.id);
+            const normalizedSub = normalizeTestName(privSub.name);
+            let targetSubId = publicSubLookup.get(normalizedSub);
+
+            if (!targetSubId) {
+                // New subtest → re-create under public test with new ID + organization_id = null
+                const subtestSlug = privSub.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+                targetSubId = `${publicTestId}_${subtestSlug}`;
+
+                // Admin can UPDATE but may not INSERT with null org_id → insert with org first, then update
+                // Actually we just need to update the existing private subtest to point to public test
+                await supabase.from('official_subtests')
+                    .update({ test_id: publicTestId, organization_id: null })
+                    .eq('id', privSub.id);
+
+                // Update its norms to public
+                await supabase.from('official_norms')
+                    .update({ organization_id: null })
+                    .eq('subtest_id', privSub.id);
+
+                newSubtestsCount++;
+                publicSubLookup.set(normalizedSub, privSub.id);
+            } else {
+                // Existing subtest → merge norms avoiding duplicates by (age_min, age_max, gender)
+                const { data: existingNorms } = await supabase
+                    .from('official_norms')
+                    .select('age_min_months, age_max_months, gender')
+                    .eq('subtest_id', targetSubId);
+
+                const existingKeys = new Set(
+                    (existingNorms || []).map(n => `${n.age_min_months}_${n.age_max_months}_${n.gender}`)
+                );
+
+                // Load norms from the private subtest
+                const { data: privateNorms } = await supabase
+                    .from('official_norms')
+                    .select('*')
+                    .eq('subtest_id', privSub.id);
+
+                const normsToMigrate = (privateNorms || []).filter(n => {
+                    const key = `${n.age_min_months}_${n.age_max_months}_${n.gender}`;
+                    return !existingKeys.has(key);
+                });
+
+                // Reassign non-duplicate norms to the public subtest_id
+                for (const norm of normsToMigrate) {
+                    await supabase.from('official_norms')
+                        .update({ subtest_id: targetSubId, organization_id: null })
+                        .eq('id', norm.id);
+                    mergedNormsCount++;
+                }
+
+                // Delete remaining private norms (duplicates)
+                await supabase.from('official_norms')
+                    .delete()
+                    .eq('subtest_id', privSub.id);
+
+                // Delete the now-orphaned private subtest
+                await supabase.from('official_subtests')
+                    .delete()
+                    .eq('id', privSub.id);
+            }
+        }
+
+        // Delete the private test shell
+        await supabase.from('official_tests').delete().eq('id', testId);
+
+        Logger.info('DB', `Merge-on-promote: +${newSubtestsCount} sous-tests, +${mergedNormsCount} normes fusionnées dans ${publicTestId}`);
+        return { merged: true, targetName: publicMatch.name };
     },
 
     /**
@@ -154,7 +267,7 @@ export const AdminService = {
             if (ageMonths < 0) return;
 
             const payload: any[] = [];
-            const sessionHash = 'anon_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+            const sessionHash = 'anon_' + crypto.randomUUID();
 
             for (const [testId, subtests] of Object.entries(tests)) {
                 for (const [subtestId, result] of Object.entries(subtests)) {

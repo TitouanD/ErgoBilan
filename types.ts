@@ -85,9 +85,13 @@ export interface ScoreResult {
     standard: string;
     percentile: string;
     zScore: number;
-    status: 'empty' | 'draft' | 'validated' | 'estimated';
+    status: 'empty' | 'draft' | 'validated' | 'estimated' | 'certified';
     observation?: string;
     validatedAt?: string;
+    /** ISO timestamp when the practitioner certified this score */
+    certifiedAt?: string;
+    /** How the score was obtained: auto (norms table), manual_ns (practitioner edited NS), manual_et (practitioner edited ET) */
+    scoreSource?: 'auto' | 'manual_ns' | 'manual_et';
 }
 
 export interface TestData {
@@ -96,6 +100,12 @@ export interface TestData {
     };
 }
 
+/**
+ * Observations type — kept for backward compatibility with saved drafts.
+ * Legacy fields (motricite, coordination, spatial, graphique) are preserved
+ * but no longer surfaced in the UI. The `anamnese` field is repurposed as
+ * the primary "clinical notes" channel fed to the AI.
+ */
 export interface Observations {
     anamnese: string;
     motricite: string;
@@ -243,4 +253,92 @@ export interface Contribution {
     submittedAt: string;
     structureType: 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
     rows: ExtractedRow[];
+}
+
+// --- Types ajoutés pour éliminer les `any` ---
+
+/** Shape of a saved/restored assessment draft */
+export interface DraftPayload {
+    patient?: Patient;
+    tests?: TestData;
+    observations?: Observations;
+    synthesis?: ClinicalSynthesis;
+    sections?: ReportSection[];
+    step?: number;
+}
+
+/** Row from the admin_candidates_promotion SQL view */
+export interface CandidateRow {
+    id: string;
+    name: string;
+    author: string;
+    created_at: string;
+    subtest_count?: number;
+    organization_id?: string;
+}
+
+/** Return shape of AdminService.getCandidateDetails */
+export interface CandidateDetails {
+    id: string;
+    testName: string;
+    author: string;
+    submittedAt: string;
+    rows: ExtractedRow[];
+}
+
+/** AI monitoring types */
+export interface AIUsageDay {
+    date: string;
+    tokens: number;
+    cost: number;
+    errors: number;
+}
+
+export interface AIFailure {
+    id: string;
+    date: string;
+    type: string;
+    context: string;
+    user: string;
+}
+
+export interface AIHealthStats {
+    daily: AIUsageDay[];
+    totalCost: number;
+    errorRate: number;
+}
+
+/** AI-generated report section (before hydration) */
+export interface GeneratedReportSection {
+    id: string;
+    title: string;
+    content: string;
+    status: 'draft';
+    isAiGenerated: true;
+}
+
+/** AI extraction response from ContributionStudio image processing */
+export interface AIExtractedNormRow {
+    label?: string;
+    raw_range?: string;
+    standard?: string;
+    mean?: string;
+    sd?: string;
+    z_score?: string;
+    percentile?: string;
+    age_min_months?: number | null;
+    age_max_months?: number | null;
+    raw_min?: number | null;
+    raw_max?: number | null;
+}
+
+export interface AIExtractedTable {
+    subtest_id?: string;
+    rows: AIExtractedNormRow[];
+}
+
+export interface AIExtractionResult {
+    test_context?: string;
+    structure_type?: 'PARAMETRIC' | 'LOOKUP';
+    tables?: AIExtractedTable[];
 }

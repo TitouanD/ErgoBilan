@@ -4,6 +4,20 @@
  * Note: La logique mathématique de scoring est déplacée dans ./utils/scoring.ts
  */
 
+/**
+ * Normalisation agressive d'un nom de test pour détection de doublons.
+ * trim → lowercase → suppression accents (NFD) → suppression de tout non-alphanumérique.
+ * Ex: "M.A.B.C.-2", "mabc 2", "MABC2", "  MABC - 2 " → "mabc2"
+ */
+export const normalizeTestName = (name: string): string => {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip combining diacritical marks
+    .replace(/[^a-z0-9]/g, '');      // strip everything non-alphanumeric
+};
+
 // Génération des données pour la courbe de Gauss (Recharts)
 export const generateGaussianData = (mean: number, sd: number) => {
   const data = [];
