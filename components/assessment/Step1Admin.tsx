@@ -6,10 +6,10 @@ import { User, Lock, AlertTriangle, Database, CheckCircle2 } from 'lucide-react'
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAssessment } from '../../contexts/AssessmentContext';
-import { DEMO_PATIENTS } from '../../data/demoData';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
+import { DEMO_PATIENTS } from '../../data/demoData';
 
 interface Props {
   data: Patient;
@@ -37,13 +37,15 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   };
 
   /**
-   * Sécurité : Sauvegarde explicite avec récupération de l'ID généré par le serveur.
+   * Sécurité : On force une sauvegarde explicite au moment de passer à l'étape suivante.
+   * Note : L'ID est normalement déjà généré par le Context dès la saisie.
    */
   const ensurePatientPersisted = async (): Promise<void> => {
-      if (!orgKey) return;
+      if (!orgKey || !data.id) return;
 
+      // On s'assure que le fichier patient est bien créé/mis à jour
       const fileWrapper: PatientFile = {
-          id: data.id || '', // Vide si création
+          id: data.id,
           patient: data,
           reports: [],
           sessions: [],
@@ -51,15 +53,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           archived: false
       };
 
-      // StorageService gère l'INSERT ou UPDATE et renvoie l'ID
-      const newId = await StorageService.saveFile(fileWrapper, orgKey);
+      await StorageService.saveFile(fileWrapper, orgKey);
       
-      // Si c'était une création, on met à jour le contexte avec le vrai ID
-      if (!data.id) {
-          updateData({ id: newId });
-          Logger.info('DB', "Patient created with ID:", newId);
-      }
-      
+      // Le Realtime du Dashboard devrait détecter le changement, mais on appelle le callback au cas où
       if (onPatientCreated) onPatientCreated();
   };
 
@@ -68,28 +64,25 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       e.stopPropagation();
       
       try {
-          const freshData = JSON.parse(JSON.stringify({ 
-              patient: DEMO_PATIENTS.LEO.patient, 
-              tests: DEMO_PATIENTS.LEO.tests, 
-              observations: DEMO_PATIENTS.LEO.observations 
-          }));
+          const freshData = JSON.parse(JSON.stringify(DEMO_PATIENTS.LEO));
           
-          // En mode démo ou test, on laisse l'ID vide pour que le serveur le génère
-          freshData.patient.id = undefined;
+          // On génère un ID frais si besoin
+          if (!freshData.patient.id) freshData.patient.id = crypto.randomUUID();
           
+          // Mise à jour du context via loadFromDraft pour écraser proprement
           loadFromDraft(freshData);
           
+          // Trigger la sauvegarde immédiate si on a la clé
           if (orgKey) {
               const fileWrapper: PatientFile = {
-                  id: '',
+                  id: freshData.patient.id,
                   patient: freshData.patient,
                   reports: [],
                   sessions: [],
                   lastInteraction: new Date().toISOString(),
                   archived: false
               };
-              const newId = await StorageService.saveFile(fileWrapper, orgKey);
-              updateData({ id: newId }); // Mise à jour immédiate
+              await StorageService.saveFile(fileWrapper, orgKey);
               if (onPatientCreated) onPatientCreated();
           }
           
@@ -115,12 +108,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           onNext();
       } catch (e) {
           Logger.error('DB', "Erreur sauvegarde patient:", e);
-          toast.error("Erreur de sauvegarde. Vérifiez votre connexion.");
+          // On ne bloque pas la navigation si erreur réseau, le draft local/session existe
+          onNext();
       }
   };
-
-  // Check de validation sécurisé
-  const isFormValid = data.lastName?.trim().length > 0 && data.firstName?.trim().length > 0;
 
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
@@ -174,7 +165,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       <div className="flex justify-center pt-12">
         <button 
             onClick={handleNextStep}
-            disabled={!isFormValid}
+            disabled={!data.lastName || !data.firstName}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
             Suivant : Tests & Mesures

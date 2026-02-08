@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
-import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User, ArrowLeft, Brush } from 'lucide-react';
+import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User, ArrowLeft, Brush, Loader2 } from 'lucide-react';
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,13 +10,13 @@ interface Props {
   patient: Patient;
   sections: ReportSection[];
   tests: TestData;
-  onValidate: () => void;
+  onValidate: () => Promise<void>; // Promise pour gérer le loading
   onUpdateSection: (sectionId: string, updates: Partial<ReportSection>) => void;
   branding: BrandingConfig;
   onUpdateBranding: (newBranding: BrandingConfig) => void;
   isPremium: boolean;
   onShowPricing: () => void;
-  onBack: () => void; // NOUVEAU
+  onBack: () => void;
 }
 
 // COMPOSANT LOCAL POUR ÉVITER L'ERREUR REACT #185 (Too many re-renders)
@@ -393,7 +393,7 @@ const BrandingEditor: React.FC<{
 
 export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack }) => {
   const [showBranding, setShowBranding] = useState(false);
-  const { isDemoMode } = useAuth(); // Hook Auth
+  const [isValidating, setIsValidating] = useState(false);
   const toast = useToast();
 
   const handlePrint = () => {
@@ -406,6 +406,15 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
           return;
       }
       setShowBranding(true);
+  };
+
+  const handleFinalValidate = async () => {
+      setIsValidating(true);
+      try {
+          await onValidate();
+      } finally {
+          setIsValidating(false);
+      }
   };
 
   return (
@@ -442,10 +451,12 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     <Download size={16} /> Imprimer / PDF
                 </button>
                 <button 
-                    onClick={onValidate}
-                    className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1"
+                    onClick={handleFinalValidate}
+                    disabled={isValidating}
+                    className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                    <Check size={16} /> Terminer & Archiver
+                    {isValidating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} 
+                    Terminer & Archiver
                 </button>
             </div>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
@@ -217,7 +218,7 @@ const AppRouter = () => {
                     { id: 'recommandations', title: 'Préconisations', content: "### À l'école\n- **Allègement de la trace écrite** : Fournir des photocopies de cours ou permettre l'utilisation d'une tablette/ordinateur (GEVA-Sco).\n- **Tiers-temps** : À envisager pour les évaluations longues.\n\n### Suivi thérapeutique\n- Poursuite du suivi en ergothérapie axé sur :\n  - L'apprentissage du clavier caché.\n  - La gestion de la fatigue et l'ergonomie posturale.", status: 'draft', isAiGenerated: true }
                 ] as any;
                 assessment.setSections(sections);
-                assessment.setStep(4); // VERS VALIDATION (NOUVEAU FLUX : 3 -> 4)
+                assessment.setStep(4); // VERS VALIDATION
                 setIsGenerating(false);
                 toast.success("Rapport généré (Simulation)");
             }, 3000); 
@@ -229,7 +230,6 @@ const AppRouter = () => {
         setIsGenerating(true); 
         try {
             // MODULE C : Télémétrie Passive & Anonyme (Fire & Forget)
-            // On le lance avant l'IA pour ne pas ralentir l'UX si ça prend du temps
             if (!isDemoMode) {
                 AdminService.logAnonymousStats(assessment.tests, assessment.patient);
             }
@@ -253,7 +253,9 @@ const AppRouter = () => {
             Attentes: ${p.familyExpectations}
             `;
             
-            const rawObs = `Anamnèse: ${assessment.observations.anamnese}\nMotricité: ${assessment.observations.motricite}`;
+            // Fusion des observations pour l'IA (Comportement général + Specifique tests)
+            // On s'assure que 'anamnese' (champ général) est bien inclus
+            const rawObs = `Observations Générales & Comportement: ${assessment.observations.anamnese || 'RAS'}\n\nDétails Moteurs/Graphiques: ${assessment.observations.motricite || ''} ${assessment.observations.graphique || ''}`;
             
             const payload: GenerationPayload = {
                 safeQuestionnaire: anonymizeData(rawQ, p).text,
@@ -264,7 +266,7 @@ const AppRouter = () => {
             };
             const sections = await AIService.generateFullReport(payload, assessment.patient);
             assessment.setSections(sections);
-            assessment.setStep(4); // VERS VALIDATION (NOUVEAU FLUX : 3 -> 4)
+            assessment.setStep(4); // VERS VALIDATION
             refreshProfile(); 
             toast.success("Rapport généré avec succès");
         } catch (e: any) {
@@ -419,10 +421,10 @@ const AppRouter = () => {
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}
                     
-                    {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW) --- */}
+                    {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW 5 ÉTAPES) --- */}
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">
-                            {/* Navigation Stepper (NOUVEAU) */}
+                            {/* Navigation Stepper */}
                             <AssessmentStepper currentStep={assessment.step} onStepClick={(s) => assessment.setStep(s)} />
 
                             {/* Step 1: Admin */}
@@ -434,9 +436,9 @@ const AppRouter = () => {
                                     patient={assessment.patient} 
                                     tests={assessment.tests} 
                                     updateTests={assessment.updateTests} 
-                                    observations={assessment.observations} // NOUVEAU: Passé au composant
-                                    updateObservations={assessment.updateObservations} // NOUVEAU
-                                    onNext={() => assessment.setStep(3)} // Va vers Synthèse
+                                    observations={assessment.observations} 
+                                    updateObservations={assessment.updateObservations} 
+                                    onNext={() => assessment.setStep(3)} // Vers Diagnostic
                                     onBack={() => assessment.setStep(1)} 
                                     onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} 
                                     onContribute={handleContributionAccess} 
@@ -444,22 +446,23 @@ const AppRouter = () => {
                                 />
                             )}
                             
-                            {/* Step 3 (Ex Step 4): Synthèse & Projet - C'est ici qu'on déclenche l'IA */}
+                            {/* Step 3: Synthèse & Projet (Ex Step 4) */}
                             {assessment.step === 3 && (
                                 <Step3BisDiagnostic 
                                     synthesis={assessment.synthesis} 
                                     updateSynthesis={assessment.updateSynthesis} 
                                     tests={assessment.tests} 
+                                    observations={assessment.observations} // NOUVEAU : Passé pour référence visuelle
                                     onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} 
-                                    onBack={() => assessment.setStep(2)} // Retourne aux Tests
+                                    onBack={() => assessment.setStep(2)} 
                                     isGenerating={isGenerating} 
                                 />
                             )}
                             
-                            {/* Step 4 (Ex Step 5): Validation */}
+                            {/* Step 4: Validation */}
                             {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
                             
-                            {/* Step 5 (Ex Step 6): Export */}
+                            {/* Step 5: Export */}
                             {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={handleFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} onBack={() => assessment.setStep(4)} />}
                         </div>
                     )}
@@ -473,7 +476,7 @@ const AppRouter = () => {
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); handleGenerateReport(); }} onClose={() => setGenerationError(null)} />}
             
-            {/* POPUP CONFIRMATION IA (Déplacé ici pour être déclenché depuis Step 3) */}
+            {/* POPUP CONFIRMATION IA */}
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white p-8 rounded-[32px] max-w-md text-center shadow-2xl">

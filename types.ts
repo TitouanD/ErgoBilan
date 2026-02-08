@@ -77,6 +77,7 @@ export interface Patient {
     interviewNotes?: string;
     screenTime?: string;
     emotionalRegulation?: string;
+    organizationId?: string;
 }
 
 export interface ScoreResult {
@@ -84,8 +85,9 @@ export interface ScoreResult {
     standard: string;
     percentile: string;
     zScore: number;
-    status: 'empty' | 'draft' | 'validated';
+    status: 'empty' | 'draft' | 'validated' | 'estimated';
     observation?: string;
+    validatedAt?: string;
 }
 
 export interface TestData {

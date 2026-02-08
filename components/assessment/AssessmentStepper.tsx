@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Check, User, Activity, Brain, FileCheck, Download } from 'lucide-react';
 
@@ -9,8 +10,8 @@ interface Props {
 export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick }) => {
     const STEPS = [
         { num: 1, label: 'Dossier', icon: User },
-        { num: 2, label: 'Tests', icon: Activity },
-        { num: 3, label: 'Synthèse', icon: Brain },
+        { num: 2, label: 'Tests & Obs.', icon: Activity },
+        { num: 3, label: 'Diagnostic', icon: Brain },
         { num: 4, label: 'Validation', icon: FileCheck },
         { num: 5, label: 'Export', icon: Download },
     ];

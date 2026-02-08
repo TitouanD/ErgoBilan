@@ -36,6 +36,7 @@ interface AssessmentContextType {
 
 const AssessmentContext = createContext<AssessmentContextType | undefined>(undefined);
 
+// NOTE: L'ID doit être undefined au départ. Pas de génération client.
 const initialPatient: Patient = {
   firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
   parentNames: '', parentPhone: '', parentEmail: '', guardArrangement: '', siblings: [],
@@ -70,11 +71,13 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-Save Logic Renforcée
+  // Auto-Save Logic Intelligente (Création puis Sauvegarde)
   useEffect(() => {
       if (!sessionKey && !isDemoMode) return;
       
-      const hasMinimalData = patient.lastName.trim().length > 0 || patient.firstName.trim().length > 0;
+      const hasMinimalData = patient.lastName.trim().length > 0 && patient.firstName.trim().length > 0;
+      
+      // Si pas de données minimales, on ne fait rien
       if (!hasMinimalData) return;
 
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -82,23 +85,46 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
       saveTimeoutRef.current = setTimeout(async () => {
           try {
-              // Ajout de 'synthesis' au draft
-              const draftData = { patient, tests, observations, synthesis, sections, step, timestamp: new Date().toISOString() };
+              let currentPatientId = patient.id;
+
+              // PHASE 1 : CRÉATION AUTOMATIQUE EN BASE (Si pas d'ID)
+              if (!currentPatientId && orgKey && !isDemoMode) {
+                  Logger.info('DB', "Autosave: creating patient entry first...");
+                  try {
+                      // On crée le patient en DB pour obtenir son ID officiel
+                      const newId = await StorageService.createPatient(patient, orgKey);
+                      currentPatientId = newId;
+                      // Mise à jour immédiate du state local avec l'ID serveur
+                      setPatient(prev => ({ ...prev, id: newId }));
+                  } catch (createError) {
+                      Logger.error('DB', "Failed to create patient during autosave", createError);
+                      return; // Stop si échec création
+                  }
+              }
+
+              // PHASE 2 : SAUVEGARDE DU BROUILLON
+              // On attache l'ID (qui vient d'être créé ou existait déjà) au payload
+              const draftData = { 
+                  patient: { ...patient, id: currentPatientId }, 
+                  tests, observations, synthesis, sections, step, 
+                  timestamp: new Date().toISOString() 
+              };
+
               if (sessionKey) {
                   await StorageService.saveDraft(draftData, sessionKey);
               }
 
-              if (orgKey && patient.id && hasMinimalData) {
+              // PHASE 3 : UPDATE DU FICHIER PATIENT (Si ID existe déjà ou vient d'être créé)
+              // Met à jour les métadonnées chiffrées (last interaction, etc.)
+              if (currentPatientId && orgKey && !isDemoMode) {
                   const fileWrapper: PatientFile = {
-                      id: patient.id,
-                      patient: patient,
+                      id: currentPatientId,
+                      patient: { ...patient, id: currentPatientId },
                       reports: [], 
                       sessions: [],
                       lastInteraction: new Date().toISOString(),
                       archived: false
                   };
-                  // En autosave, on ne sauvegarde que si l'ID existe déjà pour ne pas créer de doublons accidentels
-                  // La création explicite se fait via Step1Admin
                   await StorageService.saveFile(fileWrapper, orgKey);
               }
 
@@ -107,17 +133,13 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           } finally { 
               setIsAutoSaving(false); 
           }
-      }, 2000); 
+      }, 2000); // Délai de 2s
 
       return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [patient, tests, observations, synthesis, sections, step, sessionKey, orgKey, isDemoMode]);
 
   const updatePatient = (data: Partial<Patient>) => {
-      setPatient(prev => {
-          const newData = { ...prev, ...data };
-          // SUPPRESSION DE LA GÉNÉRATION D'ID CLIENT
-          return newData;
-      });
+      setPatient(prev => ({ ...prev, ...data }));
   };
 
   const updateTests = (data: Partial<TestData>) => setTests(prev => ({ ...prev, ...data }));

@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Logger } from '../../utils/logger';
 
@@ -11,17 +11,17 @@ interface State {
   error: Error | null;
 }
 
-export class GlobalErrorBoundary extends React.Component<Props, State> {
-  public state: State = {
+export class GlobalErrorBoundary extends Component<Props, State> {
+  state: State = {
     hasError: false,
     error: null
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     Logger.error('SYSTEM', 'Uncaught Error in Component Tree', { error, componentStack: errorInfo.componentStack });
   }
 
@@ -34,7 +34,7 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
     window.location.href = '/';
   };
 
-  public render() {
+  render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-6">

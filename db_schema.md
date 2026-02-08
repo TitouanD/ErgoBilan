@@ -1,248 +1,227 @@
 
 # Documentation du Schéma de Base de Données (Supabase)
 
-**Date de génération :** 26 Octobre 2023
-**Source :** Introspection SQL (CSV Dump)
+**Source de Vérité :** Export CSV Système
+**Mise à jour :** Post-Refactoring v1.6.1
 
-Ce document référence la structure actuelle de la base de données, les politiques de sécurité (RLS), les fonctions stockées et les déclencheurs (triggers).
+Ce document référence la structure exacte de la base de données telle qu'elle est déployée et utilisée par l'application.
 
-## 1. Structure des Tables
+## 1. Tables & Vues (Structure)
+
+### `admin_candidates_promotion` (Table/Vue)
+*File d'attente pour la modération des tests communautaires.*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | text | ID du test |
+| `name` | text | Nom du test |
+| `author` | text | Email auteur |
+| `organization_id` | uuid | Org source |
+| `subtest_count` | bigint | Nombre d'épreuves |
+| `created_at` | timestamp | |
 
 ### `contribution_insights`
-*Stockage des données anonymisées pour les statistiques et le crowdsourcing.*
-| Colonne | Type | Contraintes |
+*Stockage des données anonymisées pour les statistiques.*
+| Colonne | Type | Default |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `source_hash` | text | NOT NULL |
-| `test_id` | text | NOT NULL |
-| `subtest_id` | text | NOT NULL |
-| `age_months` | integer | NOT NULL |
-| `gender` | text | NULL |
-| `raw_score` | numeric | NULL |
-| `computed_standard` | numeric | NULL |
-| `computed_percentile` | numeric | NULL |
-| `diagnostic_tag` | text | NULL |
-| `is_clinical` | boolean | NULL DEFAULT false |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | `gen_random_uuid()` |
+| `source_hash` | text | Hash session anonyme |
+| `test_id` | text | |
+| `subtest_id` | text | |
+| `age_months` | integer | |
+| `gender` | text | |
+| `raw_score` | numeric | |
+| `computed_standard` | numeric | |
+| `computed_percentile` | numeric | |
+| `diagnostic_tag` | text | |
+| `is_clinical` | boolean | `false` |
+| `created_at` | timestamp | `now()` |
 
 ### `drafts`
-*Stockage temporaire (brouillons) chiffré des évaluations en cours.*
-| Colonne | Type | Contraintes |
+*Brouillons de travail (État volatil).*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `user_id` | uuid | NOT NULL |
-| `patient_id` | uuid | NULL |
-| `iv` | text | NOT NULL |
-| `encrypted_data` | text | NOT NULL |
-| `updated_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `user_id` | uuid | Owner |
+| `patient_id` | uuid | Nullable (si création) |
+| `iv` | text | Vecteur init |
+| `encrypted_data` | text | Blob complet (JSON) |
+| `updated_at` | timestamp | |
 
-### `official_tests` (Catalogue)
-*Définitions des tests (WISC, MABC, etc.).*
-| Colonne | Type | Contraintes |
+### `official_norms`
+*Étalonnages (Moyennes/ET ou Tables).*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | text | NOT NULL |
-| `name` | text | NOT NULL |
-| `category_id` | text | NOT NULL |
-| `version` | text | NULL |
-| `author` | text | NULL |
-| `organization_id` | uuid | NULL (NULL = Public) |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `subtest_id` | text | FK |
+| `organization_id` | uuid | NULL = Public |
+| `age_min_months` | integer | |
+| `age_max_months` | integer | |
+| `gender` | text | 'M', 'F', 'Mixed' |
+| `raw_min` | real | Pour Lookup |
+| `raw_max` | real | Pour Lookup |
+| `mean` | real | Pour Paramétrique |
+| `sd` | real | Pour Paramétrique |
+| `standard_score` | real | Resultat (NS) |
+| `percentile` | real | Resultat (%) |
 
-### `official_subtests` (Catalogue)
-*Sous-épreuves associées aux tests.*
-| Colonne | Type | Contraintes |
+### `official_subtests`
+*Définition des épreuves.*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | text | NOT NULL |
-| `test_id` | text | NOT NULL |
-| `name` | text | NOT NULL |
-| `unit` | text | NULL |
-| `score_type` | text | NOT NULL |
-| `computation_mode` | text | NULL DEFAULT 'PARAMETRIC' |
-| `organization_id` | uuid | NULL |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | text | PK |
+| `test_id` | text | FK |
+| `name` | text | |
+| `unit` | text | |
+| `score_type` | text | 'standard', 'scaled', etc. |
+| `computation_mode` | text | 'PARAMETRIC' ou 'LOOKUP' |
+| `organization_id` | uuid | |
 
-### `official_norms` (Catalogue)
-*Données d'étalonnage (Moyennes/ET ou Tables de conversion).*
-| Colonne | Type | Contraintes |
+### `official_tests`
+*Catalogue des tests.*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `subtest_id` | text | NOT NULL |
-| `organization_id` | uuid | NULL |
-| `age_min_months` | integer | NULL |
-| `age_max_months` | integer | NULL |
-| `gender` | text | NULL |
-| `raw_min` | real | NULL |
-| `raw_max` | real | NULL |
-| `mean` | real | NULL |
-| `sd` | real | NULL |
-| `standard_score` | real | NULL |
-| `percentile` | real | NULL |
+| `id` | text | PK |
+| `name` | text | |
+| `category_id` | text | |
+| `version` | text | |
+| `author` | text | |
+| `organization_id` | uuid | NULL = Public |
 
 ### `organizations`
-*Cabinets ou structures de soins.*
-| Colonne | Type | Contraintes |
+| Colonne | Type | Default |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `name` | text | NOT NULL DEFAULT 'Mon Cabinet' |
-| `stripe_customer_id` | text | NULL |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `name` | text | 'Mon Cabinet' |
+| `stripe_customer_id` | text | |
 
 ### `organization_members`
-*Lien Utilisateur <-> Organisation (Gestion des droits et clés chiffrées).*
-| Colonne | Type | Contraintes |
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `organization_id` | uuid | NOT NULL |
-| `user_id` | uuid | NOT NULL |
-| `role` | text | NULL DEFAULT 'owner' |
-| `encrypted_org_key` | text | NULL |
-| `joined_at` | timestamp with time zone | NULL DEFAULT now() |
+| `organization_id` | uuid | FK |
+| `user_id` | uuid | FK |
+| `role` | text | 'owner' |
+| `encrypted_org_key` | text | Clé partagée chiffrée |
+| `joined_at` | timestamp | |
 
 ### `patients`
-*Dossiers patients (Données chiffrées E2EE).*
-| Colonne | Type | Contraintes |
+*Dossiers (Identité chiffrée). Ne contient PAS les résultats ni les rapports.*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `organization_id` | uuid | NOT NULL |
-| `encrypted_file_key` | text | NULL |
-| `encrypted_identity` | text | NOT NULL |
-| `iv` | text | NOT NULL |
-| `encrypted_preview` | text | NULL |
-| `preview_iv` | text | NULL |
-| `last_interaction` | timestamp with time zone | NULL DEFAULT now() |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
-| `updated_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `organization_id` | uuid | FK |
+| `encrypted_identity` | text | **Blob Identité** (+ flag archived) |
+| `iv` | text | |
+| `encrypted_preview` | text | (Legacy/Opt) |
+| `preview_iv` | text | (Legacy/Opt) |
+| `encrypted_file_key` | text | (Legacy/Opt) |
+| `last_interaction` | timestamp | |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+### `pending_questionnaires`
+*Portail Famille.*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | uuid | PK (Token URL) |
+| `practitioner_id` | uuid | FK |
+| `organization_id` | uuid | FK |
+| `label` | text | |
+| `status` | text | 'pending' |
+| `practitioner_encrypted_key` | text | Clé transmise |
+| `family_encrypted_data` | text | Réponse famille |
 
 ### `practitioners`
-*Profils utilisateurs étendus (liés à auth.users).*
-| Colonne | Type | Contraintes |
+*Profil métier.*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL |
-| `email` | text | NOT NULL |
-| `first_name` | text | NULL |
-| `last_name` | text | NULL |
-| `phone_pro` | text | NULL |
-| `address_pro` | text | NULL |
-| `siret` | text | NULL |
-| `credits` | integer | NULL DEFAULT 3 |
-| `is_admin` | boolean | NULL DEFAULT false |
-| `encryption_salt` | text | NOT NULL DEFAULT 'pending' |
-| `encryption_validator` | text | NOT NULL DEFAULT 'pending' |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK (Auth ID) |
+| `email` | text | |
+| `credits` | integer | Solde IA |
+| `is_admin` | boolean | |
+| `encryption_salt` | text | Sécurité |
+| `encryption_validator` | text | Sécurité |
+| `first_name` | text | |
+| `last_name` | text | |
+| `siret` | text | |
+| `address_pro` | text | |
+| `phone_pro` | text | |
 
 ### `reports`
-*Rapports générés (Chiffrés).*
-| Colonne | Type | Contraintes |
+*Textes générés (Architecture Relationnelle).*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `patient_id` | uuid | NOT NULL |
-| `user_id` | uuid | NOT NULL |
-| `type` | text | NOT NULL |
-| `status` | text | NOT NULL |
-| `iv` | text | NOT NULL |
-| `encrypted_content` | text | NOT NULL |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `patient_id` | uuid | FK |
+| `user_id` | uuid | FK |
+| `type` | text | 'initial', 'reeval' |
+| `status` | text | |
+| `encrypted_content` | text | Blob Sections |
+| `iv` | text | |
 
 ### `sessions`
-*Sessions de tests (Scores chiffrés).*
-| Colonne | Type | Contraintes |
+*Données brutes des tests (Architecture Relationnelle).*
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `patient_id` | uuid | NOT NULL |
-| `user_id` | uuid | NOT NULL |
-| `test_id` | text | NOT NULL |
-| `test_name` | text | NULL |
-| `date` | timestamp with time zone | NULL DEFAULT now() |
-| `iv` | text | NOT NULL |
-| `encrypted_results` | text | NOT NULL |
+| `id` | uuid | PK |
+| `patient_id` | uuid | FK |
+| `user_id` | uuid | FK |
+| `test_id` | text | |
+| `test_name` | text | |
+| `date` | timestamp | |
+| `encrypted_results` | text | Blob Scores |
+| `iv` | text | |
 
 ### `subscriptions`
-*Gestion des abonnements.*
-| Colonne | Type | Contraintes |
+| Colonne | Type | Notes |
 | :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `user_id` | uuid | NOT NULL |
-| `plan_id` | text | NOT NULL DEFAULT 'free' |
-| `status` | text | NOT NULL DEFAULT 'trialing' |
-| `trial_ends_at` | timestamp with time zone | NULL DEFAULT (now() + '30 days'::interval) |
-| `current_period_end` | timestamp with time zone | NULL |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+| `id` | uuid | PK |
+| `user_id` | uuid | FK |
+| `plan_id` | text | 'free', 'essential', etc. |
+| `status` | text | 'active', 'trialing' |
+| `trial_ends_at` | timestamp | |
 
-### `pending_questionnaires`
-*Portail Famille (Zone tampon).*
-| Colonne | Type | Contraintes |
-| :--- | :--- | :--- |
-| `id` | uuid | NOT NULL DEFAULT gen_random_uuid() |
-| `practitioner_id` | uuid | NOT NULL |
-| `organization_id` | uuid | NULL |
-| `label` | text | NULL |
-| `status` | text | NULL DEFAULT 'pending' |
-| `practitioner_encrypted_key` | text | NOT NULL |
-| `family_encrypted_data` | text | NULL |
-| `created_at` | timestamp with time zone | NULL DEFAULT now() |
+### `view_unified_catalog` (Vue)
+*Vue agrégée des tests publics et privés de l'utilisateur courant.*
 
 ---
 
-## 2. Sécurité (Row Level Security - RLS)
+## 2. Sécurité (RLS Policies)
 
-### `practitioners`
-*   **Users can manage own profile:** `auth.uid() = id`
+Les politiques Row Level Security appliquées :
 
-### `organizations` & `organization_members`
-*   **Access own orgs:** L'utilisateur doit être listé dans `organization_members`.
-*   **View own membership:** `user_id = auth.uid()`
-
-### `patients`, `reports`, `sessions`
-*   **Access via organization:** L'utilisateur peut accéder si `patient.organization_id` correspond à une organisation dont il est membre.
-    *   *Query:* `organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())`
-
-### `drafts`
-*   **Private:** `user_id = auth.uid()`
-
-### `pending_questionnaires`
-*   **Practitioner Access:** `practitioner_id = auth.uid()` ET check organisation.
-*   **Public Family Access:** Ouvert aux anonymes (`anon`) pour permettre aux familles de répondre (sécurisé par UUID et clé de chiffrement côté client).
-
-### `official_tests`, `official_subtests`, `official_norms` (Catalogue)
-*   **View Mixed:**
-    *   Si `organization_id` est NULL (Test Public).
-    *   OU si `organization_id` correspond à l'utilisateur (Test Privé).
-*   **Manage Own:** Modification autorisée uniquement pour ses propres tests privés.
-
-### `contribution_insights`
-*   **Admin Analysis:** `is_admin = true` pour lire.
-*   **Anonymous Deposit:** `INSERT` autorisé pour tous les authentifiés.
+*   **`contribution_insights`** :
+    *   `Admin Read`: `check_is_admin()`
+    *   `Deposit`: `INSERT` pour authenticated.
+*   **`drafts`** :
+    *   `Private`: `user_id = auth.uid()`
+*   **`official_tests` / `subtests` / `norms`** :
+    *   `Unified View`: Visible si `organization_id IS NULL` OU `check_is_member_of(organization_id)`.
+    *   `Manage Own`: Update/Delete seulement si `check_is_member_of(organization_id)`.
+    *   `Admin Global`: Update/Delete si `check_is_admin()`.
+*   **`organizations`** :
+    *   `Access Own`: Via `organization_members`.
+*   **`patients` / `reports` / `sessions`** :
+    *   `Org Access`: Visible si le patient appartient à une organisation dont l'utilisateur est membre.
+*   **`pending_questionnaires`** :
+    *   `Family Read`: `SELECT` pour `anon` (Public access via ID).
+    *   `Family Update`: `UPDATE` pour `anon` (Soumission réponse).
+    *   `Practitioner`: Full access si `practitioner_id = auth.uid()`.
+*   **`practitioners`** :
+    *   `Self`: `id = auth.uid()`.
 
 ---
 
-## 3. Fonctions Stockées (RPC)
+## 3. Fonctions & Triggers (Server-Side)
 
-### `handle_new_user()`
-*Trigger sur `auth.users` (INSERT).*
-1. Crée l'entrée `practitioners`.
-2. Crée une organisation par défaut "Mon Cabinet".
-3. Crée l'abonnement "Free Trial".
-4. Lie l'utilisateur à l'organisation comme "Owner".
+### Fonctions
+*   `check_is_admin()`: Vérifie le flag admin.
+*   `check_is_member_of(org_id)`: Vérifie l'appartenance.
+*   `check_paid_access()`: Vérifie abonnement/trial.
+*   `consume_credit()`: Décrémente le solde de manière atomique.
 
-### `consume_credit()`
-*RPC sécurisée appelée par le client.*
-*   Vérifie si `credits > 0`.
-*   Décrémente `credits`.
-*   Retourne `TRUE` si succès, `FALSE` sinon.
-
-### `check_paid_access()`
-*Fonction utilitaire.*
-*   Vérifie si l'abonnement est actif ou si la période d'essai est valide.
-
-### `enforce_practitioner_defaults()`
-*Trigger sur `practitioners`.*
-*   Empêche la modification manuelle des champs sensibles (`credits`, `is_admin`) via une requête UPDATE standard.
-*   Force l'initialisation des crédits à 3 à la création.
-
----
-
-## 4. Triggers
-
-*   `on_auth_user_created` -> Exécute `handle_new_user()` après création du compte.
-*   `on_practitioner_save` -> Exécute `enforce_practitioner_defaults()` avant INSERT/UPDATE.
-*   `on_subscription_insert` -> Exécute `enforce_subscription_defaults()` pour forcer le statut 'trialing'.
-*   `prevent_sensitive_updates` -> Bloque les updates directs sur les colonnes critiques.
+### Triggers
+*   `handle_new_user`: À la création du compte Auth -> Crée Praticien + Org + Sub.
+*   `enforce_practitioner_defaults`: Empêche modif manuelle crédits/admin.
+*   `enforce_subscription_defaults`: Force le plan 'free'/'trialing' par défaut.
+*   `protect_practitioner_sensitive_data`: Sécurité supplémentaire sur `practitioners`.
+*   `rls_auto_enable`: Active RLS automatiquement sur toute nouvelle table.
