@@ -329,18 +329,21 @@ export const StorageService = {
 
     loadPatientList: async (orgKey: CryptoKey): Promise<PatientFile[]> => {
         if (_isDemoMode) {
+            const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[]; reports?: ReportMetadata[] };
+            const history = sarahDemo.history || [];
+            const reports = sarahDemo.reports || [];
             const sarahFile: PatientFile = {
                 id: DEMO_PATIENTS.SARAH.id,
                 patient: DEMO_PATIENTS.SARAH.patient,
-                reports: [],
-                sessions: [{
+                reports,
+                sessions: history.length > 0 ? history : [{
                     id: 'demo-session-sarah',
                     date: new Date(Date.now() - 86400000 * 2).toISOString(),
                     testId: 'multi',
                     testName: 'Bilan Écriture',
                     results: DEMO_PATIENTS.SARAH.tests as Record<string, import('../types').ScoreResult>
                 }],
-                lastInteraction: new Date(Date.now() - 86400000 * 2).toISOString(),
+                lastInteraction: history.length > 0 ? history[history.length - 1].date : new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false
             };
             return [sarahFile];
@@ -423,10 +426,11 @@ export const StorageService = {
                 };
             }
             if (patientId === DEMO_PATIENTS.SARAH.id) {
-                const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[] };
+                const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[]; reports?: ReportMetadata[] };
                 const history = sarahDemo.history || [];
+                const reports = sarahDemo.reports || [];
                 return {
-                    reports: [],
+                    reports,
                     sessions: history,
                     patient: DEMO_PATIENTS.SARAH.patient
                 };

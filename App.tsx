@@ -289,7 +289,22 @@ const AppRouter = () => {
                             {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
                             
                             {/* Step 5: Export */}
-                            {assessment.step === 5 && <Step5Export patient={assessment.patient} sections={assessment.sections} tests={assessment.tests} onValidate={onFinalize} onUpdateSection={assessment.updateSection} branding={userProfile.branding} onUpdateBranding={(b) => updateUserProfile({ branding: b })} isPremium={userProfile.subscriptionPlan !== 'free'} onShowPricing={() => setPricingModalMode('plans')} onBack={() => assessment.setStep(4)} />}
+                            {assessment.step === 5 && (
+                                <Step5Export
+                                    patient={assessment.patient}
+                                    sections={assessment.sections}
+                                    tests={assessment.tests}
+                                    onValidate={onFinalize}
+                                    onUpdateSection={assessment.updateSection}
+                                    branding={userProfile.branding}
+                                    onUpdateBranding={(b) => updateUserProfile({ branding: b })}
+                                    isPremium={userProfile.subscriptionPlan !== 'free'}
+                                    onShowPricing={() => setPricingModalMode('plans')}
+                                    onBack={() => assessment.setStep(4)}
+                                    isDemoMode={isDemoMode}
+                                    onDemoConvert={(action) => setDemoConversion({ show: true, action })}
+                                />
+                            )}
                         </div>
                     )}
 

@@ -66,8 +66,8 @@ export const useDataLoader = ({
       }
     } else if (isDemoMode) {
       setPendingQuestionnaires([
-        { id: 'demo-q1', label: 'Famille MARTIN (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
-        { id: 'demo-leo', label: 'Famille MARTIN (Dossier complet)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' },
+        { id: 'demo-q1', label: 'Famille RAVEL (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
+        { id: 'demo-leo', label: 'Famille RAVEL (Dossier complet)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' },
       ]);
     }
   }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);

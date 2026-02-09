@@ -190,19 +190,19 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
                             
                             <h1 className="font-serif text-4xl md:text-5xl font-bold text-[#3D405B] leading-tight">
-                                Bienvenue dans votre assistant de rédaction.
+                                Votre demo clinique, en 3 minutes.
                             </h1>
                             
                             <p className="text-lg text-stone-500 leading-relaxed">
-                                Gagnez jusqu'à <strong className="text-[#E07A5F]">2h de rédaction par bilan</strong> grâce à l'automatisation des calculs et à l'assistance par IA générative.
+                                Importez un questionnaire, saisissez les tests, puis générez un bilan clair et structuré. Vous voyez tout, du calcul automatique au PDF final.
                             </p>
 
                             <div className="space-y-4 pt-4">
                                 <div className="flex items-center gap-4 p-4 bg-white border border-stone-100 rounded-xl shadow-sm">
                                     <Clock className="text-[#81B29A]" size={24} />
                                     <div>
-                                        <h4 className="font-bold text-[#3D405B]">Récupérez vos dimanches</h4>
-                                        <p className="text-xs text-stone-400">Fini les heures passées sur Word.</p>
+                                        <h4 className="font-bold text-[#3D405B]">Zero friction</h4>
+                                        <p className="text-xs text-stone-400">Vous suivez un scenario complet, de l'anamnese au PDF.</p>
                                     </div>
                                 </div>
                             </div>
@@ -254,12 +254,12 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
 
                             <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B]">
-                                {isDemoMode ? "Base de Données Communautaire" : "L'intelligence collective."}
+                                {isDemoMode ? "Des normes prêtes a l'emploi" : "L'intelligence collective."}
                             </h2>
 
                             <p className="text-stone-500 leading-relaxed">
                                 {isDemoMode ? 
-                                    "Plus besoin de chercher. Accédez aux étalonnages partagés par la communauté et vérifiés par nos experts cliniques." : 
+                                    "Les conversions s'appliquent instantanement. Vous voyez l'impact des scores sur la synthese et les recommandations." : 
                                     "Accédez instantanément aux tables de conversion alimentées par la communauté. Gagnez des crédits bonus en contribuant à enrichir la base de données."}
                             </p>
 

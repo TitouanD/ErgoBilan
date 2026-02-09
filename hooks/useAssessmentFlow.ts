@@ -61,12 +61,48 @@ interface UseAssessmentFlowParams {
 
 // Demo sections for offline simulation
 const DEMO_SECTIONS: ReportSection[] = [
-  { id: 'mandat_ref', title: 'Mandat de référencement', content: "**Motif de la demande**\nL'évaluation a été sollicitée par Mme Martin et l'équipe enseignante de l'école Jules Ferry suite à des difficultés persistantes dans le domaine scolaire, notamment concernant l'écriture manuscrite et une fatigabilité importante l'après-midi.", status: 'draft', isAiGenerated: true },
-  { id: 'mandat_eval', title: "Motif de l'évaluation", content: "**Contexte**\nLéo, 9 ans, est scolarisé en CM1. Il bénéficie actuellement d'un PAP. Le bilan vise à objectiver les difficultés graphiques et à proposer des adaptations pour la suite de la scolarité.", status: 'draft', isAiGenerated: true },
-  { id: 'profil', title: 'Profil occupationnel', content: "**Habitudes de vie**\nLéo est un enfant volontaire mais qui exprime une frustration face à ses échecs scolaires. À la maison, l'autonomie est acquise pour l'habillage mais les gestes fins (boutons, lacets) restent coûteux.", status: 'draft', isAiGenerated: true },
-  { id: 'diagnostic', title: 'Synthèse Clinique', content: "### Analyse du profil\nL'évaluation met en évidence un **Trouble Développemental de la Coordination (TDC)** affectant de manière significative la sphère graphique.\n\n### Points clés\n- **Dysgraphie mixte** : Les scores au BHK (Vitesse à -1.2 ET et Qualité à -2.1 ET) confirment une écriture à la fois lente et coûteuse sur le plan cognitif.\n- **Fatigabilité** : Lenteur d'exécution motrice généralisée, impactant la double tâche (écouter et écrire).\n- **Impact Psychologique** : On note une anxiété de performance importante, majorant les symptômes en situation de classe.", status: 'draft', isAiGenerated: true },
-  { id: 'objectifs', title: "Projet d'Intervention", content: "### Objectifs à court terme\n- Améliorer le confort graphique pour réduire les douleurs au poignet.\n- Mettre en place l'outil informatique (Clavier caché).\n\n### Objectifs à moyen terme\n- Restaurer l'estime de soi scolaire.\n- Autonomie complète dans la prise de cours informatisée.", status: 'draft', isAiGenerated: true },
-  { id: 'recommandations', title: 'Préconisations', content: "### À l'école\n- **Allègement de la trace écrite** : Fournir des photocopies de cours ou permettre l'utilisation d'une tablette/ordinateur (GEVA-Sco).\n- **Tiers-temps** : À envisager pour les évaluations longues.\n\n### Suivi thérapeutique\n- Poursuite du suivi en ergothérapie axé sur :\n  - L'apprentissage du clavier caché.\n  - La gestion de la fatigue et l'ergonomie posturale.", status: 'draft', isAiGenerated: true },
+  {
+    id: 'mandat_ref',
+    title: 'Mandat de referencement',
+    content: "**Motif de la demande**\nL'evaluation est sollicitee par la famille et l'equipe enseignante en raison d'une lenteur marquée, de difficultes d'organisation et d'une ecriture couteuse. Les enseignants signalent une fatigabilite et une perte de confiance lors des taches ecrites.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
+    id: 'mandat_eval',
+    title: "Motif de l'evaluation",
+    content: "**Contexte scolaire**\nElya, 7 ans, scolarisee en CE1. Un PAP est en discussion. Le bilan vise a objectiver les difficultes graphomotrices, la regulation de l'effort et a proposer des adaptations efficaces a l'ecole comme a la maison.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
+    id: 'profil',
+    title: 'Profil occupationnel',
+    content: "**Habitudes de vie**\nElya est volontaire mais se decourage vite quand la tache dure. A la maison, l'autonomie est acquise mais la lenteur est notable (habillage, douche, brossage des dents). Elle a besoin de bouger et beneficie d'activites sportives reguliere.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
+    id: 'diagnostic',
+    title: 'Synthese clinique',
+    content: "### Analyse du profil\nLes resultats orientent vers un **trouble des coordinations et de la graphomotricite** avec impact sur l'efficience scolaire.\n\n### Elements saillants\n- **BHK** : Vitesse P10 (ET -1.3) et Qualite P4 (ET -1.8) avec tension de la main et irregularites.\n- **MABC-2** : Dexterite manuelle P9 et Equilibre P5, en faveur d'une lenteur motrice fine et d'une fatigabilite.\n- **Cloches** : P25, rythme inconstant, besoin de pauses.\n\n### Retentissement fonctionnel\nLenteur d'execution, charge cognitive elevee a l'ecrit et decouragement, avec tendance a la devalorisation.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
+    id: 'objectifs',
+    title: "Projet d'intervention",
+    content: "### Objectifs a court terme\n- Diminuer le cout graphomoteur et la fatigue.\n- Stabiliser la tenue de crayon et la posture.\n\n### Objectifs a moyen terme\n- Renforcer l'efficience a l'ecrit (vitesse + lisibilite).\n- Consolider l'autonomie sur les taches scolaires chronophages.\n\n### Objectifs a long terme\n- Maintien de l'estime de soi et des strategies d'organisation.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
+    id: 'recommandations',
+    title: 'Preconisations',
+    content: "### A l'ecole\n- **Allegement de la trace ecrite** : photocopies, textes a trous, reduction du volume de copie.\n- **Temps majore** pour les evaluations longues.\n- **Aides visuelles** : consignes segmentees, timer discret, repere sur l'horloge.\n\n### A la maison\n- Installer des routines courtes avec pauses motrices.\n- Utiliser un minuteur pour se reperer dans le temps.\n\n### Suivi therapeutique\n- Ergotherapie axee sur la graphomotricite, la posture, et la planification motrice.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
 ];
 
 // --------------------------------------------------------------------------

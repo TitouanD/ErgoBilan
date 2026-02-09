@@ -17,6 +17,8 @@ interface Props {
   isPremium: boolean;
   onShowPricing: () => void;
   onBack: () => void;
+    isDemoMode: boolean;
+    onDemoConvert: (action: string) => void;
 }
 
 // COMPOSANT LOCAL POUR ÉVITER L'ERREUR REACT #185 (Too many re-renders)
@@ -391,7 +393,7 @@ const BrandingEditor: React.FC<{
     );
 };
 
-export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack }) => {
+export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack, isDemoMode, onDemoConvert }) => {
   const [showBranding, setShowBranding] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -428,6 +430,9 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
           }).from(element).save();
           
           toast.show('PDF exporté avec succès ✓', 'success');
+          if (isDemoMode) {
+              onDemoConvert('Exporter le PDF');
+          }
       } catch (err) {
           console.error('PDF export error:', err);
           toast.show('Erreur lors de l\'export PDF', 'error');
@@ -445,6 +450,10 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
   };
 
   const handleFinalValidate = async () => {
+      if (isDemoMode) {
+          onDemoConvert('Finaliser le bilan');
+          return;
+      }
       setIsValidating(true);
       try {
           await onValidate();
