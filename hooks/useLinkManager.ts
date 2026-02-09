@@ -93,6 +93,7 @@ export const useLinkManager = ({
           status: 'pending',
           createdAt: data.created_at,
           practitionerEncryptedKey: data.practitioner_encrypted_key,
+          accessToken: data.access_token || accessToken,
         },
         ...prev,
       ]);
@@ -112,11 +113,15 @@ export const useLinkManager = ({
       }
 
       if (!sessionKey || !q.practitionerEncryptedKey) return;
+      if (!q.accessToken) {
+        toast.error('Lien expiré — veuillez régénérer.');
+        return;
+      }
 
       try {
         const [iv, content] = q.practitionerEncryptedKey.split(':');
         const keyString = await decryptData({ iv, content }, sessionKey);
-        await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}#key=${keyString}`);
+        await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}&t=${q.accessToken}#key=${keyString}`);
         toast.success('Lien copié');
       } catch {
         toast.error('Erreur déchiffrement lien');

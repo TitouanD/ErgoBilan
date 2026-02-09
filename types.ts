@@ -223,6 +223,7 @@ export interface PendingQuestionnaire {
     practitionerEncryptedKey: string;
     familyEncryptedData?: string;
     practitioner_id?: string;
+    accessToken?: string;
 }
 
 export interface ExtractedRow {

@@ -69,6 +69,23 @@ detail dans :  Supabase.csv
 | `created_at` | timestamp | |
 | `refunded_at` | timestamp | Nullable |
 
+### `ai_request_log`
+*Journal des requêtes IA (rate limiting strict par appel).*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | bigint | PK |
+| `user_id` | uuid | FK -> auth.users |
+| `created_at` | timestamp | `now()` |
+
+### `signup_rate_limit_log`
+*Journal des inscriptions (rate limiting par IP).*
+| Colonne | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | bigint | PK |
+| `ip_hash` | text | Hash IP |
+| `email_hash` | text | Hash email (opt) |
+| `created_at` | timestamp | `now()` |
+
 ### `official_norms`
 *Étalonnages (Moyennes/ET ou Tables).*
 | Colonne | Type | Notes |
@@ -97,7 +114,6 @@ detail dans :  Supabase.csv
 | `score_type` | text | 'standard', 'scaled', etc. |
 | `computation_mode` | text | 'PARAMETRIC' ou 'LOOKUP' |
 | `organization_id` | uuid | |
-| `created_at` | timestamp | |
 
 ### `official_tests`
 *Catalogue des tests.*
@@ -109,6 +125,7 @@ detail dans :  Supabase.csv
 | `version` | text | |
 | `author` | text | |
 | `organization_id` | uuid | NULL = Public |
+| `created_at` | timestamp | |
 
 ### `organizations`
 | Colonne | Type | Default |
@@ -243,8 +260,8 @@ Les politiques Row Level Security appliquées :
 *   **`patients` / `reports` / `sessions`** :
     *   `Org Access`: Visible si le patient appartient à une organisation dont l'utilisateur est membre.
 *   **`pending_questionnaires`** :
-    *   `Family Read`: `SELECT` pour `anon` (Public access via ID).
-    *   `Family Update`: `UPDATE` pour `anon` (Soumission réponse).
+    *   `Family Read`: `SELECT` pour `anon` via `access_token` (header `x-questionnaire-token`).
+    *   `Family Update`: `UPDATE` pour `anon` si `status = 'pending'` et token valide.
     *   `Practitioner`: Full access si `practitioner_id = auth.uid()`.
 *   **`practitioners`** :
     *   `Self`: `id = auth.uid()`.
@@ -257,6 +274,9 @@ Les politiques Row Level Security appliquées :
 *   `check_is_admin()`: Vérifie le flag admin.
 *   `check_is_member_of(org_id)`: Vérifie l'appartenance.
 *   `check_paid_access()`: Vérifie abonnement/trial.
+*   `check_rate_limit(p_max_per_hour)`: Limite les requêtes IA (log par appel).
+*   `check_signup_rate_limit(p_ip_hash, p_email_hash, p_max_per_hour)`: Limite les inscriptions.
+*   `purge_signup_rate_limit_log(p_retention_hours)`: Nettoyage des logs signup.
 *   `consume_credit()`: Décrémente le solde de manière atomique.
 
 ### Triggers

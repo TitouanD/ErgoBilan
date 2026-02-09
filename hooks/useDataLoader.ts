@@ -47,7 +47,7 @@ export const useDataLoader = ({
     if (practitioner && !isDemoMode) {
       const { data } = await supabase
         .from('pending_questionnaires')
-        .select('*')
+        .select('id, label, status, created_at, practitioner_encrypted_key, access_token')
         .eq('practitioner_id', practitioner.id)
         .order('created_at', { ascending: false });
 
@@ -60,6 +60,7 @@ export const useDataLoader = ({
             status: p.status as 'pending' | 'completed',
             createdAt: p.created_at as string,
             practitionerEncryptedKey: p.practitioner_encrypted_key as string,
+            accessToken: (p.access_token as string | null) || undefined,
           })),
         );
       }

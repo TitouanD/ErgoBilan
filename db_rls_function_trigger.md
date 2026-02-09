@@ -19,6 +19,7 @@ detail dans :  Supabase.csv
 - `check_is_member_of(org_id)`
 - `check_paid_access()`
 - `check_rate_limit(p_max_per_hour)`
+- `check_signup_rate_limit(p_ip_hash, p_email_hash, p_max_per_hour)`
 - `compute_score(...)`
 - `consume_credit()`
 - `enforce_practitioner_defaults()`
@@ -26,6 +27,7 @@ detail dans :  Supabase.csv
 - `handle_new_user()`
 - `protect_practitioner_sensitive_data()`
 - `refund_credit(p_generation_id)`
+- `purge_signup_rate_limit_log(p_retention_hours)`
 - `rls_auto_enable()`
 
 ## Fonctions (SECURITY INVOKER / autres)
@@ -44,6 +46,8 @@ detail dans :  Supabase.csv
 - `practitioners`: `auth.uid() = id`.
 - `patients/sessions/reports`: accès via org du patient.
 - `generation_log`: accès propriétaire (`user_id = auth.uid()`).
+- `ai_request_log`: RLS activé, insertion uniquement via `check_rate_limit()`.
+- `signup_rate_limit_log`: RLS activé, insertion uniquement via `check_signup_rate_limit()`.
 
 ## RPC de récupération
 - **`bootstrap_org_for_user(p_user_id uuid, p_org_name text)`**

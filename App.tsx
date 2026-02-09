@@ -187,7 +187,7 @@ const AppRouter = () => {
                                 <div className="mt-8 text-center pt-6 border-t border-stone-100"><p className="text-xs text-stone-400 font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
                             </div>
                         ) : (
-                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={(p, k) => { setSessionKey(k); setShowOnboarding(true); setMode('dashboard'); setShowAuthModal(false); }} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
+                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={(p, k) => { setSessionKey(k); setShowOnboarding(true); setShowAuthModal(false); }} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
                         )}
                     </div>
                 )}

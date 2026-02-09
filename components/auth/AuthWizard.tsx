@@ -101,14 +101,29 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 userId = user.id;
             } else {
                 setStatusMessage("Création du compte utilisateur...");
-                const { data: authData, error: authError } = await supabase.auth.signUp({
-                    email: formData.email,
-                    password: formData.password,
+                const { data: signupData, error: signupError } = await supabase.functions.invoke('signup', {
+                    body: { email: formData.email, password: formData.password }
                 });
-                
-                if (authError) throw authError;
-                if (!authData.user) throw new Error("Échec de création du compte Auth.");
-                userId = authData.user.id;
+
+                if (signupError) throw signupError;
+                if (!signupData?.user) throw new Error("Échec de création du compte Auth.");
+
+                // If email confirmation is required, no session is returned.
+                // Stop here and ask the user to confirm before continuing.
+                if (!signupData?.session) {
+                    Logger.warn('AUTH', 'Sign-up completed without session. Awaiting email confirmation.');
+                    toast.info("Compte créé. Vérifiez votre email pour confirmer, puis reconnectez-vous.");
+                    return;
+                }
+
+                if (signupData.session?.access_token && signupData.session?.refresh_token) {
+                    await supabase.auth.setSession({
+                        access_token: signupData.session.access_token,
+                        refresh_token: signupData.session.refresh_token
+                    });
+                }
+
+                userId = signupData.user.id;
             }
 
             // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
