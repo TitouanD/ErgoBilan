@@ -8,18 +8,21 @@ import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
+type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error';
+
 interface AuthContextType {
   userProfile: UserProfile;
   practitioner: PractitionerProfile | null;
   sessionKey: CryptoKey | null; // MasterKey (PIN)
   orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
   // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
-  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error';
+    authState: AuthState;
   isLoading: boolean;
   tempEmail: string | null;
   isDemoMode: boolean; // NOUVEAU : Flag UI
   
   refreshProfile: () => Promise<void>;
+    reloadUserFromSession: () => Promise<AuthState | null>;
   setSessionKey: (key: CryptoKey | null) => void;
   unlockSession: (key: CryptoKey) => Promise<void>; 
   lockSession: () => void;
@@ -65,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
   const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
-  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error'>('unauthenticated');
+    const [authState, setAuthState] = useState<AuthState>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -217,33 +220,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
   };
 
-  const loadUser = async (userId: string, email: string) => {
+  const loadUser = async (userId: string, email: string): Promise<AuthState> => {
       if (isLoadingProfileRef.current) {
           Logger.warn('AUTH', 'loadUser skipped: operation already in progress.');
-          return;
+          return authState;
       }
       
       isLoadingProfileRef.current = true; // LOCK
       Logger.info('AUTH', "Loading user profile (Standard - No Timeout)", userId);
       
       try {
+          const buildProfile = (user: Record<string, string | boolean | null>): PractitionerProfile => ({
+              id: user.id as string,
+              email: (user.email as string) || '',
+              firstName: (user.first_name as string) || '',
+              lastName: (user.last_name as string) || '',
+              phonePro: (user.phone_pro as string) || '',
+              siret: (user.siret as string) || '',
+              addressPro: (user.address_pro as string) || '',
+              encryptionSalt: (user.encryption_salt as string) || '',
+              encryptionValidator: (user.encryption_validator as string) || ''
+          });
+
           // 1. Charger le Praticien
           const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
           
           if (error) Logger.error('AUTH', "Supabase error loading practitioner", error);
 
           if (user) {
-              const profile: PractitionerProfile = { 
-                  id: user.id, 
-                  email: user.email!, 
-                  firstName: user.first_name || '', 
-                  lastName: user.last_name || '', 
-                  phonePro: user.phone_pro || '', 
-                  siret: user.siret || '', 
-                  addressPro: user.address_pro || '', 
-                  encryptionSalt: user.encryption_salt!, 
-                  encryptionValidator: user.encryption_validator! 
-              };
+              const profile = buildProfile(user as Record<string, string | boolean | null>);
               
               setPractitioner(profile);
 
@@ -252,7 +257,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   Logger.warn('AUTH', 'Incomplete crypto setup detected. Redirecting to wizard.');
                   setTempEmail(email);
                   setAuthState('registering');
-                  return;
+                  return 'registering';
               }
 
               // Ensure org + membership + subscription exist (repair if trigger failed)
@@ -280,24 +285,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
 
                   if (!hasValidAccess) {
-                      setAuthState('subscription_locked'); 
-                  } else {
-                      setAuthState('locked'); 
+                      setAuthState('subscription_locked');
+                      return 'subscription_locked';
                   }
+
+                  setAuthState('locked');
+                  return 'locked';
 
               } else {
                   Logger.warn('AUTH', "Subscription Service returned null (Profile not found or error caught in service)");
-                  setAuthState('subscription_locked'); 
+                  setAuthState('subscription_locked');
+                  return 'subscription_locked';
               }
 
           } else {
               Logger.warn('AUTH', "User authenticated but NO practitioner profile found. Redirecting to wizard.");
+              const { error: repairError } = await supabase.rpc('bootstrap_practitioner_for_user', {
+                  p_user_id: userId,
+                  p_email: email
+              });
+              if (repairError) {
+                  Logger.warn('AUTH', 'Practitioner bootstrap failed', repairError);
+              } else {
+                  const { data: userRetry } = await supabase
+                      .from('practitioners')
+                      .select('*')
+                      .eq('id', userId)
+                      .maybeSingle();
+
+                  if (userRetry) {
+                      const profile = buildProfile(userRetry as Record<string, string | boolean | null>);
+                      setPractitioner(profile);
+
+                      const needsRegistration = !profile.encryptionSalt || !profile.encryptionValidator || profile.encryptionValidator === 'pending';
+                      if (needsRegistration) {
+                          Logger.warn('AUTH', 'Incomplete crypto setup detected after bootstrap. Redirecting to wizard.');
+                          setTempEmail(email);
+                          setAuthState('registering');
+                          return 'registering';
+                      }
+                  }
+              }
               setTempEmail(email);
-              setAuthState('registering'); 
+              setAuthState('registering');
+              return 'registering';
           }
       } catch (e) {
           Logger.error('AUTH', "Critical Auth Load Error", e);
-          setAuthState('error'); 
+          setAuthState('error');
+          return 'error';
       } finally {
           isLoadingProfileRef.current = false; // UNLOCK
           setIsLoading(false);
@@ -313,6 +349,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
           Logger.warn('DB', "Failed to refresh profile details", e);
       }
+  };
+
+  const reloadUserFromSession = async (): Promise<AuthState | null> => {
+      if (isDemoMode) return null;
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) return null;
+
+      setIsLoading(true);
+      setAuthState('authenticating');
+      currentUserIdRef.current = user.id;
+
+      let attempts = 0;
+      while (isLoadingProfileRef.current && attempts < 10) {
+          await new Promise(resolve => setTimeout(resolve, 150));
+          attempts += 1;
+      }
+
+      return loadUser(user.id, user.email || '');
   };
 
   // NOUVEAU : Vérification stricte serveur pour Admin
@@ -408,7 +462,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{ 
         userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess
+        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess
     }}>
       {children}
     </AuthContext.Provider>

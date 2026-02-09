@@ -15,7 +15,7 @@ import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientFile } from './types'; 
+import type { PatientFile, PractitionerProfile } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, Info, Save, CheckCircle2, FileText, ShieldAlert } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
@@ -56,7 +56,7 @@ const AppLoader = () => (
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
@@ -123,6 +123,16 @@ const AppRouter = () => {
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
     const handleUnlock = (key: CryptoKey) => { unlockSession(key); setMode('dashboard'); };
+    const handleWizardComplete = async (_p: PractitionerProfile, key: CryptoKey) => {
+        setShowOnboarding(true);
+        setShowAuthModal(false);
+        setSessionKey(key);
+
+        const nextState = await reloadUserFromSession();
+        if (nextState === 'locked') {
+            await unlockSession(key);
+        }
+    };
     const handleStartDemo = async () => { await startDemo(); setShowOnboarding(true); };
     const handleAdminAccess = async () => { const allowed = await verifyAdminAccess(); if (allowed) setMode('admin'); else toast.error("Accès refusé par le serveur."); };
     const handleContributionAccess = () => { if (isDemoMode) { setDemoConversion({ show: true, action: "La contribution" }); return; } if (userProfile.subscriptionPlan === 'free') { setPricingModalMode('plans'); return; } setMode('contribution'); };
@@ -187,7 +197,7 @@ const AppRouter = () => {
                                 <div className="mt-8 text-center pt-6 border-t border-stone-100"><p className="text-xs text-stone-400 font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
                             </div>
                         ) : (
-                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={(p, k) => { setSessionKey(k); setShowOnboarding(true); setShowAuthModal(false); }} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
+                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={handleWizardComplete} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
                         )}
                     </div>
                 )}
