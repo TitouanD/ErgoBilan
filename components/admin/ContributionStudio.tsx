@@ -1,11 +1,12 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan } from 'lucide-react';
 import { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow } from '../../types';
 import { callAIProxy } from '../../services/aiProxy';
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
+import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
@@ -26,6 +27,13 @@ const GRADE_TO_AGE: Record<string, string> = {
 };
 
 type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
+type ExtractionPage = {
+    id: string;
+    fileIndex: number;
+    rows: ExtractedRow[];
+    validated: boolean;
+    detectedStructure: TableStructure;
+};
 
 export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [step, setStep] = useState<'intro' | 'upload' | 'processing' | 'editor' | 'success'>('intro');
@@ -36,8 +44,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [selectedCategory, setSelectedCategory] = useState(TEST_CATALOG[0]?.id || 'motricite-globale');
   const [testNameError, setTestNameError] = useState(false);
   
-  const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
-  const [rows, setRows] = useState<ExtractedRow[]>([]);
+    const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
+    const [pages, setPages] = useState<ExtractionPage[]>([]);
   const [zoom, setZoom] = useState(1);
   
   // LEGAL & MODAL STATE
@@ -50,8 +58,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [mergeTarget, setMergeTarget] = useState<{ id: string; name: string; subtestCount: number } | null>(null);
   const [mergeNewAgeRanges, setMergeNewAgeRanges] = useState(0);
   const [mergeNewSubtests, setMergeNewSubtests] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const toast = useToast();
+
+    const currentPage = pages[currentFileIndex] || null;
+    const currentRows = currentPage?.rows || [];
+    const allRows = useMemo(() => pages.flatMap(page => page.rows), [pages]);
 
   // Stable object URL for current file preview — revoke on change to prevent memory leaks
   const currentFileUrl = useMemo(() => {
@@ -128,14 +141,22 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       return newRow;
   };
 
+  const groupRowsBySubtest = (inputRows: ExtractedRow[]): Record<string, ExtractedRow[]> => (
+      inputRows.reduce((acc, row) => {
+          const key = row.subtest || "Global";
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(row);
+          return acc;
+      }, {} as Record<string, ExtractedRow[]>)
+  );
+
   // --- PROCESSING FUNCTION ---
 
-  const processRealExtraction = async (inputFiles: File[]) => {
-      try {
-          const imagePart = await fileToGenerativePart(inputFiles[0]);
-          const filename = inputFiles[0].name;
+  const processSingleExtraction = async (file: File) => {
+      const imagePart = await fileToGenerativePart(file);
+      const filename = file.name;
 
-          const prompt = `
+      const prompt = `
             ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
             CONTEXT: The filename is "${filename}".
             IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
@@ -198,52 +219,86 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
           `;
 
-          const response = await callAIProxy({
-              contents: [{ role: "user", parts: [imagePart, { text: prompt }] }]
+      const response = await callAIProxy({
+          contents: [{ role: "user", parts: [imagePart, { text: prompt }] }]
+      });
+
+      const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
+      const flatRows: ExtractedRow[] = [];
+      const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
+
+      if (extractedData && Array.isArray(extractedData.tables)) {
+          extractedData.tables.forEach((table: AIExtractedTable) => {
+              if (Array.isArray(table.rows)) {
+                  table.rows.forEach((r: AIExtractedNormRow) => {
+                      const rawRow: ExtractedRow = {
+                          id: crypto.randomUUID(),
+                          subtest: table.subtest_id || extractedData?.test_context || "Global",
+                          label: r.label || '',
+                          raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
+                          standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
+                          mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
+                          sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
+                          zScore: r.z_score ? String(r.z_score) : '',
+                          percentile: r.percentile ? String(r.percentile) : '',
+                          
+                          // CAPTURE DES CHAMPS CACHÉS
+                          hidden_age_min: r.age_min_months,
+                          hidden_age_max: r.age_max_months,
+                          hidden_raw_min: r.raw_min,
+                          hidden_raw_max: r.raw_max
+                      };
+                      flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
+                  });
+              }
           });
+      }
 
-          const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
-          const flatRows: ExtractedRow[] = [];
-          let globalIdCounter = 0;
-          
-          const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
-          setTableStructure(detectedStructure);
+      if (flatRows.length === 0) {
+          flatRows.push({ id: crypto.randomUUID(), subtest: 'Nouveau Sous-test', label: 'Exemple', raw: '', standard: '', zScore: '', percentile: '' });
+      }
 
-          if (extractedData && Array.isArray(extractedData.tables)) {
-              extractedData.tables.forEach((table: AIExtractedTable) => {
-                  if (Array.isArray(table.rows)) {
-                      table.rows.forEach((r: AIExtractedNormRow) => {
-                          const rawRow: ExtractedRow = {
-                              id: (globalIdCounter++).toString(),
-                              subtest: table.subtest_id || extractedData?.test_context || "Global",
-                              label: r.label || '',
-                              raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
-                              standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
-                              mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
-                              sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
-                              zScore: r.z_score ? String(r.z_score) : '',
-                              percentile: r.percentile ? String(r.percentile) : '',
-                              
-                              // CAPTURE DES CHAMPS CACHÉS
-                              hidden_age_min: r.age_min_months,
-                              hidden_age_max: r.age_max_months,
-                              hidden_raw_min: r.raw_min,
-                              hidden_raw_max: r.raw_max
-                          };
-                          flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
-                      });
-                  }
+      return {
+          rows: flatRows,
+          detectedStructure,
+          testContext: extractedData?.test_context || ''
+      };
+  };
+
+  const processFilesSequentially = async (inputFiles: File[]) => {
+      try {
+          const nextPages: ExtractionPage[] = [];
+          let resolvedStructure: TableStructure = tableStructure;
+          let resolvedTestName = testName;
+
+          for (let i = 0; i < inputFiles.length; i += 1) {
+              setCurrentFileIndex(i);
+              const result = await processSingleExtraction(inputFiles[i]);
+
+              if (resolvedStructure === 'UNKNOWN') {
+                  resolvedStructure = result.detectedStructure;
+              } else if (result.detectedStructure !== resolvedStructure) {
+                  toast.error("Structure différente détectée entre pages. Vérifiez les documents.");
+              }
+
+              if (result.testContext && !resolvedTestName) {
+                  resolvedTestName = result.testContext;
+                  setTestName(result.testContext);
+              }
+
+              nextPages.push({
+                  id: crypto.randomUUID(),
+                  fileIndex: i,
+                  rows: result.rows,
+                  validated: false,
+                  detectedStructure: result.detectedStructure
               });
           }
 
-          if (flatRows.length === 0) {
-              setRows([{ id: '1', subtest: 'Nouveau Sous-test', label: 'Exemple', raw: '', standard: '', zScore: '', percentile: '' }]);
-          } else {
-              setRows(flatRows);
-          }
-          if (extractedData?.test_context && !testName) setTestName(extractedData.test_context);
+          setTableStructure(resolvedStructure);
+          setPages(nextPages);
+          setCurrentFileIndex(0);
           setStep('editor');
-
       } catch (error) {
           Logger.error('AI', "Gemini Extraction Error", error);
           toast.error("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
@@ -258,20 +313,43 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           const newFiles = Array.from(e.target.files) as File[];
           setFiles(newFiles);
           setCurrentFileIndex(0);
+          setTableStructure('UNKNOWN');
+          setPages([]);
           setStep('processing');
-          processRealExtraction(newFiles);
+          processFilesSequentially(newFiles);
       }
   };
 
-  const groupedRows: Record<string, ExtractedRow[]> = rows.reduce((acc, row) => {
-    const key = row.subtest || "Global";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(row);
-    return acc;
-  }, {} as Record<string, ExtractedRow[]>);
+  const currentGroupedRows = useMemo(() => groupRowsBySubtest(currentRows), [currentRows]);
+  const allGroupedRows = useMemo(() => groupRowsBySubtest(allRows), [allRows]);
+  const currentGroupedEntries = useMemo(
+      () => Object.entries(currentGroupedRows) as Array<[string, ExtractedRow[]]>,
+      [currentGroupedRows]
+  );
+  const allGroupedEntries = useMemo(
+      () => Object.entries(allGroupedRows) as Array<[string, ExtractedRow[]]>,
+      [allGroupedRows]
+  );
+
+  const updateCurrentPageRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
+      setPages(prev => prev.map((page, index) => {
+          if (index !== currentFileIndex) return page;
+          return { ...page, rows: updater(page.rows) };
+      }));
+  };
+
+  const updateAllPagesRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
+      setPages(prev => prev.map(page => ({ ...page, rows: updater(page.rows) })));
+  };
+
+  const handleValidateCurrentPage = () => {
+      setPages(prev => prev.map((page, index) => (
+          index === currentFileIndex ? { ...page, validated: true } : page
+      )));
+  };
 
   const handleRowChange = (id: string, field: keyof ExtractedRow, value: string) => {
-      setRows(prev => prev.map(r => {
+      updateCurrentPageRows(prev => prev.map(r => {
           if (r.id !== id) return r;
           const updated = { ...r, [field]: value };
           if (tableStructure === 'LOOKUP' && ['standard', 'zScore', 'percentile'].includes(field)) {
@@ -283,7 +361,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   // NEW: Update label for a whole batch (group)
   const handleBatchLabelChange = (subtestName: string, oldLabel: string, newLabel: string) => {
-      setRows(prev => prev.map(r => 
+      updateCurrentPageRows(prev => prev.map(r => 
           (r.subtest === subtestName && r.label === oldLabel) 
               ? { ...r, label: newLabel } 
               : r
@@ -292,7 +370,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   // NEW: Add row to a specific batch
   const handleAddRowToBatch = (subtestName: string, label: string) => {
-      setRows(prev => [...prev, { 
+      updateCurrentPageRows(prev => [...prev, { 
           id: crypto.randomUUID(), 
           subtest: subtestName, 
           label: label, 
@@ -312,15 +390,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   const handleSubtestNameChange = (oldName: string, iName: string) => {
-      setRows(prev => prev.map(r => r.subtest === oldName ? { ...r, subtest: iName } : r));
+      updateAllPagesRows(prev => prev.map(r => r.subtest === oldName ? { ...r, subtest: iName } : r));
   };
 
   const handleAddRowToSubtest = (subtestName: string) => {
-      setRows(prev => [...prev, { id: crypto.randomUUID(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '' }]);
+      updateCurrentPageRows(prev => [...prev, { id: crypto.randomUUID(), subtest: subtestName, label: '', raw: '', standard: '', zScore: '', percentile: '' }]);
   };
 
-  const handleDeleteRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
-  const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(groupedRows).length + 1));
+    const handleDeleteRow = (id: string) => updateCurrentPageRows(prev => prev.filter(r => r.id !== id));
+    const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(currentGroupedRows).length + 1));
   
   // --- PRE-SAVE CHECK ---
   const handlePreSave = () => {
@@ -329,11 +407,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
       }
+      if (pages.length > 0 && pages.some(page => !page.validated)) {
+          toast.error("Validez chaque page avant d'enregistrer le test.");
+          return;
+      }
       setShowSaveModal(true);
   };
 
   // --- HELPER: Build norm payload from an ExtractedRow ---
-  const buildNormPayload = (row: ExtractedRow, subtestId: string, orgId: string) => {
+  const buildNormPayload = (row: ExtractedRow) => {
+      const mode: TableStructure = tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP';
       // AGE: AI values first, JS fallback
       let ageMin = row.hidden_age_min;
       let ageMax = row.hidden_age_max;
@@ -347,12 +430,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       // RAW SCORES / STATS
       let mean: number | null = null;
       let sd: number | null = null;
-      let rawMin = 0;
-      let rawMax = 0;
+      let rawMin: number | null = null;
+      let rawMax: number | null = null;
 
-      if (tableStructure === 'PARAMETRIC') {
+      if (mode === 'PARAMETRIC') {
           mean = parseFloat(row.mean || row.raw) || 0;
           sd = parseFloat(row.sd || row.zScore) || 0;
+          rawMin = null;
+          rawMax = null;
       } else {
           if (row.hidden_raw_min !== undefined && row.hidden_raw_max !== undefined) {
               rawMin = row.hidden_raw_min;
@@ -368,14 +453,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   rawMin = val;
                   rawMax = val;
               }
-              if (isNaN(rawMin)) rawMin = 0;
-              if (isNaN(rawMax)) rawMax = 0;
+              if (rawMin !== null && isNaN(rawMin)) rawMin = null;
+              if (rawMax !== null && isNaN(rawMax)) rawMax = null;
           }
       }
 
       return {
-          subtest_id: subtestId,
-          organization_id: orgId,
           age_min_months: ageMin,
           age_max_months: ageMax,
           gender: 'Mixed',
@@ -383,10 +466,26 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           raw_max: rawMax,
           mean,
           sd,
-          standard_score: tableStructure === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
-          percentile: tableStructure === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
+          standard_score: mode === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
+          percentile: mode === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
       };
   };
+
+  const buildTestPayload = () => ({
+      test: {
+          name: testName.trim(),
+          category_id: selectedCategory,
+          version: '1.0',
+          structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
+      },
+      subtests: allGroupedEntries.map(([subtestName, subRows]) => ({
+          name: subtestName,
+          unit: 'pts',
+          score_type: 'standard',
+          computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
+          norms: subRows.map(row => buildNormPayload(row))
+      }))
+  });
 
   // --- DETECT DUPLICATE & ASK USER ---
   const handleFinalSave = async () => {
@@ -396,50 +495,31 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Utilisateur non connecté");
+          setCurrentUserId(user.id);
 
-          const { data: member } = await supabase
-              .from('organization_members')
-              .select('organization_id')
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-          if (!member?.organization_id) throw new Error("Aucune organisation trouvée pour ce compte.");
-          const orgId = member.organization_id;
-
-          // --- DEDUP CHECK: Look for existing test with same normalized name in same scope ---
-          const normalizedInput = normalizeTestName(testName);
-          const { data: existingTests } = await supabase
-              .from('official_tests')
-              .select('id, name')
-              .eq('organization_id', orgId);
-
-          const match = (existingTests || []).find(t => normalizeTestName(t.name) === normalizedInput);
+          // --- DEDUP CHECK: RPC (tests privés de l'org) ---
+          const matches = await AdminService.findPrivateTestByName(testName);
+          const match = (matches || [])[0];
 
           if (match) {
               // Count existing subtests for info display
-              const { count: subCount } = await supabase
-                  .from('official_subtests')
-                  .select('id', { count: 'exact', head: true })
-                  .eq('test_id', match.id);
-
-              // Count how many new age ranges would be added (rough estimate)
               const { data: existingSubs } = await supabase
-                  .from('official_subtests')
+                  .from('view_unified_subtests')
                   .select('id, name')
                   .eq('test_id', match.id);
               const existingSubNames = new Set((existingSubs || []).map(s => normalizeTestName(s.name)));
-              const newSubtests = Object.keys(groupedRows).filter(name => !existingSubNames.has(normalizeTestName(name)));
+              const newSubtests = Object.keys(allGroupedRows).filter(name => !existingSubNames.has(normalizeTestName(name)));
 
-              setMergeTarget({ id: match.id, name: match.name, subtestCount: subCount || 0 });
+              setMergeTarget({ id: match.id, name: match.name, subtestCount: existingSubs?.length || 0 });
               setMergeNewSubtests(newSubtests.length);
-              setMergeNewAgeRanges(rows.length); // approximate: all rows are potential new norms
+              setMergeNewAgeRanges(allRows.length); // approximate: all rows are potential new norms
               setShowSaveModal(false);
               setShowMergeModal(true);
               return;
           }
 
           // No duplicate → create normally
-          await performCreate(orgId, user.email || '');
+          await performCreate();
 
       } catch (e: unknown) {
           Logger.error('DB', "Erreur sauvegarde test:", e);
@@ -450,41 +530,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   // --- CREATE NEW TEST (original flow) ---
-  const performCreate = async (orgId: string, authorEmail: string) => {
-      const testId = `priv_${orgId.split('-')[0]}_${crypto.randomUUID().slice(0, 8)}`;
-
-      await supabase.from('official_tests').insert({
-          id: testId,
-          name: testName,
-          category_id: selectedCategory,
-          version: '1.0',
-          author: authorEmail,
-          organization_id: orgId
-      });
-
-      for (const [subtestName, subRows] of Object.entries(groupedRows)) {
-          const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
-          const subtestId = `${testId}_${subtestSlug}`;
-
-          await supabase.from('official_subtests').insert({
-              id: subtestId,
-              test_id: testId,
-              name: subtestName,
-              unit: 'pts',
-              score_type: 'standard',
-              computation_mode: tableStructure,
-              organization_id: orgId
-          });
-
-          const normsPayload = subRows.map(row => buildNormPayload(row, subtestId, orgId));
-          if (normsPayload.length > 0) {
-              const { error: normsError } = await supabase.from('official_norms').insert(normsPayload);
-              if (normsError) throw normsError;
-          }
-      }
+  const performCreate = async () => {
+      const payload = buildTestPayload();
+      const testId = await AdminService.createPrivateTest(payload);
 
       Logger.info('DB', "Test privé créé avec succès.");
-      finishSuccess(testId, orgId);
+      finishSuccess(testId);
   };
 
   // --- MERGE INTO EXISTING TEST ---
@@ -492,84 +543,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       if (!mergeTarget) return;
       setIsSaving(true);
       try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) throw new Error("Utilisateur non connecté");
-
-          const { data: member } = await supabase
-              .from('organization_members')
-              .select('organization_id')
-              .eq('user_id', user.id)
-              .maybeSingle();
-          if (!member?.organization_id) throw new Error("Aucune organisation trouvée.");
-          const orgId = member.organization_id;
           const existingTestId = mergeTarget.id;
+          const payload = buildTestPayload();
+          const result = await AdminService.mergePrivateTest(existingTestId, payload);
 
-          // Load existing subtests for matching
-          const { data: existingSubs } = await supabase
-              .from('official_subtests')
-              .select('id, name')
-              .eq('test_id', existingTestId);
-
-          // Build lookup: normalizedName → subtest_id
-          const subLookup = new Map<string, string>();
-          (existingSubs || []).forEach(s => subLookup.set(normalizeTestName(s.name), s.id));
-
-          let mergedNormsCount = 0;
-          let newSubtestsCount = 0;
-
-          for (const [subtestName, subRows] of Object.entries(groupedRows)) {
-              const normalizedSub = normalizeTestName(subtestName);
-              let subtestId = subLookup.get(normalizedSub);
-
-              if (!subtestId) {
-                  // New subtest → insert it attached to the EXISTING test
-                  const subtestSlug = subtestName.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
-                  subtestId = `${existingTestId}_${subtestSlug}`;
-
-                  const { error: subErr } = await supabase.from('official_subtests').insert({
-                      id: subtestId,
-                      test_id: existingTestId,
-                      name: subtestName,
-                      unit: 'pts',
-                      score_type: 'standard',
-                      computation_mode: tableStructure,
-                      organization_id: orgId
-                  });
-                  if (subErr) throw subErr;
-                  newSubtestsCount++;
-                  subLookup.set(normalizedSub, subtestId);
-              }
-
-              // Load existing norms for this subtest to detect duplicates by (age_min, age_max, gender)
-              const { data: existingNorms } = await supabase
-                  .from('official_norms')
-                  .select('age_min_months, age_max_months, gender')
-                  .eq('subtest_id', subtestId);
-
-              const existingKeys = new Set(
-                  (existingNorms || []).map(n => `${n.age_min_months}_${n.age_max_months}_${n.gender}`)
-              );
-
-              // Only insert norms whose (age_min, age_max, gender) triplet doesn't exist yet
-              const newNorms = subRows
-                  .map(row => buildNormPayload(row, subtestId!, orgId))
-                  .filter(norm => {
-                      const key = `${norm.age_min_months}_${norm.age_max_months}_${norm.gender}`;
-                      return !existingKeys.has(key);
-                  });
-
-              if (newNorms.length > 0) {
-                  const { error: normsError } = await supabase.from('official_norms').insert(newNorms);
-                  if (normsError) throw normsError;
-                  mergedNormsCount += newNorms.length;
-              }
-          }
-
-          Logger.info('DB', `Merge réussi: +${newSubtestsCount} sous-tests, +${mergedNormsCount} normes dans ${existingTestId}`);
-          toast.success(`Fusion réussie ! ${mergedNormsCount} nouvelles entrées ajoutées.`);
+          Logger.info('DB', `Merge réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
+          toast.success(`Fusion réussie ! ${result.new_norms} nouvelles entrées ajoutées.`);
 
           setShowMergeModal(false);
-          finishSuccess(existingTestId, orgId);
+          finishSuccess(existingTestId);
 
       } catch (e: unknown) {
           Logger.error('DB', "Erreur merge test:", e);
@@ -586,13 +568,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error("Utilisateur non connecté");
-          const { data: member } = await supabase
-              .from('organization_members')
-              .select('organization_id')
-              .eq('user_id', user.id)
-              .maybeSingle();
-          if (!member?.organization_id) throw new Error("Aucune organisation trouvée.");
-          await performCreate(member.organization_id, user.email || '');
+          setCurrentUserId(user.id);
+          await performCreate();
       } catch (e: unknown) {
           Logger.error('DB', "Erreur création forcée:", e);
           toast.error("Erreur : " + (e instanceof Error ? e.message : String(e)));
@@ -602,11 +579,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   };
 
   // --- SHARED SUCCESS CALLBACK ---
-  const finishSuccess = (testId: string, orgId: string) => {
+  const finishSuccess = (testId: string) => {
       const { data: { user } } = { data: { user: null as any } }; // ID already captured by caller
       const contributionData: Contribution = {
           id: testId,
-          userId: orgId,
+          userId: currentUserId || 'unknown',
           userName: 'Moi',
           testName: testName,
           docType: 'image',
@@ -614,7 +591,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           vigilanceScore: 'pass',
           submittedAt: new Date().toISOString(),
           structureType: tableStructure,
-          rows: rows
+          rows: allRows
       };
       setShowSaveModal(false);
       onSubmit(contributionData);
@@ -700,11 +677,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             {testNameError && <p className="text-xs text-rose-500 font-bold mt-1 ml-1">Le nom est obligatoire.</p>}
                         </div>
                         <div className="border-3 border-dashed border-stone-200 rounded-[24px] p-10 hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all cursor-pointer group relative">
-                            <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" />
+                            <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" multiple />
                             <div className="relative z-10 pointer-events-none">
                                 <Upload size={32} className="text-stone-300 group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
                                 <p className="font-bold text-[#3D405B]">Importer la photo</p>
-                                <p className="text-xs text-stone-400 mt-1">L'IA détectera la structure.</p>
+                                <p className="text-xs text-stone-400 mt-1">Plusieurs images possibles. L'IA détectera la structure.</p>
                             </div>
                         </div>
                     </div>
@@ -713,6 +690,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
                         <p className="font-bold text-[#3D405B]">Extraction des données...</p>
                         <p className="text-xs text-stone-400">Structuration en cours...</p>
+                        {files.length > 1 && (
+                            <p className="text-xs text-stone-400 mt-2">Page {Math.min(currentFileIndex + 1, files.length)} / {files.length}</p>
+                        )}
                     </div>
                 )}
             </div>
@@ -764,6 +744,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
         <div className="flex-1 flex overflow-hidden">
             <div className="w-1/2 bg-stone-100 border-r border-stone-200 relative flex flex-col">
+                {pages.length > 1 && (
+                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur rounded-full shadow-sm border border-stone-200 px-3 py-1 flex items-center gap-2 z-10">
+                        <button
+                            onClick={() => setCurrentFileIndex(Math.max(0, currentFileIndex - 1))}
+                            disabled={currentFileIndex === 0}
+                            className="p-1 rounded-full text-stone-500 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <ArrowLeft size={14} />
+                        </button>
+                        <span className="text-xs font-bold text-stone-500">
+                            Page {currentFileIndex + 1} / {pages.length}
+                        </span>
+                        <button
+                            onClick={() => setCurrentFileIndex(Math.min(pages.length - 1, currentFileIndex + 1))}
+                            disabled={currentFileIndex >= pages.length - 1}
+                            className="p-1 rounded-full text-stone-500 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <ArrowRight size={14} />
+                        </button>
+                    </div>
+                )}
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-stone-200 p-1 flex gap-1 z-10">
                     <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} className="p-2 hover:bg-stone-100 rounded-full text-stone-500"><ZoomOut size={16}/></button>
                     <span className="text-xs font-mono font-bold text-stone-400 py-2 px-1 w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -815,7 +816,33 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </div>
                         </div>
 
-                        {Object.entries(groupedRows).map(([subtest, subRows]) => (
+                        {pages.length > 0 && (
+                            <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Pages</span>
+                                    <button
+                                        onClick={handleValidateCurrentPage}
+                                        className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${currentPage?.validated ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-white text-stone-500 border-stone-200 hover:border-[#E07A5F] hover:text-[#E07A5F]'}`}
+                                    >
+                                        {currentPage?.validated ? 'Page validée' : 'Valider cette page'}
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {pages.map((page, index) => (
+                                        <button
+                                            key={page.id}
+                                            onClick={() => setCurrentFileIndex(index)}
+                                            className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300'}`}
+                                        >
+                                            {`Page ${index + 1}`}
+                                            {page.validated && <Check size={12} className="text-emerald-200" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {currentGroupedEntries.map(([subtest, subRows]) => (
                             <div key={subtest} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
                                 <div className="bg-stone-50 px-4 py-3 border-b border-stone-200 flex justify-between items-center">
                                     <div className="flex items-center gap-2 flex-1">
@@ -1010,12 +1037,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <div className="flex items-center gap-2 text-sm">
                                 <Layers size={14} className="text-amber-600 shrink-0" />
                                 <span className="text-stone-600">
-                                    <strong className="text-[#3D405B]">{rows.length}</strong> entrée{rows.length > 1 ? 's' : ''} à fusionner
+                                    <strong className="text-[#3D405B]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à fusionner
                                     {mergeNewSubtests > 0 && <> dont <strong className="text-[#3D405B]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
                                 </span>
                             </div>
                             <p className="text-xs text-amber-700 leading-relaxed">
-                                Seules les tranches d'âge manquantes seront ajoutées. Les données existantes ne seront pas modifiées.
+                                Seules les lignes manquantes seront ajoutées (âge + score). Les données existantes ne seront pas modifiées.
                             </p>
                         </div>
 

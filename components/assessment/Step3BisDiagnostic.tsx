@@ -3,6 +3,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
 import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   synthesis: ClinicalSynthesis;
@@ -65,13 +66,26 @@ const VoiceArea: React.FC<{
 
 // --- SIGNIFICANT SCORES (improved with certification status) ---
 const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
+    const { catalog } = useCatalog();
+
     const alerts = useMemo(() => {
-        const items: { subId: string; z: number; standard: string; certified: boolean; observation?: string }[] = [];
+        const subtestNameMap: Record<string, string> = {};
+        catalog.forEach(cat => {
+            cat.tests.forEach(t => {
+                t.subtests.forEach(st => {
+                    subtestNameMap[st.id] = st.name;
+                });
+            });
+        });
+
+        const items: { subId: string; name: string; z: number; standard: string; certified: boolean; observation?: string }[] = [];
         Object.entries(tests).forEach(([testId, subtests]) => {
             Object.entries(subtests).forEach(([subId, res]) => {
                 if (res.raw && res.zScore <= -1.5) {
+                    const name = subtestNameMap[subId] || subId;
                     items.push({ 
-                        subId, 
+                        subId,
+                        name,
                         z: res.zScore, 
                         standard: res.standard, 
                         certified: res.status === 'certified' || res.status === 'validated',
@@ -81,7 +95,7 @@ const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
             });
         });
         return items.sort((a, b) => a.z - b.z);
-    }, [tests]);
+    }, [tests, catalog]);
 
     if (alerts.length === 0) return null;
 
@@ -96,7 +110,12 @@ const SignificantScores: React.FC<{ tests: TestData }> = ({ tests }) => {
                         <div className="flex justify-between items-center text-sm">
                             <div className="flex items-center gap-1.5">
                                 {a.certified && <ShieldCheck size={10} className="text-emerald-500" />}
-                                <span className="font-medium text-stone-600 truncate max-w-[130px]" title={a.subId}>{a.subId}</span>
+                                <span className="font-medium text-stone-600 truncate max-w-[130px]" title={a.name}>{a.name}</span>
+                                {a.name === a.subId && (
+                                    <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                                        id
+                                    </span>
+                                )}
                             </div>
                             <span className={`font-bold px-2 py-0.5 rounded text-white text-xs ${a.z <= -2 ? 'bg-[#E07A5F]' : 'bg-[#F2CC8F]'}`}>
                                 {a.z} ET
@@ -189,17 +208,28 @@ const ToggleChips: React.FC<{
 
 // --- OBSERVATION SUMMARY from per-subtest observations ---
 const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
+    const { catalog } = useCatalog();
+
     const observations = useMemo(() => {
-        const items: { subId: string; text: string }[] = [];
+        const subtestNameMap: Record<string, string> = {};
+        catalog.forEach(cat => {
+            cat.tests.forEach(t => {
+                t.subtests.forEach(st => {
+                    subtestNameMap[st.id] = st.name;
+                });
+            });
+        });
+
+        const items: { subId: string; name: string; text: string }[] = [];
         Object.entries(tests).forEach(([testId, subtests]) => {
             Object.entries(subtests).forEach(([subId, res]) => {
                 if (res.observation && res.observation.trim()) {
-                    items.push({ subId, text: res.observation });
+                    items.push({ subId, name: subtestNameMap[subId] || subId, text: res.observation });
                 }
             });
         });
         return items;
-    }, [tests]);
+    }, [tests, catalog]);
 
     if (observations.length === 0 && !interviewNotes) return null;
 
@@ -222,7 +252,12 @@ const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }
                 <div className="space-y-2">
                     {observations.slice(0, 5).map((obs, i) => (
                         <div key={i} className="flex gap-2 text-xs">
-                            <span className="text-stone-400 font-bold shrink-0">{obs.subId}:</span>
+                            <span className="text-stone-400 font-bold shrink-0">{obs.name}:</span>
+                            {obs.name === obs.subId && (
+                                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded self-center">
+                                    id
+                                </span>
+                            )}
                             <span className="text-stone-600 italic truncate">{obs.text}</span>
                         </div>
                     ))}

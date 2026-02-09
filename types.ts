@@ -287,6 +287,57 @@ export interface CandidateDetails {
     rows: ExtractedRow[];
 }
 
+/** Admin library types */
+export interface AdminTestSummary {
+    id: string;
+    name: string;
+    category_id: string;
+    organization_id?: string | null;
+    created_at: string;
+    subtest_count?: number;
+}
+
+export interface AdminTestRecord {
+    id: string;
+    name: string;
+    category_id: string;
+    version?: string;
+    author?: string;
+    organization_id?: string | null;
+    created_at?: string;
+}
+
+export interface AdminSubtestRecord {
+    id: string;
+    test_id: string;
+    name: string;
+    unit?: string;
+    score_type?: string;
+    computation_mode?: string;
+    organization_id?: string | null;
+}
+
+export interface AdminNormRecord {
+    id?: string;
+    subtest_id: string;
+    organization_id?: string | null;
+    age_min_months?: number | null;
+    age_max_months?: number | null;
+    gender?: string | null;
+    raw_min?: number | null;
+    raw_max?: number | null;
+    mean?: number | null;
+    sd?: number | null;
+    standard_score?: number | null;
+    percentile?: number | null;
+}
+
+export interface AdminTestBundle {
+    test: AdminTestRecord;
+    subtests: AdminSubtestRecord[];
+    norms: AdminNormRecord[];
+}
+
 /** AI monitoring types */
 export interface AIUsageDay {
     date: string;

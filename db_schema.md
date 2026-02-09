@@ -278,6 +278,17 @@ Les politiques Row Level Security appliquées :
 *   `check_signup_rate_limit(p_ip_hash, p_email_hash, p_max_per_hour)`: Limite les inscriptions.
 *   `purge_signup_rate_limit_log(p_retention_hours)`: Nettoyage des logs signup.
 *   `consume_credit()`: Décrémente le solde de manière atomique.
+*   `admin_check()`: Retourne `true` si l'utilisateur est admin.
+*   `admin_list_candidates()`: Liste des tests privés en attente de promotion.
+*   `admin_list_tests(p_scope)`: Liste des tests (public/privé/tous) côté admin.
+*   `admin_get_test_bundle(p_test_id)`: Bundle test + sous-tests + normes (admin).
+*   `admin_save_test_bundle(p_payload)`: Upsert test + sous-tests + remplacement des normes (admin).
+*   `admin_promote_test(p_test_id)`: Promotion avec fusion automatique si homonyme public.
+*   `admin_delete_test(p_test_id)`: Suppression définitive d'un test (admin).
+*   `admin_delete_subtest(p_subtest_id)`: Suppression d'un sous-test (admin).
+*   `find_private_test_by_name(p_name)`: Recherche d'un test privé homonyme dans l'organisation.
+*   `create_private_test(p_payload)`: Création atomique d'un test privé (user).
+*   `merge_private_test(p_target_id, p_payload)`: Fusion d'un test privé existant (user).
 
 ### Triggers
 *   `handle_new_user`: À la création du compte Auth -> Crée Praticien + Org + Sub.

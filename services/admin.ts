@@ -1,8 +1,14 @@
-
-import { supabase } from './db';
-import { Contribution, Patient, TestData } from '../types';
+﻿import { supabase } from './db';
+import {
+    Patient,
+    TestData,
+    CandidateRow,
+    CandidateDetails,
+    ExtractedRow,
+    AdminTestBundle,
+    AdminTestSummary
+} from '../types';
 import { Logger } from '../utils/logger';
-import { normalizeTestName } from '../utils';
 
 // Données simulées pour le Dashboard Ops
 const MOCK_AI_STATS = {
@@ -24,58 +30,61 @@ const MOCK_AI_STATS = {
 
 /**
  * Service dédié aux opérations Administrateur.
- * ARCHITECTURE "PROMOTION" : Gestion des tests privés (OrganizationID != NULL) vers Public (NULL).
+ * Toutes les opérations sensibles passent par des RPC sécurisées.
  */
 export const AdminService = {
 
-    /**
-     * Récupère la liste des tests candidats à la promotion (Tests privés)
-     * Utilise la vue SQL dédiée.
-     */
-    getCandidates: async () => {
-        const { data, error } = await supabase
-            .from('admin_candidates_promotion')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
+    // --- SECURITÉ ---
+    adminCheck: async (): Promise<boolean> => {
+        const { data, error } = await supabase.rpc('admin_check');
         if (error) throw error;
-        return data;
+        return data === true;
     },
 
     /**
-     * Récupère le détail complet d'un test candidat pour prévisualisation
-     * Reconstitue la structure JSON-like pour l'affichage UI
+     * Liste des tests candidats à la promotion (privés)
      */
-    getCandidateDetails: async (testId: string) => {
-        // 1. Fetch Test info
-        const { data: test } = await supabase.from('official_tests').select('*').eq('id', testId).single();
-        if (!test) throw new Error("Test introuvable");
+    getCandidates: async (): Promise<CandidateRow[]> => {
+        const { data, error } = await supabase.rpc('admin_list_candidates');
+        if (error) throw error;
+        return data || [];
+    },
 
-        // 2. Fetch Subtests
-        const { data: subtests } = await supabase.from('official_subtests').select('*').eq('test_id', testId);
-        
-        // 3. Fetch Norms
-        const subtestIds = subtests?.map(s => s.id) || [];
-        const { data: norms } = await supabase.from('official_norms').select('*').in('subtest_id', subtestIds);
+    /**
+     * Détail complet d'un test candidat pour prévisualisation
+     */
+    getCandidateDetails: async (testId: string): Promise<CandidateDetails> => {
+        const { data, error } = await supabase.rpc('admin_get_test_bundle', { p_test_id: testId });
+        if (error) throw error;
+        if (!data || !data.test) throw new Error('Test introuvable');
 
-        // 4. Flatten for UI Preview (Format ExtractedRow like)
-        const rows: any[] = [];
-        
-        subtests?.forEach(sub => {
-            const subNorms = norms?.filter(n => n.subtest_id === sub.id) || [];
-            subNorms.forEach(norm => {
-                // Reconstruction d'un label lisible
-                const ageLabel = norm.age_min_months ? `${Math.floor(norm.age_min_months/12)} ans` : 'Global';
-                
+        const test = data.test;
+        const subtests = Array.isArray(data.subtests) ? data.subtests : [];
+        const norms = Array.isArray(data.norms) ? data.norms : [];
+
+        const rows: ExtractedRow[] = [];
+
+        subtests.forEach((sub: any) => {
+            const subNorms = norms.filter((n: any) => n.subtest_id === sub.id);
+            subNorms.forEach((norm: any) => {
+                const ageLabel = norm.age_min_months !== null && norm.age_min_months !== undefined
+                    ? `${Math.floor(norm.age_min_months / 12)} ans`
+                    : 'Global';
+
+                const rawLabel = (norm.raw_min !== null && norm.raw_min !== undefined && norm.raw_max !== null && norm.raw_max !== undefined)
+                    ? (norm.raw_min === norm.raw_max ? String(norm.raw_min) : `${norm.raw_min}-${norm.raw_max}`)
+                    : '';
+
                 rows.push({
-                    id: norm.id,
+                    id: norm.id || `${sub.id}_${rows.length}`,
                     subtest: sub.name,
                     label: ageLabel,
-                    raw: norm.raw_min === norm.raw_max ? norm.raw_min : `${norm.raw_min}-${norm.raw_max}`,
-                    standard: norm.standard_score,
-                    percentile: norm.percentile,
-                    mean: norm.mean,
-                    sd: norm.sd
+                    raw: rawLabel,
+                    standard: norm.standard_score !== null && norm.standard_score !== undefined ? String(norm.standard_score) : '',
+                    percentile: norm.percentile !== null && norm.percentile !== undefined ? String(norm.percentile) : '',
+                    mean: norm.mean !== null && norm.mean !== undefined ? String(norm.mean) : undefined,
+                    sd: norm.sd !== null && norm.sd !== undefined ? String(norm.sd) : undefined,
+                    zScore: ''
                 });
             });
         });
@@ -85,178 +94,87 @@ export const AdminService = {
             testName: test.name,
             author: test.author,
             submittedAt: test.created_at,
-            rows: rows
+            rows
         };
     },
 
     /**
-     * "Rejeter" = Supprimer le test privé de la base
-     * (L'utilisateur devra le recréer s'il souhaite corriger)
+     * Suppression d'un test (admin)
      */
     deleteTest: async (testId: string) => {
-        // Grâce au ON DELETE CASCADE défini en SQL (si présent), supprimer le test suffit.
-        // Sinon, on supprime en cascade manuellement par sécurité.
-        
-        // 1. Récupérer les subtests
-        const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
-        const subIds = subtests?.map(s => s.id) || [];
-
-        if (subIds.length > 0) {
-            // 2. Delete Norms
-            await supabase.from('official_norms').delete().in('subtest_id', subIds);
-            // 3. Delete Subtests
-            await supabase.from('official_subtests').delete().eq('test_id', testId);
-        }
-        // 4. Delete Test
-        const { error } = await supabase.from('official_tests').delete().eq('id', testId);
+        const { error } = await supabase.rpc('admin_delete_test', { p_test_id: testId });
         if (error) throw error;
     },
 
     /**
-     * PROMOUVOIR LE TEST (Validé)
-     * Passe l'organization_id à NULL pour le rendre public.
-     * Si un test public homonyme (même nom normalisé) existe déjà,
-     * fusionne automatiquement les sous-tests et normes dans le test public existant,
-     * puis supprime la coquille privée.
+     * Suppression d'un sous-test (admin)
      */
-    promoteTest: async (testId: string): Promise<{ merged: boolean; targetName: string }> => {
-        // 1. Fetch the private test being promoted
-        const { data: privateTest } = await supabase
-            .from('official_tests')
-            .select('id, name')
-            .eq('id', testId)
-            .single();
-
-        if (!privateTest) throw new Error("Test introuvable");
-
-        // 2. Check if a public test with the same normalized name exists
-        const normalizedName = normalizeTestName(privateTest.name);
-        const { data: publicTests } = await supabase
-            .from('official_tests')
-            .select('id, name')
-            .is('organization_id', null);
-
-        const publicMatch = (publicTests || []).find(t => normalizeTestName(t.name) === normalizedName);
-
-        if (!publicMatch) {
-            // --- SIMPLE PROMOTION (no homonym) ---
-            const { data: subtests } = await supabase.from('official_subtests').select('id').eq('test_id', testId);
-            const subIds = subtests?.map(s => s.id) || [];
-
-            if (subIds.length > 0) {
-                await supabase.from('official_norms')
-                    .update({ organization_id: null })
-                    .in('subtest_id', subIds);
-            }
-            await supabase.from('official_subtests')
-                .update({ organization_id: null })
-                .eq('test_id', testId);
-
-            const { error } = await supabase.from('official_tests')
-                .update({ organization_id: null })
-                .eq('id', testId);
-            if (error) throw error;
-
-            return { merged: false, targetName: privateTest.name };
-        }
-
-        // --- MERGE-ON-PROMOTE: Fuse private into existing public ---
-        const publicTestId = publicMatch.id;
-
-        // Load public subtests
-        const { data: publicSubs } = await supabase
-            .from('official_subtests')
-            .select('id, name')
-            .eq('test_id', publicTestId);
-
-        const publicSubLookup = new Map<string, string>();
-        (publicSubs || []).forEach(s => publicSubLookup.set(normalizeTestName(s.name), s.id));
-
-        // Load private subtests + their norms
-        const { data: privateSubs } = await supabase
-            .from('official_subtests')
-            .select('id, name, unit, score_type, computation_mode')
-            .eq('test_id', testId);
-
-        let mergedNormsCount = 0;
-        let newSubtestsCount = 0;
-        const privateSubIds: string[] = [];
-
-        for (const privSub of (privateSubs || [])) {
-            privateSubIds.push(privSub.id);
-            const normalizedSub = normalizeTestName(privSub.name);
-            let targetSubId = publicSubLookup.get(normalizedSub);
-
-            if (!targetSubId) {
-                // New subtest → re-create under public test with new ID + organization_id = null
-                const subtestSlug = privSub.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
-                targetSubId = `${publicTestId}_${subtestSlug}`;
-
-                // Admin can UPDATE but may not INSERT with null org_id → insert with org first, then update
-                // Actually we just need to update the existing private subtest to point to public test
-                await supabase.from('official_subtests')
-                    .update({ test_id: publicTestId, organization_id: null })
-                    .eq('id', privSub.id);
-
-                // Update its norms to public
-                await supabase.from('official_norms')
-                    .update({ organization_id: null })
-                    .eq('subtest_id', privSub.id);
-
-                newSubtestsCount++;
-                publicSubLookup.set(normalizedSub, privSub.id);
-            } else {
-                // Existing subtest → merge norms avoiding duplicates by (age_min, age_max, gender)
-                const { data: existingNorms } = await supabase
-                    .from('official_norms')
-                    .select('age_min_months, age_max_months, gender')
-                    .eq('subtest_id', targetSubId);
-
-                const existingKeys = new Set(
-                    (existingNorms || []).map(n => `${n.age_min_months}_${n.age_max_months}_${n.gender}`)
-                );
-
-                // Load norms from the private subtest
-                const { data: privateNorms } = await supabase
-                    .from('official_norms')
-                    .select('*')
-                    .eq('subtest_id', privSub.id);
-
-                const normsToMigrate = (privateNorms || []).filter(n => {
-                    const key = `${n.age_min_months}_${n.age_max_months}_${n.gender}`;
-                    return !existingKeys.has(key);
-                });
-
-                // Reassign non-duplicate norms to the public subtest_id
-                for (const norm of normsToMigrate) {
-                    await supabase.from('official_norms')
-                        .update({ subtest_id: targetSubId, organization_id: null })
-                        .eq('id', norm.id);
-                    mergedNormsCount++;
-                }
-
-                // Delete remaining private norms (duplicates)
-                await supabase.from('official_norms')
-                    .delete()
-                    .eq('subtest_id', privSub.id);
-
-                // Delete the now-orphaned private subtest
-                await supabase.from('official_subtests')
-                    .delete()
-                    .eq('id', privSub.id);
-            }
-        }
-
-        // Delete the private test shell
-        await supabase.from('official_tests').delete().eq('id', testId);
-
-        Logger.info('DB', `Merge-on-promote: +${newSubtestsCount} sous-tests, +${mergedNormsCount} normes fusionnées dans ${publicTestId}`);
-        return { merged: true, targetName: publicMatch.name };
+    deleteSubtest: async (subtestId: string) => {
+        const { error } = await supabase.rpc('admin_delete_subtest', { p_subtest_id: subtestId });
+        if (error) throw error;
     },
 
     /**
-     * MODULE C : Télémétrie Passive & Anonyme
+     * Promotion d'un test privé vers public (fusion si nécessaire)
      */
+    promoteTest: async (testId: string): Promise<{ merged: boolean; targetName: string }> => {
+        const { data, error } = await supabase.rpc('admin_promote_test', { p_test_id: testId });
+        if (error) throw error;
+
+        return {
+            merged: data?.merged === true,
+            targetName: data?.target_name || ''
+        };
+    },
+
+    /**
+     * Liste des tests (admin library)
+     */
+    listTests: async (scope: 'public' | 'private' | 'all' = 'public'): Promise<AdminTestSummary[]> => {
+        const { data, error } = await supabase.rpc('admin_list_tests', { p_scope: scope });
+        if (error) throw error;
+        return data || [];
+    },
+
+    /**
+     * Charger un bundle complet (test + subtests + normes)
+     */
+    getTestBundle: async (testId: string): Promise<AdminTestBundle> => {
+        const { data, error } = await supabase.rpc('admin_get_test_bundle', { p_test_id: testId });
+        if (error) throw error;
+        if (!data) throw new Error('Bundle introuvable');
+        return data as AdminTestBundle;
+    },
+
+    /**
+     * Sauvegarder un bundle (admin)
+     */
+    saveTestBundle: async (bundle: AdminTestBundle) => {
+        const { error } = await supabase.rpc('admin_save_test_bundle', { p_payload: bundle });
+        if (error) throw error;
+    },
+
+    // --- CONTRIBUTIONS (USER RPC) ---
+    findPrivateTestByName: async (name: string): Promise<Array<{ id: string; name: string; subtest_count?: number }>> => {
+        const { data, error } = await supabase.rpc('find_private_test_by_name', { p_name: name });
+        if (error) throw error;
+        return data || [];
+    },
+
+    createPrivateTest: async (payload: any): Promise<string> => {
+        const { data, error } = await supabase.rpc('create_private_test', { p_payload: payload });
+        if (error) throw error;
+        return data as string;
+    },
+
+    mergePrivateTest: async (targetId: string, payload: any): Promise<{ new_subtests: number; new_norms: number }> => {
+        const { data, error } = await supabase.rpc('merge_private_test', { p_target_id: targetId, p_payload: payload });
+        if (error) throw error;
+        return data as { new_subtests: number; new_norms: number };
+    },
+
+    // --- MODULE C : Télémétrie Passive & Anonyme ---
+
     logAnonymousStats: async (tests: TestData, patient: Patient) => {
         try {
             if (!patient.dob) return;
@@ -273,7 +191,7 @@ export const AdminService = {
                 for (const [subtestId, result] of Object.entries(subtests)) {
                     if (result.status === 'validated' && result.raw) {
                         const rawVal = parseFloat(result.raw.replace(',', '.').replace(/[^0-9.-]/g, ''));
-                        
+
                         if (!isNaN(rawVal)) {
                             payload.push({
                                 test_id: testId,
@@ -293,11 +211,11 @@ export const AdminService = {
 
             if (payload.length > 0) {
                 const { error } = await supabase.from('contribution_insights').insert(payload);
-                if (error) Logger.warn('DB', "Telemetry insert failed", error.message);
+                if (error) Logger.warn('DB', 'Telemetry insert failed', error.message);
             }
 
         } catch (e) {
-            Logger.warn('DB', "Telemetry error (Silent)", e);
+            Logger.warn('DB', 'Telemetry error (Silent)', e);
         }
     },
 
@@ -309,7 +227,7 @@ export const AdminService = {
             .select('computed_standard')
             .eq('subtest_id', subtestId)
             .not('computed_standard', 'is', null);
-        
+
         if (error) throw error;
         return data.map((d: any) => parseFloat(d.computed_standard));
     },
@@ -349,8 +267,8 @@ export const AdminService = {
             setTimeout(() => {
                 const totalCost = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.cost, 0);
                 const totalErrors = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.errors, 0);
-                const totalRequests = 150; 
-                
+                const totalRequests = 150;
+
                 resolve({
                     daily: MOCK_AI_STATS.dailyUsage,
                     totalCost: parseFloat(totalCost.toFixed(2)),
@@ -366,3 +284,7 @@ export const AdminService = {
         });
     }
 };
+
+
+
+

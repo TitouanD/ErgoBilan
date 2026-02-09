@@ -4,6 +4,7 @@ import { Contribution, UserProfile, CandidateRow, CandidateDetails, ExtractedRow
 import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights'; 
 import { OpsMonitoring } from './OpsMonitoring';
+import { AdminLibrary } from './AdminLibrary';
 import { Check, X, FileText, LayoutGrid, ShieldAlert, Layers, Loader2, Database, Ban, Activity, Cpu, ArrowUpRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
@@ -21,13 +22,41 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
   
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
   const toast = useToast();
 
   useEffect(() => {
-      if (userProfile.isAdmin && activeTab === 'validation') loadCandidates();
-  }, [activeTab, userProfile.isAdmin]);
+      let mounted = true;
+      const verify = async () => {
+          setCheckingAdmin(true);
+          try {
+              const ok = await AdminService.adminCheck();
+              if (mounted) setAdminVerified(ok);
+          } catch (e) {
+              Logger.error('AUTH', 'Admin check failed', e);
+              if (mounted) setAdminVerified(false);
+          } finally {
+              if (mounted) setCheckingAdmin(false);
+          }
+      };
+      verify();
+      return () => { mounted = false; };
+  }, []);
 
-  if (!userProfile.isAdmin) {
+  useEffect(() => {
+      if (adminVerified && activeTab === 'validation') loadCandidates();
+  }, [activeTab, adminVerified]);
+
+  if (checkingAdmin) {
+      return (
+          <div className="min-h-screen bg-[#1A1C23] flex items-center justify-center text-stone-400">
+              <Loader2 size={32} className="animate-spin mr-2" /> Vérification des droits...
+          </div>
+      );
+  }
+
+  if (!adminVerified) {
       return (
           <div className="min-h-screen bg-rose-950 flex flex-col items-center justify-center text-white">
               <Ban size={64} className="mb-4" />
@@ -279,13 +308,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
                             </div>
                         )}
 
-                        {activeTab === 'library' && (
-                            <div className="text-center py-20 p-8">
-                                <Layers size={64} className="text-stone-700 mx-auto mb-6" />
-                                <h3 className="text-2xl font-bold text-stone-500">Bibliothèque Globale</h3>
-                                <p className="text-stone-600 mt-2">Gestion des tests déjà publics (Modification/Suppression post-prod).</p>
-                            </div>
-                        )}
+                        {activeTab === 'library' && <AdminLibrary />}
 
                         {activeTab === 'insights' && <ClinicalInsights />}
                         {activeTab === 'ops' && <OpsMonitoring />}
