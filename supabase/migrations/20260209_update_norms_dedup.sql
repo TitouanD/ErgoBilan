@@ -70,8 +70,7 @@ BEGIN
     IF v_target_sub_id IS NULL THEN
       -- Move private subtest under public test
       UPDATE official_subtests
-      SET test_id = v_public_test.id,
-          organization_id = NULL
+        SET test_id = v_public_test.id
       WHERE id = v_private_sub.id;
 
       UPDATE official_norms
@@ -210,8 +209,7 @@ BEGIN
         name,
         unit,
         score_type,
-        computation_mode,
-        organization_id
+        computation_mode
       )
       VALUES (
         v_sub_id,
@@ -219,8 +217,7 @@ BEGIN
         v_sub_name,
         COALESCE(v_sub->>'unit', 'pts'),
         COALESCE(v_sub->>'score_type', 'standard'),
-        COALESCE(v_sub->>'computation_mode', 'LOOKUP'),
-        v_org_id
+        COALESCE(v_sub->>'computation_mode', 'LOOKUP')
       );
 
       v_existing_id := v_sub_id;
