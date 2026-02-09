@@ -1,6 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
-import { PatientFile, TestSession, Patient, ScoreResult } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { PatientFile, TestSession, Patient, ScoreResult, ReportMetadata } from '../../types';
 import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
 import { CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, XAxis, YAxis } from 'recharts';
 import { CategoryDef } from '../../data/testCatalog';
@@ -133,6 +133,42 @@ const SessionRow: React.FC<{ session: TestSession; patient: Patient }> = ({ sess
     );
 };
 
+const ReportRow: React.FC<{ report: ReportMetadata; onOpen: (id: string) => void }> = ({ report, onOpen }) => {
+    const label = report.type === 'initial' ? 'Bilan initial' : 'Réévaluation';
+
+    return (
+        <div
+            onClick={() => onOpen(report.id)}
+            className="border-b border-stone-100 hover:bg-stone-50 transition-all duration-300 cursor-pointer"
+        >
+            <div className="flex items-center justify-between p-5">
+                <div className="flex items-center gap-6">
+                    <div className="flex flex-col items-center min-w-[60px]">
+                        <span className="text-xs font-bold text-stone-400 uppercase">
+                            {new Date(report.date).toLocaleDateString('fr-FR', { month: 'short' })}
+                        </span>
+                        <span className="text-xl font-serif font-bold text-[#3D405B]">{new Date(report.date).getDate()}</span>
+                    </div>
+                    <div className="h-8 w-px bg-stone-200"></div>
+                    <div>
+                        <h4 className="font-bold text-[#3D405B] text-lg">{label}</h4>
+                        <p className="text-xs text-stone-400 font-medium">
+                            {report.sections?.length || 0} section{(report.sections?.length || 0) > 1 ? 's' : ''} - {new Date(report.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#E07A5F] bg-[#E07A5F]/10 px-2 py-1 rounded-full">
+                        Document
+                    </div>
+                    <ChevronRight size={16} className="text-stone-300" />
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const DeleteConfirmationModal: React.FC<{
     onConfirm: () => void;
     onCancel: () => void;
@@ -193,7 +229,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
   const [isProcessing, setIsProcessing] = useState(false);
   const toast = useToast();
 
-  const chartData = React.useMemo(() => {
+  const chartData = useMemo(() => {
       if (!file.sessions || file.sessions.length === 0) return [];
       return file.sessions.map(s => {
           const scores = Object.values(s.results) as ScoreResult[];
@@ -208,6 +244,59 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
           };
       }).filter(d => d.score !== null);
   }, [file.sessions]);
+
+  const timelineItems = useMemo(() => {
+      const sessions = (file.sessions || []).map(session => ({
+          id: `session-${session.id}`,
+          type: 'session' as const,
+          date: session.date,
+          session
+      }));
+      const reports = (file.reports || []).map(report => ({
+          id: `report-${report.id}`,
+          type: 'report' as const,
+          date: report.date,
+          report
+      }));
+      return [...sessions, ...reports].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [file.sessions, file.reports]);
+
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'sessions' | 'reports'>('all');
+
+  const filteredTimeline = useMemo(() => {
+      if (timelineFilter === 'sessions') return timelineItems.filter(item => item.type === 'session');
+      if (timelineFilter === 'reports') return timelineItems.filter(item => item.type === 'report');
+      return timelineItems;
+  }, [timelineItems, timelineFilter]);
+
+  const reportStats = useMemo(() => {
+      const reports = file.reports || [];
+      const initialReports = reports.filter(r => r.type === 'initial');
+      const reevaluations = reports.filter(r => r.type === 'reevaluation');
+      const lastReport = reports.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+      const addMonths = (iso: string, months: number) => {
+          const d = new Date(iso);
+          const day = d.getDate();
+          d.setMonth(d.getMonth() + months);
+          if (d.getDate() !== day) {
+              d.setDate(0);
+          }
+          return d;
+      };
+
+      const nextWindow = lastReport
+          ? { from: addMonths(lastReport.date, 6), to: addMonths(lastReport.date, 12) }
+          : null;
+
+      return {
+          initialCount: initialReports.length,
+          reevaluationCount: reevaluations.length,
+          lastReport,
+          nextWindow,
+          isOverdue: nextWindow ? new Date() > nextWindow.to : false
+      };
+  }, [file.reports]);
 
   const handleArchive = async () => {
       if (!orgKey) return;
@@ -363,28 +452,73 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
                 </div>
             </div>
 
-            {/* 2. JOURNAL DES SÉANCES (NEW) */}
+            {/* 2. TIMELINE UNIFIÉE (SÉANCES + BILANS) */}
             <div>
-                <div className="flex items-center gap-3 mb-6 px-2">
-                    <Calendar size={24} className="text-[#3D405B]" />
-                    <h2 className="font-serif text-2xl font-bold text-[#3D405B]">Journal des Séances</h2>
-                    <div className="ml-auto flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-stone-400 bg-stone-100 px-3 py-1 rounded-full">
-                        <Unlock size={12} /> Accès Libre
+                <div className="flex flex-col gap-3 mb-6 px-2">
+                    <div className="flex items-center gap-3">
+                        <Calendar size={24} className="text-[#3D405B]" />
+                        <h2 className="font-serif text-2xl font-bold text-[#3D405B]">Historique global</h2>
+                        <div className="ml-auto flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-stone-400 bg-stone-100 px-3 py-1 rounded-full">
+                            <Unlock size={12} /> Accès Libre
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                        <span className="bg-stone-100 px-3 py-1 rounded-full">1 bilan initial</span>
+                        <span className="bg-stone-100 px-3 py-1 rounded-full">Réévaluation 6-12 mois</span>
+                        {reportStats.initialCount === 0 && (
+                            <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full">Bilan initial manquant</span>
+                        )}
+                        {reportStats.initialCount > 1 && (
+                            <span className="bg-rose-50 text-rose-600 px-3 py-1 rounded-full">{reportStats.initialCount} bilans initiaux</span>
+                        )}
+                        {reportStats.nextWindow && (
+                            <span className="bg-[#E07A5F]/10 text-[#E07A5F] px-3 py-1 rounded-full">
+                                Fenêtre recommandée: {reportStats.nextWindow.from.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })} - {reportStats.nextWindow.to.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                        )}
+                        {reportStats.isOverdue && (
+                            <span className="bg-rose-50 text-rose-600 px-3 py-1 rounded-full">Réévaluation en retard</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {([
+                            { id: 'all', label: 'Tout' },
+                            { id: 'sessions', label: 'Séances' },
+                            { id: 'reports', label: 'Bilans' }
+                        ] as const).map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setTimelineFilter(tab.id)}
+                                className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all ${
+                                    timelineFilter === tab.id
+                                        ? 'bg-[#3D405B] text-white border-[#3D405B]'
+                                        : 'bg-white text-stone-400 border-stone-200 hover:text-stone-600'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
                 <div className="bg-white rounded-[32px] border border-stone-200 shadow-sm overflow-hidden relative">
                     <div className="absolute top-0 bottom-0 left-[85px] w-px bg-stone-100 z-0"></div>
 
-                    {(!file.sessions || file.sessions.length === 0) ? (
+                    {filteredTimeline.length === 0 ? (
                         <div className="p-12 text-center">
-                            <p className="text-stone-400 font-medium">L'historique est vide.</p>
-                            <button onClick={onQuickEntry} className="mt-4 text-[#E07A5F] font-bold text-sm hover:underline">Ajouter une séance maintenant</button>
+                            <p className="text-stone-400 font-medium">
+                                {timelineFilter === 'reports' ? 'Aucun bilan disponible.' : timelineFilter === 'sessions' ? 'Aucune séance saisie.' : "L'historique est vide."}
+                            </p>
+                            {(timelineFilter === 'sessions' || timelineFilter === 'all') && (
+                                <button onClick={onQuickEntry} className="mt-4 text-[#E07A5F] font-bold text-sm hover:underline">Ajouter une séance maintenant</button>
+                            )}
                         </div>
                     ) : (
                         <div className="relative z-10">
-                            {file.sessions.map((session) => (
-                                <SessionRow key={session.id} session={session} patient={file.patient} />
+                            {filteredTimeline.map(item => (
+                                item.type === 'session'
+                                    ? <SessionRow key={item.id} session={item.session} patient={file.patient} />
+                                    : <ReportRow key={item.id} report={item.report} onOpen={onOpenReport} />
                             ))}
                         </div>
                     )}
