@@ -394,3 +394,45 @@ export interface AIExtractionResult {
     structure_type?: 'PARAMETRIC' | 'LOOKUP';
     tables?: AIExtractedTable[];
 }
+
+// ── Deduplication types ──
+
+/** A similar test found by find_similar_tests RPC */
+export interface SimilarTestMatch {
+    id: string;
+    name: string;
+    organization_id: string | null;
+    similarity_score: number;
+    subtests_count: number;
+}
+
+/** A pair of duplicate tests detected by admin_find_duplicates */
+export interface DuplicatePair {
+    test_id_a: string;
+    test_name_a: string;
+    org_id_a: string | null;
+    subtests_count_a: number;
+    norms_count_a: number;
+    test_id_b: string;
+    test_name_b: string;
+    org_id_b: string | null;
+    subtests_count_b: number;
+    norms_count_b: number;
+    similarity_score: number;
+}
+
+/** Result of admin_merge_tests RPC */
+export interface MergeResult {
+    merged_tests: number;
+    moved_subtests: number;
+    migrated_norms: number;
+    updated_sessions: number;
+    target_name: string;
+}
+
+/** Result of attach_subtests_to_test RPC */
+export interface AttachResult {
+    new_subtests: number;
+    new_norms: number;
+    test_id: string;
+}

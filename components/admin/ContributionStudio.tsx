@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan } from 'lucide-react';
-import { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow } from '../../types';
+import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
+import { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
 import { callAIProxy } from '../../services/aiProxy';
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
@@ -10,7 +10,8 @@ import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
-import { normalizeTestName } from '../../utils';
+import { resolveSubtestAlias } from '../../data/subtestAliases';
+import { normalizeSubtestName, normalizeTestName } from '../../utils';
 
 interface Props {
   onClose: () => void;
@@ -55,10 +56,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   // MERGE STATE
   const [showMergeModal, setShowMergeModal] = useState(false);
-  const [mergeTarget, setMergeTarget] = useState<{ id: string; name: string; subtestCount: number } | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<{ id: string; name: string; subtestCount: number; isPublic: boolean } | null>(null);
   const [mergeNewAgeRanges, setMergeNewAgeRanges] = useState(0);
   const [mergeNewSubtests, setMergeNewSubtests] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // FUZZY MATCH STATE (when multiple similar tests are found)
+  const [showFuzzyModal, setShowFuzzyModal] = useState(false);
+  const [fuzzyMatches, setFuzzyMatches] = useState<SimilarTestMatch[]>([]);
+    const [canonicalTest, setCanonicalTest] = useState<{ id: string; name: string } | null>(null);
+    const [canonicalSubtests, setCanonicalSubtests] = useState<Array<{ id: string; name: string }>>([]);
+    const [isCanonicalLoading, setIsCanonicalLoading] = useState(false);
+    const [showUnmappedModal, setShowUnmappedModal] = useState(false);
 
   const toast = useToast();
 
@@ -75,6 +83,62 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   useEffect(() => {
       return () => { if (currentFileUrl) URL.revokeObjectURL(currentFileUrl); };
   }, [currentFileUrl]);
+
+  useEffect(() => {
+      const trimmed = testName.trim();
+      if (!trimmed || trimmed.length < 3) {
+          setCanonicalTest(null);
+          setCanonicalSubtests([]);
+          return;
+      }
+
+      let canceled = false;
+      const loadCanonicalSubtests = async () => {
+          setIsCanonicalLoading(true);
+          try {
+              const { data: tests, error: testsError } = await supabase
+                  .from('view_unified_catalog')
+                  .select('id, name')
+                  .ilike('name', `%${trimmed}%`);
+
+              if (testsError) throw testsError;
+
+              const normalized = normalizeTestName(trimmed);
+              const matchedTest = (tests || []).find(t => normalizeTestName(t.name) === normalized) || null;
+
+              if (!matchedTest) {
+                  if (!canceled) {
+                      setCanonicalTest(null);
+                      setCanonicalSubtests([]);
+                  }
+                  return;
+              }
+
+              const { data: subs, error: subsError } = await supabase
+                  .from('view_unified_subtests')
+                  .select('id, name')
+                  .eq('test_id', matchedTest.id);
+
+              if (subsError) throw subsError;
+
+              if (!canceled) {
+                  setCanonicalTest(matchedTest);
+                  setCanonicalSubtests(subs || []);
+              }
+          } catch (error) {
+              Logger.error('DB', 'Canonical subtests load failed', error);
+              if (!canceled) {
+                  setCanonicalTest(null);
+                  setCanonicalSubtests([]);
+              }
+          } finally {
+              if (!canceled) setIsCanonicalLoading(false);
+          }
+      };
+
+      loadCanonicalSubtests();
+      return () => { canceled = true; };
+  }, [testName]);
 
   // --- HELPER FUNCTIONS ---
 
@@ -152,15 +216,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
   // --- PROCESSING FUNCTION ---
 
-  const processSingleExtraction = async (file: File) => {
+  const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
       const imagePart = await fileToGenerativePart(file);
       const filename = file.name;
+
+      const knownNamesBlock = (knownSubtestNames && knownSubtestNames.length > 0)
+          ? `\n            --- KNOWN SUBTESTS FROM PREVIOUS PAGES ---\n            The following subtest names have already been extracted from earlier pages of the SAME test manual.\n            YOU MUST REUSE these exact names when you encounter the same subtests on this page (even if the table header phrasing differs slightly).\n            Known names: ${JSON.stringify(knownSubtestNames)}\n            Only create a NEW subtest name if the subtest is genuinely different from all of the above.\n`
+          : '';
 
       const prompt = `
             ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
             CONTEXT: The filename is "${filename}".
             IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
-
+${knownNamesBlock}
             TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE data.
 
             --- STEP 1: CLASSIFICATION (structure_type) ---
@@ -168,7 +236,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                The table does NOT map raw scores to percentiles directly. It gives the formula constants.
             B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, Scaled) or Percentiles.
             
-            --- STEP 2: EXTRACTION RULES ---
+                --- STEP 2: EXTRACTION RULES ---
             1. PIVOT: If columns represent Ages/Grades and rows represent Stats (M, SD), YOU MUST PIVOT. Create ONE object per Age/Grade.
             2. VALUES:
                - If Parametric: Extract "mean" and "sd".
@@ -177,6 +245,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                - Clean units (sec, pts).
                - Keep decimals.
                - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
+                4. SUBTEST NAMING:
+                    - Use the simplest canonical subtest name visible in the manual, IN FRENCH when possible.
+                    - Do NOT use English code-style names like "mabc2_catching_2_hands" — use the French clinical name instead.
+                    - Do NOT add age, grade, or side qualifiers in the subtest name.
+                    - Avoid redundant phrasing; keep names short and stable.
+                    - If a known subtest name from previous pages matches what you see, use it EXACTLY.
 
             --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
             You must calculate specific numeric values for the database:
@@ -270,10 +344,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           const nextPages: ExtractionPage[] = [];
           let resolvedStructure: TableStructure = tableStructure;
           let resolvedTestName = testName;
+          const knownSubtestNames: string[] = [];
 
           for (let i = 0; i < inputFiles.length; i += 1) {
               setCurrentFileIndex(i);
-              const result = await processSingleExtraction(inputFiles[i]);
+              const result = await processSingleExtraction(inputFiles[i], knownSubtestNames.length > 0 ? knownSubtestNames : undefined);
+
+              // Collect unique subtest names from this page for subsequent prompts
+              const pageSubtests = new Set(result.rows.map(r => r.subtest).filter(Boolean));
+              pageSubtests.forEach(name => {
+                  if (!knownSubtestNames.includes(name)) knownSubtestNames.push(name);
+              });
 
               if (resolvedStructure === 'UNKNOWN') {
                   resolvedStructure = result.detectedStructure;
@@ -294,6 +375,31 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                   detectedStructure: result.detectedStructure
               });
           }
+
+          // --- Post-extraction dedup pass: unify subtest names across all pages ---
+          const nameMapping = new Map<string, string>(); // normalized → first seen canonical name
+          nextPages.forEach(page => {
+              page.rows.forEach(row => {
+                  const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                  const norm = normalizeSubtestName(alias);
+                  if (!norm) return;
+                  if (!nameMapping.has(norm)) {
+                      nameMapping.set(norm, alias);
+                  }
+              });
+          });
+          // Rename rows to the first-seen canonical form
+          nextPages.forEach(page => {
+              page.rows = page.rows.map(row => {
+                  const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                  const norm = normalizeSubtestName(alias);
+                  const canonical = norm ? nameMapping.get(norm) : null;
+                  if (canonical && canonical !== row.subtest) {
+                      return { ...row, subtest: canonical };
+                  }
+                  return row;
+              });
+          });
 
           setTableStructure(resolvedStructure);
           setPages(nextPages);
@@ -330,6 +436,62 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       () => Object.entries(allGroupedRows) as Array<[string, ExtractedRow[]]>,
       [allGroupedRows]
   );
+  const canonicalSubtestNameMap = useMemo(() => {
+      const map = new Map<string, string>();
+      canonicalSubtests.forEach(sub => {
+          map.set(normalizeSubtestName(sub.name), sub.name);
+      });
+      return map;
+  }, [canonicalSubtests]);
+
+  const stripAgeQualifier = (name: string): string => {
+      const trimmed = name.trim();
+      if (!trimmed) return trimmed;
+
+      const cleaned = trimmed.replace(/\(([^)]*)\)/g, (match, inner) => {
+          const content = String(inner).toLowerCase();
+          const hasAgeHint = /\bage\b|\bans\b|\bmois\b|\d+\s*;\s*\d+|\d+\s*[-:]\s*\d+/.test(content);
+          return hasAgeHint ? '' : match;
+      });
+
+      return cleaned
+          .replace(/\s*(?:[-–—:]\s*)?age\s*\d.*$/i, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+  };
+
+  const canonicalizeSubtestName = (subtestName: string): string => {
+      const trimmed = subtestName.trim();
+      if (!trimmed) return trimmed;
+      const baseName = canonicalSubtests.length > 0 ? stripAgeQualifier(trimmed) : trimmed;
+      const alias = resolveSubtestAlias(testName, baseName);
+      const normalized = normalizeSubtestName(alias);
+      return canonicalSubtestNameMap.get(normalized) || alias;
+  };
+
+  const canonicalGroupedEntries = useMemo(() => {
+      const grouped = new Map<string, ExtractedRow[]>();
+      allGroupedEntries.forEach(([subtestName, rows]) => {
+          const canonicalName = canonicalizeSubtestName(subtestName);
+          const existing = grouped.get(canonicalName) || [];
+          grouped.set(canonicalName, existing.concat(rows));
+      });
+      return Array.from(grouped.entries()) as Array<[string, ExtractedRow[]]>;
+  }, [allGroupedEntries, testName, canonicalSubtestNameMap]);
+
+  const unmappedSubtests = useMemo(() => {
+      if (!canonicalTest || canonicalSubtests.length === 0) return [];
+      const missing = new Set<string>();
+      allGroupedEntries.forEach(([subtestName]) => {
+          const alias = resolveSubtestAlias(testName, stripAgeQualifier(subtestName)).trim();
+          if (!alias) return;
+          const normalized = normalizeSubtestName(alias);
+          if (!canonicalSubtestNameMap.has(normalized)) {
+              missing.add(alias);
+          }
+      });
+      return Array.from(missing.values());
+  }, [allGroupedEntries, canonicalSubtests, canonicalSubtestNameMap, canonicalTest, testName]);
 
   const updateCurrentPageRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
       setPages(prev => prev.map((page, index) => {
@@ -411,6 +573,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           toast.error("Validez chaque page avant d'enregistrer le test.");
           return;
       }
+      if (canonicalTest && unmappedSubtests.length > 0) {
+          setShowUnmappedModal(true);
+          return;
+      }
       setShowSaveModal(true);
   };
 
@@ -478,7 +644,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           version: '1.0',
           structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
       },
-      subtests: allGroupedEntries.map(([subtestName, subRows]) => ({
+      subtests: canonicalGroupedEntries.map(([subtestName, subRows]) => ({
           name: subtestName,
           unit: 'pts',
           score_type: 'standard',
@@ -487,7 +653,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       }))
   });
 
-  // --- DETECT DUPLICATE & ASK USER ---
+  // --- DETECT DUPLICATE & ASK USER (cross-scope fuzzy search) ---
   const handleFinalSave = async () => {
       if (!legalConsent) return;
 
@@ -497,33 +663,91 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           if (!user) throw new Error("Utilisateur non connecté");
           setCurrentUserId(user.id);
 
-          // --- DEDUP CHECK: RPC (tests privés de l'org) ---
-          const matches = await AdminService.findPrivateTestByName(testName);
-          const match = (matches || [])[0];
+          // --- CROSS-SCOPE DEDUP: fuzzy search (public + org private) ---
+          const similarTests = await AdminService.findSimilarTests(testName, 0.3);
 
-          if (match) {
-              // Count existing subtests for info display
-              const { data: existingSubs } = await supabase
-                  .from('view_unified_subtests')
-                  .select('id, name')
-                  .eq('test_id', match.id);
-              const existingSubNames = new Set((existingSubs || []).map(s => normalizeTestName(s.name)));
-              const newSubtests = Object.keys(allGroupedRows).filter(name => !existingSubNames.has(normalizeTestName(name)));
+          if (similarTests.length > 0) {
+              // Check for high-confidence match (score > 0.85)
+              const bestMatch = similarTests[0];
+              
+              if (bestMatch.similarity_score > 0.85) {
+                  // Strong match → show merge/attach modal directly
+                  const { data: existingSubs } = await supabase
+                      .from('view_unified_subtests')
+                      .select('id, name')
+                      .eq('test_id', bestMatch.id);
+                  const existingSubNames = new Set(
+                      (existingSubs || []).map(s => normalizeSubtestName(resolveSubtestAlias(testName, s.name)))
+                  );
+                  const newSubs = canonicalGroupedEntries
+                      .map(([name]) => name)
+                      .filter(name => !existingSubNames.has(normalizeSubtestName(name)));
 
-              setMergeTarget({ id: match.id, name: match.name, subtestCount: existingSubs?.length || 0 });
-              setMergeNewSubtests(newSubtests.length);
-              setMergeNewAgeRanges(allRows.length); // approximate: all rows are potential new norms
+                  const isPublic = bestMatch.organization_id === null;
+                  setMergeTarget({ id: bestMatch.id, name: bestMatch.name, subtestCount: existingSubs?.length || 0, isPublic });
+                  setMergeNewSubtests(newSubs.length);
+                  setMergeNewAgeRanges(allRows.length);
+                  setShowSaveModal(false);
+                  setShowMergeModal(true);
+                  return;
+              }
+              
+              // Medium matches → show fuzzy selection modal
+              setFuzzyMatches(similarTests);
               setShowSaveModal(false);
-              setShowMergeModal(true);
+              setShowFuzzyModal(true);
               return;
           }
 
-          // No duplicate → create normally
+          // No similar test found → create normally
           await performCreate();
 
       } catch (e: unknown) {
           Logger.error('DB', "Erreur sauvegarde test:", e);
           toast.error("Erreur lors de la création : " + (e instanceof Error ? e.message : String(e)));
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // --- SELECT FROM FUZZY MATCHES ---
+  const handleSelectFuzzyMatch = async (match: SimilarTestMatch) => {
+      setShowFuzzyModal(false);
+      setIsSaving(true);
+      try {
+          const { data: existingSubs } = await supabase
+              .from('view_unified_subtests')
+              .select('id, name')
+              .eq('test_id', match.id);
+          const existingSubNames = new Set(
+              (existingSubs || []).map(s => normalizeSubtestName(resolveSubtestAlias(testName, s.name)))
+          );
+          const newSubs = canonicalGroupedEntries
+              .map(([name]) => name)
+              .filter(name => !existingSubNames.has(normalizeSubtestName(name)));
+
+          const isPublic = match.organization_id === null;
+          setMergeTarget({ id: match.id, name: match.name, subtestCount: existingSubs?.length || 0, isPublic });
+          setMergeNewSubtests(newSubs.length);
+          setMergeNewAgeRanges(allRows.length);
+          setShowMergeModal(true);
+      } catch (e) {
+          Logger.error('DB', 'Error loading match details:', e);
+          toast.error('Erreur chargement du test similaire.');
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  // --- SKIP FUZZY, CREATE NEW ---
+  const handleSkipFuzzy = async () => {
+      setShowFuzzyModal(false);
+      setIsSaving(true);
+      try {
+          await performCreate();
+      } catch (e: unknown) {
+          Logger.error('DB', "Erreur création:", e);
+          toast.error("Erreur : " + (e instanceof Error ? e.message : String(e)));
       } finally {
           setIsSaving(false);
       }
@@ -538,23 +762,31 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       finishSuccess(testId);
   };
 
-  // --- MERGE INTO EXISTING TEST ---
+  // --- MERGE / ATTACH INTO EXISTING TEST ---
   const performMerge = async () => {
       if (!mergeTarget) return;
       setIsSaving(true);
       try {
           const existingTestId = mergeTarget.id;
           const payload = buildTestPayload();
-          const result = await AdminService.mergePrivateTest(existingTestId, payload);
 
-          Logger.info('DB', `Merge réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
-          toast.success(`Fusion réussie ! ${result.new_norms} nouvelles entrées ajoutées.`);
+          if (mergeTarget.isPublic) {
+              // Public test → attach private subtests (scoped to user's org)
+              const result = await AdminService.attachSubtestsToTest(existingTestId, payload);
+              Logger.info('DB', `Attach réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
+              toast.success(`Rattachement réussi ! ${result.new_norms} nouvelles normes ajoutées au test public.`);
+          } else {
+              // Private test (same org) → merge
+              const result = await AdminService.mergePrivateTest(existingTestId, payload);
+              Logger.info('DB', `Merge réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
+              toast.success(`Fusion réussie ! ${result.new_norms} nouvelles entrées ajoutées.`);
+          }
 
           setShowMergeModal(false);
           finishSuccess(existingTestId);
 
       } catch (e: unknown) {
-          Logger.error('DB', "Erreur merge test:", e);
+          Logger.error('DB', "Erreur merge/attach test:", e);
           toast.error("Erreur lors de la fusion : " + (e instanceof Error ? e.message : String(e)));
       } finally {
           setIsSaving(false);
@@ -842,6 +1074,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </div>
                         )}
 
+                        {testName.trim() && (
+                            <div className={`border rounded-xl p-4 text-sm ${canonicalTest ? 'bg-indigo-50 border-indigo-200 text-indigo-900' : 'bg-stone-50 border-stone-200 text-stone-600'}`}>
+                                {isCanonicalLoading ? (
+                                    <div className="flex items-center gap-2">
+                                        <Loader2 size={14} className="animate-spin" />
+                                        <span className="font-semibold">Recherche de sous-tests canoniques...</span>
+                                    </div>
+                                ) : canonicalTest ? (
+                                    <div className="space-y-2">
+                                        <div className="font-semibold">Liste canonique detectee : {canonicalTest.name} ({canonicalSubtests.length} sous-tests)</div>
+                                        {unmappedSubtests.length > 0 && (
+                                            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                                {unmappedSubtests.length} sous-test{unmappedSubtests.length > 1 ? 's' : ''} non reconnus : {unmappedSubtests.join(', ')}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="font-semibold">Aucune liste canonique trouvee : les sous-tests seront crees tels quels.</div>
+                                )}
+                            </div>
+                        )}
+
                         {currentGroupedEntries.map(([subtest, subRows]) => (
                             <div key={subtest} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
                                 <div className="bg-stone-50 px-4 py-3 border-b border-stone-200 flex justify-between items-center">
@@ -1020,28 +1274,69 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             </div>
         )}
 
-        {/* --- MODAL MERGE CONFIRMATION --- */}
-        {showMergeModal && mergeTarget && (
+        {showUnmappedModal && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                     <div className="p-6">
                         <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-amber-100">
-                            <Database size={32} className="text-amber-600" />
+                            <BookOpen size={32} className="text-amber-600" />
                         </div>
-                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Test existant détecté</h3>
-                        <p className="text-center text-sm text-stone-500 mb-6">
+                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Sous-tests non reconnus</h3>
+                        <p className="text-center text-sm text-stone-500 mb-4">Ces sous-tests ne correspondent pas a la liste canonique du test. Voulez-vous les creer quand meme ?</p>
+
+                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 text-xs text-amber-800">
+                            {unmappedSubtests.join(', ')}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowUnmappedModal(false)}
+                                className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                            >
+                                Revenir
+                            </button>
+                            <button
+                                onClick={() => { setShowUnmappedModal(false); setShowSaveModal(true); }}
+                                className="flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 hover:-translate-y-1"
+                            >
+                                Creer quand meme
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- MODAL MERGE / ATTACH CONFIRMATION --- */}
+        {showMergeModal && mergeTarget && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="p-6">
+                        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg ${mergeTarget.isPublic ? 'bg-blue-100 shadow-blue-100' : 'bg-amber-100 shadow-amber-100'}`}>
+                            {mergeTarget.isPublic ? <Globe size={32} className="text-blue-600" /> : <Database size={32} className="text-amber-600" />}
+                        </div>
+                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">
+                            {mergeTarget.isPublic ? 'Test public existant' : 'Test existant détecté'}
+                        </h3>
+                        <p className="text-center text-sm text-stone-500 mb-2">
                             Le test <strong className="text-[#3D405B]">« {mergeTarget.name} »</strong> existe déjà avec {mergeTarget.subtestCount} sous-test{mergeTarget.subtestCount > 1 ? 's' : ''}.
                         </p>
+                        {mergeTarget.isPublic && (
+                            <p className="text-center text-xs text-blue-600 bg-blue-50 rounded-lg p-2 mb-4">
+                                <Globe size={12} className="inline mr-1" />
+                                Vos sous-tests seront rattachés au test public. Seul vous pourrez les voir jusqu'à validation par un admin.
+                            </p>
+                        )}
 
-                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 space-y-2">
+                        <div className={`border p-4 rounded-xl mb-6 space-y-2 ${mergeTarget.isPublic ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
                             <div className="flex items-center gap-2 text-sm">
-                                <Layers size={14} className="text-amber-600 shrink-0" />
+                                <Layers size={14} className={`shrink-0 ${mergeTarget.isPublic ? 'text-blue-600' : 'text-amber-600'}`} />
                                 <span className="text-stone-600">
-                                    <strong className="text-[#3D405B]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à fusionner
+                                    <strong className="text-[#3D405B]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à {mergeTarget.isPublic ? 'rattacher' : 'fusionner'}
                                     {mergeNewSubtests > 0 && <> dont <strong className="text-[#3D405B]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
                                 </span>
                             </div>
-                            <p className="text-xs text-amber-700 leading-relaxed">
+                            <p className={`text-xs leading-relaxed ${mergeTarget.isPublic ? 'text-blue-700' : 'text-amber-700'}`}>
                                 Seules les lignes manquantes seront ajoutées (âge + score). Les données existantes ne seront pas modifiées.
                             </p>
                         </div>
@@ -1057,10 +1352,75 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <button 
                                 onClick={performMerge}
                                 disabled={isSaving}
-                                className="flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 hover:-translate-y-1"
+                                className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 hover:-translate-y-1 ${mergeTarget.isPublic ? 'bg-blue-500 hover:bg-blue-600' : 'bg-amber-500 hover:bg-amber-600'}`}
                             >
-                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                                Fusionner
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : mergeTarget.isPublic ? <Link2 size={18} /> : <Sparkles size={18} />}
+                                {mergeTarget.isPublic ? 'Rattacher' : 'Fusionner'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- MODAL FUZZY MATCHES (multiple similar tests found) --- */}
+        {showFuzzyModal && fuzzyMatches.length > 0 && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-lg rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="p-6">
+                        <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-indigo-100">
+                            <Scale size={32} className="text-indigo-600" />
+                        </div>
+                        <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Tests similaires détectés</h3>
+                        <p className="text-center text-sm text-stone-500 mb-6">
+                            Nous avons trouvé des tests qui ressemblent à <strong className="text-[#3D405B]">« {testName} »</strong>. Voulez-vous rattacher vos données à l'un d'eux ?
+                        </p>
+
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto mb-6 custom-scrollbar">
+                            {fuzzyMatches.map(match => (
+                                <button
+                                    key={match.id}
+                                    onClick={() => handleSelectFuzzyMatch(match)}
+                                    disabled={isSaving}
+                                    className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all group"
+                                >
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex items-center gap-2">
+                                            {match.organization_id === null ? (
+                                                <Globe size={14} className="text-blue-500 shrink-0" />
+                                            ) : (
+                                                <Lock size={14} className="text-amber-500 shrink-0" />
+                                            )}
+                                            <span className="font-bold text-sm text-[#3D405B] group-hover:text-indigo-700">
+                                                {match.name}
+                                            </span>
+                                        </div>
+                                        <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded font-bold">
+                                            {Math.round(match.similarity_score * 100)}%
+                                        </span>
+                                    </div>
+                                    <div className="flex gap-3 mt-1 text-xs text-stone-400">
+                                        <span>{match.subtests_count} sous-test{match.subtests_count > 1 ? 's' : ''}</span>
+                                        <span>{match.organization_id === null ? 'Public' : 'Privé (votre cabinet)'}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowFuzzyModal(false)}
+                                className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                onClick={handleSkipFuzzy}
+                                disabled={isSaving}
+                                className="flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 bg-stone-500 hover:bg-stone-600 hover:-translate-y-1"
+                            >
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                                Créer nouveau test
                             </button>
                         </div>
                     </div>

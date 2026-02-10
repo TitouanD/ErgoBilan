@@ -6,7 +6,11 @@ import {
     CandidateDetails,
     ExtractedRow,
     AdminTestBundle,
-    AdminTestSummary
+    AdminTestSummary,
+    SimilarTestMatch,
+    DuplicatePair,
+    MergeResult,
+    AttachResult
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -161,6 +165,16 @@ export const AdminService = {
         return data || [];
     },
 
+    /**
+     * Cross-scope fuzzy search for similar tests (public + user's org)
+     * Uses pg_trgm similarity scoring
+     */
+    findSimilarTests: async (name: string, threshold = 0.3): Promise<SimilarTestMatch[]> => {
+        const { data, error } = await supabase.rpc('find_similar_tests', { p_name: name, p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as SimilarTestMatch[];
+    },
+
     createPrivateTest: async (payload: any): Promise<string> => {
         const { data, error } = await supabase.rpc('create_private_test', { p_payload: payload });
         if (error) throw error;
@@ -171,6 +185,46 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('merge_private_test', { p_target_id: targetId, p_payload: payload });
         if (error) throw error;
         return data as { new_subtests: number; new_norms: number };
+    },
+
+    /**
+     * Attach private subtests/norms to an existing test (public or private).
+     * Subtests are scoped to the user's organization.
+     */
+    attachSubtestsToTest: async (testId: string, payload: any): Promise<AttachResult> => {
+        const { data, error } = await supabase.rpc('attach_subtests_to_test', { p_test_id: testId, p_payload: payload });
+        if (error) throw error;
+        return data as AttachResult;
+    },
+
+    // --- ADMIN DEDUPLICATION ---
+
+    /**
+     * Find clusters of duplicate tests across all scopes (admin only)
+     */
+    findDuplicates: async (threshold = 0.4): Promise<DuplicatePair[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicates', { p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as DuplicatePair[];
+    },
+
+    /**
+     * Merge N source tests into 1 target test (admin only)
+     * Moves subtests, migrates norms, updates session references
+     */
+    mergeTests: async (sourceIds: string[], targetId: string): Promise<MergeResult> => {
+        const { data, error } = await supabase.rpc('admin_merge_tests', { p_source_ids: sourceIds, p_target_id: targetId });
+        if (error) throw error;
+        return data as MergeResult;
+    },
+
+    /**
+     * Promote private subtests to public (admin only)
+     */
+    promoteSubtests: async (subtestIds: string[]): Promise<{ promoted: number }> => {
+        const { data, error } = await supabase.rpc('admin_promote_subtests', { p_subtest_ids: subtestIds });
+        if (error) throw error;
+        return data as { promoted: number };
     },
 
     // --- MODULE C : Télémétrie Passive & Anonyme ---

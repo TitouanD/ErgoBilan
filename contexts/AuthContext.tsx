@@ -31,6 +31,7 @@ interface AuthContextType {
   setOrgKey: (key: CryptoKey | null) => void; 
   startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
   verifyAdminAccess: () => Promise<boolean>; // NOUVEAU : Vérification serveur
+  setWizardActive: (active: boolean) => void; // Lock pour empêcher loadUser pendant le wizard
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,6 +77,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // MUTEX & REFS : Empêche loadUser de tourner en double et résout le Stale Closure
   const isLoadingProfileRef = useRef(false);
   const currentUserIdRef = useRef<string | null>(null);
+  const wizardActiveRef = useRef(false);
+
+  const setWizardActive = (active: boolean) => {
+      wizardActiveRef.current = active;
+      Logger.info('AUTH', `Wizard active lock: ${active}`);
+  };
 
   // Initialisation Session & Listener
   useEffect(() => {
@@ -100,8 +107,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 Logger.info('AUTH', "New user session detected or initial load", session.user.id);
                 // On met à jour la ref immédiatement pour bloquer les appels concurrents
                 currentUserIdRef.current = session.user.id;
-                setAuthState('authenticating');
-                await loadUser(session.user.id, session.user.email!);
+
+                // Si le wizard est actif (inscription en cours), on diffère loadUser
+                // pour éviter de trouver encryption_salt='pending' et de basculer en 'registering'
+                // ce qui démonterait le wizard en pleine exécution
+                if (wizardActiveRef.current) {
+                    Logger.info('AUTH', 'Wizard active — deferring loadUser until wizard completes');
+                    setIsLoading(false);
+                } else {
+                    setAuthState('authenticating');
+                    await loadUser(session.user.id, session.user.email!);
+                }
             } else {
                 Logger.debug('AUTH', "Skipping loadUser (Same ID in Ref)");
             }
@@ -356,6 +372,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error || !user) return null;
 
+      // Reset wizard lock — si on est appelé depuis handleWizardComplete,
+      // le wizard a fini son travail et loadUser peut maintenant tourner normalement
+      wizardActiveRef.current = false;
+
       setIsLoading(true);
       setAuthState('authenticating');
       currentUserIdRef.current = user.id;
@@ -462,7 +482,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{ 
         userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess
+        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive
     }}>
       {children}
     </AuthContext.Provider>

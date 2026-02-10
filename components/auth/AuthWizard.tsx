@@ -6,6 +6,7 @@ import { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
@@ -17,6 +18,7 @@ interface Props {
 export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '' }) => {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const toast = useToast();
+    const { setWizardActive } = useAuth();
     
     // Form Data
     const [formData, setFormData] = useState({
@@ -142,6 +144,11 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                     return;
                 }
 
+                // CRITICAL: Activer le lock AVANT setSession pour empêcher
+                // onAuthStateChange → loadUser de trouver encryption_salt='pending'
+                // et de basculer en 'registering' (ce qui démonterait ce wizard)
+                setWizardActive(true);
+
                 await supabase.auth.setSession({
                     access_token: accessToken,
                     refresh_token: refreshToken
@@ -240,6 +247,8 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
         } catch (e: unknown) {
             Logger.error('AUTH', "Registration Error", e);
+            // En cas d'erreur, libérer le lock pour permettre au flow normal de reprendre
+            setWizardActive(false);
             let msg = e instanceof Error ? e.message : "Une erreur est survenue.";
             if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB. Vos droits ne sont pas encore actifs.";
             toast.error(msg);

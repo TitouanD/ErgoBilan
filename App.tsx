@@ -103,7 +103,12 @@ const AppRouter = () => {
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
             setMode('landing');
-            setShowAuthModal(true);
+            // Seulement ouvrir le modal si pas déjà ouvert — évite de re-monter
+            // un nouveau AuthWizard pendant que l'actuel est en train de travailler
+            setShowAuthModal(prev => {
+                if (prev) Logger.debug('UI', 'Auth modal already open, skipping re-open for registering state');
+                return true;
+            });
             setIsLoggingIn(false);
         } else if (authState === 'subscription_locked') {
             // Keep user inside the app view, but block with paywall
@@ -124,8 +129,10 @@ const AppRouter = () => {
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
     const handleUnlock = (key: CryptoKey) => { unlockSession(key); setMode('dashboard'); };
     const handleWizardComplete = async (_p: PractitionerProfile, key: CryptoKey) => {
-        setShowOnboarding(true);
+        // Fermer le modal AVANT reload pour éviter le flash du AuthWizard
+        // quand authState passe brièvement par 'authenticating'
         setShowAuthModal(false);
+        setShowOnboarding(true);
         setSessionKey(key);
 
         const nextState = await reloadUserFromSession();

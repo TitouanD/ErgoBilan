@@ -3,7 +3,8 @@ import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord } from '../../types';
-import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
+import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock } from 'lucide-react';
+import { normalizeSubtestName } from '../../utils';
 
 interface SubtestDraft extends AdminSubtestRecord {
   isNew?: boolean;
@@ -42,6 +43,7 @@ export const AdminLibrary: React.FC = () => {
   const [selectedSubtestId, setSelectedSubtestId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isPromoting, setIsPromoting] = useState(false);
 
   const loadTests = async () => {
     setLoadingTests(true);
@@ -93,6 +95,13 @@ export const AdminLibrary: React.FC = () => {
   const updateSubtestField = (subtestId: string, field: keyof AdminSubtestRecord, value: any) => {
     setBundle(prev => {
       if (!prev) return prev;
+      if (field === 'name') {
+        const normalized = normalizeSubtestName(String(value || ''));
+        if (normalized && prev.subtests.some(s => s.id !== subtestId && normalizeSubtestName(s.name) === normalized)) {
+          toast.error('Ce nom de sous-test existe deja pour ce test.');
+          return prev;
+        }
+      }
       setIsDirty(true);
       return {
         ...prev,
@@ -258,6 +267,23 @@ export const AdminLibrary: React.FC = () => {
     }
   };
 
+  const handlePromoteSubtests = async (subtestIds: string[]) => {
+    if (!bundle) return;
+    if (!confirm(`Promouvoir ${subtestIds.length} sous-test(s) en public ? Cette action est irréversible.`)) return;
+    setIsPromoting(true);
+    try {
+      await AdminService.promoteSubtests(subtestIds);
+      toast.success(`${subtestIds.length} sous-test(s) promu(s) en public.`);
+      await loadBundle(bundle.test.id);
+    } catch (e) {
+      Logger.error('DB', 'Promote subtests failed', e);
+      toast.error('Échec de la promotion.');
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
+  const privateSubtests = bundle?.subtests.filter(s => s.organization_id) || [];
   const activeSubtest = bundle?.subtests.find(s => s.id === selectedSubtestId) || null;
   const subtestNorms = bundle?.norms.filter(n => n.subtest_id === selectedSubtestId) || [];
 
@@ -397,9 +423,22 @@ export const AdminLibrary: React.FC = () => {
               <div className="col-span-4 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-stone-500 uppercase">Sous-tests</span>
-                  <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                    <Plus size={12} /> Ajouter
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {privateSubtests.length > 0 && !bundle.test.organization_id && (
+                      <button
+                        onClick={() => handlePromoteSubtests(privateSubtests.map(s => s.id))}
+                        disabled={isPromoting}
+                        className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
+                        title="Promouvoir tous les sous-tests privés en public"
+                      >
+                        {isPromoting ? <Loader2 size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
+                        Tout promouvoir ({privateSubtests.length})
+                      </button>
+                    )}
+                    <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                      <Plus size={12} /> Ajouter
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
                   {bundle.subtests.map(s => (
@@ -409,16 +448,31 @@ export const AdminLibrary: React.FC = () => {
                       onClick={() => setSelectedSubtestId(s.id)}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white truncate">{s.name}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteSubtest(s); }}
-                          className="text-stone-400 hover:text-rose-400"
-                          title="Supprimer"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
+                          <span className="text-xs font-bold text-white truncate">{s.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {s.organization_id && !bundle.test.organization_id && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handlePromoteSubtests([s.id]); }}
+                              disabled={isPromoting}
+                              className="text-violet-400 hover:text-violet-300 disabled:opacity-50"
+                              title="Promouvoir en public"
+                            >
+                              <ArrowUpRight size={12} />
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteSubtest(s); }}
+                            className="text-stone-400 hover:text-rose-400"
+                            title="Supprimer"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-stone-500">{s.score_type} · {s.computation_mode}</div>
+                      <div className="text-[10px] text-stone-500">{s.score_type} · {s.computation_mode} {s.organization_id ? '· Privé' : ''}</div>
                     </div>
                   ))}
                 </div>

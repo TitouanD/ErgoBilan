@@ -5,7 +5,8 @@ import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights'; 
 import { OpsMonitoring } from './OpsMonitoring';
 import { AdminLibrary } from './AdminLibrary';
-import { Check, X, FileText, LayoutGrid, ShieldAlert, Layers, Loader2, Database, Ban, Activity, Cpu, ArrowUpRight } from 'lucide-react';
+import { DedupManager } from './DedupManager';
+import { Check, X, FileText, LayoutGrid, ShieldAlert, Layers, Loader2, Database, Ban, Activity, Cpu, ArrowUpRight, GitMerge } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 
@@ -15,7 +16,7 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'validation' | 'library' | 'insights' | 'ops'>('validation');
+  const [activeTab, setActiveTab] = useState<'validation' | 'library' | 'dedup' | 'insights' | 'ops'>('validation');
   
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [selectedDetails, setSelectedDetails] = useState<CandidateDetails | null>(null);
@@ -145,6 +146,12 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
                 >
                     <Layers size={18} /> Catalogue Officiel
                 </button>
+                <button 
+                    onClick={() => setActiveTab('dedup')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'dedup' ? 'bg-violet-600 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'}`}
+                >
+                    <GitMerge size={18} /> Déduplication
+                </button>
                 
                 <div className="my-4 h-px bg-white/5"></div>
 
@@ -177,6 +184,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
                 <h2 className="font-bold text-white text-lg">
                     {activeTab === 'validation' && "Validation & Promotion (Tests Privés -> Publics)"}
                     {activeTab === 'library' && "Visualisation Catalogue"}
+                    {activeTab === 'dedup' && "Déduplication & Fusion de Tests"}
                     {activeTab === 'insights' && "Analyse Statistique & Normative"}
                     {activeTab === 'ops' && "Supervision Technique & IA"}
                 </h2>
@@ -309,6 +317,8 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
                         )}
 
                         {activeTab === 'library' && <AdminLibrary />}
+
+                        {activeTab === 'dedup' && <DedupManager />}
 
                         {activeTab === 'insights' && <ClinicalInsights />}
                         {activeTab === 'ops' && <OpsMonitoring />}
