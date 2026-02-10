@@ -273,12 +273,22 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
 
   // ──────────── DTVP-A ────────────
   'dtvpa': {
-    'copieforme':                 'Copie de formes',
+    'copie':                      'Copie',
+    'copieforme':                 'Copie',
+    'copying':                    'Copie',
     'figurefond':                 'Figure-Fond',
+    'figureground':               'Figure-Fond',
     'recherchevisuomotrice':      'Recherche visuo-motrice',
-    'cloturevisuelle':            'Clôture visuelle',
+    'visualmotorsearch':          'Recherche visuo-motrice',
+    'fermeturevisuelle':          'Fermeture Visuelle',
+    'cloturevisuelle':            'Fermeture Visuelle',
+    'visualclosure':              'Fermeture Visuelle',
     'constanceforme':             'Constance de la forme',
+    'formconstancy':              'Constance de la forme',
     'vitessevisuomotrice':        'Vitesse visuo-motrice',
+    'visualmotorspeed':           'Vitesse visuo-motrice',
+    'sommede3soustests':          'Somme de 3 sous-tests',
+    'sommede6soustests':          'Somme de 6 sous-tests',
   },
 
   // ──────────── WISC-V ────────────

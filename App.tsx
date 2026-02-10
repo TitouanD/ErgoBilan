@@ -56,7 +56,7 @@ const AppLoader = () => (
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
@@ -198,12 +198,13 @@ const AppRouter = () => {
             }));
         } catch (e) {
             Logger.warn('DB', 'Failed to load more history', e);
-            toast.error(\"Impossible de charger plus d'historique.\");
+            toast.error("Impossible de charger plus d'historique.");
             setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
         }
     }, [selectedFile, orgKey, detailPaging.nextReportOffset, detailPaging.nextSessionOffset, detailPaging.hasMoreReports, detailPaging.isLoadingMore, toast]);
 
     // --- RENDUS ---
+    if (isLoading || authState === 'authenticating') return <AppLoader />;
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     
     // LANDING
@@ -331,7 +332,7 @@ const AppRouter = () => {
                                         setMode('detail');
                                     }
                                 } catch {
-                                    toast.error(\"Impossible d'ouvrir ce dossier.\");
+                                    toast.error("Impossible d'ouvrir ce dossier.");
                                 }
                             }}
                             onProcessPending={onProcessPending}

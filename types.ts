@@ -295,6 +295,7 @@ export interface AdminTestSummary {
     organization_id?: string | null;
     created_at: string;
     subtest_count?: number;
+    pending_norms_count?: number;
 }
 
 export interface AdminTestRecord {
@@ -435,4 +436,35 @@ export interface AttachResult {
     new_subtests: number;
     new_norms: number;
     test_id: string;
+}
+
+/** A pair of duplicate subtests within a test */
+export interface SubtestDuplicatePair {
+    subtest_id_a: string;
+    subtest_name_a: string;
+    org_id_a: string | null;
+    norms_count_a: number;
+    subtest_id_b: string;
+    subtest_name_b: string;
+    org_id_b: string | null;
+    norms_count_b: number;
+    similarity_score: number;
+}
+
+/** Summary of duplicate norms for a subtest */
+export interface NormDuplicateSummary {
+    subtest_id: string;
+    subtest_name: string;
+    duplicate_group_count: number;
+    total_excess_rows: number;
+}
+
+/** A flagged norm from quality check */
+export interface NormQualityFlag {
+    norm_id: string;
+    subtest_id: string;
+    subtest_name: string;
+    flag_code: string;
+    flag_label: string;
+    details: string;
 }

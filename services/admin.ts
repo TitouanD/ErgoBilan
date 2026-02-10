@@ -10,7 +10,10 @@ import {
     SimilarTestMatch,
     DuplicatePair,
     MergeResult,
-    AttachResult
+    AttachResult,
+    SubtestDuplicatePair,
+    NormDuplicateSummary,
+    NormQualityFlag
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -225,6 +228,93 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('admin_promote_subtests', { p_subtest_ids: subtestIds });
         if (error) throw error;
         return data as { promoted: number };
+    },
+
+    /**
+     * Promote org-scoped norms to public (admin only).
+     * Can target a specific subtest+org, all orgs for a subtest, or all pending norms for a test.
+     */
+    promoteNorms: async (params: { subtestId?: string; testId?: string; organizationId?: string }): Promise<{ promoted: number }> => {
+        const { data, error } = await supabase.rpc('admin_promote_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+            p_organization_id: params.organizationId || null,
+        });
+        if (error) throw error;
+        return data as { promoted: number };
+    },
+
+    /**
+     * Reject (delete) org-scoped norms (admin only).
+     */
+    rejectNorms: async (params: { subtestId?: string; testId?: string; organizationId?: string }): Promise<{ rejected: number }> => {
+        const { data, error } = await supabase.rpc('admin_reject_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+            p_organization_id: params.organizationId || null,
+        });
+        if (error) throw error;
+        return data as { rejected: number };
+    },
+
+    // --- SUBTEST DEDUP ---
+
+    /**
+     * Find duplicate subtests within a test (by name similarity)
+     */
+    findDuplicateSubtests: async (testId: string, threshold = 0.5): Promise<SubtestDuplicatePair[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicate_subtests', { p_test_id: testId, p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as SubtestDuplicatePair[];
+    },
+
+    /**
+     * Merge source subtests into a target subtest (move norms, delete sources)
+     */
+    mergeSubtests: async (sourceIds: string[], targetId: string): Promise<{ merged_subtests: number; migrated_norms: number; target_name: string }> => {
+        const { data, error } = await supabase.rpc('admin_merge_subtests', { p_source_ids: sourceIds, p_target_id: targetId });
+        if (error) throw error;
+        return data as { merged_subtests: number; migrated_norms: number; target_name: string };
+    },
+
+    // --- NORM DEDUP ---
+
+    /**
+     * Find exact duplicate norms (grouped by subtest)
+     */
+    findDuplicateNorms: async (params: { subtestId?: string; testId?: string }): Promise<NormDuplicateSummary[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicate_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+        });
+        if (error) throw error;
+        return (data || []) as NormDuplicateSummary[];
+    },
+
+    /**
+     * Deduplicate norms: keep one per unique key, delete extras
+     */
+    deduplicateNorms: async (params: { subtestId?: string; testId?: string }): Promise<{ deleted: number }> => {
+        const { data, error } = await supabase.rpc('admin_deduplicate_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+        });
+        if (error) throw error;
+        return data as { deleted: number };
+    },
+
+    // --- NORM QUALITY ---
+
+    /**
+     * Run quality checks on norms and return flagged entries
+     */
+    normQualityCheck: async (params: { testId?: string; subtestId?: string }): Promise<NormQualityFlag[]> => {
+        const { data, error } = await supabase.rpc('admin_norm_quality_check', {
+            p_test_id: params.testId || null,
+            p_subtest_id: params.subtestId || null,
+        });
+        if (error) throw error;
+        return (data || []) as NormQualityFlag[];
     },
 
     // --- MODULE C : Télémétrie Passive & Anonyme ---
