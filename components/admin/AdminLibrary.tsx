@@ -2,8 +2,8 @@
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
-import { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord, SubtestDuplicatePair, NormDuplicateSummary, NormQualityFlag } from '../../types';
-import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle } from 'lucide-react';
+import { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord, SubtestDuplicatePair, NormDuplicateSummary, NormQualityFlag, DuplicatePair, MergeResult } from '../../types';
+import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle, Settings, Wrench, Database, ArrowRight } from 'lucide-react';
 import { normalizeSubtestName } from '../../utils';
 import { supabase } from '../../services/db';
 
@@ -46,6 +46,7 @@ export const AdminLibrary: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
   const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([]);
+  const [subTab, setSubTab] = useState<'normes' | 'meta' | 'validation' | 'outils'>('normes');
 
   // Dedup state
   const [subtestDupPairs, setSubtestDupPairs] = useState<SubtestDuplicatePair[]>([]);
@@ -58,6 +59,79 @@ export const AdminLibrary: React.FC = () => {
   // Quality check state
   const [qualityFlags, setQualityFlags] = useState<NormQualityFlag[]>([]);
   const [isCheckingQuality, setIsCheckingQuality] = useState(false);
+
+  // Test-level dedup state
+  interface DedupCluster {
+    id: string;
+    tests: Array<{ id: string; name: string; org_id: string | null; subtests_count: number; norms_count: number }>;
+    maxSimilarity: number;
+  }
+  const [testDupClusters, setTestDupClusters] = useState<DedupCluster[]>([]);
+  const [testDupThreshold, setTestDupThreshold] = useState(0.4);
+  const [isLoadingTestDups, setIsLoadingTestDups] = useState(false);
+  const [isMergingTests, setIsMergingTests] = useState(false);
+  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
+  const [lastMergeResult, setLastMergeResult] = useState<MergeResult | null>(null);
+
+  const buildClusters = (pairs: DuplicatePair[]): DedupCluster[] => {
+    const parent: Record<string, string> = {};
+    const find = (x: string): string => { if (!parent[x]) parent[x] = x; if (parent[x] !== x) parent[x] = find(parent[x]); return parent[x]; };
+    const union = (a: string, b: string) => { parent[find(a)] = find(b); };
+    const testInfo: Record<string, { name: string; org_id: string | null; subtests_count: number; norms_count: number }> = {};
+    const pairSim: Record<string, number> = {};
+    pairs.forEach(p => {
+      union(p.test_id_a, p.test_id_b);
+      testInfo[p.test_id_a] = { name: p.test_name_a, org_id: p.org_id_a, subtests_count: p.subtests_count_a, norms_count: p.norms_count_a };
+      testInfo[p.test_id_b] = { name: p.test_name_b, org_id: p.org_id_b, subtests_count: p.subtests_count_b, norms_count: p.norms_count_b };
+      pairSim[[p.test_id_a, p.test_id_b].sort().join('|')] = p.similarity_score;
+    });
+    const groups: Record<string, string[]> = {};
+    Object.keys(testInfo).forEach(id => { const r = find(id); if (!groups[r]) groups[r] = []; groups[r].push(id); });
+    return Object.entries(groups).map(([root, ids]) => {
+      let maxSim = 0;
+      ids.forEach(a => ids.forEach(b => { if (a < b) maxSim = Math.max(maxSim, pairSim[[a, b].sort().join('|')] || 0); }));
+      return {
+        id: root,
+        tests: ids.map(id => ({ id, ...testInfo[id] })).sort((a, b) => (a.org_id === null ? -1 : b.org_id === null ? 1 : b.norms_count - a.norms_count)),
+        maxSimilarity: maxSim,
+      };
+    }).sort((a, b) => b.maxSimilarity - a.maxSimilarity);
+  };
+
+  const loadTestDups = async () => {
+    setIsLoadingTestDups(true);
+    setSelectedClusterId(null);
+    setMergeTargetId(null);
+    setLastMergeResult(null);
+    try {
+      const pairs = await AdminService.findDuplicates(testDupThreshold);
+      setTestDupClusters(buildClusters(pairs));
+    } catch (e) {
+      Logger.error('DB', 'Test dedup scan failed', e);
+      toast.error('Erreur lors du scan de doublons.');
+    } finally {
+      setIsLoadingTestDups(false);
+    }
+  };
+
+  const handleMergeTests = async (cluster: DedupCluster, target: string) => {
+    const sourceIds = cluster.tests.map(t => t.id).filter(id => id !== target);
+    if (sourceIds.length === 0) return;
+    setIsMergingTests(true);
+    try {
+      const result = await AdminService.mergeTests(sourceIds, target);
+      setLastMergeResult(result);
+      toast.success(`Fusion réussie ! ${result.merged_tests} test(s) fusionné(s) dans « ${result.target_name} ».`);
+      await loadTestDups();
+      await loadTests();
+    } catch (e) {
+      Logger.error('DB', 'Merge tests failed', e);
+      toast.error('Erreur lors de la fusion : ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setIsMergingTests(false);
+    }
+  };
 
   useEffect(() => {
     supabase.from('official_categories').select('id, label').order('sort_order').then(({ data }) => {
@@ -376,7 +450,7 @@ export const AdminLibrary: React.FC = () => {
     try {
       const pairs = await AdminService.findDuplicateSubtests(bundle.test.id, 0.4);
       setSubtestDupPairs(pairs);
-      if (pairs.length === 0) toast.success('Aucun doublon de sous-test d\u00e9tect\u00e9.');
+      if (pairs.length === 0) toast.success('Aucun doublon de sous-test détecté.');
     } catch (e) {
       Logger.error('DB', 'Scan subtest dups failed', e);
       toast.error('Erreur lors du scan.');
@@ -387,10 +461,10 @@ export const AdminLibrary: React.FC = () => {
 
   const handleMergeSubtests = async (sourceIds: string[], targetId: string) => {
     if (!bundle) return;
-    if (!confirm(`Fusionner ${sourceIds.length} sous-test(s) dans la cible ? Les normes seront d\u00e9plac\u00e9es.`)) return;
+    if (!confirm(`Fusionner ${sourceIds.length} sous-test(s) dans la cible ? Les normes seront déplacées.`)) return;
     try {
       const result = await AdminService.mergeSubtests(sourceIds, targetId);
-      toast.success(`Fusion r\u00e9ussie : ${result.migrated_norms} normes d\u00e9plac\u00e9es dans \u00ab ${result.target_name} \u00bb.`);
+      toast.success(`Fusion réussie : ${result.migrated_norms} normes déplacées dans « ${result.target_name} ».`);
       setSubtestDupPairs([]);
       await loadBundle(bundle.test.id);
     } catch (e) {
@@ -417,16 +491,16 @@ export const AdminLibrary: React.FC = () => {
 
   const handleDeduplicateNorms = async (params: { subtestId?: string; testId?: string }) => {
     if (!bundle) return;
-    if (!confirm('Supprimer toutes les normes en double ? (conserve une par cl\u00e9 unique)')) return;
+    if (!confirm('Supprimer toutes les normes en double ? (conserve une par clé unique)')) return;
     setIsDedupingNorms(true);
     try {
       const result = await AdminService.deduplicateNorms(params);
-      toast.success(`${result.deleted} norme(s) en double supprim\u00e9e(s).`);
+      toast.success(`${result.deleted} norme(s) en double supprimée(s).`);
       setNormDupSummary([]);
       await loadBundle(bundle.test.id);
     } catch (e) {
       Logger.error('DB', 'Deduplicate norms failed', e);
-      toast.error('Erreur lors de la d\u00e9duplication.');
+      toast.error('Erreur lors de la déduplication.');
     } finally {
       setIsDedupingNorms(false);
     }
@@ -439,10 +513,10 @@ export const AdminLibrary: React.FC = () => {
     try {
       const flags = await AdminService.normQualityCheck({ testId: bundle.test.id });
       setQualityFlags(flags);
-      if (flags.length === 0) toast.success('Aucun probl\u00e8me de qualit\u00e9 d\u00e9tect\u00e9 \ud83c\udf89');
+      if (flags.length === 0) toast.success('Aucun problème de qualité détecté 🎉');
     } catch (e) {
       Logger.error('DB', 'Quality check failed', e);
-      toast.error('Erreur lors du contr\u00f4le qualit\u00e9.');
+      toast.error('Erreur lors du contrôle qualité.');
     } finally {
       setIsCheckingQuality(false);
     }
@@ -520,13 +594,124 @@ export const AdminLibrary: React.FC = () => {
       {/* EDITOR */}
       <div className="col-span-8 bg-[#131419] rounded-2xl border border-white/5 p-6 flex flex-col h-full">
         {!bundle ? (
-          <div className="h-full flex flex-col items-center justify-center text-stone-600">
-            <Check size={40} className="mb-4 opacity-20" />
-            <p>Sélectionnez un test à gauche pour l’éditer.</p>
+          <div className="h-full flex flex-col overflow-y-auto custom-scrollbar">
+            {/* Test-level dedup panel */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <GitMerge size={20} className="text-violet-400" /> Déduplication des tests
+                </h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-stone-500 font-bold">Seuil</label>
+                    <input type="range" min={0.2} max={0.9} step={0.05} value={testDupThreshold} onChange={e => setTestDupThreshold(parseFloat(e.target.value))} className="w-20 accent-violet-500" />
+                    <span className="text-[10px] text-stone-400 font-mono w-7">{Math.round(testDupThreshold * 100)}%</span>
+                  </div>
+                  <button onClick={loadTestDups} disabled={isLoadingTestDups} className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold hover:bg-violet-700 disabled:opacity-50">
+                    {isLoadingTestDups ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                    Analyser
+                  </button>
+                </div>
+              </div>
+              <p className="text-[10px] text-stone-500">Détecte les tests avec des noms similaires dans le catalogue et permet de les fusionner.</p>
+            </div>
+
+            {/* Last merge result */}
+            {lastMergeResult && (
+              <div className="mb-4 bg-emerald-900/30 border border-emerald-700/50 p-3 rounded-xl flex items-center gap-2 text-xs text-emerald-300">
+                <Check size={14} className="text-emerald-400 shrink-0" />
+                <span><strong>{lastMergeResult.merged_tests}</strong> test(s) fusionné(s) dans « {lastMergeResult.target_name} » — {lastMergeResult.moved_subtests} sous-tests, {lastMergeResult.migrated_norms} normes, {lastMergeResult.updated_sessions} sessions.</span>
+              </div>
+            )}
+
+            {/* Loading */}
+            {isLoadingTestDups && (
+              <div className="flex items-center justify-center py-16"><Loader2 size={28} className="text-violet-500 animate-spin" /></div>
+            )}
+
+            {/* Empty state */}
+            {!isLoadingTestDups && testDupClusters.length === 0 && (
+              <div className="flex-1 flex flex-col items-center justify-center text-stone-600">
+                <Check size={40} className="mb-3 opacity-20" />
+                <p className="font-bold text-sm mb-1">Aucun doublon détecté</p>
+                <p className="text-[10px] text-stone-500">Cliquez « Analyser » pour scanner le catalogue (seuil : {Math.round(testDupThreshold * 100)}%).</p>
+              </div>
+            )}
+
+            {/* Clusters */}
+            {!isLoadingTestDups && testDupClusters.length > 0 && (
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-violet-400 uppercase">{testDupClusters.length} groupe(s) détecté(s)</span>
+                {testDupClusters.map(cluster => (
+                  <div key={cluster.id} className={`bg-white/5 rounded-xl border transition-all ${selectedClusterId === cluster.id ? 'border-violet-500/50 ring-1 ring-violet-500/30' : 'border-white/5 hover:border-white/10'}`}>
+                    <div className="p-4 cursor-pointer" onClick={() => { setSelectedClusterId(selectedClusterId === cluster.id ? null : cluster.id); setMergeTargetId(null); }}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {cluster.tests.map((t, i) => (
+                            <React.Fragment key={t.id}>
+                              {i > 0 && <span className="text-stone-600">≈</span>}
+                              <span className="font-bold text-white text-xs flex items-center gap-1">
+                                {t.org_id === null ? <Globe size={10} className="text-blue-400" /> : <Lock size={10} className="text-amber-400" />}
+                                {t.name}
+                              </span>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                          cluster.maxSimilarity > 0.8 ? 'bg-red-500/20 text-red-400' : cluster.maxSimilarity > 0.6 ? 'bg-amber-500/20 text-amber-400' : 'bg-stone-500/20 text-stone-400'
+                        }`}>
+                          {Math.round(cluster.maxSimilarity * 100)}% — {cluster.maxSimilarity > 0.8 ? 'PROBABLE' : cluster.maxSimilarity > 0.6 ? 'POSSIBLE' : 'FAIBLE'}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedClusterId === cluster.id && (
+                      <div className="px-4 pb-4 border-t border-white/5 pt-3 space-y-2">
+                        <p className="text-[10px] text-stone-500 font-bold uppercase">Cible de fusion :</p>
+                        {cluster.tests.map(t => (
+                          <button key={t.id} onClick={() => setMergeTargetId(t.id)} className={`w-full text-left p-2.5 rounded-lg border transition-all flex items-center justify-between text-xs ${
+                            mergeTargetId === t.id ? 'border-violet-500 bg-violet-500/10' : 'border-white/5 bg-white/5 hover:border-white/10'
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${mergeTargetId === t.id ? 'border-violet-500 bg-violet-500' : 'border-stone-600'}`}>
+                                {mergeTargetId === t.id && <Check size={10} className="text-white" />}
+                              </div>
+                              {t.org_id === null
+                                ? <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded font-bold">PUBLIC</span>
+                                : <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1 py-0.5 rounded font-bold">PRIVÉ</span>
+                              }
+                              <span className="font-bold text-white">{t.name}</span>
+                              <span className="text-stone-500">{t.subtests_count} st · {t.norms_count} n</span>
+                            </div>
+                            {mergeTargetId === t.id && <span className="text-[9px] bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded font-bold">CIBLE</span>}
+                          </button>
+                        ))}
+                        {mergeTargetId && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <div className="flex-1 bg-white/5 rounded-lg p-2 text-[10px] text-stone-400">
+                              <ArrowRight size={10} className="inline mr-1 text-violet-400" />
+                              {cluster.tests.filter(t => t.id !== mergeTargetId).map(t => t.name).join(', ')} → <strong className="text-white">{cluster.tests.find(t => t.id === mergeTargetId)?.name}</strong>
+                            </div>
+                            <button
+                              onClick={() => handleMergeTests(cluster, mergeTargetId)}
+                              disabled={isMergingTests}
+                              className="px-4 py-2 bg-violet-600 text-white rounded-lg font-bold text-xs hover:bg-violet-700 flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {isMergingTests ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />}
+                              Fusionner
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <>
-            <div className="flex justify-between items-center mb-6">
+            {/* HEADER */}
+            <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="text-xl font-bold text-white">{bundle.test.name}</h3>
                 <p className="text-xs text-stone-500">ID: {bundle.test.id}</p>
@@ -536,15 +721,7 @@ export const AdminLibrary: React.FC = () => {
                   onClick={() => loadBundle(bundle.test.id)}
                   className="px-3 py-2 text-xs font-bold rounded-lg border border-white/10 text-stone-400 hover:text-white hover:bg-white/5"
                 >
-                  Rafraîchir
-                </button>                <button
-                  onClick={handleQualityCheck}
-                  disabled={isCheckingQuality}
-                  className="px-3 py-2 text-xs font-bold rounded-lg border border-white/10 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 flex items-center gap-1.5 disabled:opacity-50"
-                  title="Contr\u00f4le qualit\u00e9 des normes"
-                >
-                  {isCheckingQuality ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
-                  Qualit\u00e9
+                  <RefreshCw size={14} />
                 </button>
                 <button
                   onClick={handleSave}
@@ -564,153 +741,50 @@ export const AdminLibrary: React.FC = () => {
             </div>
 
             {isDirty && (
-              <div className="mb-4 text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              <div className="mb-3 text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                 Modifications non sauvegardées.
               </div>
             )}
 
-            {/* QUALITY FLAGS */}
-            {qualityFlags.length > 0 && (
-              <div className="mb-4 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                    <AlertTriangle size={12} /> {qualityFlags.length} problème(s) de qualité
-                  </span>
-                  <button onClick={() => setQualityFlags([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
-                </div>
-                <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
-                  {qualityFlags.map((f, idx) => (
-                    <div key={idx} className="text-[10px] bg-white/5 rounded px-2 py-1.5 flex items-center gap-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                        f.flag_code.includes('INVERTED') || f.flag_code === 'NEGATIVE_SD' ? 'bg-red-500/20 text-red-400' :
-                        f.flag_code.includes('IMPLAUSIBLE') || f.flag_code.includes('OOB') ? 'bg-amber-500/20 text-amber-400' :
-                        'bg-stone-500/20 text-stone-400'
-                      }`}>{f.flag_code}</span>
-                      <span className="text-stone-400">{f.subtest_name}:</span>
-                      <span className="text-white">{f.flag_label}</span>
-                      <span className="text-stone-600 ml-auto">{f.details}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TEST META */}
-            <div className="grid grid-cols-12 gap-4 mb-6">
-              <div className="col-span-6">
-                <label className="text-[10px] font-bold text-stone-500 uppercase">Nom du test</label>
-                <input
-                  value={bundle.test.name}
-                  onChange={(e) => updateTestField('name', e.target.value)}
-                  className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
-              <div className="col-span-3">
-                <label className="text-[10px] font-bold text-stone-500 uppercase">Catégorie</label>
-                <select
-                  value={bundle.test.category_id || ''}
-                  onChange={(e) => updateTestField('category_id', e.target.value)}
-                  className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+            {/* SUB-TABS */}
+            <div className="flex items-center gap-1 mb-4 border-b border-white/5 pb-2">
+              {([
+                { key: 'normes' as const, label: 'Normes & Sous-tests', icon: <Database size={13} /> },
+                { key: 'meta' as const, label: 'Métadonnées', icon: <Settings size={13} /> },
+                { key: 'validation' as const, label: 'Validation', icon: <ArrowUpRight size={13} />, badge: totalPendingNorms },
+                { key: 'outils' as const, label: 'Outils', icon: <Wrench size={13} /> },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setSubTab(tab.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                    subTab === tab.key
+                      ? 'bg-white/10 text-white'
+                      : 'text-stone-500 hover:text-stone-300 hover:bg-white/5'
+                  }`}
                 >
-                  <option value="" className="bg-[#23252F] text-stone-200">—</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id} className="bg-[#23252F] text-stone-200">{c.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-3">
-                <label className="text-[10px] font-bold text-stone-500 uppercase">Version</label>
-                <input
-                  value={bundle.test.version || ''}
-                  onChange={(e) => updateTestField('version', e.target.value)}
-                  className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                />
-              </div>
+                  {tab.icon}
+                  {tab.label}
+                  {(tab.badge ?? 0) > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold">{tab.badge}</span>
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* SUBTESTS + NORMS */}
+            {/* ═══ SUB-TAB: NORMES & SOUS-TESTS ═══ */}
+            {subTab === 'normes' && (
             <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
               <div className="col-span-4 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-stone-500 uppercase">
-                    Sous-tests
-                    {totalPendingNorms > 0 && (
-                      <span className="ml-2 text-amber-400 normal-case font-normal">({totalPendingNorms} norme{totalPendingNorms > 1 ? 's' : ''} en attente)</span>
-                    )}
+                    Sous-tests ({bundle.subtests.length})
                   </span>
-                  <div className="flex items-center gap-2">
-                    {totalPendingNorms > 0 && (
-                      <button
-                        onClick={() => handlePromoteNorms({ testId: bundle.test.id }, `${totalPendingNorms} norme(s) du test`)}
-                        className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-                        title="Approuver toutes les normes en attente pour ce test"
-                      >
-                        <Check size={10} /> Approuver toutes ({totalPendingNorms})
-                      </button>
-                    )}
-                    {privateSubtests.length > 0 && !bundle.test.organization_id && (
-                      <button
-                        onClick={() => handlePromoteSubtests(privateSubtests.map(s => s.id))}
-                        disabled={isPromoting}
-                        className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
-                        title="Promouvoir tous les sous-tests privés en public"
-                      >
-                        {isPromoting ? <Loader2 size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
-                        Tout promouvoir ({privateSubtests.length})
-                      </button>
-                    )}
-                    <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                      <Plus size={12} /> Ajouter
-                    </button>
-                    <button
-                      onClick={handleScanSubtestDups}
-                      disabled={isScanningSubs}
-                      className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
-                      title="Scanner les sous-tests en doublon"
-                    >
-                      {isScanningSubs ? <Loader2 size={10} className="animate-spin" /> : <GitMerge size={10} />}
-                      Doublons
-                    </button>
-                  </div>
+                  <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                    <Plus size={12} /> Ajouter
+                  </button>
                 </div>
 
-                {/* Subtest duplicate pairs alert */}
-                {subtestDupPairs.length > 0 && (
-                  <div className="mb-2 bg-violet-500/10 border border-violet-500/20 rounded-lg p-2 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-violet-400 uppercase">{subtestDupPairs.length} doublon(s) d\u00e9tect\u00e9(s)</span>
-                      <button onClick={() => setSubtestDupPairs([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
-                    </div>
-                    {subtestDupPairs.map((p, idx) => (
-                      <div key={idx} className="text-[10px] bg-white/5 rounded p-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <span className="text-white font-bold">{p.subtest_name_a}</span>
-                          <span className="text-stone-500">({p.norms_count_a}n)</span>
-                          <span className="text-violet-400 mx-1">{"\u2248"}</span>
-                          <span className="text-white font-bold">{p.subtest_name_b}</span>
-                          <span className="text-stone-500">({p.norms_count_b}n)</span>
-                          <span className="text-stone-600 ml-1">{Math.round(p.similarity_score * 100)}%</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleMergeSubtests([p.subtest_id_b], p.subtest_id_a)}
-                            className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
-                            title={`Garder \u00ab ${p.subtest_name_a} \u00bb`}
-                          >
-                            \u2190 Garder A
-                          </button>
-                          <button
-                            onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
-                            className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
-                            title={`Garder \u00ab ${p.subtest_name_b} \u00bb`}
-                          >
-                            Garder B \u2192
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
                   {bundle.subtests.map(s => (
                     <div
@@ -724,16 +798,6 @@ export const AdminLibrary: React.FC = () => {
                           <span className="text-xs font-bold text-white truncate">{s.name}</span>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          {s.organization_id && !bundle.test.organization_id && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handlePromoteSubtests([s.id]); }}
-                              disabled={isPromoting}
-                              className="text-violet-400 hover:text-violet-300 disabled:opacity-50"
-                              title="Promouvoir en public"
-                            >
-                              <ArrowUpRight size={12} />
-                            </button>
-                          )}
                           <button
                             onClick={(e) => { e.stopPropagation(); deleteSubtest(s); }}
                             className="text-stone-400 hover:text-rose-400"
@@ -745,11 +809,6 @@ export const AdminLibrary: React.FC = () => {
                       </div>
                       <div className="text-[10px] text-stone-500 flex items-center gap-1">
                         {s.score_type} · {s.computation_mode} {s.organization_id ? '· Privé' : ''}
-                        {(pendingNormCounts[s.id] || 0) > 0 && (
-                          <span className="ml-auto bg-amber-500/20 text-amber-400 px-1.5 rounded-full text-[9px] font-bold">
-                            {pendingNormCounts[s.id]} en attente
-                          </span>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -816,71 +875,10 @@ export const AdminLibrary: React.FC = () => {
                           )}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {pendingNormsForSubtest.length > 0 && (
-                          <>
-                            <button
-                              onClick={() => handlePromoteNorms({ subtestId: activeSubtest.id }, `${pendingNormsForSubtest.length} norme(s) de ce sous-test`)}
-                              className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-                              title="Approuver toutes les normes en attente pour ce sous-test"
-                            >
-                              <Check size={10} /> Approuver ({pendingNormsForSubtest.length})
-                            </button>
-                            <button
-                              onClick={() => handleRejectNorms({ subtestId: activeSubtest.id }, `${pendingNormsForSubtest.length} norme(s) de ce sous-test`)}
-                              className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1"
-                              title="Rejeter toutes les normes en attente pour ce sous-test"
-                            >
-                              <Trash2 size={10} /> Rejeter
-                            </button>
-                          </>
-                        )}
-                        <button onClick={() => addNormRow(activeSubtest.id)} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                          <Plus size={12} /> Ajouter
-                        </button>
-                        <button
-                          onClick={handleScanNormDups}
-                          disabled={isScanningNorms}
-                          className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
-                          title="Scanner les normes en doublon pour ce test"
-                        >
-                          {isScanningNorms ? <Loader2 size={10} className="animate-spin" /> : <Zap size={10} />}
-                          Doublons
-                        </button>
-                      </div>
+                      <button onClick={() => addNormRow(activeSubtest.id)} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                        <Plus size={12} /> Ajouter
+                      </button>
                     </div>
-
-                    {/* Norm dedup summary */}
-                    {normDupSummary.length > 0 && (
-                      <div className="mb-2 bg-violet-500/10 border border-violet-500/20 rounded-lg p-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-bold text-violet-400 uppercase">Normes en double détectées</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleDeduplicateNorms({ testId: bundle.test.id })}
-                              disabled={isDedupingNorms}
-                              className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50"
-                            >
-                              {isDedupingNorms ? <Loader2 size={10} className="animate-spin" /> : <Zap size={10} />}
-                              Tout dédupliquer
-                            </button>
-                            <button onClick={() => setNormDupSummary([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
-                          </div>
-                        </div>
-                        {normDupSummary.map((d, idx) => (
-                          <div key={idx} className="text-[10px] flex items-center justify-between bg-white/5 rounded p-1.5 mt-1">
-                            <span className="text-white">{d.subtest_name}: <span className="text-violet-400">{d.duplicate_group_count} groupe(s)</span>, <span className="text-amber-400">{d.total_excess_rows} excédentaire(s)</span></span>
-                            <button
-                              onClick={() => handleDeduplicateNorms({ subtestId: d.subtest_id })}
-                              disabled={isDedupingNorms}
-                              className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded disabled:opacity-50"
-                            >
-                              Dédupliquer
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
 
                     <div className="flex-1 overflow-auto border border-white/5 rounded-lg">
                       <table className="min-w-full text-[11px] text-stone-300">
@@ -942,6 +940,307 @@ export const AdminLibrary: React.FC = () => {
                 )}
               </div>
             </div>
+            )}
+
+            {/* ═══ SUB-TAB: MÉTADONNÉES ═══ */}
+            {subTab === 'meta' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-12 gap-4">
+                  <div className="col-span-6">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Nom du test</label>
+                    <input
+                      value={bundle.test.name}
+                      onChange={(e) => updateTestField('name', e.target.value)}
+                      className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Catégorie</label>
+                    <select
+                      value={bundle.test.category_id || ''}
+                      onChange={(e) => updateTestField('category_id', e.target.value)}
+                      className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                    >
+                      <option value="" className="bg-[#23252F] text-stone-200">—</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id} className="bg-[#23252F] text-stone-200">{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Version</label>
+                    <input
+                      value={bundle.test.version || ''}
+                      onChange={(e) => updateTestField('version', e.target.value)}
+                      className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-12 gap-4">
+                  <div className="col-span-6">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Auteur</label>
+                    <input
+                      value={bundle.test.author || ''}
+                      onChange={(e) => updateTestField('author', e.target.value)}
+                      className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Visibilité</label>
+                    <div className="mt-1 flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm">
+                      {bundle.test.organization_id
+                        ? <><Lock size={14} className="text-amber-400" /> <span className="text-amber-300">Privé</span></>
+                        : <><Globe size={14} className="text-emerald-400" /> <span className="text-emerald-300">Public</span></>
+                      }
+                    </div>
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase">Sous-tests</label>
+                    <div className="mt-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-stone-300">
+                      {bundle.subtests.length}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ SUB-TAB: VALIDATION ═══ */}
+            {subTab === 'validation' && (
+              <div className="space-y-4">
+                {totalPendingNorms === 0 && privateSubtests.length === 0 ? (
+                  <div className="text-center py-20 text-stone-600 bg-white/5 rounded-xl border border-dashed border-white/10">
+                    <Check size={40} className="mx-auto mb-4 opacity-20" />
+                    <p className="text-sm">Aucune norme ou sous-test en attente de validation.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Pending norms section */}
+                    {totalPendingNorms > 0 && (
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                            <Lock size={14} /> {totalPendingNorms} norme(s) en attente
+                          </h4>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handlePromoteNorms({ testId: bundle.test.id }, `${totalPendingNorms} norme(s) du test`)}
+                              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 rounded-lg"
+                            >
+                              <Check size={12} /> Approuver toutes
+                            </button>
+                            <button
+                              onClick={() => handleRejectNorms({ testId: bundle.test.id }, `${totalPendingNorms} norme(s) du test`)}
+                              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 px-3 py-1.5 bg-rose-500/10 rounded-lg"
+                            >
+                              <Trash2 size={12} /> Rejeter toutes
+                            </button>
+                          </div>
+                        </div>
+                        {/* Per-subtest breakdown */}
+                        <div className="space-y-1">
+                          {bundle.subtests.filter(s => (pendingNormCounts[s.id] || 0) > 0).map(s => (
+                            <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
+                              <span className="text-white font-bold">{s.name} <span className="text-amber-400 font-normal">({pendingNormCounts[s.id]} normes)</span></span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handlePromoteNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${s.name}`)}
+                                  className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                                >
+                                  <Check size={10} /> Approuver
+                                </button>
+                                <button
+                                  onClick={() => handleRejectNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${s.name}`)}
+                                  className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                                >
+                                  <Trash2 size={10} /> Rejeter
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Private subtests section */}
+                    {privateSubtests.length > 0 && !bundle.test.organization_id && (
+                      <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-violet-400 flex items-center gap-2">
+                            <ArrowUpRight size={14} /> {privateSubtests.length} sous-test(s) privé(s)
+                          </h4>
+                          <button
+                            onClick={() => handlePromoteSubtests(privateSubtests.map(s => s.id))}
+                            disabled={isPromoting}
+                            className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 px-3 py-1.5 bg-violet-500/10 rounded-lg disabled:opacity-50"
+                          >
+                            {isPromoting ? <Loader2 size={12} className="animate-spin" /> : <ArrowUpRight size={12} />}
+                            Tout promouvoir en public
+                          </button>
+                        </div>
+                        <div className="space-y-1">
+                          {privateSubtests.map(s => (
+                            <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
+                              <span className="text-white font-bold">{s.name}</span>
+                              <button
+                                onClick={() => handlePromoteSubtests([s.id])}
+                                disabled={isPromoting}
+                                className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
+                              >
+                                <ArrowUpRight size={10} /> Promouvoir
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ═══ SUB-TAB: OUTILS ═══ */}
+            {subTab === 'outils' && (
+              <div className="space-y-6">
+                {/* Quality check */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-amber-400" /> Contrôle qualité des normes
+                    </h4>
+                    <button
+                      onClick={handleQualityCheck}
+                      disabled={isCheckingQuality}
+                      className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 rounded-lg disabled:opacity-50"
+                    >
+                      {isCheckingQuality ? <Loader2 size={12} className="animate-spin" /> : <AlertTriangle size={12} />}
+                      Lancer le contrôle
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-stone-500">Vérifie les incohérences : âges inversés, scores hors limites, SD négatifs, normes incomplètes...</p>
+                  {qualityFlags.length > 0 && (
+                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                          <AlertTriangle size={12} /> {qualityFlags.length} problème(s) détecté(s)
+                        </span>
+                        <button onClick={() => setQualityFlags([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
+                        {qualityFlags.map((f, idx) => (
+                          <div key={idx} className="text-[10px] bg-white/5 rounded px-2 py-1.5 flex items-center gap-2">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                              f.flag_code.includes('INVERTED') || f.flag_code === 'NEGATIVE_SD' ? 'bg-red-500/20 text-red-400' :
+                              f.flag_code.includes('IMPLAUSIBLE') || f.flag_code.includes('OOB') ? 'bg-amber-500/20 text-amber-400' :
+                              'bg-stone-500/20 text-stone-400'
+                            }`}>{f.flag_code}</span>
+                            <span className="text-stone-400">{f.subtest_name}:</span>
+                            <span className="text-white">{f.flag_label}</span>
+                            <span className="text-stone-600 ml-auto">{f.details}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Subtest dedup */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <GitMerge size={14} className="text-violet-400" /> Doublons de sous-tests
+                    </h4>
+                    <button
+                      onClick={handleScanSubtestDups}
+                      disabled={isScanningSubs}
+                      className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 rounded-lg disabled:opacity-50"
+                    >
+                      {isScanningSubs ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />}
+                      Scanner
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-stone-500">Détecte les sous-tests en doublon par similarité de nom et propose la fusion.</p>
+                  {subtestDupPairs.length > 0 && (
+                    <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3 space-y-1.5">
+                      <span className="text-[10px] font-bold text-violet-400 uppercase">{subtestDupPairs.length} doublon(s) détecté(s)</span>
+                      {subtestDupPairs.map((p, idx) => (
+                        <div key={idx} className="text-[10px] bg-white/5 rounded p-2 flex items-center justify-between">
+                          <div className="flex items-center gap-1">
+                            <span className="text-white font-bold">{p.subtest_name_a}</span>
+                            <span className="text-stone-500">({p.norms_count_a}n)</span>
+                            <span className="text-violet-400 mx-1">{"≈"}</span>
+                            <span className="text-white font-bold">{p.subtest_name_b}</span>
+                            <span className="text-stone-500">({p.norms_count_b}n)</span>
+                            <span className="text-stone-600 ml-1">{Math.round(p.similarity_score * 100)}%</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleMergeSubtests([p.subtest_id_b], p.subtest_id_a)}
+                              className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                              title={`Garder « ${p.subtest_name_a} »`}
+                            >
+                              ← Garder A
+                            </button>
+                            <button
+                              onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
+                              className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                              title={`Garder « ${p.subtest_name_b} »`}
+                            >
+                              Garder B →
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Norm dedup */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Zap size={14} className="text-violet-400" /> Doublons de normes
+                    </h4>
+                    <button
+                      onClick={handleScanNormDups}
+                      disabled={isScanningNorms}
+                      className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 rounded-lg disabled:opacity-50"
+                    >
+                      {isScanningNorms ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                      Scanner
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-stone-500">Identifie les normes parfaitement identiques et nettoie les doublons.</p>
+                  {normDupSummary.length > 0 && (
+                    <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3 space-y-1.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold text-violet-400 uppercase">Normes en double détectées</span>
+                        <button
+                          onClick={() => handleDeduplicateNorms({ testId: bundle.test.id })}
+                          disabled={isDedupingNorms}
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {isDedupingNorms ? <Loader2 size={10} className="animate-spin" /> : <Zap size={10} />}
+                          Tout dédupliquer
+                        </button>
+                      </div>
+                      {normDupSummary.map((d, idx) => (
+                        <div key={idx} className="text-[10px] flex items-center justify-between bg-white/5 rounded p-1.5">
+                          <span className="text-white">{d.subtest_name}: <span className="text-violet-400">{d.duplicate_group_count} groupe(s)</span>, <span className="text-amber-400">{d.total_excess_rows} excédentaire(s)</span></span>
+                          <button
+                            onClick={() => handleDeduplicateNorms({ subtestId: d.subtest_id })}
+                            disabled={isDedupingNorms}
+                            className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded disabled:opacity-50"
+                          >
+                            Dédupliquer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </>
         )}
       </div>

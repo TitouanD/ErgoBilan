@@ -8,6 +8,7 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
 import { PinUnlock } from './components/auth/PinUnlock';
+import { NetworkErrorScreen } from './components/auth/NetworkErrorScreen';
 import { Step1Admin } from './components/assessment/Step1Admin';
 import { GenerationLoader } from './components/shared/GenerationLoader';
 import { AssessmentStepper } from './components/assessment/AssessmentStepper';
@@ -126,6 +127,8 @@ const AppRouter = () => {
         } else if (authState === 'error') {
             setIsLoggingIn(false);
             toast.error("Problème de connexion.");
+        } else if (authState === 'network_error') {
+            setIsLoggingIn(false);
         }
     }, [authState]);
 
@@ -205,6 +208,7 @@ const AppRouter = () => {
 
     // --- RENDUS ---
     if (isLoading || authState === 'authenticating') return <AppLoader />;
+    if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     
     // LANDING
