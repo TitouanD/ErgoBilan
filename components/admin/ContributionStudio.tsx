@@ -342,10 +342,16 @@ ${knownNamesBlock}
                 }
               ]
             }
+
+            OUTPUT RULES:
+            - Output valid JSON only.
+            - Do not use Markdown code blocks (no \`\`\`json).
+            - Minify the JSON (remove unnecessary whitespace) to ensure the response fits within the token limit.
           `;
 
       const response = await callAIProxy({
-          contents: [{ role: "user", parts: [imagePart, { text: prompt }] }]
+          contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
+          responseMimeType: 'application/json'
       });
 
       const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
