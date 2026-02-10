@@ -167,7 +167,7 @@ export interface UserProfile {
     credits: number;
     isAdmin: boolean;
     subscriptionPlan: 'free' | 'essential' | 'performance' | 'expert';
-    status: 'active' | 'trialing' | 'canceled' | 'past_due';
+    status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
     isTrial: boolean;
     trialDaysRemaining: number;
     totalBilansGenerated: number;

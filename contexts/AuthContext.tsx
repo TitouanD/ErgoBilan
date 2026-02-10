@@ -15,6 +15,7 @@ interface AuthContextType {
   practitioner: PractitionerProfile | null;
   sessionKey: CryptoKey | null; // MasterKey (PIN)
   orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
+  orgId: string | null; // Organization ID for filtering
   // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
     authState: AuthState;
   isLoading: boolean;
@@ -69,6 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
   const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
+  const [orgId, setOrgId] = useState<string | null>(null); 
     const [authState, setAuthState] = useState<AuthState>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
@@ -161,7 +163,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
-      setOrgKey(null); 
+      setOrgKey(null);
+      setOrgId(null); 
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
       setIsDemoMode(false);
@@ -231,6 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const dummyKey = await generateSymetricKey();
       setSessionKey(dummyKey);
       setOrgKey(dummyKey);
+      setOrgId(null);
 
       setAuthState('authenticated');
       setIsLoading(false);
@@ -428,7 +432,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
               
               setSessionKey(key); 
-              setOrgKey(unwrappedOrgKey); 
+              setOrgKey(unwrappedOrgKey);
+              setOrgId(memberData.organization_id || null); 
               setAuthState('authenticated');
           } else {
               Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
@@ -453,6 +458,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   
               setSessionKey(key);
               setOrgKey(newOrgKey);
+              setOrgId(orgId || null);
               setAuthState('authenticated');
           }
 
@@ -466,6 +472,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('CRYPTO', "Locking session (Clearing keys)");
       setSessionKey(null);
       setOrgKey(null);
+      setOrgId(null);
       setAuthState('locked');
   };
 
@@ -481,7 +488,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ 
-        userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
+        userProfile, practitioner, sessionKey, orgKey, orgId, authState, isLoading, tempEmail, isDemoMode,
         refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive
     }}>
       {children}
@@ -494,3 +501,10 @@ export const useAuth = () => {
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+
+
+
+
+
+
+

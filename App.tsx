@@ -56,7 +56,7 @@ const AppLoader = () => (
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
@@ -71,10 +71,17 @@ const AppRouter = () => {
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
+    const [detailPaging, setDetailPaging] = useState({
+        hasMoreReports: false,
+        hasMoreSessions: false,
+        nextReportOffset: 0,
+        nextSessionOffset: 0,
+        isLoadingMore: false
+    });
     const [demoConversion, setDemoConversion] = useState<{ show: boolean; action: string }>({ show: false, action: '' });
 
     // --- Extracted domain hooks ---
-    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, loadData } = useDataLoader({ sessionKey, orgKey, authState, practitioner, isDemoMode });
+    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, orgKey, orgId, authState, practitioner, isDemoMode });
 
     const { isGenerating, setIsGenerating, generationError, setGenerationError, handleGenerateReport, handleFinalize, handleSaveAndQuit, handleResumeDraft } = useAssessmentFlow({
         assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
@@ -157,6 +164,44 @@ const AppRouter = () => {
     const onResumeDraft = useCallback(async (patientId?: string) => { const ok = await handleResumeDraft(patientId); if (ok) setMode('assessment'); }, [handleResumeDraft]);
 
     const onProcessPending = useCallback(async (q: Parameters<typeof handleProcessPending>[0]) => { const result = await handleProcessPending(q); if (result === 'assessment') setMode('assessment'); }, [handleProcessPending]);
+
+    const handleLoadMoreHistory = useCallback(async () => {
+        if (!selectedFile || !orgKey) return;
+        if (detailPaging.isLoadingMore) return;
+        setDetailPaging(prev => ({ ...prev, isLoadingMore: true }));
+        try {
+            const history = await StorageService.loadPatientHistoryPage(selectedFile.id, orgKey, {
+                encryptedFileKey: selectedFile.encryptedFileKey,
+                reportOffset: detailPaging.nextReportOffset,
+                sessionOffset: detailPaging.nextSessionOffset,
+                skipReports: !detailPaging.hasMoreReports
+            });
+
+            setSelectedFile(prev => {
+                if (!prev) return prev;
+                const reportMap = new Map(prev.reports.map(r => [r.id, r]));
+                history.reports.forEach(r => reportMap.set(r.id, r));
+                const sessionMap = new Map(prev.sessions.map(s => [s.id, s]));
+                history.sessions.forEach(s => sessionMap.set(s.id, s));
+                const reports = Array.from(reportMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                const sessions = Array.from(sessionMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                return { ...prev, reports, sessions };
+            });
+
+            setDetailPaging(prev => ({
+                ...prev,
+                hasMoreReports: history.hasMoreReports,
+                hasMoreSessions: history.hasMoreSessions,
+                nextReportOffset: history.nextReportOffset,
+                nextSessionOffset: history.nextSessionOffset,
+                isLoadingMore: false
+            }));
+        } catch (e) {
+            Logger.warn('DB', 'Failed to load more history', e);
+            toast.error(\"Impossible de charger plus d'historique.\");
+            setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
+        }
+    }, [selectedFile, orgKey, detailPaging.nextReportOffset, detailPaging.nextSessionOffset, detailPaging.hasMoreReports, detailPaging.isLoadingMore, toast]);
 
     // --- RENDUS ---
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
@@ -257,8 +302,64 @@ const AppRouter = () => {
             <GlobalErrorBoundary>
                 <OfflineIndicator />
                 <Suspense fallback={<AppLoader />}>
-                    {mode === 'dashboard' && <Dashboard userProfile={userProfile} pendingQuestionnaires={pendingQuestionnaires} patientFiles={patientFiles} onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }} onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')} onOpenPatient={async (id) => { try { const details = await StorageService.loadPatientDetails(id, orgKey!); const baseFile = patientFiles.find(f => f.id === id); if (baseFile) { setSelectedFile({ ...baseFile, ...details, patient: details.patient }); setMode('detail'); } } catch { toast.error("Impossible d'ouvrir ce dossier."); } }} onProcessPending={onProcessPending} processingQueueId={processingQueueId} draftsIndex={draftsIndex} onResumeDraft={onResumeDraft} onContribute={handleContributionAccess} isDemoMode={isDemoMode} onCopyLink={handleCopyLink} />}
-                    {mode === 'detail' && selectedFile && <PatientDetail file={selectedFile} onBack={() => setMode('dashboard')} onQuickEntry={() => setShowQuickEntry(true)} onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }} onOpenReport={() => {}} draftAvailable={!!draftsIndex[selectedFile.id]} onResumeDraft={() => onResumeDraft(selectedFile.id)} />}
+                    {mode === 'dashboard' && (
+                        <Dashboard
+                            userProfile={userProfile}
+                            pendingQuestionnaires={pendingQuestionnaires}
+                            patientFiles={patientFiles}
+                            onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
+                            onGenerateLink={handleGenerateLink}
+                            onShowPricing={() => setPricingModalMode('plans')}
+                            onOpenPatient={async (id) => {
+                                try {
+                                    const details = await StorageService.loadPatientDetails(id, orgKey!);
+                                    const baseFile = patientFiles.find(f => f.id === id);
+                                    if (baseFile) {
+                                        setSelectedFile({
+                                            ...baseFile,
+                                            reports: details.reports,
+                                            sessions: details.sessions,
+                                            patient: details.patient
+                                        });
+                                        setDetailPaging({
+                                            hasMoreReports: details.hasMoreReports,
+                                            hasMoreSessions: details.hasMoreSessions,
+                                            nextReportOffset: details.nextReportOffset,
+                                            nextSessionOffset: details.nextSessionOffset,
+                                            isLoadingMore: false
+                                        });
+                                        setMode('detail');
+                                    }
+                                } catch {
+                                    toast.error(\"Impossible d'ouvrir ce dossier.\");
+                                }
+                            }}
+                            onProcessPending={onProcessPending}
+                            processingQueueId={processingQueueId}
+                            draftsIndex={draftsIndex}
+                            onResumeDraft={onResumeDraft}
+                            onContribute={handleContributionAccess}
+                            isDemoMode={isDemoMode}
+                            onCopyLink={handleCopyLink}
+                            hasMorePatients={hasMorePatients}
+                            isLoadingMorePatients={isLoadingMorePatients}
+                            onLoadMorePatients={loadMorePatients}
+                        />
+                    )}
+                    {mode === 'detail' && selectedFile && (
+                        <PatientDetail
+                            file={selectedFile}
+                            onBack={() => setMode('dashboard')}
+                            onQuickEntry={() => setShowQuickEntry(true)}
+                            onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
+                            onOpenReport={() => {}}
+                            draftAvailable={!!draftsIndex[selectedFile.id]}
+                            onResumeDraft={() => onResumeDraft(selectedFile.id)}
+                            hasMoreHistory={detailPaging.hasMoreReports || detailPaging.hasMoreSessions}
+                            isLoadingMoreHistory={detailPaging.isLoadingMore}
+                            onLoadMoreHistory={handleLoadMoreHistory}
+                        />
+                    )}
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}

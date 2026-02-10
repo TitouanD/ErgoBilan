@@ -20,6 +20,9 @@ interface Props {
   onResumeDraft?: (patientId: string) => void;
   isDemoMode?: boolean; 
   onCopyLink: (q: PendingQuestionnaire) => void; 
+  hasMorePatients?: boolean;
+  isLoadingMorePatients?: boolean;
+  onLoadMorePatients?: () => void;
 }
 
 type TabType = 'pending' | 'active' | 'archived';
@@ -67,7 +70,7 @@ const ReferralCard = () => {
     );
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, onContribute, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink }) => {
+export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, onContribute, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink, hasMorePatients = false, isLoadingMorePatients = false, onLoadMorePatients }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>(isDemoMode ? 'pending' : 'active');
   const [showImportAnim, setShowImportAnim] = useState(false);
@@ -314,6 +317,18 @@ export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires,
                         <h3 className="font-bold text-stone-500">Aucun résultat</h3>
                         {activeTab === 'active' && <p className="text-xs text-stone-400 mt-2">Créez un nouveau dossier pour commencer.</p>}
                         {activeTab === 'pending' && isDemoMode && <p className="text-xs text-stone-400 mt-2">Cliquez sur "Nouveau lien Famille" pour simuler un envoi.</p>}
+                    </div>
+                )}
+
+                {(activeTab !== 'pending' && hasMorePatients) && (
+                    <div className="col-span-full flex justify-center pt-4">
+                        <button
+                            onClick={() => onLoadMorePatients && onLoadMorePatients()}
+                            disabled={isLoadingMorePatients || !onLoadMorePatients}
+                            className="px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider border border-stone-200 text-stone-500 hover:text-[#3D405B] hover:border-[#E07A5F] transition-all disabled:opacity-50"
+                        >
+                            {isLoadingMorePatients ? 'Chargement...' : 'Charger plus de patients'}
+                        </button>
                     </div>
                 )}
             </div>

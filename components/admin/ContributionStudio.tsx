@@ -36,13 +36,21 @@ type ExtractionPage = {
     detectedStructure: TableStructure;
 };
 
+type CategoryOption = {
+    id: string;
+    label: string;
+    sortOrder?: number | null;
+};
+
 export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
   const [step, setStep] = useState<'intro' | 'upload' | 'processing' | 'editor' | 'success'>('intro');
   const [files, setFiles] = useState<File[]>([]);
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
   
   const [testName, setTestName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(TEST_CATALOG[0]?.id || 'motricite-globale');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
+  const [isCategoryLoading, setIsCategoryLoading] = useState(true);
   const [testNameError, setTestNameError] = useState(false);
   
     const [tableStructure, setTableStructure] = useState<TableStructure>('UNKNOWN');
@@ -98,13 +106,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
           try {
               const { data: tests, error: testsError } = await supabase
                   .from('view_unified_catalog')
-                  .select('id, name')
-                  .ilike('name', `%${trimmed}%`);
+                  .select('id, label')
+                  .ilike('label', `%${trimmed}%`);
 
               if (testsError) throw testsError;
 
               const normalized = normalizeTestName(trimmed);
-              const matchedTest = (tests || []).find(t => normalizeTestName(t.name) === normalized) || null;
+              const matchedTest = (tests || []).find(t => normalizeTestName(t.label) === normalized) || null;
 
               if (!matchedTest) {
                   if (!canceled) {
@@ -122,7 +130,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
               if (subsError) throw subsError;
 
               if (!canceled) {
-                  setCanonicalTest(matchedTest);
+                  setCanonicalTest({ id: matchedTest.id, name: matchedTest.label });
                   setCanonicalSubtests(subs || []);
               }
           } catch (error) {
@@ -139,6 +147,49 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
       loadCanonicalSubtests();
       return () => { canceled = true; };
   }, [testName]);
+
+  // Load categories from DB (official_categories) for the category selector
+  useEffect(() => {
+      let canceled = false;
+      const loadCategories = async () => {
+          setIsCategoryLoading(true);
+          try {
+              const { data, error } = await supabase
+                  .from('official_categories')
+                  .select('id, label, sort_order')
+                  .order('sort_order', { ascending: true });
+
+              if (error) throw error;
+
+              const options = (data || []).map((c: { id: string; label: string; sort_order?: number | null }) => ({
+                  id: c.id,
+                  label: c.label,
+                  sortOrder: c.sort_order ?? null
+              }));
+
+              const fallback = options.length > 0
+                  ? options
+                  : (TEST_CATALOG || []).map(c => ({ id: c.id, label: c.name, sortOrder: c.sortOrder }));
+
+              if (!canceled) {
+                  setCategoryOptions(fallback);
+                  setSelectedCategory(prev => prev || fallback[0]?.id || '');
+              }
+          } catch (error) {
+              Logger.error('DB', 'Failed to load categories', error);
+              const fallback = (TEST_CATALOG || []).map(c => ({ id: c.id, label: c.name, sortOrder: c.sortOrder }));
+              if (!canceled) {
+                  setCategoryOptions(fallback);
+                  setSelectedCategory(prev => prev || fallback[0]?.id || '');
+              }
+          } finally {
+              if (!canceled) setIsCategoryLoading(false);
+          }
+      };
+
+      loadCategories();
+      return () => { canceled = true; };
+  }, []);
 
   // --- HELPER FUNCTIONS ---
 
@@ -656,6 +707,10 @@ ${knownNamesBlock}
   // --- DETECT DUPLICATE & ASK USER (cross-scope fuzzy search) ---
   const handleFinalSave = async () => {
       if (!legalConsent) return;
+      if (!selectedCategory) {
+          toast.error('Veuillez sélectionner une catégorie valide.');
+          return;
+      }
 
       setIsSaving(true);
       try {
@@ -1032,7 +1087,7 @@ ${knownNamesBlock}
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-stone-400">Catégorie du Test</label>
                             <div className="flex flex-wrap gap-2">
-                                {TEST_CATALOG.map(cat => (
+                                {categoryOptions.map(cat => (
                                     <button
                                         key={cat.id}
                                         onClick={() => setSelectedCategory(cat.id)}
@@ -1042,10 +1097,15 @@ ${knownNamesBlock}
                                             : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300'
                                         }`}
                                     >
-                                        {cat.name}
+                                        {cat.label}
                                     </button>
                                 ))}
                             </div>
+                            {!isCategoryLoading && categoryOptions.length === 0 && (
+                                <p className="text-[10px] text-rose-500 mt-2 font-semibold">
+                                    Aucune catégorie disponible (vérifiez la table `official_categories`).
+                                </p>
+                            )}
                         </div>
 
                         {pages.length > 0 && (
