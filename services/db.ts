@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 
 // --- CONFIGURATION SUPABASE ---
 // Préférer les variables d'environnement pour permettre la rotation des clés sans redéploiement.
@@ -52,3 +53,21 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 		storage: safeStorage
 	}
 });
+
+const DEFAULT_REFRESH_WINDOW_MS = 60_000; // Refresh if token expires within 60s
+
+export const ensureFreshSession = async (
+	options: { forceRefresh?: boolean; minValidityMs?: number } = {}
+): Promise<{ session: Session | null; refreshed: boolean; error?: unknown }> => {
+	const { data: { session }, error } = await supabase.auth.getSession();
+	if (!session) return { session: null, refreshed: false, error };
+
+	const minValidityMs = options.minValidityMs ?? DEFAULT_REFRESH_WINDOW_MS;
+	const expiresAtMs = session.expires_at ? session.expires_at * 1000 : 0;
+	const needsRefresh = options.forceRefresh || !expiresAtMs || (expiresAtMs - Date.now() < minValidityMs);
+
+	if (!needsRefresh) return { session, refreshed: false };
+
+	const { data, error: refreshError } = await supabase.auth.refreshSession();
+	return { session: data?.session ?? null, refreshed: true, error: refreshError ?? undefined };
+};

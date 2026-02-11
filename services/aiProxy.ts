@@ -9,7 +9,7 @@
  * Both paths enforce a per-request timeout (AbortController).
  */
 
-import { supabase } from './db';
+import { supabase, ensureFreshSession } from './db';
 import { Logger } from '../utils/logger';
 
 const FUNCTION_NAME = 'generate';
@@ -101,29 +101,50 @@ const callGeminiDirect = async (params: GenerateContentParams): Promise<ProxyRes
 // PROD path — Supabase Edge Function proxy (key stays server-side)
 // ---------------------------------------------------------------------------
 const callEdgeFunctionProxy = async (params: GenerateContentParams): Promise<ProxyResponse> => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { session, error: sessionErr } = await ensureFreshSession();
   if (!session?.access_token) {
-    throw new Error('Not authenticated — cannot call AI proxy');
+    Logger.warn('AI', 'No valid session for AI proxy', sessionErr);
+    throw new Error('SESSION_EXPIRED');
   }
 
   Logger.debug('AI', 'EDGE mode — calling AI proxy edge function');
 
-  // supabase.functions.invoke doesn't support AbortSignal natively,
-  // so we race it against a timeout promise.
-  const invokePromise = supabase.functions.invoke(FUNCTION_NAME, {
-    body: {
-      contents: params.contents,
-      systemInstruction: params.systemInstruction,
-      responseMimeType: params.responseMimeType,
-      ...(params.generationId && { generation_id: params.generationId }),
-    },
-  });
+  const isInvalidJwtError = (err: any): boolean => {
+    const status = typeof err?.status === 'number'
+      ? err.status
+      : (typeof err?.context?.status === 'number' ? err.context.status : undefined);
+    if (status === 401) return true;
+    const msg = String(err?.message ?? '');
+    return /invalid jwt/i.test(msg);
+  };
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('TIMEOUT_AI')), REQUEST_TIMEOUT_MS);
-  });
+  const invokeWithTimeout = async () => {
+    const invokePromise = supabase.functions.invoke(FUNCTION_NAME, {
+      body: {
+        contents: params.contents,
+        systemInstruction: params.systemInstruction,
+        responseMimeType: params.responseMimeType,
+        ...(params.generationId && { generation_id: params.generationId }),
+      },
+    });
 
-  const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT_AI')), REQUEST_TIMEOUT_MS);
+    });
+
+    return Promise.race([invokePromise, timeoutPromise]) as Promise<{ data: any; error: any }>;
+  };
+
+  let { data, error } = await invokeWithTimeout();
+
+  if (error && isInvalidJwtError(error)) {
+    Logger.warn('AI', 'Invalid JWT detected — refreshing session and retrying');
+    const refreshResult = await ensureFreshSession({ forceRefresh: true });
+    if (!refreshResult.session?.access_token) {
+      throw new Error('SESSION_EXPIRED');
+    }
+    ({ data, error } = await invokeWithTimeout());
+  }
 
   if (error) {
     Logger.error('AI', 'AI proxy call failed', error);

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { supabase } from '../services/db';
+import { supabase, ensureFreshSession } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { StorageService } from '../services/storage';
 import { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
@@ -82,6 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const wizardActiveRef = useRef(false);
   const initCompleteRef = useRef(false);
   const isInitializingRef = useRef(false); // Synchronous guard against duplicate loadUser from StrictMode
+  const refreshInFlightRef = useRef(false);
 
   const setWizardActive = (active: boolean) => {
       wizardActiveRef.current = active;
@@ -113,6 +114,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await supabase.auth.signOut();
       } catch (e) {
           Logger.warn('AUTH', 'SignOut failed during forced logout', e);
+      }
+  };
+
+  const refreshSessionIfNeeded = async (reason: string, forceRefresh = false) => {
+      if (isDemoMode || authState === 'unauthenticated') return;
+      if (refreshInFlightRef.current) return;
+      refreshInFlightRef.current = true;
+      try {
+          const { session, refreshed, error } = await ensureFreshSession({ forceRefresh });
+          if (error) {
+              Logger.warn('AUTH', `Session refresh failed (${reason})`, error);
+          } else if (refreshed) {
+              Logger.debug('AUTH', `Session refreshed (${reason})`, session?.user?.id);
+          }
+      } finally {
+          refreshInFlightRef.current = false;
       }
   };
 
@@ -249,6 +266,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           clearTimeout(idleTimer); 
           window.removeEventListener('mousemove', resetIdleTimer); 
           window.removeEventListener('keydown', resetIdleTimer); 
+      };
+  }, [authState, isDemoMode]);
+
+  // Keep JWT fresh when the app regains focus or becomes visible.
+  useEffect(() => {
+      if (isDemoMode) return;
+      const onFocus = () => {
+          if (authState !== 'unauthenticated') {
+              refreshSessionIfNeeded('focus');
+          }
+      };
+      const onVisibility = () => {
+          if (document.visibilityState === 'visible') onFocus();
+      };
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onVisibility);
+      return () => {
+          window.removeEventListener('focus', onFocus);
+          document.removeEventListener('visibilitychange', onVisibility);
       };
   }, [authState, isDemoMode]);
 
@@ -573,6 +609,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
 
       try {
+          if (!isDemoMode) {
+              const { session, error } = await ensureFreshSession({ forceRefresh: true });
+              if (!session) {
+                  Logger.warn('AUTH', 'Session expired during unlock', error);
+                  await forceLogout('Session expired');
+                  return;
+              }
+          }
           const { data: memberData, error } = await supabase
               .from('organization_members')
               .select('encrypted_org_key, organization_id')

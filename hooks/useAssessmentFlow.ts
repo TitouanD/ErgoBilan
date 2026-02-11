@@ -218,6 +218,8 @@ Attentes: ${p.familyExpectations}
       if (msg === 'CREDIT_INSUFFICIENT') {
         // Caller should open paywall — we signal via a special error string
         setGenerationError('CREDIT_INSUFFICIENT');
+      } else if (msg === 'SESSION_EXPIRED') {
+        setGenerationError("Session expirée. Veuillez vous reconnecter.");
       } else if (msg === 'TIMEOUT_AI') {
         setGenerationError("Le serveur IA ne répond pas.");
       } else {
