@@ -42,14 +42,14 @@ Deno.serve(async (req: Request) => {
     const { email, password } = body ?? {};
 
     if (!email || !password) {
-      return new Response(JSON.stringify({ error: "Missing email or password" }), {
-        status: 400,
+      return new Response(JSON.stringify({ ok: false, error: "MISSING_FIELDS", message: "Missing email or password", status: 400 }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (typeof password !== "string" || password.length < 8) {
-      return new Response(JSON.stringify({ error: "Weak password", message: "Le mot de passe doit contenir au moins 8 caractères." }), {
-        status: 400,
+      return new Response(JSON.stringify({ ok: false, error: "WEAK_PASSWORD", message: "Le mot de passe doit contenir au moins 8 caractères.", status: 400 }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -66,9 +66,9 @@ Deno.serve(async (req: Request) => {
 
     if (rlErr || !withinLimit) {
       return new Response(
-        JSON.stringify({ error: "RATE_LIMITED", message: "Trop d'inscriptions depuis cet appareil. Réessayez plus tard." }),
+        JSON.stringify({ ok: false, error: "RATE_LIMITED", message: "Trop d'inscriptions depuis cet appareil. Réessayez plus tard.", status: 429 }),
         {
-          status: 429,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
@@ -87,21 +87,27 @@ Deno.serve(async (req: Request) => {
     const signupData = await signupRes.json();
 
     if (!signupRes.ok) {
-      return new Response(JSON.stringify(signupData), {
+      return new Response(JSON.stringify({
+        ok: false,
+        error: signupData?.error || "SIGNUP_FAILED",
+        message: signupData?.message || "Inscription impossible.",
         status: signupRes.status,
+        details: signupData,
+      }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify(signupData), {
+    return new Response(JSON.stringify({ ok: true, data: signupData }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
   } catch (err) {
     console.error("Signup edge error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
+    return new Response(JSON.stringify({ ok: false, error: "INTERNAL", message: "Internal server error", status: 500 }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

@@ -17,6 +17,9 @@ interface Props {
   onOpenReport: (reportId: string) => void;
   draftAvailable?: boolean;
   onResumeDraft?: () => void;
+  hasMoreHistory?: boolean;
+  isLoadingMoreHistory?: boolean;
+  onLoadMoreHistory?: () => void;
 }
 
 // Fonction utilitaire pour retrouver la définition d'un sous-test n'importe où dans le catalogue
@@ -218,7 +221,7 @@ const DeleteConfirmationModal: React.FC<{
     );
 };
 
-export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft }) => {
+export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQuickEntry, onOpenReport, draftAvailable, onResumeDraft, hasMoreHistory = false, isLoadingMoreHistory = false, onLoadMoreHistory }) => {
     const { ensureCatalogLoaded } = useCatalog();
     useEffect(() => {
         ensureCatalogLoaded();
@@ -228,13 +231,24 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
   const [isProcessing, setIsProcessing] = useState(false);
   const toast = useToast();
 
+  const parseScoreValue = (value: string | number | null | undefined): number | null => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+      const normalized = String(value).replace(',', '.');
+      const num = parseFloat(normalized);
+      return Number.isFinite(num) ? num : null;
+  };
+
   const chartData = useMemo(() => {
       if (!file.sessions || file.sessions.length === 0) return [];
       return file.sessions.map(s => {
           const scores = Object.values(s.results) as ScoreResult[];
           const validated = scores.filter(r => r.status === 'validated');
-          const avgNote = validated.length > 0
-              ? validated.reduce((sum, r) => sum + (r.standardScore ?? r.raw ?? 0), 0) / validated.length
+          const numericScores = validated
+              .map(r => parseScoreValue(r.standard) ?? parseScoreValue(r.raw))
+              .filter((v): v is number => v !== null);
+          const avgNote = numericScores.length > 0
+              ? numericScores.reduce((sum, v) => sum + v, 0) / numericScores.length
               : null;
           return {
               date: new Date(s.date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
@@ -522,6 +536,17 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
                         </div>
                     )}
                 </div>
+                {hasMoreHistory && onLoadMoreHistory && (
+                    <div className="mt-4 flex justify-center">
+                        <button
+                            onClick={onLoadMoreHistory}
+                            disabled={isLoadingMoreHistory}
+                            className="px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider border border-stone-200 text-stone-500 hover:text-[#3D405B] hover:border-[#E07A5F] transition-all disabled:opacity-50"
+                        >
+                            {isLoadingMoreHistory ? 'Chargement...' : 'Charger plus d\u2019historique'}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
 
@@ -595,3 +620,7 @@ export const PatientDetail: React.FC<Props> = ({ file, onBack, onNewBilan, onQui
     </div>
   );
 };
+
+
+
+

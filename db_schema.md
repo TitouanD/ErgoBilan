@@ -197,7 +197,7 @@ detail dans :  Supabase.csv
 | `id` | uuid | PK |
 | `patient_id` | uuid | FK |
 | `user_id` | uuid | FK |
-| `type` | text | 'initial', 'reeval' |
+| `type` | text | 'initial', 'reevaluation' |
 | `status` | text | |
 | `encrypted_content` | text | Blob Sections |
 | `iv` | text | |

@@ -70,6 +70,21 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               // 3. Construction de l'arbre (Mapping)
               const categoryMap: Record<string, CategoryDef> = {};
               const allTests: TestDef[] = [];
+              const subtestsByTestId: Record<string, SubtestDef[]> = {};
+
+              (subtestsData || []).forEach((s: any) => {
+                  const sub: SubtestDef = {
+                      id: s.id,
+                      name: s.name,
+                      unit: s.unit || 'pts',
+                      scoreType: s.score_type as any,
+                      lowerIsBetter: false // Défaut, ajusté si besoin par DB future
+                  };
+                  if (!subtestsByTestId[s.test_id]) {
+                      subtestsByTestId[s.test_id] = [];
+                  }
+                  subtestsByTestId[s.test_id].push(sub);
+              });
 
               // A. Initialisation des catégories basées sur la vue
               viewRows?.forEach((row: any) => {
@@ -84,15 +99,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   }
 
                   // B. Assemblage du Test
-                  const testSubtests: SubtestDef[] = (subtestsData || [])
-                      ?.filter((s: any) => s.test_id === row.id)
-                      .map((s: any) => ({
-                          id: s.id,
-                          name: s.name,
-                          unit: s.unit || 'pts',
-                          scoreType: s.score_type as any,
-                          lowerIsBetter: false // Défaut, ajusté si besoin par DB future
-                      })) || [];
+                  const testSubtests: SubtestDef[] = subtestsByTestId[row.id] || [];
 
                   const testDef: TestDef = {
                       id: row.id,
@@ -150,3 +157,4 @@ export const useCatalog = () => {
   if (context === undefined) throw new Error('useCatalog must be used within a CatalogProvider');
   return context;
 };
+

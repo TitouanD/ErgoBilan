@@ -243,22 +243,11 @@ Attentes: ${p.familyExpectations}
 
     setIsGenerating(true);
     try {
-      const flatResults: Record<string, ScoreResult> = {};
       const testNames: string[] = [];
-
-      Object.entries(assessment.tests).forEach(([tId, subtests]) => {
-        const catalogDef = catalog.flatMap((c) => c.tests).find((t) => t.id === tId);
-        testNames.push(catalogDef ? catalogDef.name : tId);
-        Object.entries(subtests).forEach(([, res]) => {
-          flatResults[(res as ScoreResult & { id?: string }).id ?? tId] = res as ScoreResult;
-        });
-      });
-
-      // Build flat results properly
       const flatResultsClean: Record<string, ScoreResult> = {};
       Object.entries(assessment.tests).forEach(([tId, subtests]) => {
         const catalogDef = catalog.flatMap((c) => c.tests).find((t) => t.id === tId);
-        if (testNames.length === 0) testNames.push(catalogDef ? catalogDef.name : tId);
+        testNames.push(catalogDef ? catalogDef.name : tId);
         Object.entries(subtests).forEach(([sId, res]) => {
           flatResultsClean[sId] = res as ScoreResult;
         });
@@ -365,3 +354,6 @@ Attentes: ${p.familyExpectations}
     handleResumeDraft,
   };
 };
+
+
+

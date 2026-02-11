@@ -100,25 +100,8 @@ export const SubscriptionService = {
     },
 
     /**
-     * Tente de consommer un crédit via la fonction sécurisée RPC (Server-Side).
-     * Retourne un generation_id (uuid) en cas de succès, null sinon.
-     * NOTE: En production (mode edge), la consommation est faite par l'Edge Function.
-     * Cette méthode reste utile pour le mode direct (dev) et les checks UI.
-     */
-    consumeCredit: async (): Promise<string | null> => {
-        try {
-            const { data, error } = await supabase.rpc('consume_credit');
-            if (error) throw error;
-            return data || null; // uuid string or null
-        } catch (e) {
-            Logger.error('DB', "Erreur consommation crédit:", e);
-            return null;
-        }
-    },
-
-    /**
      * Rembourse un crédit en cas d'échec de génération.
-     * Nécessite le generation_id retourné par consumeCredit.
+     * Nécessite un generation_id valide.
      * Protégé contre le farming : limité à 5 min après consommation.
      */
     refundCredit: async (generationId?: string): Promise<boolean> => {
@@ -157,3 +140,5 @@ export const SubscriptionService = {
             .subscribe();
     }
 };
+
+

@@ -124,7 +124,7 @@ export const ClinicalInsights: React.FC = () => {
                             >
                                 {catalog.map(cat => (
                                     <optgroup key={cat.id} label={cat.name}>
-                                        {cat.tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        {cat.tests.map(t => <option key={t.id} value={t.id} className="bg-[#23252F] text-stone-200">{t.name}</option>)}
                                     </optgroup>
                                 ))}
                             </select>
@@ -139,7 +139,7 @@ export const ClinicalInsights: React.FC = () => {
                                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[#E07A5F]"
                                 >
                                     {activeTest.subtests.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                        <option key={s.id} value={s.id} className="bg-[#23252F] text-stone-200">{s.name}</option>
                                     ))}
                                 </select>
                             </div>

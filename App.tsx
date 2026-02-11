@@ -8,6 +8,7 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
 import { PinUnlock } from './components/auth/PinUnlock';
+import { NetworkErrorScreen } from './components/auth/NetworkErrorScreen';
 import { Step1Admin } from './components/assessment/Step1Admin';
 import { GenerationLoader } from './components/shared/GenerationLoader';
 import { AssessmentStepper } from './components/assessment/AssessmentStepper';
@@ -15,7 +16,7 @@ import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientFile } from './types'; 
+import type { PatientFile, PractitionerProfile } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, Info, Save, CheckCircle2, FileText, ShieldAlert } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
@@ -56,7 +57,7 @@ const AppLoader = () => (
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, tempEmail, startDemo, isDemoMode, verifyAdminAccess } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
     const { catalog } = useCatalog(); 
     const assessment = useAssessment();
     const toast = useToast();
@@ -71,10 +72,17 @@ const AppRouter = () => {
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
+    const [detailPaging, setDetailPaging] = useState({
+        hasMoreReports: false,
+        hasMoreSessions: false,
+        nextReportOffset: 0,
+        nextSessionOffset: 0,
+        isLoadingMore: false
+    });
     const [demoConversion, setDemoConversion] = useState<{ show: boolean; action: string }>({ show: false, action: '' });
 
     // --- Extracted domain hooks ---
-    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, loadData } = useDataLoader({ sessionKey, orgKey, authState, practitioner, isDemoMode });
+    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, orgKey, orgId, authState, practitioner, isDemoMode });
 
     const { isGenerating, setIsGenerating, generationError, setGenerationError, handleGenerateReport, handleFinalize, handleSaveAndQuit, handleResumeDraft } = useAssessmentFlow({
         assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
@@ -103,7 +111,12 @@ const AppRouter = () => {
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
             setMode('landing');
-            setShowAuthModal(true);
+            // Seulement ouvrir le modal si pas déjà ouvert — évite de re-monter
+            // un nouveau AuthWizard pendant que l'actuel est en train de travailler
+            setShowAuthModal(prev => {
+                if (prev) Logger.debug('UI', 'Auth modal already open, skipping re-open for registering state');
+                return true;
+            });
             setIsLoggingIn(false);
         } else if (authState === 'subscription_locked') {
             // Keep user inside the app view, but block with paywall
@@ -114,6 +127,8 @@ const AppRouter = () => {
         } else if (authState === 'error') {
             setIsLoggingIn(false);
             toast.error("Problème de connexion.");
+        } else if (authState === 'network_error') {
+            setIsLoggingIn(false);
         }
     }, [authState]);
 
@@ -123,6 +138,18 @@ const AppRouter = () => {
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
     const handleUnlock = (key: CryptoKey) => { unlockSession(key); setMode('dashboard'); };
+    const handleWizardComplete = async (_p: PractitionerProfile, key: CryptoKey) => {
+        // Fermer le modal AVANT reload pour éviter le flash du AuthWizard
+        // quand authState passe brièvement par 'authenticating'
+        setShowAuthModal(false);
+        setShowOnboarding(true);
+        setSessionKey(key);
+
+        const nextState = await reloadUserFromSession();
+        if (nextState === 'locked') {
+            await unlockSession(key);
+        }
+    };
     const handleStartDemo = async () => { await startDemo(); setShowOnboarding(true); };
     const handleAdminAccess = async () => { const allowed = await verifyAdminAccess(); if (allowed) setMode('admin'); else toast.error("Accès refusé par le serveur."); };
     const handleContributionAccess = () => { if (isDemoMode) { setDemoConversion({ show: true, action: "La contribution" }); return; } if (userProfile.subscriptionPlan === 'free') { setPricingModalMode('plans'); return; } setMode('contribution'); };
@@ -141,7 +168,47 @@ const AppRouter = () => {
 
     const onProcessPending = useCallback(async (q: Parameters<typeof handleProcessPending>[0]) => { const result = await handleProcessPending(q); if (result === 'assessment') setMode('assessment'); }, [handleProcessPending]);
 
+    const handleLoadMoreHistory = useCallback(async () => {
+        if (!selectedFile || !orgKey) return;
+        if (detailPaging.isLoadingMore) return;
+        setDetailPaging(prev => ({ ...prev, isLoadingMore: true }));
+        try {
+            const history = await StorageService.loadPatientHistoryPage(selectedFile.id, orgKey, {
+                encryptedFileKey: selectedFile.encryptedFileKey,
+                reportOffset: detailPaging.nextReportOffset,
+                sessionOffset: detailPaging.nextSessionOffset,
+                skipReports: !detailPaging.hasMoreReports
+            });
+
+            setSelectedFile(prev => {
+                if (!prev) return prev;
+                const reportMap = new Map(prev.reports.map(r => [r.id, r]));
+                history.reports.forEach(r => reportMap.set(r.id, r));
+                const sessionMap = new Map(prev.sessions.map(s => [s.id, s]));
+                history.sessions.forEach(s => sessionMap.set(s.id, s));
+                const reports = Array.from(reportMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                const sessions = Array.from(sessionMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                return { ...prev, reports, sessions };
+            });
+
+            setDetailPaging(prev => ({
+                ...prev,
+                hasMoreReports: history.hasMoreReports,
+                hasMoreSessions: history.hasMoreSessions,
+                nextReportOffset: history.nextReportOffset,
+                nextSessionOffset: history.nextSessionOffset,
+                isLoadingMore: false
+            }));
+        } catch (e) {
+            Logger.warn('DB', 'Failed to load more history', e);
+            toast.error("Impossible de charger plus d'historique.");
+            setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
+        }
+    }, [selectedFile, orgKey, detailPaging.nextReportOffset, detailPaging.nextSessionOffset, detailPaging.hasMoreReports, detailPaging.isLoadingMore, toast]);
+
     // --- RENDUS ---
+    if (isLoading || authState === 'authenticating') return <AppLoader />;
+    if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
     
     // LANDING
@@ -187,7 +254,7 @@ const AppRouter = () => {
                                 <div className="mt-8 text-center pt-6 border-t border-stone-100"><p className="text-xs text-stone-400 font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
                             </div>
                         ) : (
-                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={(p, k) => { setSessionKey(k); setShowOnboarding(true); setShowAuthModal(false); }} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
+                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={handleWizardComplete} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
                         )}
                     </div>
                 )}
@@ -240,8 +307,64 @@ const AppRouter = () => {
             <GlobalErrorBoundary>
                 <OfflineIndicator />
                 <Suspense fallback={<AppLoader />}>
-                    {mode === 'dashboard' && <Dashboard userProfile={userProfile} pendingQuestionnaires={pendingQuestionnaires} patientFiles={patientFiles} onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }} onGenerateLink={handleGenerateLink} onShowPricing={() => setPricingModalMode('plans')} onOpenPatient={async (id) => { try { const details = await StorageService.loadPatientDetails(id, orgKey!); const baseFile = patientFiles.find(f => f.id === id); if (baseFile) { setSelectedFile({ ...baseFile, ...details, patient: details.patient }); setMode('detail'); } } catch { toast.error("Impossible d'ouvrir ce dossier."); } }} onProcessPending={onProcessPending} processingQueueId={processingQueueId} draftsIndex={draftsIndex} onResumeDraft={onResumeDraft} onContribute={handleContributionAccess} isDemoMode={isDemoMode} onCopyLink={handleCopyLink} />}
-                    {mode === 'detail' && selectedFile && <PatientDetail file={selectedFile} onBack={() => setMode('dashboard')} onQuickEntry={() => setShowQuickEntry(true)} onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }} onOpenReport={() => {}} draftAvailable={!!draftsIndex[selectedFile.id]} onResumeDraft={() => onResumeDraft(selectedFile.id)} />}
+                    {mode === 'dashboard' && (
+                        <Dashboard
+                            userProfile={userProfile}
+                            pendingQuestionnaires={pendingQuestionnaires}
+                            patientFiles={patientFiles}
+                            onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
+                            onGenerateLink={handleGenerateLink}
+                            onShowPricing={() => setPricingModalMode('plans')}
+                            onOpenPatient={async (id) => {
+                                try {
+                                    const details = await StorageService.loadPatientDetails(id, orgKey!);
+                                    const baseFile = patientFiles.find(f => f.id === id);
+                                    if (baseFile) {
+                                        setSelectedFile({
+                                            ...baseFile,
+                                            reports: details.reports,
+                                            sessions: details.sessions,
+                                            patient: details.patient
+                                        });
+                                        setDetailPaging({
+                                            hasMoreReports: details.hasMoreReports,
+                                            hasMoreSessions: details.hasMoreSessions,
+                                            nextReportOffset: details.nextReportOffset,
+                                            nextSessionOffset: details.nextSessionOffset,
+                                            isLoadingMore: false
+                                        });
+                                        setMode('detail');
+                                    }
+                                } catch {
+                                    toast.error("Impossible d'ouvrir ce dossier.");
+                                }
+                            }}
+                            onProcessPending={onProcessPending}
+                            processingQueueId={processingQueueId}
+                            draftsIndex={draftsIndex}
+                            onResumeDraft={onResumeDraft}
+                            onContribute={handleContributionAccess}
+                            isDemoMode={isDemoMode}
+                            onCopyLink={handleCopyLink}
+                            hasMorePatients={hasMorePatients}
+                            isLoadingMorePatients={isLoadingMorePatients}
+                            onLoadMorePatients={loadMorePatients}
+                        />
+                    )}
+                    {mode === 'detail' && selectedFile && (
+                        <PatientDetail
+                            file={selectedFile}
+                            onBack={() => setMode('dashboard')}
+                            onQuickEntry={() => setShowQuickEntry(true)}
+                            onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
+                            onOpenReport={() => {}}
+                            draftAvailable={!!draftsIndex[selectedFile.id]}
+                            onResumeDraft={() => onResumeDraft(selectedFile.id)}
+                            hasMoreHistory={detailPaging.hasMoreReports || detailPaging.hasMoreSessions}
+                            isLoadingMoreHistory={detailPaging.isLoadingMore}
+                            onLoadMoreHistory={handleLoadMoreHistory}
+                        />
+                    )}
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}

@@ -6,6 +6,7 @@ import { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
@@ -17,6 +18,7 @@ interface Props {
 export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '' }) => {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const toast = useToast();
+    const { setWizardActive } = useAuth();
     
     // Form Data
     const [formData, setFormData] = useState({
@@ -105,25 +107,54 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                     body: { email: formData.email, password: formData.password }
                 });
 
-                if (signupError) throw signupError;
-                if (!signupData?.user) throw new Error("Échec de création du compte Auth.");
+                if (signupError) {
+                    Logger.error('AUTH', 'Signup edge error', signupError);
+                    let errorMessage = "Erreur d'inscription. Veuillez réessayer.";
+                    const contextBody = (signupError as { context?: { body?: unknown } })?.context?.body;
+                    if (contextBody) {
+                        try {
+                            const parsed = typeof contextBody === 'string' ? JSON.parse(contextBody) : contextBody;
+                            const parsedMessage = (parsed as { message?: string; error?: string })?.message
+                                || (parsed as { message?: string; error?: string })?.error;
+                            if (parsedMessage) errorMessage = parsedMessage;
+                        } catch {
+                            if (typeof contextBody === 'string') errorMessage = contextBody;
+                        }
+                    } else if (signupError.message) {
+                        errorMessage = signupError.message;
+                    }
+                    throw new Error(errorMessage);
+                }
+                if (signupData?.ok === false) {
+                    throw new Error(signupData.message || "Inscription impossible.");
+                }
 
-                // If email confirmation is required, no session is returned.
+                const payload = signupData?.data || signupData;
+                if (!payload?.user) throw new Error("Échec de création du compte Auth.");
+
+                const accessToken = payload.session?.access_token || payload.access_token;
+                const refreshToken = payload.session?.refresh_token || payload.refresh_token;
+
+                // If email confirmation is required, no tokens are returned.
                 // Stop here and ask the user to confirm before continuing.
-                if (!signupData?.session) {
+                if (!accessToken || !refreshToken) {
                     Logger.warn('AUTH', 'Sign-up completed without session. Awaiting email confirmation.');
                     toast.info("Compte créé. Vérifiez votre email pour confirmer, puis reconnectez-vous.");
+                    onCancel();
                     return;
                 }
 
-                if (signupData.session?.access_token && signupData.session?.refresh_token) {
-                    await supabase.auth.setSession({
-                        access_token: signupData.session.access_token,
-                        refresh_token: signupData.session.refresh_token
-                    });
-                }
+                // CRITICAL: Activer le lock AVANT setSession pour empêcher
+                // onAuthStateChange → loadUser de trouver encryption_salt='pending'
+                // et de basculer en 'registering' (ce qui démonterait ce wizard)
+                setWizardActive(true);
 
-                userId = signupData.user.id;
+                await supabase.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken
+                });
+
+                userId = payload.user.id;
             }
 
             // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
@@ -216,6 +247,8 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
         } catch (e: unknown) {
             Logger.error('AUTH', "Registration Error", e);
+            // En cas d'erreur, libérer le lock pour permettre au flow normal de reprendre
+            setWizardActive(false);
             let msg = e instanceof Error ? e.message : "Une erreur est survenue.";
             if (msg.includes("violates row-level security")) msg = "Erreur de sécurité DB. Vos droits ne sont pas encore actifs.";
             toast.error(msg);

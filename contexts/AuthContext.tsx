@@ -8,18 +8,22 @@ import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
+type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'network_error' | 'error';
+
 interface AuthContextType {
   userProfile: UserProfile;
   practitioner: PractitionerProfile | null;
   sessionKey: CryptoKey | null; // MasterKey (PIN)
   orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
+  orgId: string | null; // Organization ID for filtering
   // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
-  authState: 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error';
+    authState: AuthState;
   isLoading: boolean;
   tempEmail: string | null;
   isDemoMode: boolean; // NOUVEAU : Flag UI
   
   refreshProfile: () => Promise<void>;
+    reloadUserFromSession: () => Promise<AuthState | null>;
   setSessionKey: (key: CryptoKey | null) => void;
   unlockSession: (key: CryptoKey) => Promise<void>; 
   lockSession: () => void;
@@ -28,6 +32,7 @@ interface AuthContextType {
   setOrgKey: (key: CryptoKey | null) => void; 
   startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
   verifyAdminAccess: () => Promise<boolean>; // NOUVEAU : Vérification serveur
+  setWizardActive: (active: boolean) => void; // Lock pour empêcher loadUser pendant le wizard
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,7 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
   const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
-  const [authState, setAuthState] = useState<'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'error'>('unauthenticated');
+  const [orgId, setOrgId] = useState<string | null>(null); 
+    const [authState, setAuthState] = useState<AuthState>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -73,40 +79,148 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // MUTEX & REFS : Empêche loadUser de tourner en double et résout le Stale Closure
   const isLoadingProfileRef = useRef(false);
   const currentUserIdRef = useRef<string | null>(null);
+  const wizardActiveRef = useRef(false);
+  const initCompleteRef = useRef(false);
+  const isInitializingRef = useRef(false); // Synchronous guard against duplicate loadUser from StrictMode
 
-  // Initialisation Session & Listener
+  const setWizardActive = (active: boolean) => {
+      wizardActiveRef.current = active;
+      Logger.info('AUTH', `Wizard active lock: ${active}`);
+  };
+
+  const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number): Promise<{ timedOut: boolean; value?: T }> => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('TIMEOUT')), ms);
+      });
+      try {
+          const value = await Promise.race([promise, timeout]);
+          return { timedOut: false, value: value as T };
+      } catch (e) {
+          if (e instanceof Error && e.message === 'TIMEOUT') {
+              return { timedOut: true };
+          }
+          throw e;
+      } finally {
+          if (timer) clearTimeout(timer);
+      }
+  };
+
+  const forceLogout = async (reason: string) => {
+      Logger.warn('AUTH', `Forcing logout: ${reason}`);
+      handleLocalLogout();
+      try {
+          await supabase.auth.signOut();
+      } catch (e) {
+          Logger.warn('AUTH', 'SignOut failed during forced logout', e);
+      }
+  };
+
+  // ─── SINGLE AUTH INITIALIZATION ───────────────────────────────────
+  // ONE effect does everything: check local session → loadUser → done.
+  // onAuthStateChange only handles subsequent events (login, logout, token refresh).
+  // No network call (getUser) on the init path — trust the local JWT.
+  // Supabase auto-refreshes expired tokens via autoRefreshToken: true.
   useEffect(() => {
-    Logger.info('AUTH', "Initializing Auth Listener...");
+    Logger.info('AUTH', 'Initializing Auth...');
+    let cancelled = false; // React strict-mode guard
+    isInitializingRef.current = true; // Synchronous flag — set BEFORE any async work
 
-    // On utilise onAuthStateChange comme source de vérité unique
-    // Il émettra 'INITIAL_SESSION' au démarrage si une session existe
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        Logger.debug('AUTH', `Auth State Change: ${event}`, session?.user?.id);
-        
-        if (event === 'SIGNED_OUT' || !session) {
-            if (currentUserIdRef.current) {
-                Logger.info('AUTH', "User signed out detected");
-                handleLocalLogout();
-            } else {
-                // Cas initial sans session
+    // ── 1. Bootstrap from cached session (instant, no network) ──
+    const initFromSession = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            Logger.debug('AUTH', 'Local session check', session?.user?.id ?? 'none');
+
+            if (cancelled) return;
+
+            if (!session?.user) {
+                Logger.info('AUTH', 'No session found — unauthenticated');
                 setIsLoading(false);
+                return;
             }
-        } else if (session?.user) {
-            // Check via REF pour éviter le stale closure du useEffect[]
+
+            currentUserIdRef.current = session.user.id;
+            setAuthState('authenticating');
+            await loadUser(session.user.id, session.user.email || '');
+        } catch (e) {
+            Logger.error('AUTH', 'Init failed', e);
+            if (!cancelled) setIsLoading(false);
+        } finally {
+            isInitializingRef.current = false;
+            initCompleteRef.current = true;
+        }
+    };
+
+    initFromSession();
+
+    // ── 2. Listen for subsequent auth changes ──
+    // CRITICAL: During init, onAuthStateChange fires SIGNED_IN for token recovery.
+    // We MUST skip those to avoid racing with initFromSession.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (cancelled) return;
+        Logger.debug('AUTH', `Auth event: ${event}`, session?.user?.id);
+
+        // Ignore INITIAL_SESSION — we handle init ourselves
+        if (event === 'INITIAL_SESSION') return;
+
+        if (event === 'SIGNED_OUT' || !session) {
+            Logger.info('AUTH', 'Signed out event');
+            handleLocalLogout();
+            return;
+        }
+
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+            if (!session?.user) return;
+
+            // Block ALL auth events while init is still running (prevents StrictMode duplicate)
+            if (isInitializingRef.current) {
+                Logger.debug('AUTH', `Skipping ${event} — init still in progress`);
+                return;
+            }
+
+            // Skip token refreshes for current user (no state change needed)
+            if (currentUserIdRef.current === session.user.id && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
+                Logger.debug('AUTH', `Skipping ${event} — same user already loaded`);
+                return;
+            }
+
+            if (wizardActiveRef.current) {
+                Logger.info('AUTH', 'Wizard active — deferring loadUser');
+                currentUserIdRef.current = session.user.id;
+                setIsLoading(false);
+                return;
+            }
+
+            // Truly new user (different account signed in)
             if (currentUserIdRef.current !== session.user.id) {
-                Logger.info('AUTH', "New user session detected or initial load", session.user.id);
-                // On met à jour la ref immédiatement pour bloquer les appels concurrents
+                Logger.info('AUTH', 'New user signed in', session.user.id);
                 currentUserIdRef.current = session.user.id;
                 setAuthState('authenticating');
-                await loadUser(session.user.id, session.user.email!);
-            } else {
-                Logger.debug('AUTH', "Skipping loadUser (Same ID in Ref)");
+                await loadUser(session.user.id, session.user.email || '');
             }
         }
     });
 
+    // ── 3. Safety timeout: never stay stuck on the loading screen ──
+    // Reduced from 12s to 8s — Phase 1 is now a single fetch, so this is generous.
+    // If it fires, show network_error screen with retry instead of infinite loader.
+    const safetyTimer = setTimeout(() => {
+        if (!cancelled) {
+            setIsLoading(prev => {
+                if (prev) {
+                    Logger.warn('AUTH', 'Safety timeout — showing network error screen');
+                    setAuthState('network_error');
+                }
+                return false;
+            });
+        }
+    }, 8_000);
+
     return () => {
-        Logger.debug('AUTH', "Unsubscribing Auth Listener");
+        cancelled = true;
+        isInitializingRef.current = false;
+        clearTimeout(safetyTimer);
         subscription.unsubscribe();
     };
   }, []);
@@ -142,7 +256,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
-      setOrgKey(null); 
+      setOrgKey(null);
+      setOrgId(null); 
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
       setIsDemoMode(false);
@@ -152,6 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Reset des Refs
       isLoadingProfileRef.current = false; 
       currentUserIdRef.current = null;
+      isInitializingRef.current = false;
   };
 
   const startDemo = async () => {
@@ -212,38 +328,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const dummyKey = await generateSymetricKey();
       setSessionKey(dummyKey);
       setOrgKey(dummyKey);
+      setOrgId(null);
 
       setAuthState('authenticated');
       setIsLoading(false);
   };
 
-  const loadUser = async (userId: string, email: string) => {
+    // ─── PHASE 1: FAST-LOCK ─────────────────────────────────────────
+    // Only fetches the practitioner row. Sets authState='locked' + practitioner
+    // ASAP so PinUnlock renders within ~1 network round-trip.
+    // Subscription/org checks are deferred to Phase 2 inside unlockSession().
+    const loadUser = async (userId: string, email: string): Promise<AuthState> => {
       if (isLoadingProfileRef.current) {
           Logger.warn('AUTH', 'loadUser skipped: operation already in progress.');
-          return;
+          return authState;
       }
       
       isLoadingProfileRef.current = true; // LOCK
-      Logger.info('AUTH', "Loading user profile (Standard - No Timeout)", userId);
+      Logger.info('AUTH', "Loading practitioner (fast-lock)", userId);
       
       try {
-          // 1. Charger le Praticien
-          const { data: user, error } = await supabase.from('practitioners').select('*').eq('id', userId).maybeSingle();
+          const buildProfile = (user: Record<string, string | boolean | null>): PractitionerProfile => ({
+              id: user.id as string,
+              email: (user.email as string) || '',
+              firstName: (user.first_name as string) || '',
+              lastName: (user.last_name as string) || '',
+              phonePro: (user.phone_pro as string) || '',
+              siret: (user.siret as string) || '',
+              addressPro: (user.address_pro as string) || '',
+              encryptionSalt: (user.encryption_salt as string) || '',
+              encryptionValidator: (user.encryption_validator as string) || ''
+          });
+
+          // 1. Charger le Praticien (seul appel réseau bloquant)
+          const userResult = await withTimeout(
+              supabase.from('practitioners').select('*').eq('id', userId).maybeSingle(),
+              15000
+          );
+          if (userResult.timedOut) {
+              Logger.warn('AUTH', 'Practitioner fetch timed out; showing network error');
+              setUserProfile(prev => ({ ...prev, id: userId, email }));
+              setAuthState('network_error');
+              return 'network_error';
+          }
+
+          const { data: user, error } = userResult.value!;
           
           if (error) Logger.error('AUTH', "Supabase error loading practitioner", error);
 
           if (user) {
-              const profile: PractitionerProfile = { 
-                  id: user.id, 
-                  email: user.email!, 
-                  firstName: user.first_name || '', 
-                  lastName: user.last_name || '', 
-                  phonePro: user.phone_pro || '', 
-                  siret: user.siret || '', 
-                  addressPro: user.address_pro || '', 
-                  encryptionSalt: user.encryption_salt!, 
-                  encryptionValidator: user.encryption_validator! 
-              };
+              const profile = buildProfile(user as Record<string, string | boolean | null>);
               
               setPractitioner(profile);
 
@@ -252,52 +386,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   Logger.warn('AUTH', 'Incomplete crypto setup detected. Redirecting to wizard.');
                   setTempEmail(email);
                   setAuthState('registering');
-                  return;
+                  return 'registering';
               }
 
-              // Ensure org + membership + subscription exist (repair if trigger failed)
-              const { error: bootstrapError } = await supabase.rpc('bootstrap_org_for_user', { p_user_id: userId, p_org_name: 'Mon Cabinet' });
-              if (bootstrapError) {
-                  Logger.warn('AUTH', 'Bootstrap RPC failed during loadUser', bootstrapError);
-              }
-
-              // 2. CHECK ABONNEMENT (SANS TIMEOUT)
-              Logger.info('AUTH', "Fetching full profile from SubscriptionService...");
-              
-              // On attend simplement la réponse, même si elle met 20 secondes.
-              const fullProfile = await SubscriptionService.getUserProfile(userId);
-
-              if (fullProfile) {
-                  Logger.info('AUTH', "Profile loaded successfully", fullProfile.status);
-                  setUserProfile(fullProfile);
-                  
-                  SubscriptionService.subscribeToCredits(userId, (newCredits) => { 
-                      setUserProfile(prev => ({ ...prev, credits: newCredits })); 
-                  });
-
-                  const hasValidAccess = fullProfile.status === 'active' 
-                      || fullProfile.status === 'trialing' 
-                      || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
-
-                  if (!hasValidAccess) {
-                      setAuthState('subscription_locked'); 
-                  } else {
-                      setAuthState('locked'); 
-                  }
-
-              } else {
-                  Logger.warn('AUTH', "Subscription Service returned null (Profile not found or error caught in service)");
-                  setAuthState('subscription_locked'); 
-              }
+              // Fast-lock: PIN screen renders immediately.
+              // Org bootstrap + subscription check happen AFTER PIN unlock (Phase 2).
+              Logger.info('AUTH', 'Fast-locked — ready for PIN');
+              setAuthState('locked');
+              return 'locked';
 
           } else {
               Logger.warn('AUTH', "User authenticated but NO practitioner profile found. Redirecting to wizard.");
+              const repairResult = await withTimeout(
+                  supabase.rpc('bootstrap_practitioner_for_user', { p_user_id: userId, p_email: email }),
+                  5000
+              );
+              if (!repairResult.timedOut && !repairResult.value?.error) {
+                  const retryResult = await withTimeout(
+                      supabase.from('practitioners').select('*').eq('id', userId).maybeSingle(),
+                      5000
+                  );
+                  if (!retryResult.timedOut && retryResult.value?.data) {
+                      const profile = buildProfile(retryResult.value.data as Record<string, string | boolean | null>);
+                      setPractitioner(profile);
+
+                      const needsRegistration = !profile.encryptionSalt || !profile.encryptionValidator || profile.encryptionValidator === 'pending';
+                      if (needsRegistration) {
+                          Logger.warn('AUTH', 'Incomplete crypto setup detected after bootstrap. Redirecting to wizard.');
+                          setTempEmail(email);
+                          setAuthState('registering');
+                          return 'registering';
+                      }
+                  }
+              } else {
+                  Logger.warn('AUTH', 'Practitioner bootstrap timed out or failed');
+              }
               setTempEmail(email);
-              setAuthState('registering'); 
+              setAuthState('registering');
+              return 'registering';
           }
       } catch (e) {
           Logger.error('AUTH', "Critical Auth Load Error", e);
-          setAuthState('error'); 
+          setAuthState('error');
+          return 'error';
       } finally {
           isLoadingProfileRef.current = false; // UNLOCK
           setIsLoading(false);
@@ -313,6 +444,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
           Logger.warn('DB', "Failed to refresh profile details", e);
       }
+  };
+
+  const reloadUserFromSession = async (): Promise<AuthState | null> => {
+      if (isDemoMode) return null;
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) return null;
+
+      // Reset wizard lock — si on est appelé depuis handleWizardComplete,
+      // le wizard a fini son travail et loadUser peut maintenant tourner normalement
+      wizardActiveRef.current = false;
+
+      setIsLoading(true);
+      setAuthState('authenticating');
+      currentUserIdRef.current = user.id;
+
+      let attempts = 0;
+      while (isLoadingProfileRef.current && attempts < 10) {
+          await new Promise(resolve => setTimeout(resolve, 150));
+          attempts += 1;
+      }
+
+      return loadUser(user.id, user.email || '');
   };
 
   // NOUVEAU : Vérification stricte serveur pour Admin
@@ -336,6 +489,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return data.is_admin === true;
   };
 
+  // ─── PHASE 2: HYDRATE PROFILE (runs inside unlockSession, after PIN) ──
+  // Org bootstrap + subscription check run in parallel after key derivation.
+  // If subscription is invalid → authState='subscription_locked' → paywall.
+  const hydrateProfile = async (userId: string): Promise<AuthState> => {
+      Logger.info('AUTH', 'Hydrating profile (Phase 2 — post-unlock)');
+      try {
+          // Run org bootstrap and subscription fetch in parallel
+          const [bootstrapSettled, profileSettled] = await Promise.allSettled([
+              withTimeout(
+                  Promise.resolve(supabase.rpc('bootstrap_org_for_user', { p_user_id: userId, p_org_name: 'Mon Cabinet' })),
+                  5000
+              ),
+              withTimeout(
+                  SubscriptionService.getUserProfile(userId),
+                  8000
+              )
+          ]);
+
+          // Handle bootstrap result (non-blocking)
+          if (bootstrapSettled.status === 'rejected') {
+              Logger.warn('AUTH', 'Bootstrap org RPC failed during hydration', bootstrapSettled.reason);
+          } else if (bootstrapSettled.value.timedOut) {
+              Logger.warn('AUTH', 'Bootstrap org RPC timed out during hydration');
+          } else if ((bootstrapSettled.value.value as any)?.error) {
+              Logger.warn('AUTH', 'Bootstrap RPC error during hydration', (bootstrapSettled.value.value as any).error);
+          }
+
+          // Handle subscription profile result
+          if (profileSettled.status === 'rejected') {
+              Logger.warn('AUTH', 'Profile fetch failed during hydration', profileSettled.reason);
+              // Graceful degradation — user can work, profile reloads on next action
+              return 'authenticated';
+          }
+
+          const profileResult = profileSettled.value;
+
+          if (profileResult.timedOut) {
+              Logger.warn('AUTH', 'Profile fetch timed out during hydration; continuing authenticated');
+              // Fire-and-forget late resolve
+              SubscriptionService.getUserProfile(userId)
+                  .then((laterProfile) => {
+                      if (laterProfile) {
+                          Logger.info('AUTH', 'Profile fetched after hydration timeout', laterProfile.status);
+                          setUserProfile(laterProfile);
+                      }
+                  })
+                  .catch((e) => Logger.warn('AUTH', 'Profile fetch failed after hydration timeout', e));
+              return 'authenticated';
+          }
+
+          const fullProfile = profileResult.value ?? null;
+
+          if (fullProfile) {
+              Logger.info('AUTH', 'Profile hydrated successfully', fullProfile.status);
+              setUserProfile(fullProfile);
+
+              SubscriptionService.subscribeToCredits(userId, (newCredits) => {
+                  setUserProfile(prev => ({ ...prev, credits: newCredits }));
+              });
+
+              const hasValidAccess = fullProfile.status === 'active'
+                  || fullProfile.status === 'trialing'
+                  || (fullProfile.isTrial && fullProfile.trialDaysRemaining >= 0);
+
+              if (!hasValidAccess) {
+                  Logger.warn('AUTH', 'Subscription invalid — showing paywall');
+                  return 'subscription_locked';
+              }
+              return 'authenticated';
+          } else {
+              Logger.warn('AUTH', 'Subscription Service returned null during hydration');
+              return 'authenticated'; // Graceful degradation
+          }
+      } catch (e) {
+          Logger.error('AUTH', 'Hydration error', e);
+          return 'authenticated'; // Graceful degradation — don't block user
+      }
+  };
+
   const unlockSession = async (key: CryptoKey) => {
       if (!practitioner) return;
       Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
@@ -354,16 +586,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
               
               setSessionKey(key); 
-              setOrgKey(unwrappedOrgKey); 
-              setAuthState('authenticated');
+              setOrgKey(unwrappedOrgKey);
+              setOrgId(memberData.organization_id || null);
+
+              // Phase 2: Hydrate subscription profile in parallel after key derivation
+              const finalState = await hydrateProfile(practitioner.id);
+              setAuthState(finalState);
           } else {
               Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
-              let orgId = memberData?.organization_id;
-              if (!orgId) {
+              let orgIdVal = memberData?.organization_id;
+              if (!orgIdVal) {
                   // Use SECURITY DEFINER RPC to bypass RLS on organizations table
                   const { data: newOrgId, error: orgErr } = await supabase.rpc('bootstrap_org_for_user', { p_user_id: practitioner.id, p_org_name: 'Mon Cabinet' });
                   if (orgErr || !newOrgId) throw orgErr || new Error('Failed to bootstrap organization');
-                  orgId = newOrgId;
+                  orgIdVal = newOrgId;
               }
 
               const newOrgKey = await generateSymetricKey();
@@ -379,7 +615,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   
               setSessionKey(key);
               setOrgKey(newOrgKey);
-              setAuthState('authenticated');
+              setOrgId(orgIdVal || null);
+
+              // Phase 2: Hydrate subscription profile after lazy init
+              const finalState = await hydrateProfile(practitioner.id);
+              setAuthState(finalState);
           }
 
       } catch (e) {
@@ -392,6 +632,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('CRYPTO', "Locking session (Clearing keys)");
       setSessionKey(null);
       setOrgKey(null);
+      setOrgId(null);
       setAuthState('locked');
   };
 
@@ -407,8 +648,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ 
-        userProfile, practitioner, sessionKey, orgKey, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess
+        userProfile, practitioner, sessionKey, orgKey, orgId, authState, isLoading, tempEmail, isDemoMode,
+        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive
     }}>
       {children}
     </AuthContext.Provider>
@@ -420,3 +661,10 @@ export const useAuth = () => {
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+
+
+
+
+
+
+

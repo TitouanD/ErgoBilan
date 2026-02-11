@@ -6,7 +6,14 @@ import {
     CandidateDetails,
     ExtractedRow,
     AdminTestBundle,
-    AdminTestSummary
+    AdminTestSummary,
+    SimilarTestMatch,
+    DuplicatePair,
+    MergeResult,
+    AttachResult,
+    SubtestDuplicatePair,
+    NormDuplicateSummary,
+    NormQualityFlag
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -161,6 +168,16 @@ export const AdminService = {
         return data || [];
     },
 
+    /**
+     * Cross-scope fuzzy search for similar tests (public + user's org)
+     * Uses pg_trgm similarity scoring
+     */
+    findSimilarTests: async (name: string, threshold = 0.3): Promise<SimilarTestMatch[]> => {
+        const { data, error } = await supabase.rpc('find_similar_tests', { p_name: name, p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as SimilarTestMatch[];
+    },
+
     createPrivateTest: async (payload: any): Promise<string> => {
         const { data, error } = await supabase.rpc('create_private_test', { p_payload: payload });
         if (error) throw error;
@@ -171,6 +188,133 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('merge_private_test', { p_target_id: targetId, p_payload: payload });
         if (error) throw error;
         return data as { new_subtests: number; new_norms: number };
+    },
+
+    /**
+     * Attach private subtests/norms to an existing test (public or private).
+     * Subtests are scoped to the user's organization.
+     */
+    attachSubtestsToTest: async (testId: string, payload: any): Promise<AttachResult> => {
+        const { data, error } = await supabase.rpc('attach_subtests_to_test', { p_test_id: testId, p_payload: payload });
+        if (error) throw error;
+        return data as AttachResult;
+    },
+
+    // --- ADMIN DEDUPLICATION ---
+
+    /**
+     * Find clusters of duplicate tests across all scopes (admin only)
+     */
+    findDuplicates: async (threshold = 0.4): Promise<DuplicatePair[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicates', { p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as DuplicatePair[];
+    },
+
+    /**
+     * Merge N source tests into 1 target test (admin only)
+     * Moves subtests, migrates norms, updates session references
+     */
+    mergeTests: async (sourceIds: string[], targetId: string): Promise<MergeResult> => {
+        const { data, error } = await supabase.rpc('admin_merge_tests', { p_source_ids: sourceIds, p_target_id: targetId });
+        if (error) throw error;
+        return data as MergeResult;
+    },
+
+    /**
+     * Promote private subtests to public (admin only)
+     */
+    promoteSubtests: async (subtestIds: string[]): Promise<{ promoted: number }> => {
+        const { data, error } = await supabase.rpc('admin_promote_subtests', { p_subtest_ids: subtestIds });
+        if (error) throw error;
+        return data as { promoted: number };
+    },
+
+    /**
+     * Promote org-scoped norms to public (admin only).
+     * Can target a specific subtest+org, all orgs for a subtest, or all pending norms for a test.
+     */
+    promoteNorms: async (params: { subtestId?: string; testId?: string; organizationId?: string }): Promise<{ promoted: number }> => {
+        const { data, error } = await supabase.rpc('admin_promote_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+            p_organization_id: params.organizationId || null,
+        });
+        if (error) throw error;
+        return data as { promoted: number };
+    },
+
+    /**
+     * Reject (delete) org-scoped norms (admin only).
+     */
+    rejectNorms: async (params: { subtestId?: string; testId?: string; organizationId?: string }): Promise<{ rejected: number }> => {
+        const { data, error } = await supabase.rpc('admin_reject_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+            p_organization_id: params.organizationId || null,
+        });
+        if (error) throw error;
+        return data as { rejected: number };
+    },
+
+    // --- SUBTEST DEDUP ---
+
+    /**
+     * Find duplicate subtests within a test (by name similarity)
+     */
+    findDuplicateSubtests: async (testId: string, threshold = 0.5): Promise<SubtestDuplicatePair[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicate_subtests', { p_test_id: testId, p_threshold: threshold });
+        if (error) throw error;
+        return (data || []) as SubtestDuplicatePair[];
+    },
+
+    /**
+     * Merge source subtests into a target subtest (move norms, delete sources)
+     */
+    mergeSubtests: async (sourceIds: string[], targetId: string): Promise<{ merged_subtests: number; migrated_norms: number; target_name: string }> => {
+        const { data, error } = await supabase.rpc('admin_merge_subtests', { p_source_ids: sourceIds, p_target_id: targetId });
+        if (error) throw error;
+        return data as { merged_subtests: number; migrated_norms: number; target_name: string };
+    },
+
+    // --- NORM DEDUP ---
+
+    /**
+     * Find exact duplicate norms (grouped by subtest)
+     */
+    findDuplicateNorms: async (params: { subtestId?: string; testId?: string }): Promise<NormDuplicateSummary[]> => {
+        const { data, error } = await supabase.rpc('admin_find_duplicate_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+        });
+        if (error) throw error;
+        return (data || []) as NormDuplicateSummary[];
+    },
+
+    /**
+     * Deduplicate norms: keep one per unique key, delete extras
+     */
+    deduplicateNorms: async (params: { subtestId?: string; testId?: string }): Promise<{ deleted: number }> => {
+        const { data, error } = await supabase.rpc('admin_deduplicate_norms', {
+            p_subtest_id: params.subtestId || null,
+            p_test_id: params.testId || null,
+        });
+        if (error) throw error;
+        return data as { deleted: number };
+    },
+
+    // --- NORM QUALITY ---
+
+    /**
+     * Run quality checks on norms and return flagged entries
+     */
+    normQualityCheck: async (params: { testId?: string; subtestId?: string }): Promise<NormQualityFlag[]> => {
+        const { data, error } = await supabase.rpc('admin_norm_quality_check', {
+            p_test_id: params.testId || null,
+            p_subtest_id: params.subtestId || null,
+        });
+        if (error) throw error;
+        return (data || []) as NormQualityFlag[];
     },
 
     // --- MODULE C : Télémétrie Passive & Anonyme ---

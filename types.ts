@@ -167,7 +167,7 @@ export interface UserProfile {
     credits: number;
     isAdmin: boolean;
     subscriptionPlan: 'free' | 'essential' | 'performance' | 'expert';
-    status: 'active' | 'trialing' | 'canceled' | 'past_due';
+    status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
     isTrial: boolean;
     trialDaysRemaining: number;
     totalBilansGenerated: number;
@@ -295,6 +295,7 @@ export interface AdminTestSummary {
     organization_id?: string | null;
     created_at: string;
     subtest_count?: number;
+    pending_norms_count?: number;
 }
 
 export interface AdminTestRecord {
@@ -393,4 +394,77 @@ export interface AIExtractionResult {
     test_context?: string;
     structure_type?: 'PARAMETRIC' | 'LOOKUP';
     tables?: AIExtractedTable[];
+}
+
+// ── Deduplication types ──
+
+/** A similar test found by find_similar_tests RPC */
+export interface SimilarTestMatch {
+    id: string;
+    name: string;
+    organization_id: string | null;
+    similarity_score: number;
+    subtests_count: number;
+}
+
+/** A pair of duplicate tests detected by admin_find_duplicates */
+export interface DuplicatePair {
+    test_id_a: string;
+    test_name_a: string;
+    org_id_a: string | null;
+    subtests_count_a: number;
+    norms_count_a: number;
+    test_id_b: string;
+    test_name_b: string;
+    org_id_b: string | null;
+    subtests_count_b: number;
+    norms_count_b: number;
+    similarity_score: number;
+}
+
+/** Result of admin_merge_tests RPC */
+export interface MergeResult {
+    merged_tests: number;
+    moved_subtests: number;
+    migrated_norms: number;
+    updated_sessions: number;
+    target_name: string;
+}
+
+/** Result of attach_subtests_to_test RPC */
+export interface AttachResult {
+    new_subtests: number;
+    new_norms: number;
+    test_id: string;
+}
+
+/** A pair of duplicate subtests within a test */
+export interface SubtestDuplicatePair {
+    subtest_id_a: string;
+    subtest_name_a: string;
+    org_id_a: string | null;
+    norms_count_a: number;
+    subtest_id_b: string;
+    subtest_name_b: string;
+    org_id_b: string | null;
+    norms_count_b: number;
+    similarity_score: number;
+}
+
+/** Summary of duplicate norms for a subtest */
+export interface NormDuplicateSummary {
+    subtest_id: string;
+    subtest_name: string;
+    duplicate_group_count: number;
+    total_excess_rows: number;
+}
+
+/** A flagged norm from quality check */
+export interface NormQualityFlag {
+    norm_id: string;
+    subtest_id: string;
+    subtest_name: string;
+    flag_code: string;
+    flag_label: string;
+    details: string;
 }
