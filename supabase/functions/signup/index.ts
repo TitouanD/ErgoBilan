@@ -1,17 +1,52 @@
 // @ts-nocheck
-// Supabase Edge Function — Signup with rate limiting
-// SECURITY: Enforces IP-based rate limiting before auth.signup
+// Supabase Edge Function - Hardened signup endpoint
+// SECURITY: multi-layer anti-abuse checks before auth.signup.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const MAX_SIGNUPS_PER_HOUR = 5;
+const parsePositiveInt = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
+const MAX_SIGNUPS_PER_HOUR = parsePositiveInt(Deno.env.get("SIGNUP_MAX_PER_HOUR"), 3);
+const MIN_PASSWORD_LENGTH = parsePositiveInt(Deno.env.get("SIGNUP_MIN_PASSWORD_LENGTH"), 10);
+const FAIL_DELAY_MS = parsePositiveInt(Deno.env.get("SIGNUP_FAIL_DELAY_MS"), 400);
+const TURNSTILE_SECRET_KEY = (Deno.env.get("TURNSTILE_SECRET_KEY") || "").trim();
+const SIGNUP_ACCESS_CODE = (Deno.env.get("SIGNUP_ACCESS_CODE") || "").trim();
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+const allowedOrigins = (Deno.env.get("SIGNUP_ALLOWED_ORIGINS") || "")
+  .split(",")
+  .map((v) => v.trim())
+  .filter((v) => v.length > 0);
+
+const defaultBlockedDomains = [
+  "mailinator.com",
+  "guerrillamail.com",
+  "10minutemail.com",
+  "tempmail.com",
+  "yopmail.com",
+  "sharklasers.com",
+  "dispostable.com",
+];
+
+const blockedDomains = new Set(
+  (Deno.env.get("SIGNUP_BLOCKED_EMAIL_DOMAINS") || defaultBlockedDomains.join(","))
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => v.length > 0),
+);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-captcha-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const toHex = (buffer: ArrayBuffer) =>
   Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -22,10 +57,62 @@ const sha256Hex = async (value: string) => {
   return toHex(hash);
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const getEmailDomain = (email: string) => {
+  const at = email.lastIndexOf("@");
+  if (at === -1) return "";
+  return email.slice(at + 1).toLowerCase();
+};
+
+const constantTimeEquals = (a: string, b: string) => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+};
+
 const getClientIp = (req: Request) => {
   const forwarded = req.headers.get("x-forwarded-for") || "";
   if (forwarded) return forwarded.split(",")[0].trim();
   return req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "";
+};
+
+const isAllowedOrigin = (req: Request) => {
+  if (allowedOrigins.length === 0) return true;
+  const origin = (req.headers.get("origin") || "").trim();
+  if (!origin) return false;
+  return allowedOrigins.includes(origin);
+};
+
+const verifyTurnstileToken = async (token: string, ip: string) => {
+  const body = new URLSearchParams();
+  body.set("secret", TURNSTILE_SECRET_KEY);
+  body.set("response", token);
+  if (ip) body.set("remoteip", ip);
+
+  const res = await fetch(TURNSTILE_VERIFY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  if (!res.ok) return false;
+  const data = await res.json();
+  return Boolean(data?.success);
+};
+
+const responseJson = (payload: unknown) =>
+  new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const fail = async (error: string, message: string, status: number) => {
+  await sleep(FAIL_DELAY_MS);
+  return responseJson({ ok: false, error, message, status });
 };
 
 Deno.serve(async (req: Request) => {
@@ -33,30 +120,80 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (req.method !== "POST") {
+    return responseJson({
+      ok: false,
+      error: "METHOD_NOT_ALLOWED",
+      message: "Method not allowed.",
+      status: 405,
+    });
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const body = await req.json();
-    const { email, password } = body ?? {};
-
-    if (!email || !password) {
-      return new Response(JSON.stringify({ ok: false, error: "MISSING_FIELDS", message: "Missing email or password", status: 400 }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!isAllowedOrigin(req)) {
+      return await fail("FORBIDDEN_ORIGIN", "Origin is not allowed.", 403);
     }
-    if (typeof password !== "string" || password.length < 8) {
-      return new Response(JSON.stringify({ ok: false, error: "WEAK_PASSWORD", message: "Le mot de passe doit contenir au moins 8 caractères.", status: 400 }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return await fail("INVALID_PAYLOAD", "Invalid request payload.", 400);
+    }
+
+    const rawEmail = typeof body?.email === "string" ? body.email : "";
+    const password = typeof body?.password === "string" ? body.password : "";
+    const signupCode = typeof body?.signupCode === "string" ? body.signupCode : "";
+    const captchaToken = typeof body?.captchaToken === "string"
+      ? body.captchaToken
+      : (req.headers.get("x-captcha-token") || "");
+
+    if (!rawEmail || !password) {
+      return await fail("MISSING_FIELDS", "Missing email or password.", 400);
+    }
+
+    const email = normalizeEmail(rawEmail);
+    if (!emailRegex.test(email)) {
+      return await fail("INVALID_EMAIL", "Please use a valid email address.", 400);
+    }
+
+    const domain = getEmailDomain(email);
+    if (!domain || blockedDomains.has(domain)) {
+      return await fail("EMAIL_BLOCKED", "This email domain is not allowed.", 400);
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return await fail(
+        "WEAK_PASSWORD",
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        400,
+      );
+    }
+
+    if (SIGNUP_ACCESS_CODE) {
+      if (!signupCode || !constantTimeEquals(signupCode, SIGNUP_ACCESS_CODE)) {
+        return await fail("ACCESS_CODE_REQUIRED", "Signup is currently restricted.", 403);
+      }
     }
 
     const ip = getClientIp(req);
+
+    if (TURNSTILE_SECRET_KEY) {
+      if (!captchaToken) {
+        return await fail("CAPTCHA_REQUIRED", "Captcha token is required.", 400);
+      }
+      const captchaOk = await verifyTurnstileToken(captchaToken, ip);
+      if (!captchaOk) {
+        return await fail("CAPTCHA_FAILED", "Captcha verification failed.", 403);
+      }
+    }
+
     const ipHash = ip ? await sha256Hex(ip) : null;
-    const emailHash = await sha256Hex(String(email).toLowerCase().trim());
+    const emailHash = await sha256Hex(email);
 
     const { data: withinLimit, error: rlErr } = await supabase.rpc("check_signup_rate_limit", {
       p_ip_hash: ipHash,
@@ -65,13 +202,8 @@ Deno.serve(async (req: Request) => {
     });
 
     if (rlErr || !withinLimit) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "RATE_LIMITED", message: "Trop d'inscriptions depuis cet appareil. Réessayez plus tard.", status: 429 }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      console.warn("Signup rate-limited", { rlErr, ipPresent: Boolean(ip) });
+      return await fail("RATE_LIMITED", "Too many signup attempts. Please retry later.", 429);
     }
 
     const signupRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
@@ -87,28 +219,24 @@ Deno.serve(async (req: Request) => {
     const signupData = await signupRes.json();
 
     if (!signupRes.ok) {
-      return new Response(JSON.stringify({
-        ok: false,
-        error: signupData?.error || "SIGNUP_FAILED",
-        message: signupData?.message || "Inscription impossible.",
+      const rawMessage = String(signupData?.message || "");
+      if (signupRes.status === 429) {
+        return await fail("RATE_LIMITED", "Too many signup attempts. Please retry later.", 429);
+      }
+      if (/already|registered|exists/i.test(rawMessage)) {
+        return await fail("SIGNUP_FAILED", "Signup is not available right now.", 400);
+      }
+      console.warn("Auth signup rejected", {
         status: signupRes.status,
-        details: signupData,
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        error: signupData?.error,
+        message: rawMessage,
       });
+      return await fail("SIGNUP_FAILED", "Signup is not available right now.", 400);
     }
 
-    return new Response(JSON.stringify({ ok: true, data: signupData }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-
+    return responseJson({ ok: true, data: signupData });
   } catch (err) {
     console.error("Signup edge error:", err);
-    return new Response(JSON.stringify({ ok: false, error: "INTERNAL", message: "Internal server error", status: 500 }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return await fail("INTERNAL", "Internal server error.", 500);
   }
 });
