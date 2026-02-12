@@ -228,7 +228,7 @@ export const AdminLibrary: React.FC = () => {
       test_id: bundle.test.id,
       name: newName,
       unit: 'pts',
-      score_type: 'standard',
+      score_type: 'scaled',
       computation_mode: 'LOOKUP',
       organization_id: bundle.test.organization_id || null,
       isNew: true
@@ -322,7 +322,7 @@ export const AdminLibrary: React.FC = () => {
       test_id: test.id,
       name: s.name,
       unit: s.unit || 'pts',
-      score_type: s.score_type || 'standard',
+      score_type: s.score_type || 'scaled',
       computation_mode: s.computation_mode || 'LOOKUP',
       organization_id: s.organization_id || test.organization_id || null
     }));
@@ -657,9 +657,8 @@ export const AdminLibrary: React.FC = () => {
                             </React.Fragment>
                           ))}
                         </div>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                          cluster.maxSimilarity > 0.8 ? 'bg-red-500/20 text-red-400' : cluster.maxSimilarity > 0.6 ? 'bg-amber-500/20 text-amber-400' : 'bg-stone-500/20 text-stone-400'
-                        }`}>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cluster.maxSimilarity > 0.8 ? 'bg-red-500/20 text-red-400' : cluster.maxSimilarity > 0.6 ? 'bg-amber-500/20 text-amber-400' : 'bg-stone-500/20 text-stone-400'
+                          }`}>
                           {Math.round(cluster.maxSimilarity * 100)}% — {cluster.maxSimilarity > 0.8 ? 'PROBABLE' : cluster.maxSimilarity > 0.6 ? 'POSSIBLE' : 'FAIBLE'}
                         </span>
                       </div>
@@ -668,9 +667,8 @@ export const AdminLibrary: React.FC = () => {
                       <div className="px-4 pb-4 border-t border-white/5 pt-3 space-y-2">
                         <p className="text-[10px] text-stone-500 font-bold uppercase">Cible de fusion :</p>
                         {cluster.tests.map(t => (
-                          <button key={t.id} onClick={() => setMergeTargetId(t.id)} className={`w-full text-left p-2.5 rounded-lg border transition-all flex items-center justify-between text-xs ${
-                            mergeTargetId === t.id ? 'border-violet-500 bg-violet-500/10' : 'border-white/5 bg-white/5 hover:border-white/10'
-                          }`}>
+                          <button key={t.id} onClick={() => setMergeTargetId(t.id)} className={`w-full text-left p-2.5 rounded-lg border transition-all flex items-center justify-between text-xs ${mergeTargetId === t.id ? 'border-violet-500 bg-violet-500/10' : 'border-white/5 bg-white/5 hover:border-white/10'
+                            }`}>
                             <div className="flex items-center gap-2">
                               <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${mergeTargetId === t.id ? 'border-violet-500 bg-violet-500' : 'border-stone-600'}`}>
                                 {mergeTargetId === t.id && <Check size={10} className="text-white" />}
@@ -757,11 +755,10 @@ export const AdminLibrary: React.FC = () => {
                 <button
                   key={tab.key}
                   onClick={() => setSubTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
-                    subTab === tab.key
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${subTab === tab.key
                       ? 'bg-white/10 text-white'
                       : 'text-stone-500 hover:text-stone-300 hover:bg-white/5'
-                  }`}
+                    }`}
                 >
                   {tab.icon}
                   {tab.label}
@@ -774,172 +771,174 @@ export const AdminLibrary: React.FC = () => {
 
             {/* ═══ SUB-TAB: NORMES & SOUS-TESTS ═══ */}
             {subTab === 'normes' && (
-            <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
-              <div className="col-span-4 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-stone-500 uppercase">
-                    Sous-tests ({bundle.subtests.length})
-                  </span>
-                  <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                    <Plus size={12} /> Ajouter
-                  </button>
-                </div>
-
-                <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                  {bundle.subtests.map(s => (
-                    <div
-                      key={s.id}
-                      className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
-                      onClick={() => setSelectedSubtestId(s.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
-                          <span className="text-xs font-bold text-white truncate">{s.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteSubtest(s); }}
-                            className="text-stone-400 hover:text-rose-400"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="text-[10px] text-stone-500 flex items-center gap-1">
-                        {s.score_type} · {s.computation_mode} {s.organization_id ? '· Privé' : ''}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="col-span-8 flex flex-col min-h-0">
-                {!activeSubtest ? (
-                  <div className="h-full flex items-center justify-center text-stone-600">
-                    Sélectionnez un sous-test.
+              <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
+                <div className="col-span-4 flex flex-col">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-stone-500 uppercase">
+                      Sous-tests ({bundle.subtests.length})
+                    </span>
+                    <button onClick={addSubtest} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                      <Plus size={12} /> Ajouter
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-12 gap-4 mb-4">
-                      <div className="col-span-6">
-                        <label className="text-[10px] font-bold text-stone-500 uppercase">Nom</label>
-                        <input
-                          value={activeSubtest.name}
-                          onChange={(e) => updateSubtestField(activeSubtest.id, 'name', e.target.value)}
-                          className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <label className="text-[10px] font-bold text-stone-500 uppercase">Unité</label>
-                        <input
-                          value={activeSubtest.unit || ''}
-                          onChange={(e) => updateSubtestField(activeSubtest.id, 'unit', e.target.value)}
-                          className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <label className="text-[10px] font-bold text-stone-500 uppercase">Score Type</label>
-                        <select
-                          value={activeSubtest.score_type || 'standard'}
-                          onChange={(e) => updateSubtestField(activeSubtest.id, 'score_type', e.target.value)}
-                          className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                        >
-                          <option value="standard" className="bg-[#23252F] text-stone-200">standard</option>
-                          <option value="scaled" className="bg-[#23252F] text-stone-200">scaled</option>
-                          <option value="sten" className="bg-[#23252F] text-stone-200">sten</option>
-                          <option value="t-score" className="bg-[#23252F] text-stone-200">t-score</option>
-                        </select>
-                      </div>
-                      <div className="col-span-4">
-                        <label className="text-[10px] font-bold text-stone-500 uppercase">Computation</label>
-                        <select
-                          value={activeSubtest.computation_mode || 'LOOKUP'}
-                          onChange={(e) => updateSubtestField(activeSubtest.id, 'computation_mode', e.target.value)}
-                          className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                        >
-                          <option value="LOOKUP" className="bg-[#23252F] text-stone-200">LOOKUP</option>
-                          <option value="PARAMETRIC" className="bg-[#23252F] text-stone-200">PARAMETRIC</option>
-                        </select>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-stone-500 uppercase">Normes</span>
-                        <span className="text-[10px] text-stone-600">
-                          {publicNormsForSubtest.length} publiques
-                          {pendingNormsForSubtest.length > 0 && (
-                            <span className="text-amber-400 ml-1">+ {pendingNormsForSubtest.length} en attente</span>
-                          )}
-                        </span>
+                  <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                    {bundle.subtests.map(s => (
+                      <div
+                        key={s.id}
+                        className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                        onClick={() => setSelectedSubtestId(s.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
+                            <span className="text-xs font-bold text-white truncate">{s.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteSubtest(s); }}
+                              className="text-stone-400 hover:text-rose-400"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-stone-500 flex items-center gap-1">
+                          {s.score_type} · {s.computation_mode} {s.organization_id ? '· Privé' : ''}
+                        </div>
                       </div>
-                      <button onClick={() => addNormRow(activeSubtest.id)} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-                        <Plus size={12} /> Ajouter
-                      </button>
-                    </div>
+                    ))}
+                  </div>
+                </div>
 
-                    <div className="flex-1 overflow-auto border border-white/5 rounded-lg">
-                      <table className="min-w-full text-[11px] text-stone-300">
-                        <thead className="bg-[#1A1C23] text-stone-500 uppercase text-[10px] sticky top-0">
-                          <tr>
-                            <th className="p-2 w-6" title="Statut"></th>
-                            <th className="p-2">Âge min</th>
-                            <th className="p-2">Âge max</th>
-                            <th className="p-2">Genre</th>
-                            <th className="p-2">Raw min</th>
-                            <th className="p-2">Raw max</th>
-                            <th className="p-2">Mean</th>
-                            <th className="p-2">SD</th>
-                            <th className="p-2">NS</th>
-                            <th className="p-2">%</th>
-                            <th className="p-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {subtestNorms.map((n, idx) => {
-                            const key = (n.id || (n as NormDraft).temp_id || String(idx)) as string;
-                            return (
-                              <tr key={key} className="border-t border-white/5">
-                                <td className="p-1 text-center" title={n.organization_id ? `Org: ${n.organization_id}` : 'Publique'}>
-                                  {n.organization_id ? <Lock size={10} className="text-amber-400 inline" /> : <Globe size={10} className="text-emerald-400 inline" />}
-                                </td>
-                                <td className="p-1"><input value={n.age_min_months ?? ''} onChange={(e) => updateNormField(key, 'age_min_months', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.age_max_months ?? ''} onChange={(e) => updateNormField(key, 'age_max_months', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1">
-                                  <select value={n.gender ?? 'Mixed'} onChange={(e) => updateNormField(key, 'gender', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-1 py-1 text-[11px] text-stone-300">
-                                    <option value="Mixed" className="bg-[#23252F] text-stone-200">Mixed</option>
-                                    <option value="M" className="bg-[#23252F] text-stone-200">M</option>
-                                    <option value="F" className="bg-[#23252F] text-stone-200">F</option>
-                                  </select>
-                                </td>
-                                <td className="p-1"><input value={n.raw_min ?? ''} onChange={(e) => updateNormField(key, 'raw_min', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.raw_max ?? ''} onChange={(e) => updateNormField(key, 'raw_max', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.mean ?? ''} onChange={(e) => updateNormField(key, 'mean', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.sd ?? ''} onChange={(e) => updateNormField(key, 'sd', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.standard_score ?? ''} onChange={(e) => updateNormField(key, 'standard_score', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1"><input value={n.percentile ?? ''} onChange={(e) => updateNormField(key, 'percentile', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
-                                <td className="p-1 text-right">
-                                  <button onClick={() => deleteNorm(key)} className="text-rose-400 hover:text-rose-300">
-                                    <Trash2 size={12} />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {subtestNorms.length === 0 && (
+                <div className="col-span-8 flex flex-col min-h-0">
+                  {!activeSubtest ? (
+                    <div className="h-full flex items-center justify-center text-stone-600">
+                      Sélectionnez un sous-test.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-12 gap-4 mb-4">
+                        <div className="col-span-6">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Nom</label>
+                          <input
+                            value={activeSubtest.name}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'name', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Unité</label>
+                          <input
+                            value={activeSubtest.unit || ''}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'unit', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Score Type</label>
+                          <select
+                            value={activeSubtest.score_type || 'standard'}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'score_type', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          >
+                            <option value="standard" className="bg-[#23252F] text-stone-200">standard</option>
+                            <option value="scaled" className="bg-[#23252F] text-stone-200">scaled</option>
+                            <option value="sten" className="bg-[#23252F] text-stone-200">sten</option>
+                            <option value="t-score" className="bg-[#23252F] text-stone-200">t-score</option>
+                            <option value="percentile" className="bg-[#23252F] text-stone-200">percentile</option>
+                            <option value="none" className="bg-[#23252F] text-stone-200">none</option>
+                          </select>
+                        </div>
+                        <div className="col-span-4">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Computation</label>
+                          <select
+                            value={activeSubtest.computation_mode || 'LOOKUP'}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'computation_mode', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          >
+                            <option value="LOOKUP" className="bg-[#23252F] text-stone-200">LOOKUP</option>
+                            <option value="PARAMETRIC" className="bg-[#23252F] text-stone-200">PARAMETRIC</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-bold text-stone-500 uppercase">Normes</span>
+                          <span className="text-[10px] text-stone-600">
+                            {publicNormsForSubtest.length} publiques
+                            {pendingNormsForSubtest.length > 0 && (
+                              <span className="text-amber-400 ml-1">+ {pendingNormsForSubtest.length} en attente</span>
+                            )}
+                          </span>
+                        </div>
+                        <button onClick={() => addNormRow(activeSubtest.id)} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                          <Plus size={12} /> Ajouter
+                        </button>
+                      </div>
+
+                      <div className="flex-1 overflow-auto border border-white/5 rounded-lg">
+                        <table className="min-w-full text-[11px] text-stone-300">
+                          <thead className="bg-[#1A1C23] text-stone-500 uppercase text-[10px] sticky top-0">
                             <tr>
-                              <td className="p-3 text-center text-stone-500" colSpan={11}>Aucune norme</td>
+                              <th className="p-2 w-6" title="Statut"></th>
+                              <th className="p-2">Âge min</th>
+                              <th className="p-2">Âge max</th>
+                              <th className="p-2">Genre</th>
+                              <th className="p-2">Raw min</th>
+                              <th className="p-2">Raw max</th>
+                              <th className="p-2">Mean</th>
+                              <th className="p-2">SD</th>
+                              <th className="p-2">NS</th>
+                              <th className="p-2">%</th>
+                              <th className="p-2"></th>
                             </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
+                          </thead>
+                          <tbody>
+                            {subtestNorms.map((n, idx) => {
+                              const key = (n.id || (n as NormDraft).temp_id || String(idx)) as string;
+                              return (
+                                <tr key={key} className="border-t border-white/5">
+                                  <td className="p-1 text-center" title={n.organization_id ? `Org: ${n.organization_id}` : 'Publique'}>
+                                    {n.organization_id ? <Lock size={10} className="text-amber-400 inline" /> : <Globe size={10} className="text-emerald-400 inline" />}
+                                  </td>
+                                  <td className="p-1"><input value={n.age_min_months ?? ''} onChange={(e) => updateNormField(key, 'age_min_months', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.age_max_months ?? ''} onChange={(e) => updateNormField(key, 'age_max_months', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1">
+                                    <select value={n.gender ?? 'Mixed'} onChange={(e) => updateNormField(key, 'gender', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-1 py-1 text-[11px] text-stone-300">
+                                      <option value="Mixed" className="bg-[#23252F] text-stone-200">Mixed</option>
+                                      <option value="M" className="bg-[#23252F] text-stone-200">M</option>
+                                      <option value="F" className="bg-[#23252F] text-stone-200">F</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-1"><input value={n.raw_min ?? ''} onChange={(e) => updateNormField(key, 'raw_min', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.raw_max ?? ''} onChange={(e) => updateNormField(key, 'raw_max', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.mean ?? ''} onChange={(e) => updateNormField(key, 'mean', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.sd ?? ''} onChange={(e) => updateNormField(key, 'sd', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.standard_score ?? ''} onChange={(e) => updateNormField(key, 'standard_score', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1"><input value={n.percentile ?? ''} onChange={(e) => updateNormField(key, 'percentile', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
+                                  <td className="p-1 text-right">
+                                    <button onClick={() => deleteNorm(key)} className="text-rose-400 hover:text-rose-300">
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {subtestNorms.length === 0 && (
+                              <tr>
+                                <td className="p-3 text-center text-stone-500" colSpan={11}>Aucune norme</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
             )}
 
             {/* ═══ SUB-TAB: MÉTADONNÉES ═══ */}
@@ -1128,11 +1127,10 @@ export const AdminLibrary: React.FC = () => {
                       <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
                         {qualityFlags.map((f, idx) => (
                           <div key={idx} className="text-[10px] bg-white/5 rounded px-2 py-1.5 flex items-center gap-2">
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                              f.flag_code.includes('INVERTED') || f.flag_code === 'NEGATIVE_SD' ? 'bg-red-500/20 text-red-400' :
-                              f.flag_code.includes('IMPLAUSIBLE') || f.flag_code.includes('OOB') ? 'bg-amber-500/20 text-amber-400' :
-                              'bg-stone-500/20 text-stone-400'
-                            }`}>{f.flag_code}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${f.flag_code.includes('INVERTED') || f.flag_code === 'NEGATIVE_SD' ? 'bg-red-500/20 text-red-400' :
+                                f.flag_code.includes('IMPLAUSIBLE') || f.flag_code.includes('OOB') ? 'bg-amber-500/20 text-amber-400' :
+                                  'bg-stone-500/20 text-stone-400'
+                              }`}>{f.flag_code}</span>
                             <span className="text-stone-400">{f.subtest_name}:</span>
                             <span className="text-white">{f.flag_label}</span>
                             <span className="text-stone-600 ml-auto">{f.details}</span>

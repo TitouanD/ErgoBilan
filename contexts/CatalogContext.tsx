@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/db';
-import { CategoryDef, TestDef, SubtestDef } from '../data/testCatalog';
+import { CategoryDef, TestDef, SubtestDef, ScoreType } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
 
 interface CatalogContextType {
@@ -72,12 +72,24 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               const allTests: TestDef[] = [];
               const subtestsByTestId: Record<string, SubtestDef[]> = {};
 
+              const normalizeScoreType = (value?: string | null): ScoreType => {
+                  if (!value) return 'standard';
+                  const normalized = value.toLowerCase().trim();
+                  if (['standard', 'std', 'standard_score'].includes(normalized)) return 'standard';
+                  if (['scaled', 'ns', 'note_standard', 'note standard', 'scaled_score'].includes(normalized)) return 'scaled';
+                  if (['t-score', 'tscore', 't score', 't'].includes(normalized)) return 't-score';
+                  if (['percentile', 'pct', 'percentile_rank', 'percentile rank'].includes(normalized)) return 'percentile';
+                  if (['sten', 'stennine', 'stanine'].includes(normalized)) return 'sten';
+                  if (['none', 'raw', 'raw-only', 'raw_only', 'na', 'n/a', 'no-score', 'no score'].includes(normalized)) return 'none';
+                  return 'standard';
+              };
+
               (subtestsData || []).forEach((s: any) => {
                   const sub: SubtestDef = {
                       id: s.id,
                       name: s.name,
                       unit: s.unit || 'pts',
-                      scoreType: s.score_type as any,
+                      scoreType: normalizeScoreType(s.score_type),
                       lowerIsBetter: false // Défaut, ajusté si besoin par DB future
                   };
                   if (!subtestsByTestId[s.test_id]) {

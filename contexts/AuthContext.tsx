@@ -242,6 +242,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Periodic JWT heartbeat — keep token fresh during long active clinical sessions.
+  // The Supabase SDK's built-in auto-refresh timer can be throttled by the browser,
+  // so this interval acts as a safety net (every 4 minutes).
+  useEffect(() => {
+      if (isDemoMode || authState !== 'authenticated') return;
+      const HEARTBEAT_MS = 4 * 60 * 1000; // 4 minutes
+      const heartbeat = setInterval(() => {
+          refreshSessionIfNeeded('heartbeat');
+      }, HEARTBEAT_MS);
+      return () => clearInterval(heartbeat);
+  }, [authState, isDemoMode]);
+
   // Auto-Lock (Sécurité Inactivité)
   useEffect(() => {
       let idleTimer: ReturnType<typeof setTimeout>;

@@ -7,16 +7,16 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface Props {
-  patient: Patient;
-  sections: ReportSection[];
-  tests: TestData;
-  onValidate: () => Promise<void>; // Promise pour gérer le loading
-  onUpdateSection: (sectionId: string, updates: Partial<ReportSection>) => void;
-  branding: BrandingConfig;
-  onUpdateBranding: (newBranding: BrandingConfig) => void;
-  isPremium: boolean;
-  onShowPricing: () => void;
-  onBack: () => void;
+    patient: Patient;
+    sections: ReportSection[];
+    tests: TestData;
+    onValidate: () => Promise<void>; // Promise pour gérer le loading
+    onUpdateSection: (sectionId: string, updates: Partial<ReportSection>) => void;
+    branding: BrandingConfig;
+    onUpdateBranding: (newBranding: BrandingConfig) => void;
+    isPremium: boolean;
+    onShowPricing: () => void;
+    onBack: () => void;
     isDemoMode: boolean;
     onDemoConvert: (action: string) => void;
 }
@@ -34,11 +34,11 @@ const DebouncedColorInput: React.FC<{
 
     return (
         <div className="h-10 rounded-lg border border-stone-200 relative overflow-hidden mb-1 shadow-sm group">
-            <input 
-                type="color" 
-                value={localValue} 
+            <input
+                type="color"
+                value={localValue}
                 onChange={(e) => setLocalValue(e.target.value)}
-                onBlur={() => onChange(localValue)} 
+                onBlur={() => onChange(localValue)}
                 className="absolute -top-2 -left-2 w-20 h-20 cursor-pointer"
             />
         </div>
@@ -46,13 +46,13 @@ const DebouncedColorInput: React.FC<{
 };
 
 // --- BARRE D'OUTILS STANDARDISÉE ---
-const ReportToolbar: React.FC<{ 
-    currentBranding: BrandingConfig, 
+const ReportToolbar: React.FC<{
+    currentBranding: BrandingConfig,
     onApply: (b: BrandingConfig) => void,
     onOpenEditor: () => void,
     isPremium: boolean
 }> = ({ currentBranding, onApply, onOpenEditor, isPremium }) => {
-    
+
     const PRESETS = [
         { name: "Moderne", primary: "#264653", secondary: "#E9C46A", font: "Open Sans", template: "corporate" },
         { name: "Douceur", primary: "#81B29A", secondary: "#F2CC8F", font: "Quicksand", template: "centered" },
@@ -65,7 +65,7 @@ const ReportToolbar: React.FC<{
                 <Palette size={16} className="text-[#E07A5F]" />
                 <span className="hidden md:inline">Styles Rapides :</span>
             </div>
-            
+
             <div className="flex gap-2">
                 {PRESETS.map((preset, idx) => (
                     <button
@@ -86,13 +86,13 @@ const ReportToolbar: React.FC<{
                         title={preset.name}
                     >
                         <div className="absolute bottom-0 right-0 w-4 h-4 rounded-tl-full" style={{ backgroundColor: preset.secondary }}></div>
-                        {!isPremium && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><Lock size={10} className="text-white"/></div>}
+                        {!isPremium && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><Lock size={10} className="text-white" /></div>}
                     </button>
                 ))}
             </div>
-            
+
             <div className="h-6 w-px bg-stone-200 mx-2"></div>
-            
+
             <button onClick={onOpenEditor} className="bg-[#3D405B] text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-[#2c2e42] transition-colors flex items-center gap-2">
                 <Brush size={12} /> <span className="hidden sm:inline">Éditeur Complet</span>
             </button>
@@ -105,7 +105,7 @@ const BrandingEditor: React.FC<{
     onUpdate: (b: BrandingConfig) => void;
     onClose: () => void;
 }> = ({ branding, onUpdate, onClose }) => {
-    
+
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const reader = new FileReader();
@@ -128,11 +128,11 @@ const BrandingEditor: React.FC<{
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                
+
                 {/* 1. ACTIVATION */}
                 <div className="flex items-center justify-between p-4 bg-[#fff5f2] rounded-xl border border-[#E07A5F]/20">
                     <span className="text-sm font-bold text-[#E07A5F]">Mode Personnalisé</span>
-                    <button 
+                    <button
                         onClick={() => onUpdate({ ...branding, isEnabled: !branding.isEnabled })}
                         className={`w-12 h-6 rounded-full transition-colors relative ${branding.isEnabled ? 'bg-[#E07A5F]' : 'bg-stone-300'}`}
                     >
@@ -142,11 +142,11 @@ const BrandingEditor: React.FC<{
 
                 {branding.isEnabled && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-top-2">
-                        
+
                         {/* --- TITRE DOCUMENT --- */}
                         <div className="space-y-3">
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><FileType size={14}/> Titre du Document</label>
-                            <input 
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><FileType size={14} /> Titre du Document</label>
+                            <input
                                 value={branding.documentTitle || "Bilan d'Ergothérapie"}
                                 onChange={(e) => onUpdate({ ...branding, documentTitle: e.target.value })}
                                 placeholder="Bilan d'Ergothérapie"
@@ -159,12 +159,12 @@ const BrandingEditor: React.FC<{
                         {/* --- EN-TÊTE : LAYOUT SELECTOR --- */}
                         <div>
                             <div className="flex items-center justify-between mb-3">
-                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2"><Layout size={14}/> Structure En-tête</label>
+                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2"><Layout size={14} /> Structure En-tête</label>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-3 mb-4">
-                                <button 
-                                    onClick={() => onUpdate({...branding, headerTemplate: 'classic', headerLayout: 'row', headerAlignment: 'left'})}
+                                <button
+                                    onClick={() => onUpdate({ ...branding, headerTemplate: 'classic', headerLayout: 'row', headerAlignment: 'left' })}
                                     className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center gap-1">
@@ -174,8 +174,8 @@ const BrandingEditor: React.FC<{
                                     <span className={`text-xs font-bold ${branding.headerTemplate === 'classic' ? 'text-[#E07A5F]' : 'text-stone-500'}`}>Classique</span>
                                 </button>
 
-                                <button 
-                                    onClick={() => onUpdate({...branding, headerTemplate: 'corporate', headerLayout: 'row', headerAlignment: 'right'})}
+                                <button
+                                    onClick={() => onUpdate({ ...branding, headerTemplate: 'corporate', headerLayout: 'row', headerAlignment: 'right' })}
                                     className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center justify-between gap-1">
@@ -185,8 +185,8 @@ const BrandingEditor: React.FC<{
                                     <span className={`text-xs font-bold ${branding.headerTemplate === 'corporate' ? 'text-[#E07A5F]' : 'text-stone-500'}`}>Corporate</span>
                                 </button>
 
-                                <button 
-                                    onClick={() => onUpdate({...branding, headerTemplate: 'centered', headerLayout: 'column', headerAlignment: 'center'})}
+                                <button
+                                    onClick={() => onUpdate({ ...branding, headerTemplate: 'centered', headerLayout: 'column', headerAlignment: 'center' })}
                                     className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex flex-col items-center justify-center gap-1">
@@ -200,7 +200,7 @@ const BrandingEditor: React.FC<{
 
                         {/* --- STYLE TITRES --- */}
                         <div>
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Star size={14}/> Style des Titres</label>
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Star size={14} /> Style des Titres</label>
                             <div className="flex flex-wrap gap-2">
                                 {[
                                     { id: 'simple', label: 'Simple' },
@@ -209,9 +209,9 @@ const BrandingEditor: React.FC<{
                                     { id: 'icon-star', label: 'Étoile', icon: Star },
                                     { id: 'icon-sparkle', label: 'Sparkle', icon: Sparkles },
                                 ].map((style) => (
-                                    <button 
+                                    <button
                                         key={style.id}
-                                        onClick={() => onUpdate({...branding, titleStyle: style.id as any})}
+                                        onClick={() => onUpdate({ ...branding, titleStyle: style.id as any })}
                                         className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${branding.titleStyle === style.id ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
                                     >
                                         {style.icon && <style.icon size={12} />}
@@ -223,16 +223,16 @@ const BrandingEditor: React.FC<{
 
                         {/* --- STYLE PATIENT --- */}
                         <div>
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><User size={14}/> Bloc Patient</label>
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><User size={14} /> Bloc Patient</label>
                             <div className="flex gap-3">
-                                <button 
-                                    onClick={() => onUpdate({...branding, patientBlockStyle: 'modern'})}
+                                <button
+                                    onClick={() => onUpdate({ ...branding, patientBlockStyle: 'modern' })}
                                     className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'modern' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
                                 >
                                     Encadré (Défaut)
                                 </button>
-                                <button 
-                                    onClick={() => onUpdate({...branding, patientBlockStyle: 'minimal'})}
+                                <button
+                                    onClick={() => onUpdate({ ...branding, patientBlockStyle: 'minimal' })}
                                     className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'minimal' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
                                 >
                                     Minimaliste (Texte)
@@ -244,8 +244,8 @@ const BrandingEditor: React.FC<{
 
                         {/* --- LOGO --- */}
                         <div>
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Upload size={14}/> Logo Cabinet</label>
-                            
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Upload size={14} /> Logo Cabinet</label>
+
                             <div className="flex items-center gap-4 mb-3">
                                 <div className="w-20 h-20 bg-stone-50 border-2 border-dashed border-stone-200 rounded-xl flex items-center justify-center overflow-hidden relative group hover:border-[#E07A5F] transition-colors cursor-pointer">
                                     {branding.logoUrl ? (
@@ -272,12 +272,12 @@ const BrandingEditor: React.FC<{
                                     <label className="text-[10px] font-bold text-stone-400 uppercase">Taille du logo</label>
                                     <div className="flex items-center gap-4">
                                         <span className="text-xs text-stone-400">S</span>
-                                        <input 
-                                            type="range" min="0" max="2" step="1" 
+                                        <input
+                                            type="range" min="0" max="2" step="1"
                                             value={branding.logoSize === 'small' ? 0 : branding.logoSize === 'medium' ? 1 : 2}
                                             onChange={(e) => {
                                                 const val = parseInt(e.target.value);
-                                                onUpdate({...branding, logoSize: val === 0 ? 'small' : val === 1 ? 'medium' : 'large'});
+                                                onUpdate({ ...branding, logoSize: val === 0 ? 'small' : val === 1 ? 'medium' : 'large' });
                                             }}
                                             className="w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-[#E07A5F]"
                                         />
@@ -291,17 +291,17 @@ const BrandingEditor: React.FC<{
 
                         {/* --- COULEURS (FIXED WITH DEBOUNCE) --- */}
                         <div>
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><PaletteIcon size={14}/> Palette</label>
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><PaletteIcon size={14} /> Palette</label>
                             <div className="flex gap-4">
                                 <div className="flex-1">
-                                    <DebouncedColorInput 
+                                    <DebouncedColorInput
                                         value={branding.primaryColor}
                                         onChange={(val) => onUpdate({ ...branding, primaryColor: val })}
                                     />
                                     <span className="text-[10px] text-stone-500 font-mono font-bold">Titres</span>
                                 </div>
                                 <div className="flex-1">
-                                    <DebouncedColorInput 
+                                    <DebouncedColorInput
                                         value={branding.secondaryColor}
                                         onChange={(val) => onUpdate({ ...branding, secondaryColor: val })}
                                     />
@@ -312,8 +312,8 @@ const BrandingEditor: React.FC<{
 
                         {/* --- POLICE --- */}
                         <div>
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Type size={14}/> Typographie</label>
-                            <select 
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3 block flex items-center gap-2"><Type size={14} /> Typographie</label>
+                            <select
                                 value={branding.fontFamily}
                                 onChange={(e) => onUpdate({ ...branding, fontFamily: e.target.value as any })}
                                 className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold text-[#3D405B] outline-none focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/20"
@@ -332,20 +332,20 @@ const BrandingEditor: React.FC<{
                         {/* --- INFOS PRATICIEN (READ-ONLY) --- */}
                         <div className="space-y-3">
                             <div className="flex justify-between items-center">
-                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><Home size={14}/> Coordonnées En-tête</label>
-                                <span className="text-[10px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded font-bold uppercase"><Lock size={8} className="inline mr-1"/>Sécurisé</span>
+                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider block flex items-center gap-2"><Home size={14} /> Coordonnées En-tête</label>
+                                <span className="text-[10px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded font-bold uppercase"><Lock size={8} className="inline mr-1" />Sécurisé</span>
                             </div>
-                            
+
                             {/* Nom Cabinet (Modifiable car cosmétique) */}
-                            <input 
+                            <input
                                 value={branding.cabinetName}
                                 onChange={(e) => onUpdate({ ...branding, cabinetName: e.target.value })}
                                 placeholder="Nom Principal (ex: Cabinet... ou Votre Nom)"
                                 className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
                             />
-                            
+
                             {/* Sous-titre (Nouveau) */}
-                            <input 
+                            <input
                                 value={branding.brandSubtitle || ''}
                                 onChange={(e) => onUpdate({ ...branding, brandSubtitle: e.target.value })}
                                 placeholder="Sous-titre (ex: Ergothérapeute D.E)"
@@ -361,7 +361,7 @@ const BrandingEditor: React.FC<{
                                     <p className="font-mono mt-1 text-[10px]">{branding.siret}</p>
                                 </div>
                             </div>
-                            
+
                             <p className="text-[10px] text-stone-400 text-center italic">
                                 Pour modifier ces informations, allez dans "Mon Profil".
                             </p>
@@ -369,16 +369,16 @@ const BrandingEditor: React.FC<{
 
                         {/* --- PIED DE PAGE --- */}
                         <div className="space-y-3 pt-4 border-t border-stone-100">
-                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1 block flex items-center gap-2"><MousePointerClick size={14}/> Pied de page</label>
-                            <input 
+                            <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1 block flex items-center gap-2"><MousePointerClick size={14} /> Pied de page</label>
+                            <input
                                 value={branding.footerText || ''}
                                 onChange={(e) => onUpdate({ ...branding, footerText: e.target.value })}
                                 placeholder="Texte personnalisé (ex: Confidentiel)"
                                 className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B]"
                             />
                             <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer">
-                                <input 
-                                    type="checkbox" 
+                                <input
+                                    type="checkbox"
                                     checked={branding.showPageNumbers}
                                     onChange={(e) => onUpdate({ ...branding, showPageNumbers: e.target.checked })}
                                     className="accent-[#E07A5F] w-4 h-4"
@@ -394,145 +394,152 @@ const BrandingEditor: React.FC<{
 };
 
 export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValidate, onUpdateSection, branding, onUpdateBranding, isPremium, onShowPricing, onBack, isDemoMode, onDemoConvert }) => {
-  const [showBranding, setShowBranding] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const toast = useToast();
+    const [showBranding, setShowBranding] = useState(false);
+    const [isValidating, setIsValidating] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [scoreDisplayModes, setScoreDisplayModes] = useState<Record<string, 'Brut' | 'NS' | 'ET' | '%'>>({});
+    const toast = useToast();
 
-  const handlePrint = () => {
-      window.print();
-  };
+    const handlePrint = () => {
+        window.print();
+    };
 
-  const handleExportPDF = async () => {
-      setIsExporting(true);
-      try {
-          const html2pdf = (await import('html2pdf.js')).default;
-          const element = document.getElementById('printable-report');
-          if (!element) {
-              toast.show('Erreur: rapport introuvable', 'error');
-              return;
-          }
-          
-          const fileName = `Bilan_${patient.lastName}_${patient.firstName}_${new Date().toISOString().split('T')[0]}.pdf`;
-          
-          await html2pdf().set({
-              margin: [10, 10, 15, 10],
-              filename: fileName,
-              image: { type: 'jpeg', quality: 0.98 },
-              html2canvas: { 
-                  scale: 2, 
-                  useCORS: true,
-                  letterRendering: true,
-                  scrollY: 0,
-              },
-              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-              pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-          }).from(element).save();
-          
-          toast.show('PDF exporté avec succès ✓', 'success');
-          if (isDemoMode) {
-              onDemoConvert('Exporter le PDF');
-          }
-      } catch (err) {
-          console.error('PDF export error:', err);
-          toast.show('Erreur lors de l\'export PDF', 'error');
-      } finally {
-          setIsExporting(false);
-      }
-  };
+    const handleExportPDF = async () => {
+        setIsExporting(true);
+        document.body.classList.add('pdf-mode');
+        try {
+            // Dynamic import for client-side only
+            const html2pdf = (await import('html2pdf.js')).default;
+            const element = document.getElementById('printable-report');
+            if (!element) {
+                toast.show('Erreur: rapport introuvable', 'error');
+                return;
+            }
 
-  const handleOpenBranding = () => {
-      if (!isPremium) {
-          onShowPricing();
-          return;
-      }
-      setShowBranding(true);
-  };
+            const fileName = `Bilan_${patient.lastName}_${patient.firstName}_${new Date().toISOString().split('T')[0]}.pdf`;
 
-  const handleFinalValidate = async () => {
-      if (isDemoMode) {
-          onDemoConvert('Finaliser le bilan');
-          return;
-      }
-      setIsValidating(true);
-      try {
-          await onValidate();
-      } finally {
-          setIsValidating(false);
-      }
-  };
+            await html2pdf().set({
+                margin: 0,
+                filename: fileName,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    letterRendering: true,
+                    windowWidth: 794, // Force A4 width (approx 794px at 96dpi)
+                    scrollY: 0,
+                },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+            } as any).from(element).save();
 
-  return (
-    <div className="max-w-5xl mx-auto pb-32 animate-in fade-in duration-500 relative">
-        
-        {/* BARRE D'OUTILS STANDARDISÉE */}
-        <ReportToolbar 
-            currentBranding={branding} 
-            onApply={onUpdateBranding} 
-            onOpenEditor={handleOpenBranding}
-            isPremium={isPremium}
-        />
+            toast.show('PDF exporté avec succès ✓', 'success');
+            if (isDemoMode) {
+                onDemoConvert('Exporter le PDF');
+            }
+        } catch (err) {
+            console.error('PDF export error:', err);
+            toast.show('Erreur lors de l\'export PDF', 'error');
+        } finally {
+            document.body.classList.remove('pdf-mode');
+            setIsExporting(false);
+        }
+    };
 
-        {/* Actions Bar (No Print) */}
-        <div className="flex justify-between items-center mb-8 border-b border-stone-200 pb-6 no-print">
-            <div className="flex items-center gap-4">
-                <button 
-                    onClick={onBack}
-                    className="p-2 text-stone-400 hover:text-[#3D405B] rounded-xl hover:bg-stone-100 transition-all"
-                    title="Retour à la validation"
-                >
-                    <ArrowLeft size={20} />
-                </button>
-                <div>
-                    <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Export & Impression</h2>
-                    <p className="text-stone-500 font-medium mt-2">Personnalisez et finalisez votre document.</p>
+    const handleOpenBranding = () => {
+        if (!isPremium) {
+            onShowPricing();
+            return;
+        }
+        setShowBranding(true);
+    };
+
+    const handleFinalValidate = async () => {
+        if (isDemoMode) {
+            onDemoConvert('Finaliser le bilan');
+            return;
+        }
+        setIsValidating(true);
+        try {
+            await onValidate();
+        } finally {
+            setIsValidating(false);
+        }
+    };
+
+    return (
+        <div className="max-w-5xl mx-auto pb-32 animate-in fade-in duration-500 relative">
+
+            {/* BARRE D'OUTILS STANDARDISÉE */}
+            <ReportToolbar
+                currentBranding={branding}
+                onApply={onUpdateBranding}
+                onOpenEditor={handleOpenBranding}
+                isPremium={isPremium}
+            />
+
+            {/* Actions Bar (No Print) */}
+            <div className="flex justify-between items-center mb-8 border-b border-stone-200 pb-6 no-print">
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onBack}
+                        className="p-2 text-stone-400 hover:text-[#3D405B] rounded-xl hover:bg-stone-100 transition-all"
+                        title="Retour à la validation"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                    <div>
+                        <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Export & Impression</h2>
+                        <p className="text-stone-500 font-medium mt-2">Personnalisez et finalisez votre document.</p>
+                    </div>
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={handlePrint}
+                        className="flex items-center gap-2 px-5 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"
+                    >
+                        <Download size={16} /> Imprimer
+                    </button>
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 px-5 py-3 bg-[#3D405B] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#2c2e42] transition-all disabled:opacity-70"
+                    >
+                        {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                        {isExporting ? 'Export...' : 'Télécharger PDF'}
+                    </button>
+                    <button
+                        onClick={handleFinalValidate}
+                        disabled={isValidating}
+                        className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {isValidating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                        Terminer & Archiver
+                    </button>
                 </div>
             </div>
-            <div className="flex gap-3">
-                <button 
-                    onClick={handlePrint}
-                    className="flex items-center gap-2 px-5 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-200 transition-all"
-                >
-                    <Download size={16} /> Imprimer
-                </button>
-                <button 
-                    onClick={handleExportPDF}
-                    disabled={isExporting}
-                    className="flex items-center gap-2 px-5 py-3 bg-[#3D405B] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#2c2e42] transition-all disabled:opacity-70"
-                >
-                    {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
-                    {isExporting ? 'Export...' : 'Télécharger PDF'}
-                </button>
-                <button 
-                    onClick={handleFinalValidate}
-                    disabled={isValidating}
-                    className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                    {isValidating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} 
-                    Terminer & Archiver
-                </button>
+
+            {/* Report Preview */}
+            <div className="bg-white shadow-xl shadow-stone-200/50 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full">
+                <ReportView
+                    patient={patient}
+                    sections={sections}
+                    tests={tests}
+                    branding={branding}
+                    onUpdateSection={onUpdateSection}
+                    scoreDisplayModes={scoreDisplayModes}
+                    onScoreDisplayModeChange={setScoreDisplayModes}
+                />
             </div>
-        </div>
 
-        {/* Report Preview */}
-        <div className="bg-white shadow-xl shadow-stone-200/50 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full">
-            <ReportView 
-                patient={patient} 
-                sections={sections} 
-                tests={tests} 
-                branding={branding}
-                onUpdateSection={onUpdateSection}
-            />
+            {/* Branding Editor Drawer */}
+            {showBranding && (
+                <BrandingEditor
+                    branding={branding}
+                    onUpdate={onUpdateBranding}
+                    onClose={() => setShowBranding(false)}
+                />
+            )}
         </div>
-
-        {/* Branding Editor Drawer */}
-        {showBranding && (
-            <BrandingEditor 
-                branding={branding} 
-                onUpdate={onUpdateBranding} 
-                onClose={() => setShowBranding(false)} 
-            />
-        )}
-    </div>
-  );
+    );
 };

@@ -171,13 +171,18 @@ TÂCHE : Rédige 3 sections JSON (Markdown string values) :
             const result = await callAI();
             // Mark generation as completed after both AI calls succeeded
             if (sessionGenerationId) {
-                supabase.from('generation_log')
-                    .update({ status: 'completed' })
-                    .eq('id', sessionGenerationId)
-                    .then(({ error }) => {
+                const genId = sessionGenerationId; // capture for async closure
+                (async () => {
+                    try {
+                        const { error } = await supabase.from('generation_log')
+                            .update({ status: 'completed' })
+                            .eq('id', genId);
                         if (error) Logger.warn('AI', 'Failed to mark generation completed', error);
-                        else Logger.debug('AI', 'Generation marked completed', sessionGenerationId);
-                    });
+                        else Logger.debug('AI', 'Generation marked completed', genId);
+                    } catch (e) {
+                        Logger.warn('AI', 'Exception marking generation completed', e);
+                    }
+                })();
             }
             return result;
         } catch (e: unknown) {

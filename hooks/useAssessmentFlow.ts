@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react';
 import { AIService, type GenerationPayload } from '../services/ai';
 import { StorageService } from '../services/storage';
 import { AdminService } from '../services/admin';
+import { ensureFreshSession } from '../services/db';
 import { anonymizeData } from '../utils/anonymizer';
 import type {
   Patient,
@@ -218,6 +219,8 @@ Attentes: ${p.familyExpectations}
       if (msg === 'CREDIT_INSUFFICIENT') {
         // Caller should open paywall — we signal via a special error string
         setGenerationError('CREDIT_INSUFFICIENT');
+      } else if (msg === 'RATE_LIMITED') {
+        setGenerationError("Trop de requêtes. Réessayez dans quelques minutes.");
       } else if (msg === 'SESSION_EXPIRED') {
         setGenerationError("Session expirée. Veuillez vous reconnecter.");
       } else if (msg === 'TIMEOUT_AI') {
@@ -245,6 +248,9 @@ Attentes: ${p.familyExpectations}
 
     setIsGenerating(true);
     try {
+      // Ensure JWT is fresh before critical save operation
+      await ensureFreshSession();
+
       const testNames: string[] = [];
       const flatResultsClean: Record<string, ScoreResult> = {};
       Object.entries(assessment.tests).forEach(([tId, subtests]) => {
@@ -305,6 +311,9 @@ Attentes: ${p.familyExpectations}
   const handleSaveAndQuit = useCallback(async () => {
     if (sessionKey && assessment.patient.id) {
       try {
+        // Ensure JWT is fresh before draft save
+        await ensureFreshSession();
+
         const draftData = {
           patient: assessment.patient,
           tests: assessment.tests,

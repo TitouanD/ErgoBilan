@@ -87,16 +87,20 @@ export const percentileToZScore = (p: number): number => {
 
 // Types de scores standards supportés
 export const SCALES = {
-  'standard': { mean: 100, sd: 15, name: 'Standard (100 ± 15)' },
-  'scaled': { mean: 10, sd: 3, name: 'Note Standard (10 ± 3)' },
-  't-score': { mean: 50, sd: 10, name: 'T-Score (50 ± 10)' },
-  'percentile': { mean: 50, sd: 0, name: 'Percentile' } // Cas particulier
+    'standard': { mean: 100, sd: 15, name: 'Standard (100 ± 15)' },
+    'scaled': { mean: 10, sd: 3, name: 'Note Standard (10 ± 3)' },
+    't-score': { mean: 50, sd: 10, name: 'T-Score (50 ± 10)' },
+    'sten': { mean: 5.5, sd: 2, name: 'Sten (5.5 ± 2)' },
+    'percentile': { mean: 50, sd: 0, name: 'Percentile' } // Cas particulier
 };
 
 // --- FONCTIONS DE CALCUL UNIFIÉES ---
 
 // Appelé quand on modifie NS
-export const calculateFromStandard = (val: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile') => {
+export const calculateFromStandard = (val: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none') => {
+    if (scoreType === 'none') {
+        return { standard: '', zScore: 0, percentile: '' };
+    }
     if (scoreType === 'percentile') {
         // Pour le mode percentile, on traite la valeur standard comme un percentile
         return calculateFromPercentile(val, scoreType);
@@ -108,7 +112,10 @@ export const calculateFromStandard = (val: number, scoreType: 'standard' | 'scal
 };
 
 // Appelé quand on modifie ET (Z-Score)
-export const calculateFromZ = (z: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile') => {
+export const calculateFromZ = (z: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none') => {
+    if (scoreType === 'none') {
+        return { standard: '', zScore: z, percentile: '' };
+    }
     const p = zScoreToPercentile(z);
     if (scoreType === 'percentile') {
         return { standard: p.toString(), zScore: z, percentile: p.toString() };
@@ -119,7 +126,10 @@ export const calculateFromZ = (z: number, scoreType: 'standard' | 'scaled' | 't-
 };
 
 // Appelé quand on modifie Percentile
-export const calculateFromPercentile = (p: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile') => {
+export const calculateFromPercentile = (p: number, scoreType: 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none') => {
+    if (scoreType === 'none') {
+        return { standard: '', zScore: 0, percentile: '' };
+    }
     const z = percentileToZScore(p);
     if (scoreType === 'percentile') {
         return { standard: p.toString(), zScore: z, percentile: p.toString() };

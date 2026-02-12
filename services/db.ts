@@ -54,7 +54,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 	}
 });
 
-const DEFAULT_REFRESH_WINDOW_MS = 60_000; // Refresh if token expires within 60s
+const DEFAULT_REFRESH_WINDOW_MS = 300_000; // Refresh if token expires within 5 min — generous window for clinical sessions
 
 export const ensureFreshSession = async (
 	options: { forceRefresh?: boolean; minValidityMs?: number } = {}

@@ -1,6 +1,7 @@
 // Supabase Edge Function — Gemini AI Proxy
 // Keeps the API key server-side, never exposed to the client.
 // SECURITY: Enforces credit consumption + rate limiting server-side.
+// RELIABILITY: Retries transient Gemini errors (503/429) with exponential backoff.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -10,12 +11,42 @@ const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const GEMINI_TIMEOUT_MS = 110_000; // 110s — leaves headroom below Edge Function's 150s wall-clock limit
 const MAX_REQUESTS_PER_HOUR = 15;
+const GEMINI_MAX_RETRIES = 2;        // Up to 3 total attempts for transient errors
+const GEMINI_RETRY_BASE_MS = 2_000;  // 2s, 4s exponential backoff
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Sleep for `ms` milliseconds. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Safely refund a credit. supabase.rpc() returns a PostgrestFilterBuilder
+ * (thenable but NOT a native Promise — no .catch()). We use try/await instead.
+ */
+const safeRefund = async (
+  sb: ReturnType<typeof createClient> | null,
+  genId: string | null,
+  isReused: boolean,
+) => {
+  if (isReused || !sb || !genId) return;
+  try {
+    await sb.rpc('refund_credit', { p_generation_id: genId });
+    console.log("Credit refunded for generation", genId);
+  } catch (e) {
+    console.error("Refund failed (non-blocking):", e);
+  }
+};
+
+/** Whether a Gemini HTTP status is transient and worth retrying. */
+const isRetryableStatus = (status: number) => status === 503 || status === 429;
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight
@@ -101,9 +132,7 @@ Deno.serve(async (req: Request) => {
 
     // 5. Validate Gemini API key
     if (!GEMINI_API_KEY) {
-      if (!isReusedSession && supabase && generationId) {
-        await supabase.rpc('refund_credit', { p_generation_id: generationId });
-      }
+      await safeRefund(supabase, generationId, isReusedSession);
       return new Response(JSON.stringify({ error: "AI service not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -112,16 +141,14 @@ Deno.serve(async (req: Request) => {
 
     // 6. Validate contents
     if (!contents) {
-      if (!isReusedSession && supabase && generationId) {
-        await supabase.rpc('refund_credit', { p_generation_id: generationId });
-      }
+      await safeRefund(supabase, generationId, isReusedSession);
       return new Response(JSON.stringify({ error: "Missing 'contents' in request body" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 5. Build Gemini API request
+    // 7. Build Gemini API request body
     const geminiBody: Record<string, unknown> = {
       contents: Array.isArray(contents) ? contents : [{ role: "user", parts: [{ text: contents }] }],
     };
@@ -134,42 +161,72 @@ Deno.serve(async (req: Request) => {
       geminiBody.generationConfig = { responseMimeType };
     }
 
-    // 6. Call Gemini API (with timeout)
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    // 8. Call Gemini API with retry for transient errors (503, 429)
+    let geminiResponse: Response | null = null;
+    let lastGeminiStatus = 0;
 
-    let geminiResponse: Response;
-    try {
-      geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(geminiBody),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      clearTimeout(timer);
-      // Refund on timeout or network error — only if we consumed a fresh credit
-      if (!isReusedSession && supabase && generationId) {
-        await supabase.rpc('refund_credit', { p_generation_id: generationId }).catch(() => {});
+    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delayMs = GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1); // 2s, 4s
+        console.log(`Gemini retry ${attempt}/${GEMINI_MAX_RETRIES} after ${delayMs}ms (last status: ${lastGeminiStatus})`);
+        await sleep(delayMs);
       }
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return new Response(JSON.stringify({ error: "Gemini request timed out" }), {
-          status: 504,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+      try {
+        geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(geminiBody),
+          signal: controller.signal,
         });
-      }
-      throw err;
-    }
-    clearTimeout(timer);
+        clearTimeout(timer);
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error("Gemini API error:", errorText);
-      // Refund on Gemini API error — only if we consumed a fresh credit
-      if (!isReusedSession && supabase && generationId) {
-        await supabase.rpc('refund_credit', { p_generation_id: generationId }).catch(() => {});
+        if (geminiResponse.ok) break; // Success — exit retry loop
+
+        lastGeminiStatus = geminiResponse.status;
+
+        // Only retry transient errors (503, 429); permanent errors fail immediately
+        if (!isRetryableStatus(geminiResponse.status)) break;
+
+        // Consume the body so the connection is released before retry
+        await geminiResponse.text();
+        geminiResponse = null; // Force re-fetch on next iteration
+
+      } catch (err) {
+        clearTimeout(timer);
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Timeout — don't retry (we're already near the wall-clock limit)
+          await safeRefund(supabase, generationId, isReusedSession);
+          return new Response(JSON.stringify({ error: "Gemini request timed out", retryable: true }), {
+            status: 504,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        // Network error on last attempt → refund and rethrow
+        if (attempt === GEMINI_MAX_RETRIES) {
+          await safeRefund(supabase, generationId, isReusedSession);
+          throw err;
+        }
+        // Network error with retries left → continue loop
+        lastGeminiStatus = 0;
+        geminiResponse = null;
       }
-      return new Response(JSON.stringify({ error: "AI generation failed", details: geminiResponse.status }), {
+    }
+
+    // All retries exhausted or permanent error
+    if (!geminiResponse || !geminiResponse.ok) {
+      const errorText = geminiResponse ? await geminiResponse.text() : `Network error (status ${lastGeminiStatus})`;
+      console.error("Gemini API error after retries:", errorText);
+      await safeRefund(supabase, generationId, isReusedSession);
+      const retryable = isRetryableStatus(lastGeminiStatus);
+      return new Response(JSON.stringify({
+        error: "AI generation failed",
+        details: lastGeminiStatus || 0,
+        retryable,
+      }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -177,10 +234,10 @@ Deno.serve(async (req: Request) => {
 
     const geminiData = await geminiResponse.json();
 
-    // 7. Extract text from Gemini response
+    // 9. Extract text from Gemini response
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 
-    // 8. Return — client marks 'completed' after all AI calls for a report succeed
+    // 10. Return — client marks 'completed' after all AI calls for a report succeed
     return new Response(JSON.stringify({ text, generationId }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -188,6 +245,8 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     console.error("Edge function error:", err);
+    // Attempt refund on unexpected errors (safeRefund is no-op if already refunded/reused)
+    await safeRefund(supabase, generationId, isReusedSession);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

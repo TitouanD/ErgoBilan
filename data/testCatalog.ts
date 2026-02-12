@@ -17,12 +17,14 @@ export const ICON_MAP: Record<string, any> = {
   'User': User
 };
 
+export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+
 export interface SubtestDef {
   id: string;
   name: string;
   unit: string; 
   lowerIsBetter?: boolean;
-  scoreType: 'standard' | 'scaled' | 't-score' | 'percentile';
+  scoreType: ScoreType;
 }
 
 export interface TestDef {
