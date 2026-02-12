@@ -68,10 +68,35 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!bearerMatch) {
+      console.warn("Invalid Authorization header format");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const accessToken = bearerMatch[1].trim();
+    const jwtParts = accessToken.split(".");
+    const isMalformedJwt = jwtParts.length !== 3 || jwtParts.some((part) => part.length === 0);
+    if (
+      !accessToken ||
+      accessToken.startsWith("sb_publishable_") ||
+      accessToken.startsWith("sb_secret_") ||
+      isMalformedJwt
+    ) {
+      console.warn("Rejected non-user bearer token");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
     });
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();

@@ -51,6 +51,14 @@ const timeoutSignal = (ms: number): AbortSignal => {
 /** Sleep for `ms` milliseconds. */
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Basic JWT shape validation + guard against API keys accidentally used as bearer tokens. */
+const isLikelyJwt = (token: string | null | undefined): token is string => {
+  if (!token) return false;
+  if (token.startsWith('sb_publishable_') || token.startsWith('sb_secret_')) return false;
+  const parts = token.split('.');
+  return parts.length === 3 && parts.every((part) => part.length > 0);
+};
+
 // ---------------------------------------------------------------------------
 // DEV path — direct REST call to Gemini (no Edge Function round-trip)
 // ---------------------------------------------------------------------------
@@ -110,10 +118,11 @@ const callGeminiDirect = async (params: GenerateContentParams): Promise<ProxyRes
 const callEdgeFunctionProxy = async (params: GenerateContentParams): Promise<ProxyResponse> => {
   // Ensure fresh JWT before calling the edge function (5-min window)
   const { session, error: sessionErr } = await ensureFreshSession();
-  if (!session?.access_token) {
+  if (!isLikelyJwt(session?.access_token)) {
     Logger.warn('AI', 'No valid session for AI proxy', sessionErr);
     throw new Error('SESSION_EXPIRED');
   }
+  let accessToken = session.access_token;
 
   Logger.debug('AI', 'EDGE mode — calling AI proxy edge function');
 
@@ -150,8 +159,9 @@ const callEdgeFunctionProxy = async (params: GenerateContentParams): Promise<Pro
     return false;
   };
 
-  const invokeWithTimeout = async () => {
+  const invokeWithTimeout = async (jwt: string) => {
     const invokePromise = supabase.functions.invoke(FUNCTION_NAME, {
+      headers: { Authorization: `Bearer ${jwt}` },
       body: {
         contents: params.contents,
         systemInstruction: params.systemInstruction,
@@ -176,19 +186,23 @@ const callEdgeFunctionProxy = async (params: GenerateContentParams): Promise<Pro
       Logger.info('AI', `Retrying edge function (attempt ${attempt + 1}/${CLIENT_MAX_RETRIES + 1}) after ${delayMs}ms`);
       await sleep(delayMs);
       // Refresh session before retry in case JWT expired during backoff
-      await ensureFreshSession();
+      const refreshInBackoff = await ensureFreshSession();
+      if (isLikelyJwt(refreshInBackoff.session?.access_token)) {
+        accessToken = refreshInBackoff.session.access_token;
+      }
     }
 
-    let { data, error } = await invokeWithTimeout();
+    let { data, error } = await invokeWithTimeout(accessToken);
 
     // JWT retry (single attempt per main iteration)
     if (error && isInvalidJwtError(error)) {
       Logger.warn('AI', 'Invalid JWT detected — refreshing session and retrying');
       const refreshResult = await ensureFreshSession({ forceRefresh: true });
-      if (!refreshResult.session?.access_token) {
+      if (!isLikelyJwt(refreshResult.session?.access_token)) {
         throw new Error('SESSION_EXPIRED');
       }
-      ({ data, error } = await invokeWithTimeout());
+      accessToken = refreshResult.session.access_token;
+      ({ data, error } = await invokeWithTimeout(accessToken));
     }
 
     // Extract the edge function response body (from `data` on 2xx, from `error.context` on non-2xx)
