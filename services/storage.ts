@@ -1,6 +1,16 @@
 
 import { supabase } from './db';
-import { PatientFile, Patient, ReportMetadata, TestSession, DraftPayload } from '../types';
+import type {
+    PatientFile,
+    Patient,
+    ReportMetadata,
+    TestSession,
+    DraftPayload,
+    PatientDashboardPreviewMeta,
+    PatientDashboardProgressLabel,
+    PatientEncryptedPreviewV2,
+    ScoreResult,
+} from '../types';
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 import { DEMO_PATIENTS } from '../data/demoData';
@@ -38,6 +48,206 @@ const createEmptyPatient = (): Patient => ({
     remarks: '', priorities: ''
 });
 
+type LegacyPreviewPayload = Partial<Patient> & { _archived?: boolean };
+
+const getLatestIsoDate = (dates: Array<string | null | undefined>): string | null => {
+    const timestamps = dates
+        .map((value) => (value ? new Date(value).getTime() : Number.NaN))
+        .filter((value) => Number.isFinite(value));
+
+    if (timestamps.length === 0) return null;
+    return new Date(Math.max(...timestamps)).toISOString();
+};
+
+const clampPercent = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, Math.round(value)));
+};
+
+const buildWorkflowState = (
+    patient: Patient,
+    metrics: PatientDashboardPreviewMeta['metrics'],
+    hasInitialReport: boolean,
+    hasReevaluationOpportunity: boolean
+): PatientDashboardPreviewMeta['workflow'] => {
+    if (metrics.reportsCount > 0) {
+        return {
+            progressPercent: 100,
+            progressLabel: 'termine',
+            statusTone: 'success',
+            nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient',
+        };
+    }
+
+    if (metrics.sessionsCount > 0) {
+        return {
+            progressPercent: 60,
+            progressLabel: 'tests_saisis',
+            statusTone: 'neutral',
+            nextAction: 'open_patient',
+        };
+    }
+
+    const hasInitialInfos = Boolean(patient.reason || patient.school || patient.familyExpectations || patient.classLevel);
+    if (hasInitialInfos) {
+        return {
+            progressPercent: 35,
+            progressLabel: 'infos_recues',
+            statusTone: 'warning',
+            nextAction: 'complete_initial',
+        };
+    }
+
+    return {
+        progressPercent: 10,
+        progressLabel: 'created',
+        statusTone: 'warning',
+        nextAction: 'complete_initial',
+    };
+};
+
+const buildPreviewPayload = (
+    patient: Patient,
+    options: { archived?: boolean; reports?: ReportMetadata[]; sessions?: TestSession[] }
+): PatientEncryptedPreviewV2 => {
+    const reports = options.reports || [];
+    const sessions = options.sessions || [];
+    const hasInitialReport = reports.some((r) => r.type === 'initial');
+    const hasReevaluationReport = reports.some((r) => r.type === 'reevaluation');
+    const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
+
+    const metrics: PatientDashboardPreviewMeta['metrics'] = {
+        reportsCount: reports.length,
+        sessionsCount: sessions.length,
+        lastReportDate: getLatestIsoDate(reports.map((r) => r.date)),
+        lastSessionDate: getLatestIsoDate(sessions.map((s) => s.date)),
+    };
+
+    const workflow = buildWorkflowState(patient, metrics, hasInitialReport, hasReevaluationOpportunity);
+
+    return {
+        uiVersion: 2,
+        identity: {
+            firstName: patient.firstName || '',
+            lastName: patient.lastName || '',
+            age: patient.age || '',
+            classLevel: patient.classLevel || '',
+            gender: patient.gender || '',
+        },
+        workflow,
+        metrics,
+        flags: {
+            _archived: options.archived === true,
+            hasInitialReport,
+            hasReevaluationOpportunity,
+        },
+    };
+};
+
+const buildEncryptedPreview = async (
+    patient: Patient,
+    fileKey: CryptoKey,
+    options: { archived?: boolean; reports?: ReportMetadata[]; sessions?: TestSession[] }
+) => {
+    const payload = buildPreviewPayload(patient, options);
+    return encryptBlob(payload, fileKey);
+};
+
+const toPreviewMeta = (payload: PatientEncryptedPreviewV2): PatientDashboardPreviewMeta => ({
+    uiVersion: 2,
+    workflow: payload.workflow,
+    metrics: payload.metrics,
+    flags: payload.flags,
+});
+
+const buildFallbackPreviewMeta = (
+    patient: Patient,
+    archived: boolean
+): PatientDashboardPreviewMeta => {
+    const metrics: PatientDashboardPreviewMeta['metrics'] = {
+        reportsCount: 0,
+        sessionsCount: 0,
+        lastReportDate: null,
+        lastSessionDate: null,
+    };
+
+    const workflow = buildWorkflowState(patient, metrics, false, false);
+
+    return {
+        uiVersion: 2,
+        workflow,
+        metrics,
+        flags: {
+            _archived: archived,
+            hasInitialReport: false,
+            hasReevaluationOpportunity: false,
+        },
+    };
+};
+
+const isPreviewV2 = (value: unknown): value is PatientEncryptedPreviewV2 => {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Partial<PatientEncryptedPreviewV2>;
+    return candidate.uiVersion === 2 && !!candidate.identity && typeof candidate.identity === 'object';
+};
+
+const parsePreviewPayload = (preview: unknown): { patient: Patient; previewMeta: PatientDashboardPreviewMeta; archived: boolean } => {
+    if (isPreviewV2(preview)) {
+        const archived = preview.flags?._archived === true;
+        const patient = {
+            ...createEmptyPatient(),
+            ...preview.identity,
+        };
+
+        const workflow = preview.workflow || buildFallbackPreviewMeta(patient, archived).workflow;
+        const metrics = preview.metrics || buildFallbackPreviewMeta(patient, archived).metrics;
+        const progressLabel: PatientDashboardProgressLabel = (
+            workflow.progressLabel === 'created' ||
+            workflow.progressLabel === 'infos_recues' ||
+            workflow.progressLabel === 'tests_saisis' ||
+            workflow.progressLabel === 'termine'
+        ) ? workflow.progressLabel : 'created';
+
+        const normalizedPreview: PatientEncryptedPreviewV2 = {
+            uiVersion: 2,
+            identity: preview.identity,
+            workflow: {
+                progressPercent: clampPercent(workflow.progressPercent),
+                progressLabel,
+                statusTone: workflow.statusTone === 'success' || workflow.statusTone === 'warning' ? workflow.statusTone : 'neutral',
+                nextAction: workflow.nextAction || 'open_patient',
+            },
+            metrics: {
+                reportsCount: Math.max(0, Number(metrics.reportsCount || 0)),
+                sessionsCount: Math.max(0, Number(metrics.sessionsCount || 0)),
+                lastReportDate: metrics.lastReportDate || null,
+                lastSessionDate: metrics.lastSessionDate || null,
+            },
+            flags: {
+                _archived: archived,
+                hasInitialReport: preview.flags?.hasInitialReport === true,
+                hasReevaluationOpportunity: preview.flags?.hasReevaluationOpportunity === true,
+            },
+        };
+
+        return { patient, previewMeta: toPreviewMeta(normalizedPreview), archived };
+    }
+
+    const legacyPreview = (preview || {}) as LegacyPreviewPayload;
+    const { _archived, ...legacyWithoutArchived } = legacyPreview;
+    const archived = _archived === true;
+    const patient = {
+        ...createEmptyPatient(),
+        ...(legacyWithoutArchived as Partial<Patient>),
+    };
+
+    return {
+        patient,
+        previewMeta: buildFallbackPreviewMeta(patient, archived),
+        archived,
+    };
+};
+
 export const StorageService = {
     
     setDemoMode: (active: boolean) => {
@@ -64,15 +274,7 @@ export const StorageService = {
         // 2. Chiffrement Identité (Full + Preview)
         const encIdentity = await encryptBlob({ ...patientData, _archived: false }, fileKey);
         
-        const previewData = {
-            firstName: patientData.firstName,
-            lastName: patientData.lastName,
-            age: patientData.age,
-            classLevel: patientData.classLevel,
-            gender: patientData.gender,
-            _archived: false
-        };
-        const encPreview = await encryptBlob(previewData, fileKey);
+        const encPreview = await buildEncryptedPreview(patientData, fileKey, { archived: false, reports: [], sessions: [] });
 
         // 3. Récupération Org ID
         let orgId = patientData.id ? undefined : undefined; // Pas d'ID connu au départ
@@ -249,16 +451,11 @@ export const StorageService = {
         const patientToSave = { ...file.patient, _archived: file.archived }; 
         const encIdentity = await encryptBlob(patientToSave, fileKey);
 
-        const previewData = {
-            id: file.patient.id,
-            firstName: file.patient.firstName,
-            lastName: file.patient.lastName,
-            age: file.patient.age,
-            classLevel: file.patient.classLevel,
-            gender: file.patient.gender,
-            _archived: file.archived
-        };
-        const encPreview = await encryptBlob(previewData, fileKey);
+        const encPreview = await buildEncryptedPreview(file.patient, fileKey, {
+            archived: file.archived,
+            reports: file.reports,
+            sessions: file.sessions,
+        });
 
         // 3. UPDATE ONLY
         const patientPayload = {
@@ -327,11 +524,13 @@ export const StorageService = {
                     date: new Date(Date.now() - 86400000 * 2).toISOString(),
                     testId: 'multi',
                     testName: 'Bilan Écriture',
-                    results: DEMO_PATIENTS.SARAH.tests as Record<string, import('../types').ScoreResult>
+                    results: DEMO_PATIENTS.SARAH.tests as Record<string, ScoreResult>
                 }],
                 lastInteraction: history.length > 0 ? history[history.length - 1].date : new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false
             };
+            const demoPreview = buildPreviewPayload(sarahFile.patient, { archived: false, reports, sessions: sarahFile.sessions });
+            sarahFile.previewMeta = toPreviewMeta(demoPreview);
             return { files: [sarahFile], hasMore: false, nextOffset: 1 };
         }
 
@@ -402,22 +601,23 @@ export const StorageService = {
                 const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
                 let patientData: Patient;
+                let previewMeta: PatientDashboardPreviewMeta;
                 let isArchived = false;
 
                 if (row.encrypted_preview && row.preview_iv) {
-                    const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey) as Patient & { _archived?: boolean };
-                    isArchived = preview?._archived === true;
-                    if (preview && typeof preview === 'object' && '_archived' in preview) {
-                        delete (preview as { _archived?: boolean })._archived;
-                    }
-                    patientData = { ...createEmptyPatient(), ...preview };
+                    const decryptedPreview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
+                    const parsedPreview = parsePreviewPayload(decryptedPreview);
+                    isArchived = parsedPreview.archived;
+                    patientData = parsedPreview.patient;
+                    previewMeta = parsedPreview.previewMeta;
                 } else {
                     const identityRow = identityById.get(row.id);
                     if (!identityRow?.encrypted_identity) return null;
                     const fullData = await decryptBlob(identityRow.iv, identityRow.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-                    isArchived = fullData._archived === true;
-                    delete fullData._archived;
-                    patientData = fullData as Patient;
+                    const { _archived, ...identityData } = fullData;
+                    isArchived = _archived === true;
+                    patientData = { ...createEmptyPatient(), ...(identityData as Patient) };
+                    previewMeta = buildFallbackPreviewMeta(patientData, isArchived);
                 }
 
                 return {
@@ -427,7 +627,8 @@ export const StorageService = {
                     sessions: [],
                     lastInteraction: row.last_interaction,
                     archived: isArchived,
-                    encryptedFileKey: row.encrypted_file_key
+                    encryptedFileKey: row.encrypted_file_key,
+                    previewMeta,
                 };
             } catch (e) {
                 Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
@@ -476,20 +677,21 @@ export const StorageService = {
             const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
             let patientData: Patient;
+            let previewMeta: PatientDashboardPreviewMeta;
             let isArchived = false;
 
             if (row.encrypted_preview && row.preview_iv) {
-                const preview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey) as Patient & { _archived?: boolean };
-                isArchived = preview?._archived === true;
-                if (preview && typeof preview === 'object' && '_archived' in preview) {
-                    delete (preview as { _archived?: boolean })._archived;
-                }
-                patientData = { ...createEmptyPatient(), ...preview };
+                const decryptedPreview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
+                const parsedPreview = parsePreviewPayload(decryptedPreview);
+                patientData = parsedPreview.patient;
+                previewMeta = parsedPreview.previewMeta;
+                isArchived = parsedPreview.archived;
             } else if (row.encrypted_identity && row.iv) {
                 const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-                isArchived = fullData._archived === true;
-                delete fullData._archived;
-                patientData = fullData as Patient;
+                const { _archived, ...identityData } = fullData;
+                isArchived = _archived === true;
+                patientData = { ...createEmptyPatient(), ...(identityData as Patient) };
+                previewMeta = buildFallbackPreviewMeta(patientData, isArchived);
             } else {
                 return null;
             }
@@ -501,7 +703,8 @@ export const StorageService = {
                 sessions: [],
                 lastInteraction: row.last_interaction,
                 archived: isArchived,
-                encryptedFileKey: row.encrypted_file_key
+                encryptedFileKey: row.encrypted_file_key,
+                previewMeta,
             };
         } catch (e) {
             Logger.error('CRYPTO', `Failed to decrypt patient ${patientId}`, e);

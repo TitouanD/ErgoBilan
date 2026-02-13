@@ -1,8 +1,25 @@
-import React, { useState, useMemo } from 'react';
-import { PendingQuestionnaire, PatientFile, UserProfile } from '../../types';
-import { Plus, Clock, Users, Search, Inbox, Archive, UserCheck, Gift, Send, Sparkles, Crown, FileText, CheckCircle2, Link as LinkIcon, Copy, Loader2, Edit3, ArrowRight, Calendar } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { PendingQuestionnaire, PatientDashboardPreviewMeta, PatientFile, UserProfile } from '../../types';
+import {
+  AlertCircle,
+  Archive,
+  ArrowRight,
+  Calendar,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  Coffee,
+  Crown,
+  Edit3,
+  Filter,
+  Loader2,
+  Plus,
+  Search,
+  Users,
+} from 'lucide-react';
 import { ImportAnimation } from '../shared/ImportAnimation';
-import { useToast } from '../../contexts/ToastContext';
+import { CommandPalette } from './CommandPalette';
+import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 
 interface Props {
   userProfile: UserProfile;
@@ -14,325 +31,393 @@ interface Props {
   onShowPricing: () => void;
   onProcessPending?: (q: PendingQuestionnaire) => void;
   processingQueueId?: string | null;
-  onContribute?: () => void; 
-  
-  draftsIndex?: Record<string, string>; 
+  draftsIndex?: Record<string, string>;
   onResumeDraft?: (patientId: string) => void;
-  isDemoMode?: boolean; 
-  onCopyLink: (q: PendingQuestionnaire) => void; 
+  isDemoMode?: boolean;
+  onCopyLink: (q: PendingQuestionnaire) => void;
   hasMorePatients?: boolean;
   isLoadingMorePatients?: boolean;
   onLoadMorePatients?: () => void;
 }
 
-type TabType = 'pending' | 'active' | 'archived';
-
-const StatCard = ({ icon: Icon, value, label, subtext, highlight = false, onClick }: any) => (
-    <div 
-        onClick={onClick}
-        className={`p-6 rounded-[24px] border transition-all duration-300 relative overflow-hidden group cursor-pointer ${highlight ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white border-stone-100 hover:border-[#E07A5F]/30 hover:shadow-lg'}`}
-    >
-        <div className="flex justify-between items-start mb-4 relative">
-            <div className={`p-3 rounded-2xl ${highlight ? 'bg-white/10 text-white' : 'bg-stone-50 text-[#E07A5F] group-hover:bg-[#fff5f2]'}`}>
-                <Icon size={24} />
-            </div>
-            <Icon size={80} className={`absolute -right-4 -bottom-4 opacity-5 transform rotate-12 transition-transform group-hover:scale-110 ${highlight ? 'text-white' : 'text-[#3D405B]'}`} />
-        </div>
-        <div>
-            <div className="text-3xl font-bold font-serif mb-1">{value}</div>
-            <div className={`text-sm font-bold uppercase tracking-wider mb-2 ${highlight ? 'text-stone-300' : 'text-stone-400'}`}>{label}</div>
-            <div className={`text-xs px-2 py-1 rounded-lg w-fit ${highlight ? 'bg-white/10 text-stone-200' : 'bg-stone-50 text-stone-500'}`}>
-                {subtext}
-            </div>
-        </div>
-    </div>
-);
-
-// Carte Parrainage
-const ReferralCard = () => {
-    return (
-        <div className="p-6 rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 to-white hover:shadow-lg hover:shadow-amber-100/50 transition-all duration-300 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-                <Gift size={100} className="text-amber-500 transform rotate-12" />
-            </div>
-            <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="p-2 bg-amber-100 text-amber-600 rounded-xl"><Gift size={20} /></div>
-                    <h3 className="font-bold text-amber-800 text-lg">Mois offert</h3>
-                </div>
-                <p className="text-sm text-stone-600 mb-4 leading-relaxed">Invitez un collègue = <strong className="text-amber-600">+1 Crédit chacun</strong>.</p>
-                <div className="flex gap-2">
-                    <input placeholder="Email du collègue..." className="flex-1 bg-white border border-amber-200 rounded-xl px-3 text-sm focus:border-amber-500 outline-none text-[#3D405B]" />
-                    <button onClick={() => alert("Invitation simulée !")} className="bg-amber-500 text-white p-3 rounded-xl hover:bg-amber-600 transition-colors shadow-md shadow-amber-200"><Send size={18} /></button>
-                </div>
-            </div>
-        </div>
-    );
+type UrgencyKind = 'draft' | 'pending_done' | 'pending_waiting';
+interface UrgencyItem {
+  id: string;
+  kind: UrgencyKind;
+  title: string;
+  subtitle: string;
+  date: string;
+  actionHint: string;
+  isBusy?: boolean;
+  onClick: () => void;
 }
 
-export const Dashboard: React.FC<Props> = ({ userProfile, pendingQuestionnaires, patientFiles, onCreateNew, onOpenPatient, onGenerateLink, onShowPricing, onProcessPending, processingQueueId, onContribute, draftsIndex = {}, onResumeDraft, isDemoMode = false, onCopyLink, hasMorePatients = false, isLoadingMorePatients = false, onLoadMorePatients }) => {
+const monthDate = (value: string) =>
+  new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+
+const fullDate = (value: string | null | undefined) => {
+  if (!value) return 'Aucune activité récente';
+  return new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const workflowLabelMap: Record<PatientDashboardPreviewMeta['workflow']['progressLabel'], string> = {
+  created: 'Dossier créé',
+  infos_recues: 'Infos reçues',
+  tests_saisis: 'Tests saisis',
+  termine: 'Dossier terminé',
+};
+
+const nextActionLabelMap: Record<PatientDashboardPreviewMeta['workflow']['nextAction'], string> = {
+  complete_initial: 'Compléter bilan initial',
+  resume_draft: 'Brouillon',
+  open_patient: 'Ouvrir le dossier',
+  reevaluation_candidate: 'Suivi à programmer',
+};
+
+const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTone']) => {
+  if (tone === 'success') return { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', progress: 'bg-emerald-500' };
+  if (tone === 'warning') return { badge: 'bg-amber-50 text-amber-700 border-amber-200', progress: 'bg-amber-500' };
+  return { badge: 'bg-[#3D405B]/10 text-[#3D405B] border-[#3D405B]/20', progress: 'bg-[#3D405B]' };
+};
+
+const getUrgencyTone = (kind: UrgencyKind) => {
+  if (kind === 'draft') return { card: 'border-rose-200 bg-rose-50/60 hover:border-rose-300', icon: 'bg-rose-100 text-rose-600', action: 'text-rose-700' };
+  if (kind === 'pending_done') return { card: 'border-amber-200 bg-amber-50/60 hover:border-amber-300', icon: 'bg-amber-100 text-amber-600', action: 'text-amber-700' };
+  return { card: 'border-stone-200 bg-white hover:border-stone-300', icon: 'bg-stone-100 text-stone-500', action: 'text-stone-600' };
+};
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
+};
+
+const deriveFallbackPreviewMeta = (file: PatientFile): PatientDashboardPreviewMeta => {
+  const reportsCount = file.reports.length;
+  const sessionsCount = file.sessions.length;
+  const hasInitialReport = file.reports.some((report) => report.type === 'initial');
+  const hasReevaluationReport = file.reports.some((report) => report.type === 'reevaluation');
+  const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
+  const lastReportDate = reportsCount > 0 ? file.reports.map((report) => report.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+  const lastSessionDate = sessionsCount > 0 ? file.sessions.map((session) => session.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+
+  if (reportsCount > 0) {
+    return {
+      uiVersion: 2,
+      workflow: { progressPercent: 100, progressLabel: 'termine', statusTone: 'success', nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient' },
+      metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+      flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
+    };
+  }
+
+  if (sessionsCount > 0) {
+    return {
+      uiVersion: 2,
+      workflow: { progressPercent: 60, progressLabel: 'tests_saisis', statusTone: 'neutral', nextAction: 'open_patient' },
+      metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+      flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
+    };
+  }
+
+  return {
+    uiVersion: 2,
+    workflow: { progressPercent: 10, progressLabel: 'created', statusTone: 'warning', nextAction: 'complete_initial' },
+    metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+    flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
+  };
+};
+
+const KpiCard = ({
+  icon: Icon,
+  value,
+  label,
+  subtext,
+  colorClass,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  value: string;
+  label: string;
+  subtext: string;
+  colorClass: string;
+}) => (
+  <div className="rounded-[24px] border border-stone-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+    <div className="mb-4 flex items-center gap-3">
+      <div className={`rounded-2xl p-3 ${colorClass}`}>
+        <Icon size={22} />
+      </div>
+      <div className="text-3xl font-serif font-bold text-[#3D405B]">{value}</div>
+    </div>
+    <div className="text-xs font-bold uppercase tracking-wide text-[#3D405B]">{label}</div>
+    <div className="mt-1 text-xs text-stone-500">{subtext}</div>
+  </div>
+);
+
+export const Dashboard: React.FC<Props> = ({
+  userProfile,
+  pendingQuestionnaires,
+  patientFiles,
+  onCreateNew,
+  onOpenPatient,
+  onGenerateLink,
+  onShowPricing,
+  onProcessPending,
+  processingQueueId,
+  draftsIndex = {},
+  onResumeDraft,
+  isDemoMode = false,
+  onCopyLink,
+  hasMorePatients = false,
+  isLoadingMorePatients = false,
+  onLoadMorePatients,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>(isDemoMode ? 'pending' : 'active');
   const [showImportAnim, setShowImportAnim] = useState(false);
   const [targetDemoQ, setTargetDemoQ] = useState<PendingQuestionnaire | null>(null);
-  
-  const hoursSaved = Math.round(userProfile.totalBilansGenerated * 1.5);
+  const [showArchived, setShowArchived] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [isNewPatientChoiceOpen, setIsNewPatientChoiceOpen] = useState(false);
+  const [rewardedUrgencyId, setRewardedUrgencyId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const rewardTimeoutRef = useRef<number | null>(null);
 
-  const filteredPending = useMemo(() => 
-    pendingQuestionnaires.filter(q => q.label.toLowerCase().includes(searchQuery.toLowerCase())),
-    [pendingQuestionnaires, searchQuery]
-  );
+  const shortcutLabel = useMemo(() => (typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? 'Cmd+K' : 'Ctrl+K'), []);
+  const practitionerFirstName = useMemo(() => userProfile.branding.practitionerName.split(' ')[0] || 'Thérapeute', [userProfile.branding.practitionerName]);
+  const activeFiles = useMemo(() => patientFiles.filter((file) => !file.archived), [patientFiles]);
+  const patientById = useMemo(() => new Map(patientFiles.map((file) => [file.id, file])), [patientFiles]);
 
-  const activeFiles = useMemo(() => 
-    patientFiles.filter(f => 
-        !f.archived && 
-        (f.patient.firstName + ' ' + f.patient.lastName).toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [patientFiles, searchQuery]
-  );
+  const filteredFiles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return patientFiles.filter((file) => {
+      const inScope = showArchived ? file.archived : !file.archived;
+      if (!inScope) return false;
+      if (!q) return true;
+      return `${file.patient.firstName} ${file.patient.lastName} ${file.patient.classLevel}`.toLowerCase().includes(q);
+    });
+  }, [patientFiles, searchQuery, showArchived]);
 
-  const archivedFiles = useMemo(() => 
-    patientFiles.filter(f => 
-        f.archived && 
-        (f.patient.firstName + ' ' + f.patient.lastName).toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [patientFiles, searchQuery]
-  );
+  const kpis = useMemo(() => {
+    const now = new Date();
+    const newThisMonth = activeFiles.filter((file) => {
+      const d = new Date(file.lastInteraction);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+    const reevaluationOpportunities = activeFiles.filter((file) => (file.previewMeta || deriveFallbackPreviewMeta(file)).flags.hasReevaluationOpportunity).length;
+    return { hoursSaved: Math.round(userProfile.totalBilansGenerated * 1.5), activeCount: activeFiles.length, newThisMonth, reevaluationOpportunities };
+  }, [activeFiles, userProfile.totalBilansGenerated]);
 
-  const currentFilesList = activeTab === 'archived' ? archivedFiles : activeFiles;
+  const urgencyItems = useMemo<UrgencyItem[]>(() => {
+    const drafts: UrgencyItem[] = Object.entries(draftsIndex).map(([patientId, draftDate]) => {
+      const file = patientById.get(patientId);
+      if (!file || file.archived) return null;
+      return { id: `draft-${patientId}`, kind: 'draft', title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom', subtitle: 'Brouillon à reprendre', date: draftDate, actionHint: 'Reprendre le brouillon', onClick: () => onResumeDraft && onResumeDraft(patientId) };
+    }).filter((item): item is UrgencyItem => item !== null);
 
-  const handleOpenPatient = (id: string) => {
-      onOpenPatient(id);
-  };
-
-  const handleProcessClick = (q: PendingQuestionnaire) => {
-      if (isDemoMode) {
-          setTargetDemoQ(q);
+    const done: UrgencyItem[] = pendingQuestionnaires.filter((item) => item.status === 'completed').map((item) => ({
+      id: `pending-completed-${item.id}`,
+      kind: 'pending_done',
+      title: item.label || 'Questionnaire reçu',
+      subtitle: 'Questionnaire complété à importer',
+      date: item.createdAt,
+      actionHint: 'Importer',
+      isBusy: processingQueueId === item.id,
+      onClick: () => {
+        if (isDemoMode) {
+          setTargetDemoQ(item);
           setShowImportAnim(true);
-      } else {
-          if (onProcessPending) onProcessPending(q);
+          return;
+        }
+        if (onProcessPending) onProcessPending(item);
+      },
+    }));
+
+    const waiting: UrgencyItem[] = pendingQuestionnaires.filter((item) => item.status === 'pending').slice(0, 6).map((item) => ({
+      id: `pending-waiting-${item.id}`,
+      kind: 'pending_waiting',
+      title: item.label || 'Questionnaire en attente',
+      subtitle: 'Lien envoyé, en attente de réponse famille',
+      date: item.createdAt,
+      actionHint: 'Copier le lien',
+      onClick: () => onCopyLink(item),
+    }));
+
+    const order = { draft: 0, pending_done: 1, pending_waiting: 2 };
+    return [...drafts, ...done, ...waiting].sort((a, b) => order[a.kind] - order[b.kind] || new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [draftsIndex, patientById, pendingQuestionnaires, onResumeDraft, processingQueueId, isDemoMode, onProcessPending, onCopyLink]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && key === 'k' && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        setIsPaletteOpen(true);
+      } else if (!event.metaKey && !event.ctrlKey && !event.altKey && key === '/' && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if (key === 'escape') {
+        setIsPaletteOpen(false);
       }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => () => {
+    if (rewardTimeoutRef.current !== null) window.clearTimeout(rewardTimeoutRef.current);
+  }, []);
+
+  const handleUrgencyAction = (item: UrgencyItem) => {
+    if (item.isBusy) return;
+    item.onClick();
+    setRewardedUrgencyId(item.id);
+    if (rewardTimeoutRef.current !== null) window.clearTimeout(rewardTimeoutRef.current);
+    rewardTimeoutRef.current = window.setTimeout(() => setRewardedUrgencyId(null), 820);
   };
 
   return (
-    <div className="animate-in fade-in duration-700 relative">
-        
-        {/* ANIMATION IMPORT (DEMO SEULEMENT) */}
-        <ImportAnimation 
-            isOpen={showImportAnim} 
-            onComplete={() => {
-                setShowImportAnim(false);
-                if (targetDemoQ && onProcessPending) onProcessPending(targetDemoQ);
-            }} 
-        />
+    <div className="relative animate-in fade-in duration-700 motion-reduce:animate-none">
+      <ImportAnimation isOpen={showImportAnim} onComplete={() => { setShowImportAnim(false); if (targetDemoQ && onProcessPending) onProcessPending(targetDemoQ); }} />
+      <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} patientFiles={patientFiles} draftsIndex={draftsIndex} onOpenPatient={onOpenPatient} onOpenNewPatientChoice={() => setIsNewPatientChoiceOpen(true)} onResumeDraft={onResumeDraft} />
+      <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} />
 
-        {/* BANDEAU STICKY */}
-        {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
-            <div className="bg-[#3D405B] text-white py-3 px-6 sticky top-20 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2">
-                <div className="flex items-center gap-2 text-sm">
-                    <Clock size={16} className="text-[#E07A5F] animate-pulse" />
-                    <span className="font-medium hidden md:inline">Vous êtes en mode Essai Gratuit.</span>
-                    <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
-                </div>
-                <button onClick={onShowPricing} className="bg-[#E07A5F] hover:bg-white hover:text-[#E07A5F] text-white px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-orange-900/20">
-                    <Crown size={14} /> Passer à la vitesse supérieure
-                </button>
-            </div>
-        )}
-
-        <div className="max-w-7xl mx-auto px-6 py-12">
-            
-            {/* 1. KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <StatCard icon={Clock} value={`${hoursSaved}h`} label="Temps Libéré" subtext="~ 2 dimanches récupérés" highlight={true} />
-                <StatCard icon={Users} value={activeFiles.length} label="Patients Actifs" subtext="+3 cette semaine" />
-                <ReferralCard />
-            </div>
-
-            {/* 2. Actions */}
-            <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-10">
-                <div className="relative w-full md:max-w-md">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
-                    <input 
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Rechercher..."
-                        className="w-full pl-12 pr-4 py-4 bg-white border border-stone-200 rounded-[20px] shadow-sm outline-none focus:border-[#E07A5F] transition-all font-medium text-[#3D405B]"
-                    />
-                </div>
-                <div className="flex gap-3 w-full md:w-auto">
-                    <button 
-                        onClick={onGenerateLink} 
-                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-[#3D405B] px-6 py-4 rounded-2xl font-bold border border-stone-200 hover:border-[#E07A5F] transition-all text-sm group shadow-sm"
-                    >
-                        <LinkIcon size={18} className="text-[#E07A5F] group-hover:rotate-45 transition-transform" /> 
-                        <span className="hidden lg:inline">Nouveau lien Famille</span>
-                    </button>
-                    
-                    <button onClick={onCreateNew} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#E07A5F] text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] transition-all text-sm h-fit">
-                        <Plus size={18} /> Nouveau Dossier
-                    </button>
-                </div>
-            </div>
-
-            {/* 3. Onglets */}
-            <div className="flex gap-8 border-b border-stone-200 mb-8 overflow-x-auto no-scrollbar">
-                {[
-                    { id: 'pending', label: 'En attente', icon: Inbox, count: filteredPending.length },
-                    { id: 'active', label: 'Patients Actifs', icon: UserCheck, count: activeFiles.length },
-                    { id: 'archived', label: 'Archives', icon: Archive, count: archivedFiles.length }
-                ].map(tab => (
-                    <button 
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as TabType)}
-                        className={`flex items-center gap-2 pb-4 px-2 font-bold text-sm uppercase tracking-wider transition-all relative ${activeTab === tab.id ? 'text-[#3D405B]' : 'text-stone-400 hover:text-stone-600'}`}
-                    >
-                        <tab.icon size={18} />
-                        {tab.label}
-                        {tab.count > 0 && <span className="bg-stone-100 px-2 py-0.5 rounded-full text-[10px] ml-1">{tab.count}</span>}
-                        {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#E07A5F] rounded-t-full animate-in slide-in-from-bottom-1"></div>}
-                    </button>
-                ))}
-            </div>
-
-            {/* 4. Grille */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                
-                {/* VUE PENDING */}
-                {activeTab === 'pending' && filteredPending.map((q) => (
-                    <div key={q.id} className={`group bg-transparent border-2 border-dashed rounded-[24px] p-6 flex flex-col justify-between h-auto min-h-[12rem] hover:bg-white transition-all ${q.status === 'completed' ? 'border-emerald-300 bg-emerald-50/50' : 'border-stone-300 hover:border-[#E07A5F]'}`}>
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="bg-white p-2 rounded-lg border border-stone-100 shadow-sm text-stone-400">
-                                <Clock size={20} />
-                            </div>
-                            {q.status === 'completed' ? (
-                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-md uppercase flex items-center gap-1 animate-pulse">
-                                    <CheckCircle2 size={12}/> Reçu
-                                </span>
-                            ) : (
-                                <span className="px-3 py-1 bg-stone-100 text-stone-500 text-[10px] font-bold rounded-md uppercase">Envoyé</span>
-                            )}
-                        </div>
-                        <div className="text-center mb-4">
-                            <h3 className="font-serif font-bold text-lg text-[#3D405B] mb-1 truncate px-2">{q.label}</h3>
-                            <p className="text-xs text-stone-400">Créé le {new Date(q.createdAt).toLocaleDateString()}</p>
-                        </div>
-                        
-                        {q.status === 'completed' ? (
-                            <div className="mt-auto">
-                                <button 
-                                    onClick={() => handleProcessClick(q)} 
-                                    disabled={processingQueueId === q.id}
-                                    className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg relative overflow-hidden group/btn ${processingQueueId === q.id ? 'bg-emerald-600 text-white cursor-wait' : 'bg-[#E07A5F] text-white hover:bg-[#d0694e] shadow-orange-200'}`}
-                                >
-                                    <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
-                                    {processingQueueId === q.id ? (
-                                        <>Sécurisation... <Loader2 size={16} className="animate-spin"/></>
-                                    ) : (
-                                        <>Importer & Déchiffrer <FileText size={16}/></>
-                                    )}
-                                </button>
-                                {isDemoMode && (
-                                    <div className="text-[10px] text-center mt-2 text-[#E07A5F] font-bold flex items-center justify-center gap-1">
-                                        <Sparkles size={10} /> Scénario Démo
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="mt-auto pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
-                                <span className="text-xs text-stone-400 italic">En attente famille...</span>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); onCopyLink(q); }}
-                                    className="flex items-center gap-2 px-3 py-2 bg-stone-50 hover:bg-[#E07A5F] hover:text-white text-stone-500 rounded-lg text-xs font-bold transition-all"
-                                >
-                                    <Copy size={14} /> <span className="hidden sm:inline">Lien</span>
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                ))}
-
-                {/* VUE ACTIVE & ARCHIVED */}
-                {(activeTab === 'active' || activeTab === 'archived') && currentFilesList.map((file) => {
-                    const draftDate = draftsIndex[file.id];
-                    const hasDraft = !!draftDate;
-                    
-                    return (
-                        <div 
-                            key={file.id} 
-                            onClick={() => handleOpenPatient(file.id)} 
-                            className={`group bg-white rounded-[24px] p-6 border border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50 hover:border-[#E07A5F]/30 transition-all cursor-pointer h-64 flex flex-col relative overflow-hidden ${file.archived ? 'opacity-70 grayscale hover:grayscale-0' : ''}`}
-                        >
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-serif font-bold text-xl ${file.archived ? 'bg-stone-300 text-white' : 'bg-[#3D405B] text-white'}`}>
-                                    {file.patient.firstName.charAt(0)}{file.patient.lastName.charAt(0)}
-                                </div>
-                                <div>
-                                    <h3 className="font-serif font-bold text-lg text-[#3D405B] group-hover:text-[#E07A5F] transition-colors">
-                                        {file.patient.firstName} {file.patient.lastName}
-                                    </h3>
-                                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-tighter">{file.patient.age} • {file.patient.classLevel}</p>
-                                </div>
-                            </div>
-                            <div className="flex-1 space-y-4">
-                                <div className="flex items-center gap-3 text-xs text-stone-600">
-                                    <div className={`w-2 h-2 rounded-full ${file.archived ? 'bg-stone-400' : 'bg-[#E07A5F]'}`}></div>
-                                    <span>{file.reports.length} interventions archivées</span>
-                                </div>
-                                <div className="text-xs text-stone-400 bg-stone-50 p-2 rounded-lg flex items-center gap-2">
-                                    <Calendar size={14} /> Dernier contact : {new Date(file.lastInteraction).toLocaleDateString()}
-                                </div>
-                            </div>
-                            
-                            {/* BOUTON DRAFT */}
-                            {hasDraft && !file.archived ? (
-                                <div className="mt-4">
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onResumeDraft && onResumeDraft(file.id); }}
-                                        className="w-full py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold uppercase tracking-wide hover:bg-amber-100 transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        <Edit3 size={14} /> Reprendre brouillon
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="mt-4 flex justify-end">
-                                    <div className="w-8 h-8 rounded-full bg-stone-50 flex items-center justify-center group-hover:bg-[#E07A5F] group-hover:text-white transition-all">
-                                        <ArrowRight size={16} />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-
-                {/* EMPTY STATE */}
-                {((activeTab === 'active' && activeFiles.length === 0) || 
-                  (activeTab === 'pending' && filteredPending.length === 0) ||
-                  (activeTab === 'archived' && archivedFiles.length === 0)) && (
-                    <div className="col-span-full py-20 flex flex-col items-center text-center">
-                        <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center text-stone-200 mb-4">
-                            {activeTab === 'archived' ? <Archive size={32} /> : <Search size={32} />}
-                        </div>
-                        <h3 className="font-bold text-stone-500">Aucun résultat</h3>
-                        {activeTab === 'active' && <p className="text-xs text-stone-400 mt-2">Créez un nouveau dossier pour commencer.</p>}
-                        {activeTab === 'pending' && isDemoMode && <p className="text-xs text-stone-400 mt-2">Cliquez sur "Nouveau lien Famille" pour simuler un envoi.</p>}
-                    </div>
-                )}
-
-                {(activeTab !== 'pending' && hasMorePatients) && (
-                    <div className="col-span-full flex justify-center pt-4">
-                        <button
-                            onClick={() => onLoadMorePatients && onLoadMorePatients()}
-                            disabled={isLoadingMorePatients || !onLoadMorePatients}
-                            className="px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider border border-stone-200 text-stone-500 hover:text-[#3D405B] hover:border-[#E07A5F] transition-all disabled:opacity-50"
-                        >
-                            {isLoadingMorePatients ? 'Chargement...' : 'Charger plus de patients'}
-                        </button>
-                    </div>
-                )}
-            </div>
+      {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
+        <div className="sticky top-20 z-30 flex items-center justify-center gap-4 bg-[#3D405B] px-6 py-3 text-white shadow-lg">
+          <div className="flex items-center gap-2 text-sm">
+            <Clock size={16} className="animate-pulse text-[#E07A5F] motion-reduce:animate-none" />
+            <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
+            <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
+          </div>
+          <button onClick={onShowPricing} className="flex items-center gap-2 rounded-full bg-[#E07A5F] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white hover:text-[#E07A5F] motion-reduce:transition-none"><Crown size={14} /> Passer en premium</button>
         </div>
+      )}
+
+      <div className="mx-auto max-w-7xl px-6 py-8 md:px-8 md:py-10">
+        <section className="mb-9 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)] lg:items-end">
+          <div>
+            <h1 className="font-serif text-[38px] font-bold leading-[1.05] text-[#3D405B] md:text-[44px]">Bonjour, {practitionerFirstName} <span className="align-middle text-2xl opacity-75">👋</span></h1>
+            <p className="mt-2 text-sm font-medium text-stone-400">Prêt pour votre journée ?</p>
+          </div>
+          <div className="w-full"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+            <div className="relative w-full md:flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-24 text-sm font-medium text-[#3D405B] shadow-sm outline-none transition-all focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 motion-reduce:transition-none" />
+              <button type="button" onClick={() => setIsPaletteOpen(true)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-stone-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-500 transition-colors hover:border-[#E07A5F] hover:text-[#E07A5F] motion-reduce:transition-none">{shortcutLabel}</button>
+            </div>
+            <button onClick={() => setIsNewPatientChoiceOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#E07A5F] px-5 text-sm font-bold text-white shadow-lg shadow-orange-200 transition-all hover:-translate-y-0.5 hover:bg-[#d0694e] motion-reduce:transform-none motion-reduce:transition-none"><Plus size={18} /> Nouveau patient</button>
+          </div></div>
+        </section>
+
+        <section className="mb-10 grid grid-cols-1 gap-5 md:grid-cols-3">
+          <KpiCard icon={Clock} value={`${kpis.hoursSaved}h`} label="Temps économisé" subtext="Ce mois-ci" colorClass="bg-blue-50 text-blue-600" />
+          <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-orange-50 text-[#E07A5F]" />
+          <KpiCard icon={Calendar} value={`${kpis.reevaluationOpportunities}`} label="Réévaluations" subtext="Opportunités de suivi" colorClass="bg-emerald-50 text-emerald-600" />
+        </section>
+
+        <section className="mb-10">
+          <div className="mb-4 flex items-center gap-2 px-1">
+            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">À traiter</h2>
+            {urgencyItems.length > 0 && <span className="rounded-full bg-[#3D405B] px-2 py-0.5 text-[10px] font-bold text-white">{urgencyItems.length}</span>}
+          </div>
+
+          {urgencyItems.length === 0 ? (
+            <div className="flex items-center justify-between gap-4 rounded-[24px] border border-emerald-100 bg-emerald-50/40 p-6 shadow-sm">
+              <div className="flex items-center gap-4"><div className="rounded-2xl bg-emerald-100 p-3 text-emerald-600"><Coffee size={24} /></div><div><h3 className="font-serif text-xl font-bold text-[#3D405B]">Tout est à jour</h3><p className="text-xs font-medium text-stone-500">Aucun brouillon ni urgence en attente.</p></div></div>
+              <button onClick={() => setIsNewPatientChoiceOpen(true)} className="hidden items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-xs font-bold text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50 md:flex"><Plus size={14} /> Nouveau patient</button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="overflow-x-auto pb-2 [scrollbar-width:thin]"><div className="flex snap-x snap-mandatory gap-3 px-1">
+                {urgencyItems.map((item) => {
+                  const tone = getUrgencyTone(item.kind);
+                  const isRewarded = rewardedUrgencyId === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleUrgencyAction(item)}
+                      disabled={item.isBusy}
+                      aria-label={`${item.actionHint}: ${item.title}`}
+                      className={`relative min-h-[112px] shrink-0 basis-[83%] snap-start rounded-[18px] border p-3 text-left shadow-sm transition-all duration-200 motion-reduce:transition-none sm:basis-[64%] lg:basis-[42%] xl:basis-[34%] 2xl:basis-[28.5%] ${
+                        tone.card
+                      } ${item.isBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none'} ${isRewarded ? 'ring-2 ring-emerald-300 bg-emerald-50/70 shadow-emerald-200/70' : ''}`}
+                    >
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div className="min-w-0"><h3 className="truncate text-lg font-serif font-bold text-[#3D405B]">{item.title}</h3><p className="truncate text-xs text-stone-600">{item.subtitle}</p></div>
+                        <div className={`rounded-lg p-1.5 ${tone.icon}`}>{item.kind === 'draft' ? <Edit3 size={13} /> : item.kind === 'pending_done' ? <ClipboardList size={13} /> : <AlertCircle size={13} />}</div>
+                      </div>
+                      <div className="flex items-end justify-between border-t border-black/5 pt-2.5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400"><Clock size={10} /> {monthDate(item.date)}</div>
+                        <div className={`text-[10px] font-bold uppercase tracking-wider ${tone.action}`}>{item.isBusy ? 'Import en cours...' : item.actionHint}</div>
+                      </div>
+                      <div className={`pointer-events-none absolute right-3 top-3 transition-all duration-150 motion-reduce:transition-none ${isRewarded ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}`}>
+                        <div className="rounded-full bg-white/90 p-1 text-emerald-600 shadow-sm"><CheckCircle2 size={14} /></div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div></div>
+              <p className="px-1 text-[11px] font-medium text-stone-400">Faites défiler pour voir toutes les actions prioritaires.</p>
+            </div>
+          )}
+        </section>
+
+        <section className="max-w-6xl">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
+            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">{showArchived ? 'Dossiers archivés' : 'Dossiers en cours'}</h2>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowArchived((prev) => !prev)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${showArchived ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-200 bg-white text-stone-500 hover:border-[#3D405B] hover:text-[#3D405B]'}`}><Archive size={12} /> {showArchived ? 'Voir actifs' : 'Voir archives'}</button>
+              <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-white hover:text-[#3D405B]"><Filter size={12} /> Trier par date</button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredFiles.map((file) => {
+              const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
+              const tone = getToneClasses(previewMeta.workflow.statusTone);
+              const hasDraft = Boolean(draftsIndex[file.id]);
+              const activityDate = previewMeta.metrics.lastReportDate || previewMeta.metrics.lastSessionDate || file.lastInteraction;
+
+              return (
+                <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-stone-200 opacity-80 hover:opacity-100' : 'border-stone-100 hover:border-[#E07A5F]/30'}`}>
+                  <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(230px,1.5fr)_minmax(220px,1fr)_minmax(220px,1fr)_auto] lg:items-center">
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-stone-200 text-stone-500' : 'bg-[#3D405B] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
+                      <div className="min-w-0"><h3 className="truncate text-base font-bold text-[#3D405B] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-stone-100"><div className={`h-full ${tone.progress}`} style={{ width: `${previewMeta.workflow.progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{previewMeta.workflow.progressPercent}%</span></div>
+                      <p className="text-[11px] text-stone-500">{workflowLabelMap[previewMeta.workflow.progressLabel]}</p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">Dernière modif.</p><p className="text-xs font-bold text-[#3D405B]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-stone-200 bg-stone-50 text-stone-600' : tone.badge}`}>{hasDraft ? 'Brouillon' : nextActionLabelMap[previewMeta.workflow.nextAction]}</span></div>
+                    <div className="flex items-center justify-end gap-2">
+                      {hasDraft && !file.archived && onResumeDraft ? (
+                        <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre le brouillon</button>
+                      ) : (
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-50 text-stone-300 transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredFiles.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-white py-10 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-stone-50 text-stone-300"><Search size={22} /></div>
+                <p className="text-sm font-medium text-stone-500">{showArchived ? 'Aucun dossier archivé.' : searchQuery ? `Aucun dossier trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
+                {!showArchived && <button onClick={() => setIsNewPatientChoiceOpen(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#E07A5F]/30 bg-[#E07A5F]/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-[#E07A5F] transition-colors hover:bg-[#E07A5F] hover:text-white"><Plus size={14} /> Nouveau patient</button>}
+              </div>
+            )}
+
+            {hasMorePatients && !showArchived && (
+              <div className="flex justify-center pt-4">
+                <button onClick={() => onLoadMorePatients && onLoadMorePatients()} disabled={isLoadingMorePatients || !onLoadMorePatients} className="rounded-xl border border-stone-200 px-6 py-2.5 text-[10px] font-bold uppercase tracking-widest text-stone-500 transition-all hover:border-[#3D405B] hover:bg-white hover:text-[#3D405B] disabled:opacity-50">
+                  {isLoadingMorePatients ? <span className="inline-flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Chargement...</span> : 'Voir plus'}
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 };

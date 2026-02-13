@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
@@ -17,7 +17,7 @@ import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientFile, PractitionerProfile } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, Info, Save, CheckCircle2, FileText, ShieldAlert } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, Info, Save, CheckCircle2, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -72,6 +72,8 @@ const AppRouter = () => {
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
+    const [showAccountMenu, setShowAccountMenu] = useState(false);
+    const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const [detailPaging, setDetailPaging] = useState({
         hasMoreReports: false,
         hasMoreSessions: false,
@@ -130,10 +132,26 @@ const AppRouter = () => {
         } else if (authState === 'network_error') {
             setIsLoggingIn(false);
         }
-    }, [authState]);
+    }, [authState, toast]);
 
     // Bridge generation error → paywall
     useEffect(() => { if (generationError === 'CREDIT_INSUFFICIENT') { setPricingModalMode('paywall'); setGenerationError(null); } }, [generationError, setGenerationError]);
+
+    useEffect(() => {
+        const onMouseDown = (event: MouseEvent) => {
+            if (!accountMenuRef.current) return;
+            if (!accountMenuRef.current.contains(event.target as Node)) {
+                setShowAccountMenu(false);
+            }
+        };
+
+        window.addEventListener('mousedown', onMouseDown);
+        return () => window.removeEventListener('mousedown', onMouseDown);
+    }, []);
+
+    useEffect(() => {
+        setShowAccountMenu(false);
+    }, [mode]);
 
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
@@ -205,6 +223,19 @@ const AppRouter = () => {
             setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
         }
     }, [selectedFile, orgKey, detailPaging.nextReportOffset, detailPaging.nextSessionOffset, detailPaging.hasMoreReports, detailPaging.isLoadingMore, toast]);
+
+    const accountDisplayName = (
+        userProfile.branding.practitionerName ||
+        `${practitioner?.firstName || ''} ${practitioner?.lastName || ''}`.trim() ||
+        userProfile.email.split('@')[0]
+    ).trim();
+
+    const accountInitials = accountDisplayName
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((chunk) => chunk[0].toUpperCase())
+        .join('') || 'AB';
 
     // --- RENDUS ---
     if (isLoading || authState === 'authenticating') return <AppLoader />;
@@ -285,18 +316,44 @@ const AppRouter = () => {
                         </>
                     ) : (
                         <>
-                            {userProfile.isAdmin && (
-                                <button 
-                                    onClick={handleAdminAccess}
-                                    className="hidden md:flex items-center gap-2 px-4 py-2 bg-rose-950/10 hover:bg-rose-950 hover:text-white text-rose-800 rounded-full text-xs font-bold transition-all"
-                                >
-                                    <ShieldAlert size={14} /> Admin
-                                </button>
-                            )}
-                            <button onClick={handleContributionAccess} className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full border border-stone-200 text-xs font-bold text-[#3D405B] hover:bg-stone-50 hover:border-[#3D405B] transition-all"><FilePlus size={14}/> Créer un Test</button>
                             <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
                             <div className="h-8 w-px bg-stone-200 mx-1"></div>
-                            <button onClick={logout} className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Déconnexion"><LogOut size={20}/></button>
+
+                            <div className="relative" ref={accountMenuRef}>
+                                <button
+                                    onClick={() => setShowAccountMenu((prev) => !prev)}
+                                    className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-2 py-1.5 transition-colors hover:border-[#3D405B]"
+                                >
+                                    <div className="h-8 w-8 rounded-full bg-[#3D405B] text-white text-xs font-bold flex items-center justify-center">
+                                        {accountInitials}
+                                    </div>
+                                    <ChevronDown size={14} className={`text-stone-500 transition-transform ${showAccountMenu ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {showAccountMenu && (
+                                    <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+                                        <div className="px-3 py-2 border-b border-stone-100">
+                                            <p className="text-sm font-bold text-[#3D405B] truncate">{accountDisplayName}</p>
+                                            <p className="text-xs text-stone-400 truncate">{userProfile.email}</p>
+                                        </div>
+
+                                        <button onClick={() => { setShowAccountMenu(false); handleContributionAccess(); }} className="w-full mt-1 px-3 py-2 text-left text-sm font-medium text-[#3D405B] hover:bg-stone-50 rounded-xl flex items-center gap-2">
+                                            <FilePlus size={14} /> Créer un test
+                                        </button>
+                                        <button onClick={() => { setShowAccountMenu(false); setPricingModalMode('plans'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[#3D405B] hover:bg-stone-50 rounded-xl flex items-center gap-2">
+                                            <Crown size={14} /> Mon abonnement
+                                        </button>
+                                        {userProfile.isAdmin && (
+                                            <button onClick={() => { setShowAccountMenu(false); handleAdminAccess(); }} className="w-full px-3 py-2 text-left text-sm font-medium text-rose-700 hover:bg-rose-50 rounded-xl flex items-center gap-2">
+                                                <ShieldAlert size={14} /> Admin
+                                            </button>
+                                        )}
+                                        <button onClick={() => { setShowAccountMenu(false); logout(); }} className="w-full px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2">
+                                            <LogOut size={14} /> Déconnexion
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </>
                     )}
                 </div>
@@ -343,7 +400,6 @@ const AppRouter = () => {
                             processingQueueId={processingQueueId}
                             draftsIndex={draftsIndex}
                             onResumeDraft={onResumeDraft}
-                            onContribute={handleContributionAccess}
                             isDemoMode={isDemoMode}
                             onCopyLink={handleCopyLink}
                             hasMorePatients={hasMorePatients}
@@ -481,3 +537,4 @@ const App = () => (
 );
 
 export default App;
+

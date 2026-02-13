@@ -205,6 +205,45 @@ export interface ReportMetadata {
     sections: ReportSection[];
 }
 
+export type PatientDashboardProgressLabel = 'created' | 'infos_recues' | 'tests_saisis' | 'termine';
+export type PatientDashboardStatusTone = 'neutral' | 'warning' | 'success';
+export type PatientDashboardNextAction = 'complete_initial' | 'resume_draft' | 'open_patient' | 'reevaluation_candidate';
+
+export interface PatientDashboardPreviewMeta {
+    uiVersion: 2;
+    workflow: {
+        progressPercent: number;
+        progressLabel: PatientDashboardProgressLabel;
+        statusTone: PatientDashboardStatusTone;
+        nextAction: PatientDashboardNextAction;
+    };
+    metrics: {
+        reportsCount: number;
+        sessionsCount: number;
+        lastReportDate: string | null;
+        lastSessionDate: string | null;
+    };
+    flags: {
+        _archived: boolean;
+        hasInitialReport: boolean;
+        hasReevaluationOpportunity: boolean;
+    };
+}
+
+export interface PatientEncryptedPreviewV2 {
+    uiVersion: 2;
+    identity: {
+        firstName: string;
+        lastName: string;
+        age: string;
+        classLevel: string;
+        gender: string;
+    };
+    workflow: PatientDashboardPreviewMeta['workflow'];
+    metrics: PatientDashboardPreviewMeta['metrics'];
+    flags: PatientDashboardPreviewMeta['flags'];
+}
+
 export interface PatientFile {
     id: string;
     patient: Patient;
@@ -213,6 +252,7 @@ export interface PatientFile {
     lastInteraction: string;
     archived?: boolean;
     encryptedFileKey?: string;
+    previewMeta?: PatientDashboardPreviewMeta;
 }
 
 export interface PendingQuestionnaire {
