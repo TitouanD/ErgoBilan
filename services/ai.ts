@@ -3,7 +3,7 @@ import { callAIProxy } from './aiProxy';
 import { SubscriptionService } from './subscription';
 import { supabase } from './db';
 import { cleanAndParseJson } from '../utils/aiHelpers';
-import { Patient, ClinicalSynthesis, GeneratedReportSection } from '../types';
+import type { Patient, ClinicalSynthesis, GeneratedReportSection } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
 import { Logger } from '../utils/logger';
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ReportSection, Patient } from '../../types';
+import type { ReportSection, Patient } from '../../types';
 import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info } from 'lucide-react';
 
 interface Props {
@@ -37,7 +37,7 @@ const renderMarkdown = (text: string) => {
                 <div key={idx} className="flex gap-3 ml-2 mb-2 items-start">
                     <div className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2.5 shrink-0"></div>
                     <p className="text-stone-700 leading-relaxed text-base text-justify">
-                         {parseBold(trimmed.replace(/^[\*\-]\s+/, ''))}
+                         {parseBold(trimmed.replace(/^[*-]\s+/, ''))}
                     </p>
                 </div>
             );

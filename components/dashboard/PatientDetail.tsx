@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { PatientFile, TestSession, Patient, ScoreResult, ReportMetadata } from '../../types';
+import type { PatientFile, TestSession, Patient, ScoreResult, ReportMetadata } from '../../types';
 import { ArrowLeft, Plus, TrendingUp, ChevronRight, Zap, LineChart as ChartIcon, FileText, Calendar, ChevronDown, ChevronUp, Lock, Unlock, AlertTriangle, Archive, Trash2, X, ArchiveRestore } from 'lucide-react';
 import { CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, XAxis, YAxis } from 'recharts';
-import { CategoryDef } from '../../data/testCatalog';
+import type { CategoryDef } from '../../data/testCatalog';
 import { SubtestRowCheck } from '../assessment/Step2Tests';
 import { StorageService } from '../../services/storage';
 import { useAuth } from '../../contexts/AuthContext';

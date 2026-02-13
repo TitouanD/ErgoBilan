@@ -1,4 +1,4 @@
--- AutoBilan: add missing indexes for common filters
+﻿-- ErgoBilan: add missing indexes for common filters
 
 create index if not exists idx_pending_questionnaires_practitioner
   on public.pending_questionnaires (practitioner_id);

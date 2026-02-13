@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
-import { PractitionerProfile } from '../../types';
+import type { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';

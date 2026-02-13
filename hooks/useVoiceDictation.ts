@@ -6,6 +6,20 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 // Extend Window for vendor-prefixed API
+interface SpeechRecognitionAlternative {
+    transcript: string;
+}
+
+interface SpeechRecognitionResult {
+    isFinal: boolean;
+    [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionResultList {
+    length: number;
+    [index: number]: SpeechRecognitionResult;
+}
+
 interface SpeechRecognitionEvent extends Event {
     results: SpeechRecognitionResultList;
     resultIndex: number;

@@ -41,7 +41,7 @@ export const CommandPalette: React.FC<Props> = ({
   }, [isOpen]);
 
   const latestDraftPatientId = useMemo(() => {
-    const ranked = Object.entries(draftsIndex)
+    const ranked = (Object.entries(draftsIndex) as Array<[string, string]>)
       .sort((a, b) => new Date(b[1]).getTime() - new Date(a[1]).getTime())
       .map(([patientId]) => patientId);
     return ranked[0];

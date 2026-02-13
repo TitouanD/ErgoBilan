@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
+import type { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
 // GaussianChart removed — using horizontal bar profile only
 // import { SCALES } from '../../utils/scoring';
 import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move, Home, Star, Sparkles, PieChart } from 'lucide-react';
@@ -239,7 +239,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     const SectionTitle = ({ title }: { title: string }) => {
         // Style Icones (Personnalisation avancée)
         let IconComponent: any = FileText;
-        let isFilledShape = titleStyle === 'filled-shape';
+        const isFilledShape = titleStyle === 'filled-shape';
 
         if (titleStyle === 'icon-house') IconComponent = Home;
         else if (titleStyle === 'icon-star') IconComponent = Star;
@@ -295,14 +295,13 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
     const InteractiveSection = ({ sectionId, pageIdx, indexInPage, totalInPage }: { sectionId: string, pageIdx: number, indexInPage: number, totalInPage: number }) => {
         const section = getSection(sectionId);
-        if (!section) return null;
-
-        const paragraphs = (section.content || '').split('\n').filter(line => line.trim().length > 0);
         const [editingIndex, setEditingIndex] = useState<number | null>(null);
         const [tempText, setTempText] = useState('');
         const fileInputRef = useRef<HTMLInputElement>(null);
         const [insertIndex, setInsertIndex] = useState<number | null>(null);
         const [insertType, setInsertType] = useState<'image-full' | 'image-text'>('image-full');
+        if (!section) return null;
+        const paragraphs = (section.content || '').split('\n').filter(line => line.trim().length > 0);
 
         const handleTextClick = (index: number, text: string) => { if (!onUpdateSection) return; setEditingIndex(index); setTempText(text); };
         const saveText = (index: number) => { if (!onUpdateSection) return; const newParagraphs = [...paragraphs]; newParagraphs[index] = tempText; onUpdateSection(section.id, { content: newParagraphs.join('\n\n') }); setEditingIndex(null); };
@@ -324,7 +323,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         let content = para;
                         if (para.startsWith('## ')) { textStyle = "text-lg font-bold mt-6 mb-2 uppercase border-b pb-1 border-stone-100"; }
                         else if (para.startsWith('### ')) { textStyle = "text-md font-bold text-stone-800 mt-4 mb-1"; content = para.replace('### ', ''); }
-                        else if (para.startsWith('- ') || para.startsWith('* ')) { textStyle = "text-stone-700 leading-relaxed text-sm text-justify ml-4 list-item list-disc marker:text-stone-800"; content = para.replace(/^[\*\-]\s+/, ''); }
+                        else if (para.startsWith('- ') || para.startsWith('* ')) { textStyle = "text-stone-700 leading-relaxed text-sm text-justify ml-4 list-item list-disc marker:text-stone-800"; content = para.replace(/^[*-]\s+/, ''); }
 
                         return (
                             <div key={idx} className="relative group/block">

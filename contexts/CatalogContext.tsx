@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/db';
-import { CategoryDef, TestDef, SubtestDef, ScoreType } from '../data/testCatalog';
+import type { CategoryDef, TestDef, SubtestDef, ScoreType } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
 
 interface CatalogContextType {

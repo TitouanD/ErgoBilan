@@ -1,9 +1,9 @@
 ﻿
 import React, { useEffect, useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
-import { ScoreResult, TestSession, Patient } from '../../types';
+import type { ScoreResult, TestSession, Patient } from '../../types';
 import { SubtestRowCheck, TestCatalogModal } from '../assessment/Step2Tests';
-import { TestDef } from '../../data/testCatalog';
+import type { TestDef } from '../../data/testCatalog';
 import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {

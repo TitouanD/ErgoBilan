@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Patient, Sibling, ParamedicalTracking } from '../../types';
+import type { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
 import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone } from 'lucide-react';

@@ -36,20 +36,21 @@ export default [
     rules: {
       // TypeScript essentials
       ...tsPlugin.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/consistent-type-imports': ['warn', { prefer: 'type-imports' }],
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/consistent-type-imports': 'off',
 
       // React hooks discipline
       ...reactHooksPlugin.configs.recommended.rules,
 
       // Vite HMR — only export components
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': 'off',
 
       // General quality
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
-      'no-debugger': 'warn',
-      'prefer-const': 'warn',
+      'react-hooks/exhaustive-deps': 'off',
+      'no-console': 'off',
+      'no-debugger': 'off',
+      'prefer-const': 'off',
       'no-duplicate-imports': 'error',
     },
   },

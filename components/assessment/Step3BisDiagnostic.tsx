@@ -1,6 +1,6 @@
 ﻿
 import React, { useState, useCallback, useMemo } from 'react';
-import { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
+import type { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
 import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { useCatalog } from '../../contexts/CatalogContext';

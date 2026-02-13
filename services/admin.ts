@@ -1,5 +1,5 @@
 ﻿import { supabase } from './db';
-import {
+import type {
     Patient,
     TestData,
     CandidateRow,

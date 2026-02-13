@@ -1,7 +1,7 @@
 ﻿
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { TestData, ScoreResult, UserProfile, Patient, Observations } from '../../types';
-import { SubtestDef, TestDef, ICON_MAP } from '../../data/testCatalog';
+import type { TestData, ScoreResult, UserProfile, Patient, Observations } from '../../types';
+import { ICON_MAP, type SubtestDef, type TestDef } from '../../data/testCatalog';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { Plus, Trash2, ArrowRight, MessageSquare, X, Check, Layers, Search, FilePlus, Loader2, Activity, Brain, GripVertical, CheckCircle2, Shield, ShieldCheck, AlertTriangle, ChevronDown, ChevronUp, Mic, MicOff, Edit2, Zap, BarChart3, PenTool } from 'lucide-react';
@@ -378,7 +378,7 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
     const stats = useMemo(() => {
         let total = 0;
         let certified = 0;
-        let alerts: { name: string; z: number }[] = [];
+        const alerts: { name: string; z: number }[] = [];
         const categoryScores: Record<string, { scores: number[]; name: string }> = {};
 
         // Build a flat lookup: subtestId → subtestName, testId → testName

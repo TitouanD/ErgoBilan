@@ -16,7 +16,7 @@ import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientFile, PractitionerProfile } from './types'; 
+import type { PatientFile, PractitionerProfile, ReportMetadata, TestSession } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
@@ -203,9 +203,9 @@ const AppRouter = () => {
 
             setSelectedFile(prev => {
                 if (!prev) return prev;
-                const reportMap = new Map(prev.reports.map(r => [r.id, r]));
+                const reportMap = new Map<string, ReportMetadata>(prev.reports.map((r) => [r.id, r]));
                 history.reports.forEach(r => reportMap.set(r.id, r));
-                const sessionMap = new Map(prev.sessions.map(s => [s.id, s]));
+                const sessionMap = new Map<string, TestSession>(prev.sessions.map((s) => [s.id, s]));
                 history.sessions.forEach(s => sessionMap.set(s.id, s));
                 const reports = Array.from(reportMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 const sessions = Array.from(sessionMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -258,7 +258,7 @@ const AppRouter = () => {
                         </div>
                     </div>
                     <div>
-                        <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#3D405B] mb-2">AutoBilan<span className="text-[#E07A5F]">.</span></h1>
+                        <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#3D405B] mb-2">ErgoBilan<span className="text-[#E07A5F]">.</span></h1>
                         <p className="text-lg text-stone-500 font-medium">L'assistant clinique intelligent pour Ergothérapeutes.</p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-4 mt-8 justify-center">
@@ -307,9 +307,9 @@ const AppRouter = () => {
 
     return (
         <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
-            <header className="z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
+            <header className="relative z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
                 <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
-                    <Sparkles size={18} className="text-[#E07A5F]" /> AutoBilan.
+                    <Sparkles size={18} className="text-[#E07A5F]" /> ErgoBilan.
                 </div>
                 <div className="flex items-center gap-3">
                     {mode === 'assessment' ? (
@@ -322,7 +322,7 @@ const AppRouter = () => {
                             <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
                             <div className="h-8 w-px bg-stone-200 mx-1"></div>
 
-                            <div className="relative" ref={accountMenuRef}>
+                            <div className="relative z-50" ref={accountMenuRef} onMouseDown={(event) => event.stopPropagation()}>
                                 <button
                                     onClick={() => setShowAccountMenu((prev) => !prev)}
                                     className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-2 py-1.5 transition-colors hover:border-[#3D405B]"
@@ -334,7 +334,7 @@ const AppRouter = () => {
                                 </button>
 
                                 {showAccountMenu && (
-                                    <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+                                    <div className="absolute right-0 z-[60] mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
                                         <div className="px-3 py-2 border-b border-stone-100">
                                             <p className="text-sm font-bold text-[#3D405B] truncate">{accountDisplayName}</p>
                                             <p className="text-xs text-stone-400 truncate">{userProfile.email}</p>

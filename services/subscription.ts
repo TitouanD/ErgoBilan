@@ -1,5 +1,5 @@
 import { supabase } from './db';
-import { UserProfile, BrandingConfig } from '../types';
+import type { UserProfile, BrandingConfig } from '../types';
 import { Logger } from '../utils/logger';
 
 // Valeurs par défaut pour éviter les crashs si la DB est incomplète

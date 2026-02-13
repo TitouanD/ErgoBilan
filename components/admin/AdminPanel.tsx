@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile } from '../../types';
+import type { UserProfile } from '../../types';
 import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights';
 import { OpsMonitoring } from './OpsMonitoring';

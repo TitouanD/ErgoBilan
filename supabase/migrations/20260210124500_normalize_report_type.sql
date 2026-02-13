@@ -1,4 +1,4 @@
--- AutoBilan: normalize report type values and enforce allowed set
+-- ErgoBilan: normalize report type values and enforce allowed set
 
 update public.reports
 set type = 'reevaluation'

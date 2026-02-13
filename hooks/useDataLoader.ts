@@ -136,7 +136,7 @@ export const useDataLoader = ({
       );
 
       setPatientFiles((prev) => {
-        const byId = new Map(prev.map((file) => [file.id, file]));
+        const byId = new Map<string, PatientFile>(prev.map((file) => [file.id, file]));
         uniqueIds.forEach((id, idx) => {
           const file = results[idx];
           if (file) {

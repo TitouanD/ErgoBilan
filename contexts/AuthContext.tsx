@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { supabase, ensureFreshSession } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { StorageService } from '../services/storage';
-import { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
+import type { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
 import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; 
 import { Logger } from '../utils/logger';
 
@@ -326,7 +326,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const mockPractitioner: PractitionerProfile = {
           id: 'demo-practitioner',
-          email: 'demo@autobilan.fr',
+          email: 'demo@ergobilan.com',
           firstName: 'Invité',
           lastName: 'Démo',
           phonePro: '01 02 03 04 05',
@@ -360,7 +360,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const mockUser: UserProfile = {
           id: 'demo-practitioner',
-          email: 'demo@autobilan.fr',
+          email: 'demo@ergobilan.com',
           credits: 99, 
           subscriptionPlan: 'expert', // On met Expert pour débloquer toutes les features UI
           status: 'active',

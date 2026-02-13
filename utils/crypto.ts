@@ -1,11 +1,11 @@
+﻿
+// Module de Cryptographie AvancÃ©e (Web Crypto API)
 
-// Module de Cryptographie Avancée (Web Crypto API)
-
-const VALIDATION_TOKEN = "AUTOBILAN_VALID_TOKEN";
+const VALIDATION_TOKEN = "ERGOBILAN_VALID_TOKEN";
 const CURRENT_ITERATIONS = 600_000; // OWASP 2024 recommendation for PBKDF2-SHA256
-const LEGACY_ITERATIONS = 100_000; // Previous iteration count — used for migration only
+const LEGACY_ITERATIONS = 100_000; // Previous iteration count â€” used for migration only
 
-// 1. Génération de la Master Key via PBKDF2
+// 1. GÃ©nÃ©ration de la Master Key via PBKDF2
 export const deriveMasterKey = async (password: string, salt: string, iterations = CURRENT_ITERATIONS): Promise<CryptoKey> => {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
@@ -25,12 +25,12 @@ export const deriveMasterKey = async (password: string, salt: string, iterations
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
-    true, // IMPORTANT: true pour permettre l'export/wrap de clés avec cette clé
+    true, // IMPORTANT: true pour permettre l'export/wrap de clÃ©s avec cette clÃ©
     ["encrypt", "decrypt", "wrapKey", "unwrapKey"]
   );
 };
 
-// 2. Chiffrement Symétrique (AES-GCM) pour les Données
+// 2. Chiffrement SymÃ©trique (AES-GCM) pour les DonnÃ©es
 export const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: string; content: string }> => {
   const enc = new TextEncoder();
   const encoded = enc.encode(JSON.stringify(data));
@@ -48,7 +48,7 @@ export const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: 
   };
 };
 
-// 3. Déchiffrement
+// 3. DÃ©chiffrement
 export const decryptData = async (encryptedObj: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
   const dec = new TextDecoder();
   
@@ -97,7 +97,7 @@ export const verifyPin = async (pin: string, salt: string, validatorStr: string)
         const decrypted = await decryptData({ iv, content }, key);
         if (decrypted === VALIDATION_TOKEN) return { key };
     } catch {
-        // Decryption failed — may be using legacy iteration count
+        // Decryption failed â€” may be using legacy iteration count
     }
 
     // 2. Fallback to legacy iterations (100k) for accounts created before upgrade
@@ -106,7 +106,7 @@ export const verifyPin = async (pin: string, salt: string, validatorStr: string)
         const decrypted = await decryptData({ iv, content }, legacyKey);
         if (decrypted !== VALIDATION_TOKEN) return null;
 
-        // Legacy key worked → re-derive with current iterations and produce a new validator
+        // Legacy key worked â†’ re-derive with current iterations and produce a new validator
         const newKey = await deriveMasterKey(pin, salt, CURRENT_ITERATIONS);
         const newValidation = await encryptData(VALIDATION_TOKEN, newKey);
         const migratedValidator = `${newValidation.iv}:${newValidation.content}`;
@@ -117,9 +117,9 @@ export const verifyPin = async (pin: string, salt: string, validatorStr: string)
     }
 };
 
-// --- GESTION DES CLÉS PARTAGÉES (URL LINK) ---
+// --- GESTION DES CLÃ‰S PARTAGÃ‰ES (URL LINK) ---
 
-// Génère une clé AES aléatoire pour un questionnaire spécifique
+// GÃ©nÃ¨re une clÃ© AES alÃ©atoire pour un questionnaire spÃ©cifique
 export const generateQuestionnaireKey = async (): Promise<{ key: CryptoKey; keyString: string }> => {
   const key = await window.crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
@@ -127,7 +127,7 @@ export const generateQuestionnaireKey = async (): Promise<{ key: CryptoKey; keyS
     ["encrypt", "decrypt"]
   );
   
-  // Export en JWK pour pouvoir le passer dans l'URL (encodé base64url)
+  // Export en JWK pour pouvoir le passer dans l'URL (encodÃ© base64url)
   const exported = await window.crypto.subtle.exportKey("jwk", key);
   // Encodage simple en base64 pour l'URL (safe car hash fragment)
   const keyString = btoa(JSON.stringify(exported));
@@ -135,7 +135,7 @@ export const generateQuestionnaireKey = async (): Promise<{ key: CryptoKey; keyS
   return { key, keyString };
 };
 
-// Reconstruit la clé depuis le fragment d'URL
+// Reconstruit la clÃ© depuis le fragment d'URL
 export const importQuestionnaireKey = async (keyString: string): Promise<CryptoKey> => {
   try {
       const jwk = JSON.parse(atob(keyString));
@@ -146,42 +146,43 @@ export const importQuestionnaireKey = async (keyString: string): Promise<CryptoK
         true,
         ["encrypt", "decrypt"]
       );
-  } catch (e) {
-      throw new Error("Clé de questionnaire invalide ou corrompue.");
+  } catch {
+      throw new Error("ClÃ© de questionnaire invalide ou corrompue.");
   }
 };
 
-// --- NOUVEAU : KEY WRAPPING (HIÉRARCHIE DE CLÉS) ---
+// --- NOUVEAU : KEY WRAPPING (HIÃ‰RARCHIE DE CLÃ‰S) ---
 
-// 1. Générer une nouvelle clé AES-GCM exportable (ex: OrgKey ou FileKey)
+// 1. GÃ©nÃ©rer une nouvelle clÃ© AES-GCM exportable (ex: OrgKey ou FileKey)
 export const generateSymetricKey = async (): Promise<CryptoKey> => {
     return window.crypto.subtle.generateKey(
         { name: "AES-GCM", length: 256 },
-        true, // Exportable pour pouvoir être chiffrée (wrapped)
+        true, // Exportable pour pouvoir Ãªtre chiffrÃ©e (wrapped)
         ["encrypt", "decrypt"]
     );
 };
 
-// 2. Wrap Key : Chiffre une clé "enfant" avec une clé "parent"
+// 2. Wrap Key : Chiffre une clÃ© "enfant" avec une clÃ© "parent"
 // Ex: Chiffrer OrgKey avec MasterKey(PIN)
 export const wrapKey = async (keyToWrap: CryptoKey, wrappingKey: CryptoKey): Promise<{ iv: string, content: string }> => {
-    // On exporte d'abord la clé à chiffrer en format JWK (JSON)
+    // On exporte d'abord la clÃ© Ã  chiffrer en format JWK (JSON)
     const exportedKey = await window.crypto.subtle.exportKey("jwk", keyToWrap);
-    // On chiffre ce JSON comme une donnée normale
+    // On chiffre ce JSON comme une donnÃ©e normale
     return encryptData(exportedKey, wrappingKey);
 };
 
-// 3. Unwrap Key : Déchiffre une clé "enfant" avec une clé "parent"
-// Ex: Déchiffrer OrgKey avec MasterKey(PIN)
+// 3. Unwrap Key : DÃ©chiffre une clÃ© "enfant" avec une clÃ© "parent"
+// Ex: DÃ©chiffrer OrgKey avec MasterKey(PIN)
 export const unwrapKey = async (encryptedKey: { iv: string, content: string }, unwrappingKey: CryptoKey): Promise<CryptoKey> => {
-    // On déchiffre pour récupérer le JSON (JWK)
+    // On dÃ©chiffre pour rÃ©cupÃ©rer le JSON (JWK)
     const decryptedJwk = await decryptData(encryptedKey, unwrappingKey);
-    // On réimporte le JSON en objet CryptoKey utilisable
+    // On rÃ©importe le JSON en objet CryptoKey utilisable
     return window.crypto.subtle.importKey(
         "jwk",
         decryptedJwk,
         { name: "AES-GCM" },
         true,
-        ["encrypt", "decrypt"] // Droits de la clé restaurée
+        ["encrypt", "decrypt"] // Droits de la clÃ© restaurÃ©e
     );
 };
+

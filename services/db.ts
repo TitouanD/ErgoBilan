@@ -1,5 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import type { Session } from '@supabase/supabase-js';
+import { createClient, type Session } from '@supabase/supabase-js';
 
 // --- CONFIGURATION SUPABASE ---
 // Préférer les variables d'environnement pour permettre la rotation des clés sans redéploiement.
@@ -49,7 +48,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 		persistSession: true,
 		autoRefreshToken: true,
 		detectSessionInUrl: true,
-		storageKey: 'autobilan.auth',
+		storageKey: 'ergobilan.auth',
 		storage: safeStorage
 	}
 });

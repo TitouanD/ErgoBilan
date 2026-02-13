@@ -614,7 +614,7 @@ export const StorageService = {
                     date: new Date(Date.now() - 86400000 * 2).toISOString(),
                     testId: 'multi',
                     testName: 'Bilan Écriture',
-                    results: DEMO_PATIENTS.SARAH.tests as Record<string, ScoreResult>
+                    results: DEMO_PATIENTS.SARAH.tests as unknown as Record<string, ScoreResult>
                 }],
                 lastInteraction: history.length > 0 ? history[history.length - 1].date : new Date(Date.now() - 86400000 * 2).toISOString(),
                 archived: false

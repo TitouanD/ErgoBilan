@@ -22,7 +22,7 @@ export const zScoreToPercentile = (z: number): number => {
   const p = 0.5 * (1 + erf(z / Math.sqrt(2)));
   // On arrondit pour l'affichage (0-100), mais on garde la précision pour les calculs internes si besoin
   // Ici on retourne un entier pour l'UI, sauf pour les extrêmes
-  let percent = p * 100;
+  const percent = p * 100;
   if (percent < 0.1) return 0.1;
   if (percent > 99.9) return 99.9;
   return Math.round(percent);

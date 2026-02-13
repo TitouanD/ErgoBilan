@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, AlertTriangle, LogOut, Timer } from 'lucide-react';
-import { verifyPin, PinVerifyResult } from '../../utils/crypto';
+import { Lock, AlertTriangle, LogOut, Timer } from 'lucide-react';
+import { verifyPin, type PinVerifyResult } from '../../utils/crypto';
 import { supabase } from '../../services/db';
-import { PractitionerProfile } from '../../types';
+import type { PractitionerProfile } from '../../types';
 
 // --- Brute-force protection ---
 const MAX_ATTEMPTS = 5;
@@ -23,7 +23,9 @@ const getLockoutState = (): LockoutState => {
             const parsed = JSON.parse(stored);
             return { attempts: parsed.attempts || 0, lockedUntil: parsed.lockedUntil || null, lockoutLevel: parsed.lockoutLevel || 0 };
         }
-    } catch {}
+    } catch {
+        // Ignore malformed lockout cache and fallback to defaults
+    }
     return { attempts: 0, lockedUntil: null, lockoutLevel: 0 };
 };
 
@@ -207,7 +209,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
             </div>
             
             <div className="absolute bottom-8 text-white/20 text-[10px] uppercase tracking-widest font-bold">
-                Chiffrement End-to-End Sécurisé • AutoBilan 1.2
+                Chiffrement End-to-End Sécurisé • ErgoBilan 1.2
             </div>
         </div>
     );

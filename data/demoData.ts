@@ -1,5 +1,5 @@
 
-import { Patient, TestData, Observations } from '../types';
+import type { Patient, TestData, Observations } from '../types';
 
 export const DEMO_PATIENTS = {
   LEO: {
