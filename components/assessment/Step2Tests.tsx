@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { TestData, ScoreResult, UserProfile, Patient, Observations } from '../../types';
 import { SubtestDef, TestDef, ICON_MAP } from '../../data/testCatalog';
@@ -665,7 +665,7 @@ export const TestCatalogModal: React.FC<{
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar bg-[#F9F9F9]">
+                <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar bg-[var(--app-bg)]">
                     {loading && catalog.length === 0 && (
                         <div className="flex items-center justify-center h-32 text-stone-400 text-sm font-bold uppercase tracking-wider">
                             Chargement du catalogue...
@@ -1053,3 +1053,4 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, updat
 };
 
 export const SubtestRowCheck = CompactSubtestRow;
+

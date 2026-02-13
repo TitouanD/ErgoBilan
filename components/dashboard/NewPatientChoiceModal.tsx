@@ -76,7 +76,7 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
             </span>
             <div>
               <div className="text-sm font-bold text-[#3D405B]">Envoyer un lien famille</div>
-              <div className="mt-1 text-xs text-stone-500">La famille remplit le questionnaire a distance.</div>
+              <div className="mt-1 text-xs text-stone-500">La famille remplit le questionnaire à distance.</div>
             </div>
           </button>
 

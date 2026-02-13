@@ -14,6 +14,7 @@ import type {
 import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 import { DEMO_PATIENTS } from '../data/demoData';
+import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
 
 // --- HELPERS CHIFFREMENT ---
 
@@ -144,6 +145,19 @@ const buildPreviewPayload = (
     };
 };
 
+const normalizePatientIdentity = (patient: Patient): Patient => ({
+    ...patient,
+    age: getPatientAgeForIdentity(patient),
+});
+
+const toPreviewIdentity = (patient: Patient): PatientEncryptedPreviewV2['identity'] => ({
+    firstName: patient.firstName || '',
+    lastName: patient.lastName || '',
+    age: getPatientAgeForIdentity(patient),
+    classLevel: patient.classLevel || '',
+    gender: patient.gender || '',
+});
+
 const buildEncryptedPreview = async (
     patient: Patient,
     fileKey: CryptoKey,
@@ -265,6 +279,7 @@ export const StorageService = {
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Utilisateur non connecté");
+        const normalizedPatient = normalizePatientIdentity(patientData);
 
         // 1. Génération de la Clé de Dossier (FileKey)
         const fileKey = await generateSymetricKey();
@@ -272,9 +287,9 @@ export const StorageService = {
         const encryptedFileKeyStr = `${wrapped.iv}:${wrapped.content}`;
 
         // 2. Chiffrement Identité (Full + Preview)
-        const encIdentity = await encryptBlob({ ...patientData, _archived: false }, fileKey);
+        const encIdentity = await encryptBlob({ ...normalizedPatient, _archived: false }, fileKey);
         
-        const encPreview = await buildEncryptedPreview(patientData, fileKey, { archived: false, reports: [], sessions: [] });
+        const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, { archived: false, reports: [], sessions: [] });
 
         // 3. Récupération Org ID
         let orgId = patientData.id ? undefined : undefined; // Pas d'ID connu au départ
@@ -303,6 +318,80 @@ export const StorageService = {
 
         Logger.info('DB', "Patient created with Server ID:", data.id);
         return data.id;
+    },
+    ensurePatientId: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
+        if (patientData.id) return patientData.id;
+        if (!isPatientCreationReady(patientData)) {
+            throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
+        }
+        return StorageService.createPatient(patientData, orgKey);
+    },
+
+    syncPatientIdentityPreview: async (patientId: string, patientData: Patient, orgKey: CryptoKey): Promise<void> => {
+        if (_isDemoMode) return;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Utilisateur non connecté");
+        if (!patientId) throw new Error('Missing patient ID.');
+
+        const { data: existingPatient, error: existingPatientError } = await supabase
+            .from('patients')
+            .select('encrypted_file_key, iv, encrypted_identity, preview_iv, encrypted_preview')
+            .eq('id', patientId)
+            .single();
+
+        if (existingPatientError) throw existingPatientError;
+        if (!existingPatient?.encrypted_file_key) throw new Error("Dossier introuvable ou corrompu (Clé manquante).");
+
+        const [iv, content] = existingPatient.encrypted_file_key.split(':');
+        const fileKey = await unwrapKey({ iv, content }, orgKey);
+        const normalizedPatient = normalizePatientIdentity(patientData);
+
+        let archived = false;
+        if (existingPatient.iv && existingPatient.encrypted_identity) {
+            const decryptedIdentity = await decryptBlob(existingPatient.iv, existingPatient.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
+            archived = decryptedIdentity?._archived === true;
+        }
+
+        let previewPayload: PatientEncryptedPreviewV2;
+        if (existingPatient.preview_iv && existingPatient.encrypted_preview) {
+            const decryptedPreview = await decryptBlob(existingPatient.preview_iv, existingPatient.encrypted_preview, fileKey);
+            const parsedPreview = parsePreviewPayload(decryptedPreview);
+            previewPayload = {
+                uiVersion: 2,
+                identity: toPreviewIdentity(normalizedPatient),
+                workflow: parsedPreview.previewMeta.workflow,
+                metrics: parsedPreview.previewMeta.metrics,
+                flags: {
+                    ...parsedPreview.previewMeta.flags,
+                    _archived: archived,
+                },
+            };
+        } else {
+            const fallback = buildFallbackPreviewMeta(normalizedPatient, archived);
+            previewPayload = {
+                uiVersion: 2,
+                identity: toPreviewIdentity(normalizedPatient),
+                workflow: fallback.workflow,
+                metrics: fallback.metrics,
+                flags: fallback.flags,
+            };
+        }
+
+        const patientToSave = { ...normalizedPatient, _archived: archived };
+        const encIdentity = await encryptBlob(patientToSave, fileKey);
+        const encPreview = await encryptBlob(previewPayload, fileKey);
+
+        const patientPayload = {
+            updated_at: new Date().toISOString(),
+            iv: encIdentity.iv,
+            encrypted_identity: encIdentity.content,
+            preview_iv: encPreview.iv,
+            encrypted_preview: encPreview.content,
+        };
+
+        const { error: patError } = await supabase.from('patients').update(patientPayload).eq('id', patientId);
+        if (patError) throw patError;
     },
 
     /**
@@ -426,6 +515,7 @@ export const StorageService = {
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Utilisateur non connecté");
+        const normalizedPatient = normalizePatientIdentity(file.patient);
 
         if (!file.id) {
             throw new Error("ERREUR CRITIQUE: Tentative de mise à jour d'un patient sans ID.");
@@ -448,10 +538,10 @@ export const StorageService = {
         Logger.info('DB', 'Updating patient file', { id: file.id });
 
         // 2. Chiffrement Identité & Preview
-        const patientToSave = { ...file.patient, _archived: file.archived }; 
+        const patientToSave = { ...normalizedPatient, _archived: file.archived };
         const encIdentity = await encryptBlob(patientToSave, fileKey);
 
-        const encPreview = await buildEncryptedPreview(file.patient, fileKey, {
+        const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, {
             archived: file.archived,
             reports: file.reports,
             sessions: file.sessions,
@@ -899,6 +989,3 @@ export const StorageService = {
 
     
 };
-
-
-

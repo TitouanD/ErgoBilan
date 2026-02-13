@@ -1,9 +1,9 @@
 /**
  * useLinkManager — Handles secure questionnaire link generation, copying,
- * and the associated UI state (modal visibility, copy confirmation).
+ * and clipboard actions for dashboard workflows.
  */
 
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
 import { generateQuestionnaireKey, encryptData, decryptData } from '../utils/crypto';
 import type { PendingQuestionnaire, PractitionerProfile } from '../types';
@@ -25,20 +25,30 @@ export const useLinkManager = ({
   setPendingQuestionnaires,
   toast,
 }: UseLinkManagerParams) => {
-  const [createdLink, setCreatedLink] = useState<string | null>(null);
-  const [linkCopiedConfirmed, setLinkCopiedConfirmed] = useState(false);
+  const tryCopyLink = useCallback(
+    async (link: string): Promise<boolean> => {
+      try {
+        await navigator.clipboard.writeText(link);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
 
   // ------------------------------------------------------------------
   // Generate a new questionnaire link
   // ------------------------------------------------------------------
   const handleGenerateLink = useCallback(async () => {
     if (isDemoMode) {
-      setCreatedLink(`${window.location.origin}/?q_id=demo-q1#key=demo-key`);
+      const demoLink = `${window.location.origin}/?q_id=demo-q1#key=demo-key`;
       setPendingQuestionnaires((prev) => [
         { id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
         ...prev,
       ]);
-      toast.success('Lien sécurisé généré');
+      const copied = await tryCopyLink(demoLink);
+      toast.success(copied ? 'Lien sécurisé généré et copié' : 'Lien sécurisé généré');
       return;
     }
 
@@ -84,8 +94,7 @@ export const useLinkManager = ({
     }
 
     if (data) {
-      setCreatedLink(`${window.location.origin}/?q_id=${data.id}&t=${accessToken}#key=${keyString}`);
-      setLinkCopiedConfirmed(false);
+      const generatedLink = `${window.location.origin}/?q_id=${data.id}&t=${accessToken}#key=${keyString}`;
       setPendingQuestionnaires((prev) => [
         {
           id: data.id,
@@ -97,9 +106,10 @@ export const useLinkManager = ({
         },
         ...prev,
       ]);
-      toast.success('Lien sécurisé généré');
+      const copied = await tryCopyLink(generatedLink);
+      toast.success(copied ? 'Lien sécurisé généré et copié' : 'Lien sécurisé généré');
     }
-  }, [isDemoMode, sessionKey, practitioner, pendingQuestionnaires, setPendingQuestionnaires, toast]);
+  }, [isDemoMode, sessionKey, practitioner, pendingQuestionnaires, setPendingQuestionnaires, toast, tryCopyLink]);
 
   // ------------------------------------------------------------------
   // Copy an existing link
@@ -131,10 +141,6 @@ export const useLinkManager = ({
   );
 
   return {
-    createdLink,
-    setCreatedLink,
-    linkCopiedConfirmed,
-    setLinkCopiedConfirmed,
     handleGenerateLink,
     handleCopyLink,
   };

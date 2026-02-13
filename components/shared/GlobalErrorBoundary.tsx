@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+﻿import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Logger } from '../../utils/logger';
 
@@ -37,7 +37,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-6">
+        <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-white rounded-[32px] shadow-2xl p-8 text-center border border-stone-100 relative overflow-hidden">
             {/* Décoration d'arrière-plan */}
             <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>

@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef } from 'react';
 import { Patient } from '../../types';
 import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key, FileText } from 'lucide-react';
@@ -267,7 +267,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
   // --- ÉCRAN FORMULAIRE ---
   return (
-    <div className="min-h-screen bg-[#F9F9F9] pb-24 font-sans">
+    <div className="min-h-screen bg-[var(--app-bg)] pb-24 font-sans">
         
         {/* BANDEAU SÉCURITÉ */}
         <div className="bg-[#3D405B] text-white px-4 py-2 text-center text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
@@ -332,3 +332,4 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
     </div>
   );
 };
+

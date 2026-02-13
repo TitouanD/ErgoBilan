@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
 import { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
@@ -897,7 +897,7 @@ ${knownNamesBlock}
             <div className="fixed inset-0 z-[50] bg-[#3D405B]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
                 <div className="bg-white max-w-4xl w-full rounded-[40px] overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
                     <button onClick={onClose} className="absolute top-6 right-6 text-stone-300 hover:text-stone-500 z-10"><X size={24} /></button>
-                    <div className="w-full md:w-2/5 bg-[#F9F9F9] p-10 flex flex-col justify-center items-center relative overflow-hidden">
+                    <div className="w-full md:w-2/5 bg-[var(--app-bg)] p-10 flex flex-col justify-center items-center relative overflow-hidden">
                         <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-[#E07A5F]/10 rounded-full blur-3xl"></div>
                         <div className="relative z-10 text-center">
                             <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-8 mx-auto transform -rotate-6">
@@ -945,7 +945,7 @@ ${knownNamesBlock}
 
     if (step === 'upload' || step === 'processing') {
         return (
-            <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
+            <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
                 <div className="w-full max-w-2xl bg-white rounded-[32px] shadow-xl p-10 text-center relative overflow-hidden">
                     <button onClick={onClose} className="absolute top-6 left-6 text-stone-400 hover:text-stone-600 flex items-center gap-2 font-bold text-sm uppercase tracking-wider">
                         <ArrowLeft size={16} /> Annuler
@@ -995,7 +995,7 @@ ${knownNamesBlock}
 
     if (step === 'success') {
         return (
-            <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-6 animate-in zoom-in-95 duration-500">
+            <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center p-6 animate-in zoom-in-95 duration-500">
                 <div className="text-center">
                     <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
                         <Check size={48} strokeWidth={4} />
@@ -1495,3 +1495,4 @@ ${knownNamesBlock}
         </div>
     );
 };
+

@@ -17,7 +17,7 @@ import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientFile, PractitionerProfile } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, Link as LinkIcon, Copy, X, User, Loader2, Info, Save, CheckCircle2, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -90,7 +90,7 @@ const AppRouter = () => {
         assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
     });
 
-    const { createdLink, setCreatedLink, linkCopiedConfirmed, setLinkCopiedConfirmed, handleGenerateLink, handleCopyLink } = useLinkManager({
+    const { handleGenerateLink, handleCopyLink } = useLinkManager({
         sessionKey, practitioner, isDemoMode, pendingQuestionnaires, setPendingQuestionnaires, toast,
     });
 
@@ -180,7 +180,10 @@ const AppRouter = () => {
         if (result === 'dashboard') setMode('dashboard');
     }, [isDemoMode, handleFinalize, toast]);
 
-    const onSaveAndQuit = useCallback(async () => { await handleSaveAndQuit(); setMode('dashboard'); }, [handleSaveAndQuit]);
+    const onSaveAndQuit = useCallback(async () => {
+        const result = await handleSaveAndQuit();
+        if (result === 'dashboard') setMode('dashboard');
+    }, [handleSaveAndQuit]);
 
     const onResumeDraft = useCallback(async (patientId?: string) => { const ok = await handleResumeDraft(patientId); if (ok) setMode('assessment'); }, [handleResumeDraft]);
 
@@ -245,7 +248,7 @@ const AppRouter = () => {
     // LANDING
     if (mode === 'landing') {
         return (
-            <div className="min-h-screen bg-[#F9F9F9] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+            <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
                 <div className="absolute inset-0 bg-gradient-to-br from-[#E07A5F]/5 to-[#3D405B]/5 pointer-events-none"></div>
                 <div className="text-center space-y-8 z-10 animate-in fade-in zoom-in-95 duration-700">
                     <div className="flex justify-center">
@@ -303,8 +306,8 @@ const AppRouter = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#F9F9F9] pb-20 font-sans">
-            <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
+        <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
+            <header className="z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
                 <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> AutoBilan.
                 </div>
@@ -359,7 +362,7 @@ const AppRouter = () => {
                 </div>
             </header>
 
-            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] py-2 px-6 sticky top-20 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
+            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] py-2 px-6 sticky top-0 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
 
             <GlobalErrorBoundary>
                 <OfflineIndicator />
@@ -492,7 +495,6 @@ const AppRouter = () => {
                 </Suspense>
             </GlobalErrorBoundary>
             
-            {createdLink && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200"><div className="bg-white p-8 rounded-[32px] text-center max-w-lg shadow-2xl relative"><div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600"><LinkIcon size={32}/></div><h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Lien d'accès créé</h2><p className="text-stone-500 text-sm mb-6">Attention : Ce lien n'est affiché qu'une seule fois ici.</p><div className="bg-stone-50 border border-stone-200 p-4 rounded-2xl font-mono text-xs mb-6 flex items-center gap-3 text-[#3D405B]"><div className="truncate flex-1 font-bold">{createdLink}</div><button onClick={() => { navigator.clipboard.writeText(createdLink); toast.success("Lien copié !"); }} className="hover:text-[#E07A5F] transition-colors"><Copy size={18}/></button></div><div className="flex items-center justify-center gap-3 mb-6 p-3 rounded-xl hover:bg-stone-50 cursor-pointer" onClick={() => setLinkCopiedConfirmed(!linkCopiedConfirmed)}><div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${linkCopiedConfirmed ? 'bg-[#E07A5F] border-[#E07A5F] text-white' : 'border-stone-300 bg-white'}`}>{linkCopiedConfirmed && <CheckCircle2 size={14} strokeWidth={3} />}</div><span className="text-xs font-bold text-stone-600 select-none">J'ai bien copié le lien et je l'ai sécurisé.</span></div><button onClick={() => setCreatedLink(null)} disabled={!linkCopiedConfirmed} className={`w-full py-3 rounded-xl font-bold shadow-lg transition-all ${linkCopiedConfirmed ? 'bg-[#3D405B] text-white hover:bg-[#2c2e42]' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}>Terminer</button></div></div>}
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && generationError !== 'CREDIT_INSUFFICIENT' && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); onTriggerGeneration(); }} onClose={() => setGenerationError(null)} />}
             

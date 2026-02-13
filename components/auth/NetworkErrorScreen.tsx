@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { WifiOff, RefreshCw, LogOut, Loader2 } from 'lucide-react';
 
 interface Props {
@@ -19,7 +19,7 @@ export const NetworkErrorScreen: React.FC<Props> = ({ onRetry, onLogout }) => {
     };
 
     return (
-        <div className="flex h-screen w-full items-center justify-center bg-[#F9F9F9]">
+        <div className="flex h-screen w-full items-center justify-center bg-[var(--app-bg)]">
             <div className="flex flex-col items-center gap-6 text-center max-w-sm px-6">
                 <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
                     <WifiOff size={36} className="text-red-400" />
@@ -57,3 +57,4 @@ export const NetworkErrorScreen: React.FC<Props> = ({ onRetry, onLogout }) => {
         </div>
     );
 };
+

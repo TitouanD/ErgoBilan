@@ -5,11 +5,15 @@ import {
   Archive,
   ArrowRight,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardList,
+  Copy,
   Clock,
   Coffee,
   Crown,
+  Download,
   Edit3,
   Filter,
   Loader2,
@@ -51,6 +55,10 @@ interface UrgencyItem {
   isBusy?: boolean;
   onClick: () => void;
 }
+interface PendingLinkConfirmationState {
+  urgencyId: string;
+  title: string;
+}
 
 const monthDate = (value: string) =>
   new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
@@ -58,6 +66,58 @@ const monthDate = (value: string) =>
 const fullDate = (value: string | null | undefined) => {
   if (!value) return 'Aucune activité récente';
   return new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const REEVALUATION_TARGET_DAYS = 180;
+const REEVALUATION_MAX_DAYS = 365;
+
+interface ReevaluationProgress {
+  progressPercent: number;
+  label: string;
+  targetDateLabel: string;
+  badgeLabel: string;
+  statusTone: PatientDashboardPreviewMeta['workflow']['statusTone'];
+}
+
+const buildReevaluationProgress = (lastReportDate: string | null | undefined): ReevaluationProgress | null => {
+  if (!lastReportDate) return null;
+  const referenceDate = new Date(lastReportDate);
+  if (Number.isNaN(referenceDate.getTime())) return null;
+  const targetDate = new Date(referenceDate.getTime() + REEVALUATION_TARGET_DAYS * DAY_IN_MS);
+  const targetDateLabel = targetDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const daysSince = Math.max(0, Math.floor((Date.now() - referenceDate.getTime()) / DAY_IN_MS));
+  if (daysSince < REEVALUATION_TARGET_DAYS) {
+    const monthsLeft = Math.max(1, Math.ceil((REEVALUATION_TARGET_DAYS - daysSince) / 30));
+    return {
+      progressPercent: clampPercent((daysSince / REEVALUATION_TARGET_DAYS) * 100),
+      label: `Prochaine réévaluation dans ${monthsLeft} mois`,
+      targetDateLabel,
+      badgeLabel: 'Suivi',
+      statusTone: 'neutral',
+    };
+  }
+
+  if (daysSince < REEVALUATION_MAX_DAYS) {
+    return {
+      progressPercent: 100,
+      label: 'Fenêtre de réévaluation ouverte',
+      targetDateLabel,
+      badgeLabel: 'Réévaluation',
+      statusTone: 'warning',
+    };
+  }
+
+  const monthsLate = Math.max(1, Math.ceil((daysSince - REEVALUATION_MAX_DAYS) / 30));
+  return {
+    progressPercent: 100,
+    label: `Réévaluation en retard (${monthsLate} mois)`,
+    targetDateLabel,
+    badgeLabel: 'Réévaluation',
+    statusTone: 'warning',
+  };
 };
 
 const workflowLabelMap: Record<PatientDashboardPreviewMeta['workflow']['progressLabel'], string> = {
@@ -70,8 +130,8 @@ const workflowLabelMap: Record<PatientDashboardPreviewMeta['workflow']['progress
 const nextActionLabelMap: Record<PatientDashboardPreviewMeta['workflow']['nextAction'], string> = {
   complete_initial: 'Compléter bilan initial',
   resume_draft: 'Brouillon',
-  open_patient: 'Ouvrir le dossier',
-  reevaluation_candidate: 'Suivi à programmer',
+  open_patient: 'Suivi clinique',
+  reevaluation_candidate: 'Réévaluation à planifier',
 };
 
 const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTone']) => {
@@ -177,8 +237,16 @@ export const Dashboard: React.FC<Props> = ({
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isNewPatientChoiceOpen, setIsNewPatientChoiceOpen] = useState(false);
   const [rewardedUrgencyId, setRewardedUrgencyId] = useState<string | null>(null);
+  const [pendingLinkConfirmation, setPendingLinkConfirmation] = useState<PendingLinkConfirmationState | null>(null);
+  const [hiddenUrgencyIds, setHiddenUrgencyIds] = useState<Set<string>>(new Set());
+  const [railCanScroll, setRailCanScroll] = useState(false);
+  const [railAtStart, setRailAtStart] = useState(true);
+  const [railAtEnd, setRailAtEnd] = useState(true);
+  const [railScrollProgress, setRailScrollProgress] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const todoRailRef = useRef<HTMLDivElement | null>(null);
   const rewardTimeoutRef = useRef<number | null>(null);
+  const dismissTimeoutsRef = useRef<number[]>([]);
 
   const shortcutLabel = useMemo(() => (typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? 'Cmd+K' : 'Ctrl+K'), []);
   const practitionerFirstName = useMemo(() => userProfile.branding.practitionerName.split(' ')[0] || 'Thérapeute', [userProfile.branding.practitionerName]);
@@ -209,7 +277,7 @@ export const Dashboard: React.FC<Props> = ({
     const drafts: UrgencyItem[] = Object.entries(draftsIndex).map(([patientId, draftDate]) => {
       const file = patientById.get(patientId);
       if (!file || file.archived) return null;
-      return { id: `draft-${patientId}`, kind: 'draft', title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom', subtitle: 'Brouillon à reprendre', date: draftDate, actionHint: 'Reprendre le brouillon', onClick: () => onResumeDraft && onResumeDraft(patientId) };
+      return { id: `draft-${patientId}`, kind: 'draft', title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom', subtitle: 'Brouillon à reprendre', date: draftDate, actionHint: 'Reprendre', onClick: () => onResumeDraft && onResumeDraft(patientId) };
     }).filter((item): item is UrgencyItem => item !== null);
 
     const done: UrgencyItem[] = pendingQuestionnaires.filter((item) => item.status === 'completed').map((item) => ({
@@ -236,13 +304,18 @@ export const Dashboard: React.FC<Props> = ({
       title: item.label || 'Questionnaire en attente',
       subtitle: 'Lien envoyé, en attente de réponse famille',
       date: item.createdAt,
-      actionHint: 'Copier le lien',
+      actionHint: 'Copier lien',
       onClick: () => onCopyLink(item),
     }));
 
     const order = { draft: 0, pending_done: 1, pending_waiting: 2 };
     return [...drafts, ...done, ...waiting].sort((a, b) => order[a.kind] - order[b.kind] || new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [draftsIndex, patientById, pendingQuestionnaires, onResumeDraft, processingQueueId, isDemoMode, onProcessPending, onCopyLink]);
+
+  const visibleUrgencyItems = useMemo(
+    () => urgencyItems.filter((item) => !hiddenUrgencyIds.has(item.id)),
+    [urgencyItems, hiddenUrgencyIds],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -263,14 +336,109 @@ export const Dashboard: React.FC<Props> = ({
 
   useEffect(() => () => {
     if (rewardTimeoutRef.current !== null) window.clearTimeout(rewardTimeoutRef.current);
+    dismissTimeoutsRef.current.forEach((timerId) => window.clearTimeout(timerId));
   }, []);
+
+  useEffect(() => {
+    if (!pendingLinkConfirmation) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingLinkConfirmation(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pendingLinkConfirmation]);
+
+  useEffect(() => {
+    setHiddenUrgencyIds((current) => {
+      if (current.size === 0) return current;
+      const availableIds = new Set(urgencyItems.map((item) => item.id));
+      let changed = false;
+      const next = new Set<string>();
+      current.forEach((id) => {
+        if (availableIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [urgencyItems]);
+
+  useEffect(() => {
+    const rail = todoRailRef.current;
+    if (!rail) {
+      setRailCanScroll(false);
+      setRailAtStart(true);
+      setRailAtEnd(true);
+      setRailScrollProgress(0);
+      return;
+    }
+
+    const updateRailState = () => {
+      const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      const currentScroll = rail.scrollLeft;
+      setRailCanScroll(maxScroll > 1);
+      setRailAtStart(currentScroll <= 1);
+      setRailAtEnd(currentScroll >= maxScroll - 1);
+      setRailScrollProgress(maxScroll > 0 ? currentScroll / maxScroll : 0);
+    };
+
+    updateRailState();
+    rail.addEventListener('scroll', updateRailState, { passive: true });
+    window.addEventListener('resize', updateRailState);
+    return () => {
+      rail.removeEventListener('scroll', updateRailState);
+      window.removeEventListener('resize', updateRailState);
+    };
+  }, [visibleUrgencyItems.length]);
 
   const handleUrgencyAction = (item: UrgencyItem) => {
     if (item.isBusy) return;
     item.onClick();
     setRewardedUrgencyId(item.id);
+    if (item.kind === 'pending_waiting') {
+      setPendingLinkConfirmation({ urgencyId: item.id, title: item.title });
+    } else if (item.kind === 'draft') {
+      const dismissTimer = window.setTimeout(() => {
+        setHiddenUrgencyIds((current) => {
+          const next = new Set(current);
+          next.add(item.id);
+          return next;
+        });
+      }, 760);
+      dismissTimeoutsRef.current.push(dismissTimer);
+    }
     if (rewardTimeoutRef.current !== null) window.clearTimeout(rewardTimeoutRef.current);
     rewardTimeoutRef.current = window.setTimeout(() => setRewardedUrgencyId(null), 820);
+  };
+
+  const scrollTodoRailBy = (offset: number) => {
+    if (!todoRailRef.current) return;
+    todoRailRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+  };
+
+  const handleTodoRailWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!todoRailRef.current || !railCanScroll) return;
+    const primaryDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (primaryDelta === 0) return;
+    todoRailRef.current.scrollBy({ left: primaryDelta, behavior: 'auto' });
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleLinkConfirmationKeep = () => {
+    setPendingLinkConfirmation(null);
+  };
+
+  const handleLinkConfirmationDone = () => {
+    if (!pendingLinkConfirmation) return;
+    setHiddenUrgencyIds((current) => {
+      const next = new Set(current);
+      next.add(pendingLinkConfirmation.urgencyId);
+      return next;
+    });
+    setPendingLinkConfirmation(null);
   };
 
   return (
@@ -278,9 +446,33 @@ export const Dashboard: React.FC<Props> = ({
       <ImportAnimation isOpen={showImportAnim} onComplete={() => { setShowImportAnim(false); if (targetDemoQ && onProcessPending) onProcessPending(targetDemoQ); }} />
       <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} patientFiles={patientFiles} draftsIndex={draftsIndex} onOpenPatient={onOpenPatient} onOpenNewPatientChoice={() => setIsNewPatientChoiceOpen(true)} onResumeDraft={onResumeDraft} />
       <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} />
+      {pendingLinkConfirmation && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-[#3D405B]/45 p-4 backdrop-blur-sm" onMouseDown={handleLinkConfirmationKeep}>
+          <div className="w-full max-w-[520px] rounded-[24px] border border-stone-200 bg-white p-6 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <h3 className="font-serif text-2xl font-bold text-[#3D405B]">Lien copié</h3>
+            <p className="mt-2 text-sm text-stone-600">Avez-vous bien envoyé le lien au parent pour <span className="font-semibold text-[#3D405B]">{pendingLinkConfirmation.title}</span> ?</p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={handleLinkConfirmationKeep}
+                className="rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:border-stone-300 hover:text-[#3D405B]"
+              >
+                Garder dans À traiter
+              </button>
+              <button
+                type="button"
+                onClick={handleLinkConfirmationDone}
+                className="rounded-xl bg-[#E07A5F] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#d0694e]"
+              >
+                Oui, retirer la tâche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
-        <div className="sticky top-20 z-30 flex items-center justify-center gap-4 bg-[#3D405B] px-6 py-3 text-white shadow-lg">
+        <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[#3D405B] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="animate-pulse text-[#E07A5F] motion-reduce:animate-none" />
             <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
@@ -291,12 +483,12 @@ export const Dashboard: React.FC<Props> = ({
       )}
 
       <div className="mx-auto max-w-7xl px-6 py-8 md:px-8 md:py-10">
-        <section className="mb-9 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)] lg:items-end">
+        <section className="mb-9 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)] lg:items-start">
           <div>
             <h1 className="font-serif text-[38px] font-bold leading-[1.05] text-[#3D405B] md:text-[44px]">Bonjour, {practitionerFirstName} <span className="align-middle text-2xl opacity-75">👋</span></h1>
-            <p className="mt-2 text-sm font-medium text-stone-400">Prêt pour votre journée ?</p>
+            <p className="mt-2 text-sm font-medium text-stone-400">Votre journée clinique est prête.</p>
           </div>
-          <div className="w-full"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+          <div className="w-full lg:pt-1"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <div className="relative w-full md:flex-1">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
               <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-24 text-sm font-medium text-[#3D405B] shadow-sm outline-none transition-all focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 motion-reduce:transition-none" />
@@ -313,22 +505,56 @@ export const Dashboard: React.FC<Props> = ({
         </section>
 
         <section className="mb-10">
-          <div className="mb-4 flex items-center gap-2 px-1">
-            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">À traiter</h2>
-            {urgencyItems.length > 0 && <span className="rounded-full bg-[#3D405B] px-2 py-0.5 text-[10px] font-bold text-white">{urgencyItems.length}</span>}
+          <div className="mb-4 flex items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-2">
+              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">À traiter</h2>
+              {visibleUrgencyItems.length > 0 && <span className="rounded-full bg-[#3D405B] px-2 py-0.5 text-[10px] font-bold text-white">{visibleUrgencyItems.length}</span>}
+            </div>
+            {railCanScroll && (
+              <div className="hidden items-center gap-1.5 sm:flex">
+                <button
+                  type="button"
+                  aria-label="Voir les actions précédentes"
+                  onClick={() => scrollTodoRailBy(-360)}
+                  disabled={railAtStart}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:text-[#3D405B] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Voir les actions suivantes"
+                  onClick={() => scrollTodoRailBy(360)}
+                  disabled={railAtEnd}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:text-[#3D405B] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
 
-          {urgencyItems.length === 0 ? (
+          {visibleUrgencyItems.length === 0 ? (
             <div className="flex items-center justify-between gap-4 rounded-[24px] border border-emerald-100 bg-emerald-50/40 p-6 shadow-sm">
               <div className="flex items-center gap-4"><div className="rounded-2xl bg-emerald-100 p-3 text-emerald-600"><Coffee size={24} /></div><div><h3 className="font-serif text-xl font-bold text-[#3D405B]">Tout est à jour</h3><p className="text-xs font-medium text-stone-500">Aucun brouillon ni urgence en attente.</p></div></div>
               <button onClick={() => setIsNewPatientChoiceOpen(true)} className="hidden items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-xs font-bold text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50 md:flex"><Plus size={14} /> Nouveau patient</button>
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="overflow-x-auto pb-2 [scrollbar-width:thin]"><div className="flex snap-x snap-mandatory gap-3 px-1">
-                {urgencyItems.map((item) => {
+              <div className="relative">
+                <div
+                  className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 transition-opacity ${railCanScroll && !railAtStart ? 'opacity-100' : 'opacity-0'}`}
+                  style={{ backgroundImage: 'linear-gradient(to right, var(--app-bg), transparent)' }}
+                />
+                <div
+                  className={`pointer-events-none absolute inset-y-0 right-0 z-10 w-10 transition-opacity ${railCanScroll && !railAtEnd ? 'opacity-100' : 'opacity-0'}`}
+                  style={{ backgroundImage: 'linear-gradient(to left, var(--app-bg), transparent)' }}
+                />
+                <div ref={todoRailRef} onWheel={handleTodoRailWheel} className="overflow-x-auto overscroll-x-contain overscroll-y-contain pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"><div className="flex snap-x snap-mandatory gap-3 px-1">
+                {visibleUrgencyItems.map((item) => {
                   const tone = getUrgencyTone(item.kind);
                   const isRewarded = rewardedUrgencyId === item.id;
+                  const ActionIcon = item.kind === 'draft' ? Edit3 : item.kind === 'pending_done' ? Download : Copy;
                   return (
                     <button
                       key={item.id}
@@ -336,9 +562,9 @@ export const Dashboard: React.FC<Props> = ({
                       onClick={() => handleUrgencyAction(item)}
                       disabled={item.isBusy}
                       aria-label={`${item.actionHint}: ${item.title}`}
-                      className={`relative min-h-[112px] shrink-0 basis-[83%] snap-start rounded-[18px] border p-3 text-left shadow-sm transition-all duration-200 motion-reduce:transition-none sm:basis-[64%] lg:basis-[42%] xl:basis-[34%] 2xl:basis-[28.5%] ${
+                      className={`relative min-h-[108px] shrink-0 basis-[83%] snap-start rounded-[18px] border p-3 text-left shadow-sm transition-all duration-200 motion-reduce:transition-none sm:basis-[64%] lg:basis-[42%] xl:basis-[34%] 2xl:basis-[28.5%] ${
                         tone.card
-                      } ${item.isBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none'} ${isRewarded ? 'ring-2 ring-emerald-300 bg-emerald-50/70 shadow-emerald-200/70' : ''}`}
+                      } ${item.isBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none'} ${isRewarded ? 'scale-[0.985] ring-2 ring-emerald-300 bg-emerald-50/75 shadow-lg shadow-emerald-200/70' : ''}`}
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <div className="min-w-0"><h3 className="truncate text-lg font-serif font-bold text-[#3D405B]">{item.title}</h3><p className="truncate text-xs text-stone-600">{item.subtitle}</p></div>
@@ -346,7 +572,10 @@ export const Dashboard: React.FC<Props> = ({
                       </div>
                       <div className="flex items-end justify-between border-t border-black/5 pt-2.5">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400"><Clock size={10} /> {monthDate(item.date)}</div>
-                        <div className={`text-[10px] font-bold uppercase tracking-wider ${tone.action}`}>{item.isBusy ? 'Import en cours...' : item.actionHint}</div>
+                        <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${tone.action}`}>
+                          {item.isBusy ? <Loader2 size={12} className="animate-spin" /> : <ActionIcon size={12} />}
+                          <span>{item.isBusy ? 'Import...' : item.actionHint}</span>
+                        </div>
                       </div>
                       <div className={`pointer-events-none absolute right-3 top-3 transition-all duration-150 motion-reduce:transition-none ${isRewarded ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}`}>
                         <div className="rounded-full bg-white/90 p-1 text-emerald-600 shadow-sm"><CheckCircle2 size={14} /></div>
@@ -355,6 +584,17 @@ export const Dashboard: React.FC<Props> = ({
                   );
                 })}
               </div></div>
+                {railCanScroll && (
+                  <div className="mt-1 px-1">
+                    <div className="relative h-1 rounded-full bg-stone-200/80">
+                      <div
+                        className="absolute top-0 h-1 w-16 rounded-full bg-stone-400 transition-all"
+                        style={{ left: `${railScrollProgress * (100 - 12)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
               <p className="px-1 text-[11px] font-medium text-stone-400">Faites défiler pour voir toutes les actions prioritaires.</p>
             </div>
           )}
@@ -362,9 +602,9 @@ export const Dashboard: React.FC<Props> = ({
 
         <section className="max-w-6xl">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
-            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">{showArchived ? 'Dossiers archivés' : 'Dossiers en cours'}</h2>
+            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">{showArchived ? 'Patients archivés' : 'Patients suivis'}</h2>
             <div className="flex items-center gap-2">
-              <button onClick={() => setShowArchived((prev) => !prev)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${showArchived ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-200 bg-white text-stone-500 hover:border-[#3D405B] hover:text-[#3D405B]'}`}><Archive size={12} /> {showArchived ? 'Voir actifs' : 'Voir archives'}</button>
+              <button onClick={() => setShowArchived((prev) => !prev)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${showArchived ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-200 bg-white text-stone-500 hover:border-[#3D405B] hover:text-[#3D405B]'}`}><Archive size={12} /> {showArchived ? 'Voir patients suivis' : 'Voir archives'}</button>
               <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-white hover:text-[#3D405B]"><Filter size={12} /> Trier par date</button>
             </div>
           </div>
@@ -372,25 +612,33 @@ export const Dashboard: React.FC<Props> = ({
           <div className="space-y-3">
             {filteredFiles.map((file) => {
               const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
-              const tone = getToneClasses(previewMeta.workflow.statusTone);
               const hasDraft = Boolean(draftsIndex[file.id]);
               const activityDate = previewMeta.metrics.lastReportDate || previewMeta.metrics.lastSessionDate || file.lastInteraction;
+              const followUpProgress = !file.archived && !hasDraft && previewMeta.flags.hasInitialReport
+                ? buildReevaluationProgress(previewMeta.metrics.lastReportDate || file.lastInteraction)
+                : null;
+              const tone = getToneClasses(followUpProgress?.statusTone || previewMeta.workflow.statusTone);
+              const progressPercent = followUpProgress ? followUpProgress.progressPercent : previewMeta.workflow.progressPercent;
+              const progressLabel = followUpProgress ? followUpProgress.label : workflowLabelMap[previewMeta.workflow.progressLabel];
+              const followUpTargetDateLabel = followUpProgress ? followUpProgress.targetDateLabel : null;
+              const statusBadgeLabel = hasDraft ? 'Brouillon' : followUpProgress ? followUpProgress.badgeLabel : nextActionLabelMap[previewMeta.workflow.nextAction];
 
               return (
                 <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-stone-200 opacity-80 hover:opacity-100' : 'border-stone-100 hover:border-[#E07A5F]/30'}`}>
-                  <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(230px,1.5fr)_minmax(220px,1fr)_minmax(220px,1fr)_auto] lg:items-center">
+                  <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(220px,1.55fr)_minmax(220px,1.1fr)_minmax(170px,0.95fr)_auto] lg:items-center lg:gap-4">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-stone-200 text-stone-500' : 'bg-[#3D405B] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
                       <div className="min-w-0"><h3 className="truncate text-base font-bold text-[#3D405B] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
                     </div>
                     <div>
-                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-stone-100"><div className={`h-full ${tone.progress}`} style={{ width: `${previewMeta.workflow.progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{previewMeta.workflow.progressPercent}%</span></div>
-                      <p className="text-[11px] text-stone-500">{workflowLabelMap[previewMeta.workflow.progressLabel]}</p>
+                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-stone-100"><div className={`h-full ${tone.progress}`} style={{ width: `${progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{progressPercent}%</span></div>
+                      <p className="text-[11px] text-stone-500">{progressLabel}</p>
+                      {followUpTargetDateLabel && <p className="mt-0.5 text-[10px] text-stone-400">Cible: {followUpTargetDateLabel}</p>}
                     </div>
-                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">Dernière modif.</p><p className="text-xs font-bold text-[#3D405B]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-stone-200 bg-stone-50 text-stone-600' : tone.badge}`}>{hasDraft ? 'Brouillon' : nextActionLabelMap[previewMeta.workflow.nextAction]}</span></div>
+                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">Dernière modif.</p><p className="text-xs font-bold text-[#3D405B]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-stone-200 bg-stone-50 text-stone-600' : tone.badge}`}>{statusBadgeLabel}</span></div>
                     <div className="flex items-center justify-end gap-2">
                       {hasDraft && !file.archived && onResumeDraft ? (
-                        <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre le brouillon</button>
+                        <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre</button>
                       ) : (
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-50 text-stone-300 transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>
                       )}
@@ -403,7 +651,7 @@ export const Dashboard: React.FC<Props> = ({
             {filteredFiles.length === 0 && (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-white py-10 text-center">
                 <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-stone-50 text-stone-300"><Search size={22} /></div>
-                <p className="text-sm font-medium text-stone-500">{showArchived ? 'Aucun dossier archivé.' : searchQuery ? `Aucun dossier trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
+                <p className="text-sm font-medium text-stone-500">{showArchived ? 'Aucun patient archivé.' : searchQuery ? `Aucun patient trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
                 {!showArchived && <button onClick={() => setIsNewPatientChoiceOpen(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#E07A5F]/30 bg-[#E07A5F]/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-[#E07A5F] transition-colors hover:bg-[#E07A5F] hover:text-white"><Plus size={14} /> Nouveau patient</button>}
               </div>
             )}

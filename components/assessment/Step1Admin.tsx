@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
-import { Patient, PatientFile } from '../../types';
-import { calculateAge } from '../../utils';
+import type { Patient } from '../../types';
+import { calculateAge, getPatientAgeForIdentity, isPatientCreationReady } from '../../utils';
 import { User, Lock, AlertTriangle, Database, CheckCircle2, Mic, MicOff, Edit3, Check, FileText } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
@@ -116,7 +116,7 @@ const SectionSummary: React.FC<{
 };
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
-  const { userProfile, sessionKey, orgKey } = useAuth(); 
+  const { userProfile, orgKey } = useAuth(); 
   const { loadFromDraft } = useAssessment();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -177,13 +177,22 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   const totalSections = sectionDefs.length;
 
   const ensurePatientPersisted = async (): Promise<void> => {
-      if (!orgKey || !data.id) return;
-      const fileWrapper: PatientFile = {
-          id: data.id, patient: data, reports: [], sessions: [],
-          lastInteraction: new Date().toISOString(), archived: false
+      if (!orgKey) throw new Error('Missing org key');
+      if (!isPatientCreationReady(data)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
+
+      const patientId = await StorageService.ensurePatientId(data, orgKey);
+      const patientSnapshot: Patient = {
+          ...data,
+          id: patientId,
+          age: getPatientAgeForIdentity(data),
       };
-      await StorageService.saveFile(fileWrapper, orgKey);
-      if (onPatientCreated) onPatientCreated();
+
+      if (data.id !== patientId || data.age !== patientSnapshot.age) {
+          updateData({ id: patientId, age: patientSnapshot.age });
+      }
+
+      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot, orgKey);
+      onPatientCreated();
   };
 
   const handleFakeData = async (e: React.MouseEvent) => {
@@ -194,12 +203,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           if (!freshData.patient.id) freshData.patient.id = crypto.randomUUID();
           loadFromDraft(freshData);
           if (orgKey) {
-              const fileWrapper: PatientFile = {
-                  id: freshData.patient.id, patient: freshData.patient,
-                  reports: [], sessions: [], lastInteraction: new Date().toISOString(), archived: false
-              };
-              await StorageService.saveFile(fileWrapper, orgKey);
-              if (onPatientCreated) onPatientCreated();
+              const patientId = await StorageService.ensurePatientId(freshData.patient, orgKey);
+              await StorageService.syncPatientIdentityPreview(patientId, { ...freshData.patient, id: patientId }, orgKey);
+              onPatientCreated();
           }
           setDataLoaded(true);
           setFormKey(prev => prev + 1); 
@@ -212,15 +218,15 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
 
   const handleNextStep = async () => {
       try {
-          if (!data.lastName || !data.firstName) {
-              toast.error("Le nom et le prénom sont obligatoires.");
+          if (!isPatientCreationReady(data)) {
+              toast.error("Le nom, le prénom et la date de naissance sont obligatoires.");
               return;
           }
           await ensurePatientPersisted();
           onNext();
       } catch (e) {
           Logger.error('DB', "Erreur sauvegarde patient:", e);
-          onNext();
+          toast.error("Impossible de sauvegarder le patient. Réessayez.");
       }
   };
 
@@ -339,7 +345,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       <div className="flex justify-center pt-12">
         <button 
             onClick={handleNextStep}
-            disabled={!data.lastName || !data.firstName}
+            disabled={!isPatientCreationReady(data)}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
             Suivant : Tests & Mesures

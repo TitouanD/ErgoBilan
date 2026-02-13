@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useCallback, useMemo } from 'react';
 import { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
 import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
@@ -315,7 +315,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             value={synthesis.diagnosticInput}
                             onChange={handleDiagChange}
                             placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
-                            className="w-full p-4 pr-14 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-indigo-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-indigo-200 transition-all leading-relaxed mb-4"
                             rows={4}
                         />
 
@@ -341,7 +341,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             value={synthesis.recommendationsInput}
                             onChange={handleRecoChange}
                             placeholder="Ex: Suivi hebdo. Apprentissage du clavier caché. Mise en place tiers-temps."
-                            className="w-full p-4 pr-14 bg-[#F9F9F9] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-emerald-200 transition-all leading-relaxed mb-4"
                             rows={4}
                         />
 
@@ -405,3 +405,4 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
         </div>
     );
 };
+

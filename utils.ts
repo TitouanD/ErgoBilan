@@ -9,6 +9,18 @@
  * trim → lowercase → suppression accents (NFD) → suppression de tout non-alphanumérique.
  * Ex: "M.A.B.C.-2", "mabc 2", "MABC2", "  MABC - 2 " → "mabc2"
  */
+interface PatientIdentityRequiredFields {
+  firstName?: string;
+  lastName?: string;
+  dob?: string;
+}
+
+interface PatientIdentityPreviewFields extends PatientIdentityRequiredFields {
+  age?: string;
+  classLevel?: string;
+  gender?: string;
+}
+
 export const normalizeTestName = (name: string): string => {
   return name
     .trim()
@@ -95,6 +107,7 @@ export const generateGaussianData = (mean: number, sd: number) => {
 export const calculateAge = (dob: string): string => {
   if (!dob) return "";
   const birthDate = new Date(dob);
+  if (Number.isNaN(birthDate.getTime())) return "";
   const today = new Date();
   let years = today.getFullYear() - birthDate.getFullYear();
   let months = today.getMonth() - birthDate.getMonth();
@@ -104,4 +117,29 @@ export const calculateAge = (dob: string): string => {
     months += 12;
   }
   return `${years} ans ${months} mois`;
+};
+
+export const isPatientCreationReady = (patient: PatientIdentityRequiredFields): boolean => {
+  const firstName = patient.firstName?.trim() || '';
+  const lastName = patient.lastName?.trim() || '';
+  const dob = patient.dob?.trim() || '';
+  return firstName.length > 0 && lastName.length > 0 && dob.length > 0;
+};
+
+export const getPatientAgeForIdentity = (patient: PatientIdentityRequiredFields & { age?: string }): string => {
+  const derivedAge = calculateAge(patient.dob || '');
+  if (derivedAge) return derivedAge;
+  return patient.age?.trim() || '';
+};
+
+export const buildPatientIdentitySignature = (patient: PatientIdentityPreviewFields): string => {
+  const age = getPatientAgeForIdentity(patient);
+  return [
+    patient.firstName?.trim().toLowerCase() || '',
+    patient.lastName?.trim().toLowerCase() || '',
+    patient.dob?.trim() || '',
+    age,
+    patient.classLevel?.trim().toLowerCase() || '',
+    patient.gender?.trim().toLowerCase() || '',
+  ].join('|');
 };

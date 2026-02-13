@@ -1,4 +1,4 @@
-
+﻿
 import React, { useEffect, useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
 import { ScoreResult, TestSession, Patient } from '../../types';
@@ -84,7 +84,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
-        <div className="bg-[#F9F9F9] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
+        <div className="bg-[var(--app-bg)] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
             
             {/* Header */}
             <div className="p-8 border-b border-stone-200 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
@@ -102,7 +102,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-[#F9F9F9] p-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto bg-[var(--app-bg)] p-8 custom-scrollbar">
                 <div className="max-w-3xl mx-auto space-y-12">
                     
                     {selectedTests.map(test => (
@@ -181,3 +181,4 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
     </div>
   );
 };
+

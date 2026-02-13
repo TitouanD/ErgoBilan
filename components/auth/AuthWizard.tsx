@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect } from 'react';
 import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
@@ -378,7 +378,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
                     {step === 3 && (
                         <form onSubmit={handleFinalSubmit} className="space-y-8 animate-in slide-in-from-right duration-300">
-                            <div className="bg-[#F9F9F9] p-8 rounded-2xl border border-stone-200 text-center">
+                            <div className="bg-[var(--app-bg)] p-8 rounded-2xl border border-stone-200 text-center">
                                 <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-stone-100">
                                     <ShieldCheck size={32} className="text-[#E07A5F]" />
                                 </div>
@@ -413,3 +413,4 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         </div>
     );
 };
+

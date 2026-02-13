@@ -161,7 +161,7 @@ export const CommandPalette: React.FC<Props> = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-[#3D405B]">{getPatientName(file)}</div>
-                  <div className="truncate text-xs text-stone-500">{file.patient.classLevel || 'Dossier en cours'}</div>
+                  <div className="truncate text-xs text-stone-500">{file.patient.classLevel || 'Patient suivi'}</div>
                 </div>
                 <UserRound size={14} className="text-stone-300" />
               </button>

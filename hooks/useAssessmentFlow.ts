@@ -9,6 +9,7 @@ import { StorageService } from '../services/storage';
 import { AdminService } from '../services/admin';
 import { ensureFreshSession } from '../services/db';
 import { anonymizeData } from '../utils/anonymizer';
+import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
 import type {
   Patient,
   TestData,
@@ -233,6 +234,41 @@ Attentes: ${p.familyExpectations}
     }
   }, [assessment, isDemoMode, refreshProfile, toast]);
 
+  const ensurePatientIdentityPersisted = useCallback(
+    async (action: 'save_quit' | 'finalize'): Promise<{ patientId: string; patientSnapshot: Patient } | null> => {
+      if (!orgKey) return null;
+
+      const normalizedPatient: Patient = {
+        ...assessment.patient,
+        age: getPatientAgeForIdentity(assessment.patient),
+      };
+
+      let patientId = normalizedPatient.id;
+      if (!patientId) {
+        if (!isPatientCreationReady(normalizedPatient)) {
+          Logger.warn('DB', 'missing_required_fields', { action });
+          toast.error('Nom, prénom et date de naissance requis.');
+          return null;
+        }
+
+        patientId = await StorageService.ensurePatientId(normalizedPatient, orgKey);
+      }
+
+      const patientSnapshot: Patient = {
+        ...normalizedPatient,
+        id: patientId,
+      };
+
+      if (assessment.patient.id !== patientId || assessment.patient.age !== patientSnapshot.age) {
+        assessment.updatePatient({ id: patientId, age: patientSnapshot.age });
+      }
+
+      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot, orgKey);
+      return { patientId, patientSnapshot };
+    },
+    [assessment, orgKey, toast],
+  );
+
   // ------------------------------------------------------------------
   // Finalize assessment (save to Supabase + clean up)
   // ------------------------------------------------------------------
@@ -240,16 +276,13 @@ Attentes: ${p.familyExpectations}
     if (isDemoMode) return 'dashboard' as const;
     if (!sessionKey || !orgKey) return null;
 
-    const patientId = assessment.patient.id;
-    if (!patientId) {
-      toast.error('Erreur ID Patient.');
-      return null;
-    }
-
     setIsGenerating(true);
     try {
       // Ensure JWT is fresh before critical save operation
       await ensureFreshSession();
+      const persisted = await ensurePatientIdentityPersisted('finalize');
+      if (!persisted) return null;
+      const { patientId, patientSnapshot } = persisted;
 
       const testNames: string[] = [];
       const flatResultsClean: Record<string, ScoreResult> = {};
@@ -273,14 +306,14 @@ Attentes: ${p.familyExpectations}
         date: new Date().toISOString(),
         type: 'initial',
         status: 'completed',
-        patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`,
+        patientName: `${patientSnapshot.firstName} ${patientSnapshot.lastName}`,
         sections: assessment.sections,
       };
 
       const currentFileIndex = patientFiles.findIndex((f) => f.id === patientId);
       const currentFile: PatientFile =
         currentFileIndex === -1
-          ? { id: patientId, patient: assessment.patient, reports: [], sessions: [], lastInteraction: new Date().toISOString(), archived: false }
+          ? { id: patientId, patient: patientSnapshot, reports: [], sessions: [], lastInteraction: new Date().toISOString(), archived: false }
           : patientFiles[currentFileIndex];
 
       const updatedFile: PatientFile = {
@@ -303,34 +336,43 @@ Attentes: ${p.familyExpectations}
     } finally {
       setIsGenerating(false);
     }
-  }, [assessment, sessionKey, orgKey, isDemoMode, catalog, patientFiles, loadData, toast]);
+  }, [assessment, sessionKey, orgKey, isDemoMode, catalog, patientFiles, loadData, toast, ensurePatientIdentityPersisted]);
 
   // ------------------------------------------------------------------
   // Save draft and quit
   // ------------------------------------------------------------------
   const handleSaveAndQuit = useCallback(async () => {
-    if (sessionKey && assessment.patient.id) {
-      try {
-        // Ensure JWT is fresh before draft save
-        await ensureFreshSession();
-
-        const draftData = {
-          patient: assessment.patient,
-          tests: assessment.tests,
-          observations: assessment.observations,
-          synthesis: assessment.synthesis,
-          sections: assessment.sections,
-          step: assessment.step,
-          timestamp: new Date().toISOString(),
-        };
-        await StorageService.saveDraft(draftData, sessionKey);
-        toast.success('Brouillon sauvegardé');
-      } catch (e) {
-        Logger.error('DB', 'Save error', e);
-      }
+    if (isDemoMode) {
+      assessment.resetAssessment();
+      return 'dashboard' as const;
     }
-    assessment.resetAssessment();
-  }, [assessment, sessionKey, toast]);
+
+    if (!sessionKey || !orgKey) return null;
+
+    try {
+      await ensureFreshSession();
+      const persisted = await ensurePatientIdentityPersisted('save_quit');
+      if (!persisted) return null;
+
+      const draftData = {
+        patient: persisted.patientSnapshot,
+        tests: assessment.tests,
+        observations: assessment.observations,
+        synthesis: assessment.synthesis,
+        sections: assessment.sections,
+        step: assessment.step,
+        timestamp: new Date().toISOString(),
+      };
+      await StorageService.saveDraft(draftData, sessionKey);
+      assessment.resetAssessment();
+      toast.success('Brouillon sauvegardé');
+      return 'dashboard' as const;
+    } catch (e) {
+      Logger.error('DB', 'Save error', e);
+      toast.error('Impossible de sauvegarder le brouillon.');
+      return null;
+    }
+  }, [assessment, sessionKey, orgKey, isDemoMode, toast, ensurePatientIdentityPersisted]);
 
   // ------------------------------------------------------------------
   // Resume a draft
@@ -365,6 +407,3 @@ Attentes: ${p.familyExpectations}
     handleResumeDraft,
   };
 };
-
-
-
