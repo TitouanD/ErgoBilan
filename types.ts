@@ -84,7 +84,7 @@ export interface ScoreResult {
     raw: string;
     standard: string;
     percentile: string;
-    zScore: number;
+    zScore?: number;
     status: 'empty' | 'draft' | 'validated' | 'estimated' | 'certified';
     observation?: string;
     validatedAt?: string;
@@ -92,6 +92,23 @@ export interface ScoreResult {
     certifiedAt?: string;
     /** How the score was obtained: auto (norms table), manual_ns (practitioner edited NS), manual_et (practitioner edited ET) */
     scoreSource?: 'auto' | 'manual_ns' | 'manual_et';
+    /** Input metric selected by practitioner for numeric entry */
+    entryMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+    /** UI-only practitioner review state (non legal trace) */
+    reviewState?: 'not_reviewed' | 'reviewed';
+    /** ISO timestamp of the review action */
+    reviewedAt?: string;
+    /** Qualitative coded value for categorical tests */
+    qualitativeCode?: string;
+    /** Human-readable qualitative label */
+    qualitativeLabel?: string;
+    /** Optional derived values from assisted/automatic calculations */
+    derived?: {
+        standard?: string;
+        percentile?: string;
+        zScore?: number;
+        source: 'auto' | 'assisted' | 'manual';
+    };
 }
 
 export interface TestData {
@@ -188,21 +205,22 @@ export interface PractitionerProfile {
     organizationRole?: string;
 }
 
-export interface TestSession {
-    id: string;
-    date: string;
-    testId: string;
-    testName: string;
-    results: Record<string, ScoreResult>;
-}
+export type PatientAssessmentKind = 'initial' | 'reevaluation' | 'mini_reevaluation';
 
-export interface ReportMetadata {
-    id: string;
-    date: string;
-    type: 'initial' | 'reevaluation';
+export interface PatientAssessmentReport {
     status: 'completed';
     patientName: string;
     sections: ReportSection[];
+}
+
+export interface PatientAssessment {
+    id: string;
+    date: string;
+    kind: PatientAssessmentKind;
+    hasFormalReport: boolean;
+    testName?: string;
+    results?: Record<string, ScoreResult>;
+    report?: PatientAssessmentReport;
 }
 
 export type PatientDashboardProgressLabel = 'created' | 'infos_recues' | 'tests_saisis' | 'termine';
@@ -218,10 +236,10 @@ export interface PatientDashboardPreviewMeta {
         nextAction: PatientDashboardNextAction;
     };
     metrics: {
-        reportsCount: number;
-        sessionsCount: number;
-        lastReportDate: string | null;
-        lastSessionDate: string | null;
+        assessmentsCount: number;
+        formalReportsCount: number;
+        lastAssessmentDate: string | null;
+        lastFormalReportDate: string | null;
     };
     flags: {
         _archived: boolean;
@@ -247,12 +265,26 @@ export interface PatientEncryptedPreviewV2 {
 export interface PatientFile {
     id: string;
     patient: Patient;
-    reports: ReportMetadata[];
-    sessions: TestSession[];
+    assessments: PatientAssessment[];
+    followup?: PatientFollowup | null;
     lastInteraction: string;
     archived?: boolean;
     encryptedFileKey?: string;
     previewMeta?: PatientDashboardPreviewMeta;
+}
+
+export type PatientFollowupStatus = 'upcoming' | 'due' | 'overdue' | 'scheduled' | 'completed' | 'snoozed';
+
+export interface PatientFollowup {
+    id: string;
+    patientId: string;
+    organizationId: string;
+    status: PatientFollowupStatus;
+    dueAt: string;
+    snoozedUntil?: string | null;
+    note?: string | null;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface PendingQuestionnaire {
@@ -305,6 +337,7 @@ export interface DraftPayload {
     observations?: Observations;
     synthesis?: ClinicalSynthesis;
     sections?: ReportSection[];
+    reportType?: 'initial' | 'reevaluation';
     step?: number;
 }
 
@@ -355,6 +388,11 @@ export interface AdminSubtestRecord {
     unit?: string;
     score_type?: string;
     computation_mode?: string;
+    input_model?: 'numeric_4mode' | 'qualitative_category' | 'raw_only';
+    input_config?: {
+        options?: Array<{ code: string; label: string; order: number; reportText?: string }>;
+        defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+    };
     organization_id?: string | null;
 }
 

@@ -15,11 +15,10 @@ import type {
   TestData,
   Observations,
   ClinicalSynthesis,
+  PatientAssessment,
   ReportSection,
   PatientFile,
   ScoreResult,
-  TestSession,
-  ReportMetadata,
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -34,8 +33,10 @@ export interface AssessmentHandle {
   observations: Observations;
   synthesis: ClinicalSynthesis;
   sections: ReportSection[];
+  reportType: 'initial' | 'reevaluation';
   step: number;
   setSections: (s: ReportSection[]) => void;
+  setReportType: (t: 'initial' | 'reevaluation') => void;
   setStep: (n: number) => void;
   setPatient: (p: Patient) => void;
   setTests: (t: TestData) => void;
@@ -201,10 +202,47 @@ Attentes: ${p.familyExpectations}
           subtestObs.length > 0 ? `Observations par épreuve:\n${subtestObs.join('\n')}` : '',
       ].filter(Boolean).join('\n\n') || 'RAS';
 
+      const testNameById = new Map<string, string>();
+      const subtestNameByTestAndId = new Map<string, string>();
+      catalog.forEach((category) => {
+        category.tests.forEach((test) => {
+          testNameById.set(test.id, test.name);
+          (test.subtests || []).forEach((subtest: any) => {
+            subtestNameByTestAndId.set(`${test.id}:${subtest.id}`, subtest.name || subtest.id);
+          });
+        });
+      });
+
+      const scoresEvidence = Object.entries(assessment.tests).flatMap(([testId, subtests]) =>
+        Object.entries(subtests).map(([subtestId, res]) => {
+          const qualitative = !!(res.qualitativeCode || res.qualitativeLabel);
+          const source = res.derived?.source || (res.scoreSource === 'auto' ? 'auto' : 'manual');
+          const normFound = qualitative ? null : source === 'auto';
+          return {
+            testId,
+            testName: testNameById.get(testId) || testId,
+            subtestId,
+            subtestName: subtestNameByTestAndId.get(`${testId}:${subtestId}`) || subtestId,
+            type: qualitative ? 'qualitative' : 'quantitative',
+            raw: res.raw || null,
+            standard: res.standard || null,
+            percentile: res.percentile || null,
+            zScore: typeof res.zScore === 'number' && Number.isFinite(res.zScore) ? res.zScore : null,
+            qualitativeCode: res.qualitativeCode || null,
+            qualitativeLabel: res.qualitativeLabel || null,
+            observation: res.observation || null,
+            source,
+            norm_found: normFound,
+            review_state: res.reviewState || null,
+            reviewed_at: res.reviewedAt || null,
+          };
+        }),
+      );
+
       const payload: GenerationPayload = {
         safeQuestionnaire: anonymizeData(rawQ, p).text,
         safeObservations: anonymizeData(rawObs, p).text,
-        scoresRaw: JSON.stringify(assessment.tests, null, 2),
+        scoresEvidence,
         childContext: `L'enfant est ${genderString} de ${p.age}.`,
         synthesis: assessment.synthesis,
       };
@@ -294,36 +332,53 @@ Attentes: ${p.familyExpectations}
         });
       });
 
-      const newSession: TestSession = {
+      const newAssessment: PatientAssessment = {
         id: crypto.randomUUID(),
         date: new Date().toISOString(),
-        testId: 'multi',
+        kind: assessment.reportType,
+        hasFormalReport: true,
         testName: testNames.join(', ') || 'Bilan',
         results: flatResultsClean,
-      };
-      const newReport: ReportMetadata = {
-        id: crypto.randomUUID(),
-        date: new Date().toISOString(),
-        type: 'initial',
-        status: 'completed',
-        patientName: `${patientSnapshot.firstName} ${patientSnapshot.lastName}`,
-        sections: assessment.sections,
+        report: {
+          status: 'completed',
+          patientName: `${patientSnapshot.firstName} ${patientSnapshot.lastName}`,
+          sections: assessment.sections,
+        },
       };
 
       const currentFileIndex = patientFiles.findIndex((f) => f.id === patientId);
       const currentFile: PatientFile =
         currentFileIndex === -1
-          ? { id: patientId, patient: patientSnapshot, reports: [], sessions: [], lastInteraction: new Date().toISOString(), archived: false }
+          ? { id: patientId, patient: patientSnapshot, assessments: [], lastInteraction: new Date().toISOString(), archived: false }
           : patientFiles[currentFileIndex];
 
       const updatedFile: PatientFile = {
         ...currentFile,
         lastInteraction: new Date().toISOString(),
-        sessions: [newSession, ...(currentFile.sessions || [])],
-        reports: [newReport, ...(currentFile.reports || [])],
+        assessments: [newAssessment, ...(currentFile.assessments || [])],
       };
 
       await StorageService.saveFile(updatedFile, orgKey);
+      if (assessment.reportType === 'initial') {
+        try {
+          const dueAt = new Date(newAssessment.date);
+          dueAt.setMonth(dueAt.getMonth() + 6);
+          await StorageService.upsertPatientFollowup({
+            patientId,
+            status: 'upcoming',
+            dueAt: dueAt.toISOString(),
+            note: 'Rappel genere apres bilan initial',
+          });
+        } catch {
+          // Follow-up status is best effort and must not block finalization
+        }
+      } else if (assessment.reportType === 'reevaluation') {
+        try {
+          await StorageService.markFollowupCompleted(patientId);
+        } catch {
+          // Follow-up status is best effort and must not block finalization
+        }
+      }
       await StorageService.deleteDraft(patientId);
       loadData();
       assessment.resetAssessment();
@@ -360,6 +415,7 @@ Attentes: ${p.familyExpectations}
         observations: assessment.observations,
         synthesis: assessment.synthesis,
         sections: assessment.sections,
+        reportType: assessment.reportType,
         step: assessment.step,
         timestamp: new Date().toISOString(),
       };

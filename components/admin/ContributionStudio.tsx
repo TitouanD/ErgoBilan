@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
 import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
-import { callAIProxy } from '../../services/aiProxy';
+import { callAIProxyTask } from '../../services/aiProxy';
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
@@ -271,87 +271,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const imagePart = await fileToGenerativePart(file);
         const filename = file.name;
 
-        const knownNamesBlock = (knownSubtestNames && knownSubtestNames.length > 0)
-            ? `\n            --- KNOWN SUBTESTS FROM PREVIOUS PAGES ---\n            The following subtest names have already been extracted from earlier pages of the SAME test manual.\n            YOU MUST REUSE these exact names when you encounter the same subtests on this page (even if the table header phrasing differs slightly).\n            Known names: ${JSON.stringify(knownSubtestNames)}\n            Only create a NEW subtest name if the subtest is genuinely different from all of the above.\n`
-            : '';
-
-        const prompt = `
-            ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
-            CONTEXT: The filename is "${filename}".
-            IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
-${knownNamesBlock}
-            TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE data.
-
-            --- STEP 1: CLASSIFICATION (structure_type) ---
-            A) "PARAMETRIC": Contains statistical constants per group (Mean/Moyenne/M AND SD/Ecart-Type/Sigma).
-               The table does NOT map raw scores to percentiles directly. It gives the formula constants.
-            B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, Scaled) or Percentiles.
-            
-                --- STEP 2: EXTRACTION RULES ---
-            1. PIVOT: If columns represent Ages/Grades and rows represent Stats (M, SD), YOU MUST PIVOT. Create ONE object per Age/Grade.
-            2. VALUES:
-               - If Parametric: Extract "mean" and "sd".
-               - If Lookup: Extract "raw_range", "standard", "percentile".
-            3. ACCURACY:
-               - Clean units (sec, pts).
-               - Keep decimals.
-               - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
-                4. SUBTEST NAMING:
-                    - Use the simplest canonical subtest name visible in the manual, IN FRENCH when possible.
-                    - Do NOT use English code-style names like "mabc2_catching_2_hands" — use the French clinical name instead.
-                    - Do NOT add age, grade, or side qualifiers in the subtest name.
-                    - Avoid redundant phrasing; keep names short and stable.
-                    - If a known subtest name from previous pages matches what you see, use it EXACTLY.
-
-            --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
-            You must calculate specific numeric values for the database:
-            1. AGE NORMALIZATION (age_min_months, age_max_months):
-               - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
-               - Convert range "4;0 - 4;5" -> min: 48, max: 53.
-               - If only grade is available (e.g. "CP"), estimate typical age (CP = 6 years = 72 months).
-            2. RAW SCORE NORMALIZATION (raw_min, raw_max):
-               - "15-16" -> min: 15, max: 16
-               - "7" -> min: 7, max: 7
-               - "<5" -> min: 0, max: 5
-               - ">19" or "19+" -> min: 19, max: 999 (use a high number for infinity)
-
-            --- JSON OUTPUT SCHEMA ---
-            {
-              "test_context": "string (Detected name of the test)",
-              "structure_type": "PARAMETRIC" | "LOOKUP",
-              "tables": [
-                {
-                  "subtest_id": "string (Subtest name)",
-                  "rows": [
-                    {
-                      "label": "string (Display Label, e.g. '4;0 - 4;5')",
-                      "mean": "string (Only if PARAMETRIC)",
-                      "sd": "string (Only if PARAMETRIC)",
-                      "raw_range": "string (Only if LOOKUP: Raw Score as displayed)",
-                      "standard": "string (Only if LOOKUP: Standard Score)",
-                      "percentile": "string (Only if LOOKUP: Percentile)",
-                      "z_score": "string (Z-Score if explicit)",
-                      
-                      // NORMALIZED FIELDS (MANDATORY)
-                      "age_min_months": number | null,
-                      "age_max_months": number | null,
-                      "raw_min": number | null,
-                      "raw_max": number | null
-                    }
-                  ]
-                }
-              ]
-            }
-
-            OUTPUT RULES:
-            - Output valid JSON only.
-            - Do not use Markdown code blocks (no \`\`\`json).
-            - Minify the JSON (remove unnecessary whitespace) to ensure the response fits within the token limit.
-          `;
-
-        const response = await callAIProxy({
-            contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
-            responseMimeType: 'application/json'
+        const response = await callAIProxyTask({
+            task: 'extract_norms',
+            payload: {
+                filename,
+                knownSubtestNames: knownSubtestNames || [],
+                imagePart,
+            },
         });
 
         const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
@@ -706,6 +632,8 @@ ${knownNamesBlock}
             unit: 'pts',
             score_type: 'scaled',
             computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
+            input_model: 'numeric_4mode',
+            input_config: {},
             norms: subRows.map(row => buildNormPayload(row))
         }))
     });

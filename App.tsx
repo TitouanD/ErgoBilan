@@ -16,7 +16,7 @@ import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientFile, PractitionerProfile, ReportMetadata, TestSession } from './types'; 
+import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
@@ -75,10 +75,8 @@ const AppRouter = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const [detailPaging, setDetailPaging] = useState({
-        hasMoreReports: false,
-        hasMoreSessions: false,
-        nextReportOffset: 0,
-        nextSessionOffset: 0,
+        hasMoreAssessments: false,
+        nextAssessmentOffset: 0,
         isLoadingMore: false
     });
     const [demoConversion, setDemoConversion] = useState<{ show: boolean; action: string }>({ show: false, action: '' });
@@ -196,28 +194,21 @@ const AppRouter = () => {
         try {
             const history = await StorageService.loadPatientHistoryPage(selectedFile.id, orgKey, {
                 encryptedFileKey: selectedFile.encryptedFileKey,
-                reportOffset: detailPaging.nextReportOffset,
-                sessionOffset: detailPaging.nextSessionOffset,
-                skipReports: !detailPaging.hasMoreReports
+                assessmentOffset: detailPaging.nextAssessmentOffset,
             });
 
             setSelectedFile(prev => {
                 if (!prev) return prev;
-                const reportMap = new Map<string, ReportMetadata>(prev.reports.map((r) => [r.id, r]));
-                history.reports.forEach(r => reportMap.set(r.id, r));
-                const sessionMap = new Map<string, TestSession>(prev.sessions.map((s) => [s.id, s]));
-                history.sessions.forEach(s => sessionMap.set(s.id, s));
-                const reports = Array.from(reportMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                const sessions = Array.from(sessionMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                return { ...prev, reports, sessions };
+                const assessmentMap = new Map<string, PatientAssessment>(prev.assessments.map((item) => [item.id, item]));
+                history.assessments.forEach((item) => assessmentMap.set(item.id, item));
+                const assessments = Array.from(assessmentMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                return { ...prev, assessments };
             });
 
             setDetailPaging(prev => ({
                 ...prev,
-                hasMoreReports: history.hasMoreReports,
-                hasMoreSessions: history.hasMoreSessions,
-                nextReportOffset: history.nextReportOffset,
-                nextSessionOffset: history.nextSessionOffset,
+                hasMoreAssessments: history.hasMoreAssessments,
+                nextAssessmentOffset: history.nextAssessmentOffset,
                 isLoadingMore: false
             }));
         } catch (e) {
@@ -225,7 +216,7 @@ const AppRouter = () => {
             toast.error("Impossible de charger plus d'historique.");
             setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
         }
-    }, [selectedFile, orgKey, detailPaging.nextReportOffset, detailPaging.nextSessionOffset, detailPaging.hasMoreReports, detailPaging.isLoadingMore, toast]);
+    }, [selectedFile, orgKey, detailPaging.nextAssessmentOffset, detailPaging.isLoadingMore, toast]);
 
     const accountDisplayName = (
         userProfile.branding.practitionerName ||
@@ -382,15 +373,13 @@ const AppRouter = () => {
                                     if (baseFile) {
                                         setSelectedFile({
                                             ...baseFile,
-                                            reports: details.reports,
-                                            sessions: details.sessions,
+                                            assessments: details.assessments,
+                                            followup: details.followup,
                                             patient: details.patient
                                         });
                                         setDetailPaging({
-                                            hasMoreReports: details.hasMoreReports,
-                                            hasMoreSessions: details.hasMoreSessions,
-                                            nextReportOffset: details.nextReportOffset,
-                                            nextSessionOffset: details.nextSessionOffset,
+                                            hasMoreAssessments: details.hasMoreAssessments,
+                                            nextAssessmentOffset: details.nextAssessmentOffset,
                                             isLoadingMore: false
                                         });
                                         setMode('detail');
@@ -415,13 +404,32 @@ const AppRouter = () => {
                             file={selectedFile}
                             onBack={() => setMode('dashboard')}
                             onQuickEntry={() => setShowQuickEntry(true)}
-                            onNewBilan={() => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); setMode('assessment'); }}
-                            onOpenReport={() => {}}
+                            onNewBilan={(type) => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); assessment.setReportType(type); setMode('assessment'); }}
+                            onOpenReport={(reportId) => {
+                                const target = selectedFile.assessments.find((item) => item.id === reportId && item.hasFormalReport && item.report);
+                                if (!target || !target.report) {
+                                    toast.info('Document introuvable.');
+                                    return;
+                                }
+                                assessment.resetAssessment();
+                                assessment.setPatient(selectedFile.patient);
+                                assessment.setSections(target.report.sections || []);
+                                assessment.setTests({});
+                                assessment.setReportType(target.kind === 'initial' ? 'initial' : 'reevaluation');
+                                assessment.setStep(5);
+                                setMode('assessment');
+                            }}
                             draftAvailable={!!draftsIndex[selectedFile.id]}
                             onResumeDraft={() => onResumeDraft(selectedFile.id)}
-                            hasMoreHistory={detailPaging.hasMoreReports || detailPaging.hasMoreSessions}
+                            hasMoreHistory={detailPaging.hasMoreAssessments}
                             isLoadingMoreHistory={detailPaging.isLoadingMore}
                             onLoadMoreHistory={handleLoadMoreHistory}
+                            onFollowupChange={(followup: PatientFollowup | null) => {
+                                setSelectedFile((prev) => (prev ? { ...prev, followup } : prev));
+                                setPatientFiles((prev) =>
+                                    prev.map((item) => (item.id === selectedFile.id ? { ...item, followup } : item))
+                                );
+                            }}
                         />
                     )}
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
@@ -447,7 +455,6 @@ const AppRouter = () => {
                                     updateObservations={assessment.updateObservations} 
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
                                     onBack={() => assessment.setStep(1)} 
-                                    onAcceptResponsibility={() => updateUserProfile({ hasAcceptedResponsibility: true })} 
                                     onContribute={handleContributionAccess} 
                                     userProfile={userProfile} 
                                 />
@@ -491,7 +498,7 @@ const AppRouter = () => {
                     )}
 
                     {pricingModalMode && <PricingModal onClose={() => { if (pricingModalMode === 'paywall' && authState === 'subscription_locked') { logout(); } else { setPricingModalMode(null); } }} onSelectPlan={() => toast.info("Stripe à venir")} onUnlockOneOff={() => toast.info("Stripe à venir")} isPaywallMode={pricingModalMode === 'paywall'} />}
-                    {showQuickEntry && <QuickEntryModal onClose={() => setShowQuickEntry(false)} onSave={async (sess) => { if(selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, sessions: [sess, ...(selectedFile.sessions||[])] }, orgKey); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
+                    {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if(selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments||[])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
                 </Suspense>
             </GlobalErrorBoundary>
             

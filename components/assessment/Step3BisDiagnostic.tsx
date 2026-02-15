@@ -79,10 +79,7 @@ const TestSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
         Object.entries(tests).forEach(([testId, subtests]) => {
             const zScores: number[] = [];
             Object.values(subtests).forEach(res => {
-                // Include ALL scored results, even estimated ones
-                if (res.raw && res.zScore !== undefined && res.zScore !== null) {
-                    zScores.push(res.zScore);
-                }
+                if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
             });
             if (zScores.length > 0) {
                 const avg = zScores.reduce((a, b) => a + b, 0) / zScores.length;
@@ -266,15 +263,29 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
     const handleDiagChange = (val: string) => updateSynthesis({ diagnosticInput: val });
     const handleRecoChange = (val: string) => updateSynthesis({ recommendationsInput: val });
 
-    // Certification stats
-    const certStats = useMemo(() => {
-        let total = 0, certified = 0;
+    const hasScoreValue = (res: any) =>
+        !!(
+            (res.raw && String(res.raw).trim()) ||
+            (res.standard && String(res.standard).trim()) ||
+            (res.percentile && String(res.percentile).trim()) ||
+            (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) ||
+            (res.qualitativeCode && String(res.qualitativeCode).trim())
+        );
+    const isReviewed = (res: any) => res.reviewState === 'reviewed' || res.status === 'validated' || res.status === 'certified';
+
+    // Review stats
+    const reviewStats = useMemo(() => {
+        let total = 0;
+        let reviewed = 0;
         Object.values(tests).forEach(subtests => {
             Object.values(subtests).forEach((res: any) => {
-                if (res.raw) { total++; if (res.status === 'certified' || res.status === 'validated') certified++; }
+                if (hasScoreValue(res)) {
+                    total++;
+                    if (isReviewed(res)) reviewed++;
+                }
             });
         });
-        return { total, certified, allCertified: total > 0 && certified === total };
+        return { total, reviewed, allReviewed: total > 0 && reviewed === total };
     }, [tests]);
 
     return (
@@ -285,12 +296,12 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Synthèse & Projet</h2>
                     <p className="text-stone-500 font-medium mt-2">Posez votre diagnostic. L'IA se chargera de l'argumenter.</p>
                 </div>
-                {certStats.total > 0 && (
-                    <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${certStats.allCertified ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+                {reviewStats.total > 0 && (
+                    <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${reviewStats.allReviewed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
                         }`}>
-                        {certStats.allCertified
-                            ? <><ShieldCheck size={14} /> {certStats.certified}/{certStats.total} scores certifiés</>
-                            : <><AlertTriangle size={14} /> {certStats.certified}/{certStats.total} certifiés</>
+                        {reviewStats.allReviewed
+                            ? <><ShieldCheck size={14} /> {reviewStats.reviewed}/{reviewStats.total} scores revus</>
+                            : <><AlertTriangle size={14} /> {reviewStats.reviewed}/{reviewStats.total} revus</>
                         }
                     </div>
                 )}

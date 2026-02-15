@@ -68,16 +68,14 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
             if (!catDef) return;
 
             Object.values(subtests).forEach(res => {
-                if (res.status === 'validated' || res.status === 'certified') {
-                    // On inverse le score si lowerIsBetter ? Non, Z-Score est déjà normalisé par le moteur.
-                    // On clamp les valeurs extrêmes pour le graphique (-3 à +2)
-                    let z = res.zScore;
-                    if (z < -3) z = -3;
-                    if (z > 2) z = 2;
+                if (!isReviewedScore(res) || !hasValidZ(res)) return;
+                // On clamp les valeurs extremes pour le graphique (-3 a +2)
+                let z = res.zScore as number;
+                if (z < -3) z = -3;
+                if (z > 2) z = 2;
 
-                    stats[catDef.id].sum += z;
-                    stats[catDef.id].count += 1;
-                }
+                stats[catDef.id].sum += z;
+                stats[catDef.id].count += 1;
             });
         });
 
@@ -383,12 +381,16 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             <section>
                 <div className="flex items-center justify-center gap-3 mb-8">
                     <div style={accentStyle}><ClipboardList size={24} /></div>
-                    <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats Chiffrés</h2>
+                    <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats</h2>
                 </div>
 
                 {/* GRAPHIQUE GLOBAL (Radar) */}
-                <ProfileRadarChart tests={tests} branding={branding} />
+                {Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
+                    <ProfileRadarChart tests={tests} branding={branding} />
+                )}
 
+                {Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
+                <>
                 {/* HORIZONTAL BAR CHART PROFILE */}
                 <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
                     <div className="bg-stone-100 p-4 border-b border-stone-200" style={{ backgroundColor: isCustom ? primaryColor + '08' : undefined }}>
@@ -398,10 +400,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         {Object.entries(tests).flatMap(([testId, subtests]) => {
                             const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                             return Object.entries(subtests)
-                                .filter(([, val]) => val.raw && (val.status === 'validated' || val.status === 'certified'))
+                                .filter(([, val]) => hasValidZ(val))
                                 .map(([subId, result]) => {
                                     const subDef = def?.subtests.find(s => s.id === subId);
-                                    const z = result.zScore || 0;
+                                    const z = result.zScore as number;
                                     const clamped = Math.max(-3.5, Math.min(3.5, z));
                                     const left = ((clamped + 3.5) / 7) * 100;
                                     let color = '#81B29A';
@@ -440,19 +442,25 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         <li><span className="font-bold text-[#E07A5F]">Rouge :</span> Zone de difficulté (Inférieur à -2 ET).</li>
                     </ul>
                 </div>
+                </>
+                )}
                 <div className="space-y-12">
                     {Object.entries(tests).map(([testId, subtests]) => {
                         const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                         if (!def) return null;
-                        const validSubtests = Object.entries(subtests).filter(([, val]) => val.raw && (val.status === 'validated' || val.status === 'certified'));
+                        const validSubtests = Object.entries(subtests).filter(([, val]) => hasAnyScoreValue(val));
                         if (validSubtests.length === 0) return null;
 
-                        // Determine default score mode if not set
-                        // Smart check: if no subtest has a scoreType, default to 'Brut' and hide selector
-                        const hasScoreableSubtests = validSubtests.some(([subId]) => {
+                        const enrichedSubtests = validSubtests.map(([subId, result]) => {
                             const subDef = def.subtests.find(s => s.id === subId);
-                            return (subDef?.scoreType || 'standard') !== 'none';
+                            const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
+                            const isScoreable = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
+                            return { subId, result, subDef, isQualitative, isScoreable };
                         });
+
+                        const quantitativeSubtests = enrichedSubtests.filter((item) => !item.isQualitative);
+                        const qualitativeSubtests = enrichedSubtests.filter((item) => item.isQualitative);
+                        const hasScoreableSubtests = quantitativeSubtests.some((item) => item.isScoreable);
 
                         const currentMode = scoreDisplayModes?.[testId] || (hasScoreableSubtests ? 'ET' : 'Brut');
                         const showSelector = hasScoreableSubtests;
@@ -473,45 +481,81 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                     )}
                                 </div>
                                 <div className="p-6">
-                                    <div className="overflow-x-auto w-full">
-                                        <table className="w-full border-collapse text-sm mb-4">
-                                            <thead>
-                                                <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
-                                                    <th className="pb-3 w-[35%]">Épreuves</th>
-                                                    <th className="pb-3 w-[15%] text-center">{showSelector ? `Score (${currentMode})` : 'Résultat'}</th>
-                                                    <th className="pb-3 w-[50%] pl-4">Observations</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-stone-700">
-                                                {validSubtests.map(([subId, result]) => {
-                                                    const subDef = def.subtests.find(s => s.id === subId);
-                                                    const isPathological = result.zScore <= -2;
-                                                    const isFragile = result.zScore <= -1 && result.zScore > -2;
-                                                    const isScoreable = (subDef?.scoreType || 'standard') !== 'none';
-                                                    const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
+                                    {quantitativeSubtests.length > 0 && (
+                                        <div className="overflow-x-auto w-full mb-6">
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">Quantitatif</div>
+                                            <table className="w-full border-collapse text-sm">
+                                                <thead>
+                                                    <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
+                                                        <th className="pb-3 w-[35%]">Epreuves</th>
+                                                        <th className="pb-3 w-[15%] text-center">{showSelector ? `Score (${currentMode})` : 'Resultat'}</th>
+                                                        <th className="pb-3 w-[50%] pl-4">Observations</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-stone-700">
+                                                    {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => {
+                                                        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+                                                        const isPathological = z !== null && z <= -2;
+                                                        const isFragile = z !== null && z <= -1 && z > -2;
+                                                        const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
 
-                                                    // Display logic based on selected mode
-                                                    let displayScore: string | number = '-';
-                                                    if (currentMode === 'Brut') displayScore = result.raw;
-                                                    else if (currentMode === 'NS') displayScore = isScoreable ? (result.standard || '-') : '-';
-                                                    else if (currentMode === 'ET') displayScore = (isScoreable && result.zScore !== undefined && result.zScore !== null) ? (result.zScore > 0 ? '+' : '') + result.zScore.toFixed(2) + ' ET' : '-';
-                                                    else if (currentMode === '%') displayScore = (isScoreable && result.percentile !== undefined && result.percentile !== null) ? result.percentile + '%' : '-';
+                                                        let displayScore: string | number = '-';
+                                                        if (currentMode === 'Brut') displayScore = result.raw || '-';
+                                                        else if (currentMode === 'NS') displayScore = isScoreable ? (result.standard || '-') : '-';
+                                                        else if (currentMode === 'ET') displayScore = (isScoreable && z !== null) ? (z > 0 ? '+' : '') + z.toFixed(2) + ' ET' : '-';
+                                                        else if (currentMode === '%') displayScore = (isScoreable && result.percentile !== undefined && result.percentile !== null) ? result.percentile + '%' : '-';
 
-                                                    // Fallback for non-scoreable tests wanting standard/zscore: show raw if relevant, or '-'
-                                                    if (!isScoreable && currentMode !== 'Brut') displayScore = '-';
-                                                    // User requested flexibility: if they select 'Brut' on a scoreable test, show raw. Correct.
+                                                        if (!isScoreable && currentMode !== 'Brut') displayScore = '-';
 
-                                                    return (
-                                                        <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                            <td className="py-3 pr-4 font-medium">• {subDef?.name}</td>
-                                                            <td className={`py-3 text-center ${isScoreable && (currentMode === 'ET' || currentMode === 'NS') ? colorClass : 'text-stone-500'}`}>{displayScore}</td>
-                                                            <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "—"}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                        return (
+                                                            <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className={`py-3 text-center ${isScoreable && (currentMode === 'ET' || currentMode === 'NS') ? colorClass : 'text-stone-500'}`}>{displayScore}</td>
+                                                                <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "-"}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    {qualitativeSubtests.length > 0 && (
+                                        <div className="overflow-x-auto w-full">
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">Qualitatif</div>
+                                            <table className="w-full border-collapse text-sm">
+                                                <thead>
+                                                    <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
+                                                        <th className="pb-3 w-[30%]">Epreuves</th>
+                                                        <th className="pb-3 w-[20%] text-center">Categorie</th>
+                                                        <th className="pb-3 w-[25%] pl-3">Interpretation</th>
+                                                        <th className="pb-3 w-[25%] pl-3">Observations</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-stone-700">
+                                                    {qualitativeSubtests.map(({ subId, result, subDef }) => {
+                                                        const selectedOption = subDef?.inputConfig?.options?.find(
+                                                            (opt) =>
+                                                                opt.code === result.qualitativeCode ||
+                                                                opt.code === result.raw ||
+                                                                opt.label === result.qualitativeLabel,
+                                                        );
+                                                        const displayCategory = result.qualitativeLabel || selectedOption?.label || result.qualitativeCode || result.raw || '-';
+                                                        const displayInterpretation = selectedOption?.reportText || '-';
+
+                                                        return (
+                                                            <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className="py-3 text-center font-semibold text-[#3D405B]">{displayCategory}</td>
+                                                                <td className="py-3 pl-3 text-xs text-stone-600">{displayInterpretation}</td>
+                                                                <td className="py-3 pl-3 italic text-xs text-stone-500">{result.observation || "-"}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -670,7 +714,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             <p>{branding?.footerText || "Document confidentiel"}</p>
                             <p className="mt-1">Profession inscrite au code de la santé publique.</p>
                             {pageIdx === pages.length - 1 && (
-                                <p className="mt-1 text-[9px] italic">Scores certifiés par le praticien. Calculs vérifiés et validés individuellement.</p>
+                                <p className="mt-1 text-[9px] italic">Résultats saisis et revus par le praticien.</p>
                             )}
                         </div>
                         {branding?.showPageNumbers && <div className="font-mono">Page {pageIdx + 1}/{pages.length}</div>}
@@ -685,3 +729,20 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         </div>
     );
 };
+
+const hasAnyScoreValue = (result?: any): boolean => {
+    if (!result) return false;
+    return Boolean(
+        (result.raw && String(result.raw).trim()) ||
+        (result.standard && String(result.standard).trim()) ||
+        (result.percentile && String(result.percentile).trim()) ||
+        (typeof result.zScore === 'number' && Number.isFinite(result.zScore)) ||
+        (result.qualitativeCode && String(result.qualitativeCode).trim()) ||
+        (result.qualitativeLabel && String(result.qualitativeLabel).trim())
+    );
+};
+
+const hasValidZ = (result?: any): boolean => typeof result?.zScore === 'number' && Number.isFinite(result.zScore);
+
+const isReviewedScore = (result?: any): boolean =>
+    result?.reviewState === 'reviewed' || result?.status === 'validated' || result?.status === 'certified';

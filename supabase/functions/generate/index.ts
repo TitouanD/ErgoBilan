@@ -1,18 +1,21 @@
-// Supabase Edge Function — Gemini AI Proxy
-// Keeps the API key server-side, never exposed to the client.
-// SECURITY: Enforces credit consumption + rate limiting server-side.
-// RELIABILITY: Retries transient Gemini errors (503/429) with exponential backoff.
-
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = 110_000; // 110s — leaves headroom below Edge Function's 150s wall-clock limit
+const GEMINI_TIMEOUT_MS = 110_000;
 const MAX_REQUESTS_PER_HOUR = 15;
-const GEMINI_MAX_RETRIES = 2;        // Up to 3 total attempts for transient errors
-const GEMINI_RETRY_BASE_MS = 2_000;  // 2s, 4s exponential backoff
+const GEMINI_MAX_RETRIES = 2;
+const GEMINI_RETRY_BASE_MS = 2_000;
+
+type AITask = 'report_bio' | 'report_diagnostic' | 'extract_norms';
+
+type BuildResult = {
+  contents: unknown;
+  systemInstruction?: string;
+  responseMimeType: string;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,17 +23,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Sleep for `ms` milliseconds. */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const isRetryableStatus = (status: number) => status === 503 || status === 429;
 
-/**
- * Safely refund a credit. supabase.rpc() returns a PostgrestFilterBuilder
- * (thenable but NOT a native Promise — no .catch()). We use try/await instead.
- */
 const safeRefund = async (
   sb: ReturnType<typeof createClient> | null,
   genId: string | null,
@@ -39,94 +34,160 @@ const safeRefund = async (
   if (isReused || !sb || !genId) return;
   try {
     await sb.rpc('refund_credit', { p_generation_id: genId });
-    console.log("Credit refunded for generation", genId);
-  } catch (e) {
-    console.error("Refund failed (non-blocking):", e);
+  } catch (_e) {
+    // no-op
   }
 };
 
-/** Whether a Gemini HTTP status is transient and worth retrying. */
-const isRetryableStatus = (status: number) => status === 503 || status === 429;
+const PEDIATRIC_SYSTEM = `Tu es un ergotherapeute pediatrique. Rends un texte clinique sobre, structure, professionnel.
+Regles: lien preuve->impact, langage clair, limites explicites si donnees manquantes, jamais de placeholders inventes.`;
+
+const ADULT_SYSTEM = `Tu es un ergotherapeute adulte. Focus autonomie, securite, retentissement fonctionnel.
+Regles: lien preuve->impact, ton clinique sobre, limites explicites si donnees manquantes.`;
+
+const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
+  const profile = String(payload.profile || 'pediatric');
+  const context = String(payload.childContext || '');
+  const questionnaire = String(payload.safeQuestionnaire || '');
+
+  const userPrompt = [
+    'TACHE: produire un JSON valide uniquement.',
+    'Champs requis: mandat_referencement, mandat_evaluation, profil_occupationnel.',
+    'Style: clinique, structure claire, argumente.',
+    `Contexte: ${context}`,
+    `Questionnaire: ${questionnaire}`,
+  ].join('\n');
+
+  return {
+    contents: userPrompt,
+    systemInstruction: profile === 'adult' ? ADULT_SYSTEM : PEDIATRIC_SYSTEM,
+    responseMimeType: 'application/json',
+  };
+};
+
+const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
+  const profile = String(payload.profile || 'pediatric');
+  const profilContext = JSON.stringify(payload.profilContext || 'Non disponible');
+  const safeObservations = String(payload.safeObservations || 'RAS');
+  const scoresEvidence = JSON.stringify(payload.scoresEvidence || [], null, 2);
+  const synthesis = (payload.synthesis || {}) as Record<string, unknown>;
+  const diagnosticInput = String(synthesis.diagnosticInput || '').trim();
+  const recommendationsInput = String(synthesis.recommendationsInput || '').trim();
+
+  const diagnosticDirective = diagnosticInput.length > 3
+    ? `Le praticien a pose: "${diagnosticInput}". Justifie ce positionnement avec les preuves disponibles.`
+    : 'Si aucun diagnostic n est fourni, propose une synthese prudente et argumentee sans sur-conclusion.';
+
+  const recommendationsDirective = recommendationsInput.length > 3
+    ? `Le praticien propose: "${recommendationsInput}". Structure et complete ces recommandations.`
+    : 'Formule des recommandations concretes et proportionnees aux preuves.';
+
+  const userPrompt = [
+    'TACHE: produire un JSON valide uniquement.',
+    'Champs requis: synthese_diagnostic, recommandations, objectifs_generaux.',
+    'Format attendu: markdown sobre, sections courtes, liens preuve->impact explicites.',
+    diagnosticDirective,
+    recommendationsDirective,
+    `Profil occupationnel deja etabli: ${profilContext}`,
+    `Observations: ${safeObservations}`,
+    `Scores (evidence-ready): ${scoresEvidence}`,
+    'Important: mentionner explicitement les limites quand des donnees sont absentes ou partielles.',
+  ].join('\n\n');
+
+  return {
+    contents: userPrompt,
+    systemInstruction: profile === 'adult' ? ADULT_SYSTEM : PEDIATRIC_SYSTEM,
+    responseMimeType: 'application/json',
+  };
+};
+
+const buildExtractNormsTask = (payload: Record<string, unknown>): BuildResult => {
+  const filename = String(payload.filename || 'document');
+  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const imagePart = payload.imagePart;
+
+  const knownNamesBlock = knownSubtestNames.length > 0
+    ? `Sous-tests deja connus a reutiliser quand pertinent: ${JSON.stringify(knownSubtestNames)}`
+    : 'Aucun sous-test pre-connu.';
+
+  const prompt = [
+    'ROLE: extraction de normes cliniques en ergotherapie.',
+    `Contexte fichier: ${filename}`,
+    knownNamesBlock,
+    'Sortie JSON stricte uniquement (pas de markdown).',
+    'Classer la structure: PARAMETRIC ou LOOKUP.',
+    'Extraire et normaliser: age_min_months, age_max_months, raw_min, raw_max.',
+    'Schema JSON:',
+    '{"test_context":"string","structure_type":"PARAMETRIC|LOOKUP","tables":[{"subtest_id":"string","rows":[{"label":"string","mean":"string","sd":"string","raw_range":"string","standard":"string","percentile":"string","z_score":"string","age_min_months":number,"age_max_months":number,"raw_min":number,"raw_max":number}]}]}',
+    'Consignes qualite: noms de sous-tests stables en francais, pas de code technique, garder les plages brutes en texte pour LOOKUP.',
+  ].join('\n');
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+    responseMimeType: 'application/json',
+  };
+};
+
+const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult => {
+  if (task === 'report_bio') return buildBioTask(payload);
+  if (task === 'report_diagnostic') return buildDiagnosticTask(payload);
+  return buildExtractNormsTask(payload);
+};
 
 Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
 
   let supabase: ReturnType<typeof createClient> | null = null;
   let generationId: string | null = null;
-  let isReusedSession = false; // true when a valid generation_id was provided (no new credit consumed)
+  let isReusedSession = false;
 
   try {
-    // 1. Verify JWT — only authenticated users can call this
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing authorization" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
     if (!bearerMatch) {
-      console.warn("Invalid Authorization header format");
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const accessToken = bearerMatch[1].trim();
-    const jwtParts = accessToken.split(".");
-    const isMalformedJwt = jwtParts.length !== 3 || jwtParts.some((part) => part.length === 0);
-    if (
-      !accessToken ||
-      accessToken.startsWith("sb_publishable_") ||
-      accessToken.startsWith("sb_secret_") ||
-      isMalformedJwt
-    ) {
-      console.warn("Rejected non-user bearer token");
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const jwtParts = accessToken.split('.');
+    const malformedJwt = jwtParts.length !== 3 || jwtParts.some((part) => part.length === 0);
+    if (!accessToken || accessToken.startsWith('sb_publishable_') || accessToken.startsWith('sb_secret_') || malformedJwt) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    supabase = createClient(supabaseUrl, supabaseKey, {
+    supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
     });
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 2. SECURITY: Rate limiting — always checked, even for reused sessions
-    const { data: withinLimit, error: rlErr } = await supabase.rpc('check_rate_limit', {
-      p_max_per_hour: MAX_REQUESTS_PER_HOUR,
-    });
+    const { data: withinLimit, error: rlErr } = await supabase.rpc('check_rate_limit', { p_max_per_hour: MAX_REQUESTS_PER_HOUR });
     if (rlErr || !withinLimit) {
-      return new Response(JSON.stringify({ error: "RATE_LIMITED", message: "Trop de requêtes. Réessayez dans quelques minutes." }), {
+      return new Response(JSON.stringify({ error: 'RATE_LIMITED', message: 'Trop de requetes. Reessayez plus tard.' }), {
         status: 429,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 3. Parse request body BEFORE credit logic (need generation_id param)
     const body = await req.json();
-    const { contents, systemInstruction, responseMimeType, generation_id: providedGenId } = body;
+    const task = String(body.task || '') as AITask;
+    const payload = (body.payload || {}) as Record<string, unknown>;
+    const providedGenId = typeof body.generation_id === 'string' ? body.generation_id : null;
 
-    // 4. SECURITY: Credit logic — reuse session OR consume new credit
-    //    A full report = 2 AI calls but 1 credit. The first call returns a generationId,
-    //    and the second call passes it back to skip credit consumption.
-    if (providedGenId && typeof providedGenId === 'string') {
-      // Validate: belongs to user, not refunded, created < 10 min ago
+    if (!['report_bio', 'report_diagnostic', 'extract_norms'].includes(task)) {
+      return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (providedGenId) {
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data: validGen } = await supabase
         .from('generation_log')
@@ -141,59 +202,46 @@ Deno.serve(async (req: Request) => {
         generationId = providedGenId;
         isReusedSession = true;
       }
-      // If invalid/expired, fall through to consume a new credit
     }
 
     if (!isReusedSession) {
       const { data: genId, error: creditErr } = await supabase.rpc('consume_credit');
       if (creditErr || !genId) {
-        return new Response(JSON.stringify({ error: "CREDIT_INSUFFICIENT", message: "Crédits insuffisants." }), {
+        return new Response(JSON.stringify({ error: 'CREDIT_INSUFFICIENT', message: 'Credits insuffisants.' }), {
           status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       generationId = genId;
     }
 
-    // 5. Validate Gemini API key
     if (!GEMINI_API_KEY) {
       await safeRefund(supabase, generationId, isReusedSession);
-      return new Response(JSON.stringify({ error: "AI service not configured" }), {
+      return new Response(JSON.stringify({ error: 'AI service not configured' }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 6. Validate contents
-    if (!contents) {
-      await safeRefund(supabase, generationId, isReusedSession);
-      return new Response(JSON.stringify({ error: "Missing 'contents' in request body" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const built = buildTask(task, payload);
 
-    // 7. Build Gemini API request body
     const geminiBody: Record<string, unknown> = {
-      contents: Array.isArray(contents) ? contents : [{ role: "user", parts: [{ text: contents }] }],
+      contents: Array.isArray(built.contents)
+        ? built.contents
+        : [{ role: 'user', parts: [{ text: String(built.contents || '') }] }],
+      generationConfig: { responseMimeType: built.responseMimeType },
     };
 
-    if (systemInstruction) {
-      geminiBody.system_instruction = { parts: [{ text: systemInstruction }] };
+    if (built.systemInstruction) {
+      geminiBody.system_instruction = { parts: [{ text: built.systemInstruction }] };
     }
 
-    if (responseMimeType) {
-      geminiBody.generationConfig = { responseMimeType };
-    }
-
-    // 8. Call Gemini API with retry for transient errors (503, 429)
     let geminiResponse: Response | null = null;
     let lastGeminiStatus = 0;
 
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        const delayMs = GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1); // 2s, 4s
-        console.log(`Gemini retry ${attempt}/${GEMINI_MAX_RETRIES} after ${delayMs}ms (last status: ${lastGeminiStatus})`);
+        const delayMs = GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1);
         await sleep(delayMs);
       }
 
@@ -202,79 +250,59 @@ Deno.serve(async (req: Request) => {
 
       try {
         geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(geminiBody),
           signal: controller.signal,
         });
         clearTimeout(timer);
 
-        if (geminiResponse.ok) break; // Success — exit retry loop
+        if (geminiResponse.ok) break;
 
         lastGeminiStatus = geminiResponse.status;
-
-        // Only retry transient errors (503, 429); permanent errors fail immediately
         if (!isRetryableStatus(geminiResponse.status)) break;
 
-        // Consume the body so the connection is released before retry
         await geminiResponse.text();
-        geminiResponse = null; // Force re-fetch on next iteration
-
+        geminiResponse = null;
       } catch (err) {
         clearTimeout(timer);
-        if (err instanceof DOMException && err.name === "AbortError") {
-          // Timeout — don't retry (we're already near the wall-clock limit)
+        if (err instanceof DOMException && err.name === 'AbortError') {
           await safeRefund(supabase, generationId, isReusedSession);
-          return new Response(JSON.stringify({ error: "Gemini request timed out", retryable: true }), {
+          return new Response(JSON.stringify({ error: 'Gemini request timed out', retryable: true }), {
             status: 504,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        // Network error on last attempt → refund and rethrow
         if (attempt === GEMINI_MAX_RETRIES) {
           await safeRefund(supabase, generationId, isReusedSession);
           throw err;
         }
-        // Network error with retries left → continue loop
         lastGeminiStatus = 0;
         geminiResponse = null;
       }
     }
 
-    // All retries exhausted or permanent error
     if (!geminiResponse || !geminiResponse.ok) {
-      const errorText = geminiResponse ? await geminiResponse.text() : `Network error (status ${lastGeminiStatus})`;
-      console.error("Gemini API error after retries:", errorText);
-      await safeRefund(supabase, generationId, isReusedSession);
       const retryable = isRetryableStatus(lastGeminiStatus);
-      return new Response(JSON.stringify({
-        error: "AI generation failed",
-        details: lastGeminiStatus || 0,
-        retryable,
-      }), {
+      await safeRefund(supabase, generationId, isReusedSession);
+      return new Response(JSON.stringify({ error: 'AI generation failed', details: lastGeminiStatus || 0, retryable }), {
         status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const geminiData = await geminiResponse.json();
-
-    // 9. Extract text from Gemini response
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 
-    // 10. Return — client marks 'completed' after all AI calls for a report succeed
     return new Response(JSON.stringify({ text, generationId }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
-  } catch (err) {
-    console.error("Edge function error:", err);
-    // Attempt refund on unexpected errors (safeRefund is no-op if already refunded/reused)
+  } catch (_err) {
     await safeRefund(supabase, generationId, isReusedSession);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

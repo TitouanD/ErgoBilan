@@ -134,8 +134,21 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       updateData({ interviewNotes: val });
   }, [updateData]);
 
-  // Determine if form has substantial data (from parent questionnaire)
-  const hasParentData = !!(data.firstName && data.lastName && data.dob && (data.reason || data.familyExpectations));
+  // Determine if parent questionnaire has meaningful content (not only reason/expectations).
+  const hasQuestionnaireData = !!(
+      data.reason ||
+      data.familyExpectations ||
+      data.goals?.length ||
+      data.remarks ||
+      data.interviewNotes ||
+      data.parentNames ||
+      data.school ||
+      data.medicalDiagnosis ||
+      data.developmentMotor ||
+      data.meals ||
+      data.writingIssues
+  );
+  const hasParentData = !!(data.firstName && data.lastName && data.dob && hasQuestionnaireData);
   
   // Section fill status checks
   const sectionDefs = [
@@ -167,8 +180,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Écriture', value: data.writingIssues }, { label: 'Douleur', value: data.writingPain },
           { label: 'Latéralité', value: data.handDominance },
       ]},
-      { title: 'Motif & Priorités', filled: !!data.reason, fields: [
-          { label: 'Motif', value: data.reason }, { label: 'Attentes', value: data.familyExpectations },
+      { title: 'Motif & Priorités', filled: !!(data.reason || data.familyExpectations || (data.goals?.length ?? 0) > 0 || data.remarks), fields: [
+          { label: 'Motif', value: data.reason || data.remarks }, { label: 'Attentes', value: data.familyExpectations },
           { label: 'Objectifs', value: data.goals?.join(', ') },
       ]},
   ];

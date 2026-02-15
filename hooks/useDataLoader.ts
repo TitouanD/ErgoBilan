@@ -188,6 +188,17 @@ export const useDataLoader = ({
       });
     };
 
+    const handleFollowupChange = (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+      const patientId = (payload.new?.patient_id as string) || (payload.old?.patient_id as string);
+      if (!patientId) return;
+      pendingPatientIdsRef.current.add(patientId);
+      schedule(() => {
+        const ids = Array.from(pendingPatientIdsRef.current);
+        pendingPatientIdsRef.current.clear();
+        refreshPatientsByIds(ids);
+      });
+    };
+
     const channel = supabase
       .channel('dashboard-updates')
       .on(
@@ -198,6 +209,7 @@ export const useDataLoader = ({
 
     if (orgId) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table: 'patients', filter: `organization_id=eq.${orgId}` }, handlePatientChange);
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'patient_followups', filter: `organization_id=eq.${orgId}` }, handleFollowupChange);
     }
 
     channel.subscribe();

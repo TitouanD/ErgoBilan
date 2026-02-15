@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { PendingQuestionnaire, PatientDashboardPreviewMeta, PatientFile, UserProfile } from '../../types';
+import type { PendingQuestionnaire, PatientDashboardPreviewMeta, PatientFile, PatientFollowup, UserProfile } from '../../types';
 import {
   AlertCircle,
   Archive,
@@ -44,7 +44,7 @@ interface Props {
   onLoadMorePatients?: () => void;
 }
 
-type UrgencyKind = 'draft' | 'pending_done' | 'pending_waiting';
+type UrgencyKind = 'draft' | 'pending_done' | 'pending_waiting' | 'followup';
 interface UrgencyItem {
   id: string;
   kind: UrgencyKind;
@@ -143,7 +143,95 @@ const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTon
 const getUrgencyTone = (kind: UrgencyKind) => {
   if (kind === 'draft') return { card: 'border-rose-200 bg-rose-50/60 hover:border-rose-300', icon: 'bg-rose-100 text-rose-600', action: 'text-rose-700' };
   if (kind === 'pending_done') return { card: 'border-amber-200 bg-amber-50/60 hover:border-amber-300', icon: 'bg-amber-100 text-amber-600', action: 'text-amber-700' };
+  if (kind === 'followup') return { card: 'border-orange-200 bg-orange-50/60 hover:border-orange-300', icon: 'bg-orange-100 text-orange-600', action: 'text-orange-700' };
   return { card: 'border-stone-200 bg-white hover:border-stone-300', icon: 'bg-stone-100 text-stone-500', action: 'text-stone-600' };
+};
+
+const buildSyntheticFollowup = (file: PatientFile): PatientFollowup | null => {
+  if (file.followup) return file.followup;
+  const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
+  const lastFormalDate = previewMeta.metrics.lastFormalReportDate;
+  if (!lastFormalDate || !previewMeta.flags.hasInitialReport) return null;
+
+  const dueDate = new Date(lastFormalDate);
+  if (Number.isNaN(dueDate.getTime())) return null;
+  dueDate.setMonth(dueDate.getMonth() + 6);
+
+  const overdueDate = new Date(dueDate);
+  overdueDate.setMonth(overdueDate.getMonth() + 6);
+  const now = Date.now();
+  const status = now < dueDate.getTime() ? 'upcoming' : now <= overdueDate.getTime() ? 'due' : 'overdue';
+
+  return {
+    id: `virtual-${file.id}`,
+    patientId: file.id,
+    organizationId: file.patient.organizationId || '',
+    status,
+    dueAt: dueDate.toISOString(),
+    snoozedUntil: null,
+    note: null,
+    createdAt: lastFormalDate,
+    updatedAt: lastFormalDate,
+  };
+};
+
+const buildFollowupProgress = (followup: PatientFollowup): ReevaluationProgress => {
+  const dueDateLabel = new Date(followup.dueAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  if (followup.status === 'due') {
+    return {
+      progressPercent: 100,
+      label: 'Fenetre de reevaluation ouverte',
+      targetDateLabel: dueDateLabel,
+      badgeLabel: 'Reevaluation',
+      statusTone: 'warning',
+    };
+  }
+  if (followup.status === 'overdue') {
+    return {
+      progressPercent: 100,
+      label: 'Reevaluation en retard',
+      targetDateLabel: dueDateLabel,
+      badgeLabel: 'Retard',
+      statusTone: 'warning',
+    };
+  }
+  if (followup.status === 'scheduled') {
+    return {
+      progressPercent: 80,
+      label: `Reevaluation planifiee (${dueDateLabel})`,
+      targetDateLabel: dueDateLabel,
+      badgeLabel: 'Planifie',
+      statusTone: 'neutral',
+    };
+  }
+  if (followup.status === 'snoozed') {
+    const snoozedDateLabel = followup.snoozedUntil
+      ? new Date(followup.snoozedUntil).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+      : dueDateLabel;
+    return {
+      progressPercent: 70,
+      label: `Rappel reporte jusqu'au ${snoozedDateLabel}`,
+      targetDateLabel: dueDateLabel,
+      badgeLabel: 'Reporte',
+      statusTone: 'neutral',
+    };
+  }
+  if (followup.status === 'completed') {
+    return {
+      progressPercent: 100,
+      label: 'Rappel complete',
+      targetDateLabel: dueDateLabel,
+      badgeLabel: 'Complete',
+      statusTone: 'success',
+    };
+  }
+  return {
+    progressPercent: 45,
+    label: `Prochain rappel le ${dueDateLabel}`,
+    targetDateLabel: dueDateLabel,
+    badgeLabel: 'Suivi',
+    statusTone: 'neutral',
+  };
 };
 
 const isEditableTarget = (target: EventTarget | null) => {
@@ -153,19 +241,20 @@ const isEditableTarget = (target: EventTarget | null) => {
 };
 
 const deriveFallbackPreviewMeta = (file: PatientFile): PatientDashboardPreviewMeta => {
-  const reportsCount = file.reports.length;
-  const sessionsCount = file.sessions.length;
-  const hasInitialReport = file.reports.some((report) => report.type === 'initial');
-  const hasReevaluationReport = file.reports.some((report) => report.type === 'reevaluation');
+  const assessments = file.assessments || [];
+  const reportsCount = assessments.filter((assessment) => assessment.hasFormalReport).length;
+  const sessionsCount = assessments.length;
+  const hasInitialReport = assessments.some((assessment) => assessment.hasFormalReport && assessment.kind === 'initial');
+  const hasReevaluationReport = assessments.some((assessment) => assessment.hasFormalReport && assessment.kind === 'reevaluation');
   const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
-  const lastReportDate = reportsCount > 0 ? file.reports.map((report) => report.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
-  const lastSessionDate = sessionsCount > 0 ? file.sessions.map((session) => session.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+  const lastReportDate = reportsCount > 0 ? assessments.filter((assessment) => assessment.hasFormalReport).map((assessment) => assessment.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+  const lastSessionDate = sessionsCount > 0 ? assessments.map((assessment) => assessment.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
 
   if (reportsCount > 0) {
     return {
       uiVersion: 2,
       workflow: { progressPercent: 100, progressLabel: 'termine', statusTone: 'success', nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient' },
-      metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+      metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
       flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
     };
   }
@@ -174,7 +263,7 @@ const deriveFallbackPreviewMeta = (file: PatientFile): PatientDashboardPreviewMe
     return {
       uiVersion: 2,
       workflow: { progressPercent: 60, progressLabel: 'tests_saisis', statusTone: 'neutral', nextAction: 'open_patient' },
-      metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+      metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
       flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
     };
   }
@@ -182,7 +271,7 @@ const deriveFallbackPreviewMeta = (file: PatientFile): PatientDashboardPreviewMe
   return {
     uiVersion: 2,
     workflow: { progressPercent: 10, progressLabel: 'created', statusTone: 'warning', nextAction: 'complete_initial' },
-    metrics: { reportsCount, sessionsCount, lastReportDate, lastSessionDate },
+    metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
     flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
   };
 };
@@ -269,48 +358,94 @@ export const Dashboard: React.FC<Props> = ({
       const d = new Date(file.lastInteraction);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).length;
+    const followups = activeFiles.map((file) => buildSyntheticFollowup(file)).filter((item): item is PatientFollowup => item !== null);
+    const dueFollowups = followups.filter((item) => item.status === 'due' || item.status === 'overdue').length;
     const reevaluationOpportunities = activeFiles.filter((file) => (file.previewMeta || deriveFallbackPreviewMeta(file)).flags.hasReevaluationOpportunity).length;
-    return { hoursSaved: Math.round(userProfile.totalBilansGenerated * 1.5), activeCount: activeFiles.length, newThisMonth, reevaluationOpportunities };
+    return { hoursSaved: Math.round(userProfile.totalBilansGenerated * 1.5), activeCount: activeFiles.length, newThisMonth, dueFollowups, reevaluationOpportunities };
   }, [activeFiles, userProfile.totalBilansGenerated]);
 
   const urgencyItems = useMemo<UrgencyItem[]>(() => {
-    const drafts: UrgencyItem[] = Object.entries(draftsIndex).map(([patientId, draftDate]) => {
-      const file = patientById.get(patientId);
-      if (!file || file.archived) return null;
-      return { id: `draft-${patientId}`, kind: 'draft', title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom', subtitle: 'Brouillon à reprendre', date: draftDate, actionHint: 'Reprendre', onClick: () => onResumeDraft && onResumeDraft(patientId) };
-    }).filter((item): item is UrgencyItem => item !== null);
+    const drafts: UrgencyItem[] = Object.entries(draftsIndex)
+      .map(([patientId, draftDate]) => {
+        const file = patientById.get(patientId);
+        if (!file || file.archived) return null;
+        return {
+          id: `draft-${patientId}`,
+          kind: 'draft',
+          title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom',
+          subtitle: 'Brouillon a reprendre',
+          date: draftDate,
+          actionHint: 'Reprendre',
+          onClick: () => onResumeDraft && onResumeDraft(patientId),
+        };
+      })
+      .filter((item): item is UrgencyItem => item !== null);
 
-    const done: UrgencyItem[] = pendingQuestionnaires.filter((item) => item.status === 'completed').map((item) => ({
-      id: `pending-completed-${item.id}`,
-      kind: 'pending_done',
-      title: item.label || 'Questionnaire reçu',
-      subtitle: 'Questionnaire complété à importer',
-      date: item.createdAt,
-      actionHint: 'Importer',
-      isBusy: processingQueueId === item.id,
-      onClick: () => {
-        if (isDemoMode) {
-          setTargetDemoQ(item);
-          setShowImportAnim(true);
-          return;
-        }
-        if (onProcessPending) onProcessPending(item);
-      },
-    }));
+    const done: UrgencyItem[] = pendingQuestionnaires
+      .filter((item) => item.status === 'completed')
+      .map((item) => ({
+        id: `pending-completed-${item.id}`,
+        kind: 'pending_done',
+        title: item.label || 'Questionnaire recu',
+        subtitle: 'Questionnaire complete a importer',
+        date: item.createdAt,
+        actionHint: 'Importer',
+        isBusy: processingQueueId === item.id,
+        onClick: () => {
+          if (isDemoMode) {
+            setTargetDemoQ(item);
+            setShowImportAnim(true);
+            return;
+          }
+          if (onProcessPending) onProcessPending(item);
+        },
+      }));
 
-    const waiting: UrgencyItem[] = pendingQuestionnaires.filter((item) => item.status === 'pending').slice(0, 6).map((item) => ({
-      id: `pending-waiting-${item.id}`,
-      kind: 'pending_waiting',
-      title: item.label || 'Questionnaire en attente',
-      subtitle: 'Lien envoyé, en attente de réponse famille',
-      date: item.createdAt,
-      actionHint: 'Copier lien',
-      onClick: () => onCopyLink(item),
-    }));
+    const followupsDue: UrgencyItem[] = activeFiles
+      .map((file) => {
+        const followup = buildSyntheticFollowup(file);
+        if (!followup || (followup.status !== 'due' && followup.status !== 'overdue')) return null;
+        return {
+          id: `followup-${file.id}`,
+          kind: 'followup',
+          title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient',
+          subtitle: followup.status === 'overdue' ? 'Reevaluation en retard' : 'Reevaluation a planifier',
+          date: followup.dueAt,
+          actionHint: 'Ouvrir',
+          onClick: () => onOpenPatient(file.id),
+        } satisfies UrgencyItem;
+      })
+      .filter((item): item is UrgencyItem => item !== null);
 
-    const order = { draft: 0, pending_done: 1, pending_waiting: 2 };
-    return [...drafts, ...done, ...waiting].sort((a, b) => order[a.kind] - order[b.kind] || new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [draftsIndex, patientById, pendingQuestionnaires, onResumeDraft, processingQueueId, isDemoMode, onProcessPending, onCopyLink]);
+    const waiting: UrgencyItem[] = pendingQuestionnaires
+      .filter((item) => item.status === 'pending')
+      .slice(0, 6)
+      .map((item) => ({
+        id: `pending-waiting-${item.id}`,
+        kind: 'pending_waiting',
+        title: item.label || 'Questionnaire en attente',
+        subtitle: 'Lien envoye, en attente de reponse famille',
+        date: item.createdAt,
+        actionHint: 'Copier lien',
+        onClick: () => onCopyLink(item),
+      }));
+
+    const order = { draft: 0, pending_done: 1, followup: 2, pending_waiting: 3 };
+    return [...drafts, ...done, ...followupsDue, ...waiting].sort(
+      (a, b) => order[a.kind] - order[b.kind] || new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  }, [
+    draftsIndex,
+    patientById,
+    pendingQuestionnaires,
+    onResumeDraft,
+    processingQueueId,
+    isDemoMode,
+    onProcessPending,
+    onCopyLink,
+    activeFiles,
+    onOpenPatient,
+  ]);
 
   const visibleUrgencyItems = useMemo(
     () => urgencyItems.filter((item) => !hiddenUrgencyIds.has(item.id)),
@@ -501,7 +636,7 @@ export const Dashboard: React.FC<Props> = ({
         <section className="mb-10 grid grid-cols-1 gap-5 md:grid-cols-3">
           <KpiCard icon={Clock} value={`${kpis.hoursSaved}h`} label="Temps économisé" subtext="Ce mois-ci" colorClass="bg-blue-50 text-blue-600" />
           <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-orange-50 text-[#E07A5F]" />
-          <KpiCard icon={Calendar} value={`${kpis.reevaluationOpportunities}`} label="Réévaluations" subtext="Opportunités de suivi" colorClass="bg-emerald-50 text-emerald-600" />
+          <KpiCard icon={Calendar} value={`${kpis.dueFollowups}`} label="Rappels actifs" subtext={`${kpis.reevaluationOpportunities} opportunités de suivi`} colorClass="bg-emerald-50 text-emerald-600" />
         </section>
 
         <section className="mb-10">
@@ -554,7 +689,7 @@ export const Dashboard: React.FC<Props> = ({
                 {visibleUrgencyItems.map((item) => {
                   const tone = getUrgencyTone(item.kind);
                   const isRewarded = rewardedUrgencyId === item.id;
-                  const ActionIcon = item.kind === 'draft' ? Edit3 : item.kind === 'pending_done' ? Download : Copy;
+                  const ActionIcon = item.kind === 'draft' ? Edit3 : item.kind === 'pending_done' ? Download : item.kind === 'followup' ? Calendar : Copy;
                   return (
                     <button
                       key={item.id}
@@ -568,7 +703,7 @@ export const Dashboard: React.FC<Props> = ({
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <div className="min-w-0"><h3 className="truncate text-lg font-serif font-bold text-[#3D405B]">{item.title}</h3><p className="truncate text-xs text-stone-600">{item.subtitle}</p></div>
-                        <div className={`rounded-lg p-1.5 ${tone.icon}`}>{item.kind === 'draft' ? <Edit3 size={13} /> : item.kind === 'pending_done' ? <ClipboardList size={13} /> : <AlertCircle size={13} />}</div>
+                        <div className={`rounded-lg p-1.5 ${tone.icon}`}>{item.kind === 'draft' ? <Edit3 size={13} /> : item.kind === 'pending_done' ? <ClipboardList size={13} /> : item.kind === 'followup' ? <Calendar size={13} /> : <AlertCircle size={13} />}</div>
                       </div>
                       <div className="flex items-end justify-between border-t border-black/5 pt-2.5">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400"><Clock size={10} /> {monthDate(item.date)}</div>
@@ -613,10 +748,13 @@ export const Dashboard: React.FC<Props> = ({
             {filteredFiles.map((file) => {
               const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
               const hasDraft = Boolean(draftsIndex[file.id]);
-              const activityDate = previewMeta.metrics.lastReportDate || previewMeta.metrics.lastSessionDate || file.lastInteraction;
-              const followUpProgress = !file.archived && !hasDraft && previewMeta.flags.hasInitialReport
-                ? buildReevaluationProgress(previewMeta.metrics.lastReportDate || file.lastInteraction)
-                : null;
+              const activityDate = previewMeta.metrics.lastFormalReportDate || previewMeta.metrics.lastAssessmentDate || file.lastInteraction;
+              const followup = !file.archived && !hasDraft ? buildSyntheticFollowup(file) : null;
+              const followUpProgress = followup
+                ? buildFollowupProgress(followup)
+                : !file.archived && !hasDraft && previewMeta.flags.hasInitialReport
+                  ? buildReevaluationProgress(previewMeta.metrics.lastFormalReportDate || file.lastInteraction)
+                  : null;
               const tone = getToneClasses(followUpProgress?.statusTone || previewMeta.workflow.statusTone);
               const progressPercent = followUpProgress ? followUpProgress.progressPercent : previewMeta.workflow.progressPercent;
               const progressLabel = followUpProgress ? followUpProgress.label : workflowLabelMap[previewMeta.workflow.progressLabel];

@@ -18,6 +18,20 @@ export const ICON_MAP: Record<string, any> = {
 };
 
 export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
+export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only';
+
+export interface SubtestInputOption {
+  code: string;
+  label: string;
+  order: number;
+  reportText?: string;
+}
+
+export interface SubtestInputConfig {
+  options?: SubtestInputOption[];
+  defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+}
 
 export interface SubtestDef {
   id: string;
@@ -25,6 +39,9 @@ export interface SubtestDef {
   unit: string; 
   lowerIsBetter?: boolean;
   scoreType: ScoreType;
+  computationMode?: ComputationMode;
+  inputModel: SubtestInputModel;
+  inputConfig?: SubtestInputConfig;
 }
 
 export interface TestDef {

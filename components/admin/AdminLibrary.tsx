@@ -32,6 +32,17 @@ const toNumber = (val: string | number | null | undefined): number | null => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const QUALITATIVE_5_BUCKETS_PRESET = {
+  options: [
+    { code: 'much_less', label: 'Beaucoup moins que les autres', order: 1 },
+    { code: 'less', label: 'Moins que les autres', order: 2 },
+    { code: 'as_others', label: 'Comme la plupart des autres', order: 3 },
+    { code: 'more', label: 'Plus que les autres', order: 4 },
+    { code: 'much_more', label: 'Beaucoup plus que les autres', order: 5 },
+  ],
+  defaultMetric: 'raw',
+} as const;
+
 export const AdminLibrary: React.FC = () => {
   const toast = useToast();
   const [scope, setScope] = useState<'public' | 'private' | 'all'>('public');
@@ -47,6 +58,7 @@ export const AdminLibrary: React.FC = () => {
   const [isPromoting, setIsPromoting] = useState(false);
   const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([]);
   const [subTab, setSubTab] = useState<'normes' | 'meta' | 'validation' | 'outils'>('normes');
+  const [inputConfigDraft, setInputConfigDraft] = useState('{}');
 
   // Dedup state
   const [subtestDupPairs, setSubtestDupPairs] = useState<SubtestDuplicatePair[]>([]);
@@ -139,6 +151,15 @@ export const AdminLibrary: React.FC = () => {
     });
   }, []);
 
+  useEffect(() => {
+    if (!bundle || !selectedSubtestId) {
+      setInputConfigDraft('{}');
+      return;
+    }
+    const current = bundle.subtests.find((s) => s.id === selectedSubtestId);
+    setInputConfigDraft(JSON.stringify(current?.input_config || {}, null, 2));
+  }, [bundle, selectedSubtestId]);
+
   const loadTests = async () => {
     setLoadingTests(true);
     try {
@@ -230,6 +251,8 @@ export const AdminLibrary: React.FC = () => {
       unit: 'pts',
       score_type: 'scaled',
       computation_mode: 'LOOKUP',
+      input_model: 'numeric_4mode',
+      input_config: {},
       organization_id: bundle.test.organization_id || null,
       isNew: true
     };
@@ -324,6 +347,8 @@ export const AdminLibrary: React.FC = () => {
       unit: s.unit || 'pts',
       score_type: s.score_type || 'scaled',
       computation_mode: s.computation_mode || 'LOOKUP',
+      input_model: s.input_model || 'numeric_4mode',
+      input_config: s.input_config || {},
       organization_id: s.organization_id || test.organization_id || null
     }));
 
@@ -805,7 +830,7 @@ export const AdminLibrary: React.FC = () => {
                           </div>
                         </div>
                         <div className="text-[10px] text-stone-500 flex items-center gap-1">
-                          {s.score_type} · {s.computation_mode} {s.organization_id ? '· Privé' : ''}
+                          {s.score_type} · {s.computation_mode} · {s.input_model || 'numeric_4mode'} {s.organization_id ? '· Privé' : ''}
                         </div>
                       </div>
                     ))}
@@ -861,6 +886,54 @@ export const AdminLibrary: React.FC = () => {
                             <option value="LOOKUP" className="bg-[#23252F] text-stone-200">LOOKUP</option>
                             <option value="PARAMETRIC" className="bg-[#23252F] text-stone-200">PARAMETRIC</option>
                           </select>
+                        </div>
+                        <div className="col-span-4">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Input model</label>
+                          <select
+                            value={activeSubtest.input_model || 'numeric_4mode'}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'input_model', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          >
+                            <option value="numeric_4mode" className="bg-[#23252F] text-stone-200">numeric_4mode</option>
+                            <option value="qualitative_category" className="bg-[#23252F] text-stone-200">qualitative_category</option>
+                            <option value="raw_only" className="bg-[#23252F] text-stone-200">raw_only</option>
+                          </select>
+                        </div>
+                        <div className="col-span-12">
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="text-[10px] font-bold text-stone-500 uppercase">Input config (JSON)</label>
+                            {activeSubtest.input_model === 'qualitative_category' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const preset = {
+                                    options: QUALITATIVE_5_BUCKETS_PRESET.options.map((opt) => ({ ...opt })),
+                                    defaultMetric: QUALITATIVE_5_BUCKETS_PRESET.defaultMetric,
+                                  };
+                                  setInputConfigDraft(JSON.stringify(preset, null, 2));
+                                  updateSubtestField(activeSubtest.id, 'input_config', preset);
+                                  toast.success('Preset qualitatif 5 categories applique.');
+                                }}
+                                className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 uppercase"
+                              >
+                                Appliquer preset 5 categories
+                              </button>
+                            )}
+                          </div>
+                          <textarea
+                            value={inputConfigDraft}
+                            onChange={(e) => setInputConfigDraft(e.target.value)}
+                            onBlur={() => {
+                              try {
+                                const parsed = JSON.parse(inputConfigDraft || '{}');
+                                updateSubtestField(activeSubtest.id, 'input_config', parsed);
+                              } catch {
+                                toast.error('input_config JSON invalide.');
+                              }
+                            }}
+                            rows={4}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          />
                         </div>
                       </div>
 

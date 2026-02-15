@@ -1,184 +1,283 @@
-﻿
-import React, { useEffect, useState } from 'react';
-import { X, Save, Info, Zap, Plus, Trash2 } from 'lucide-react';
-import type { ScoreResult, TestSession, Patient } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Save, Info, Zap, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import type { Patient, PatientAssessment, ScoreResult } from '../../types';
 import { SubtestRowCheck, TestCatalogModal } from '../assessment/Step2Tests';
 import type { TestDef } from '../../data/testCatalog';
 import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
   onClose: () => void;
-  onSave: (session: TestSession) => void;
+  onSave: (assessment: PatientAssessment) => void;
   patient?: Patient;
 }
 
 export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) => {
-    const { catalog, ensureCatalogLoaded } = useCatalog();
+  const { catalog, ensureCatalogLoaded } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
-    const [selectedTests, setSelectedTests] = useState<TestDef[]>([]);
-
-    useEffect(() => {
-            ensureCatalogLoaded();
-    }, [ensureCatalogLoaded]);
-
-    useEffect(() => {
-            if (selectedTests.length === 0 && catalog.length > 0 && catalog[0].tests.length > 0) {
-                    setSelectedTests([catalog[0].tests[0]]);
-            }
-    }, [catalog, selectedTests.length]);
-  
+  const [selectedTests, setSelectedTests] = useState<TestDef[]>([]);
   const [allResults, setAllResults] = useState<Record<string, Record<string, ScoreResult>>>({});
   const [expandedSubtestId, setExpandedSubtestId] = useState<string | null>(null);
 
-  const handleAddTests = (testIds: string[]) => {
-      const newTests = [...selectedTests];
-      testIds.forEach(id => {
-          if (!newTests.find(t => t.id === id)) {
-              const def = catalog.flatMap(c => c.tests).find(t => t.id === id);
-              if (def) newTests.push(def);
-          }
-      });
-      setSelectedTests(newTests);
+  useEffect(() => {
+    ensureCatalogLoaded();
+  }, [ensureCatalogLoaded]);
+
+  const hasMeaningfulValue = (result?: Partial<ScoreResult>): boolean => {
+    if (!result) return false;
+    const hasScoreValue = [result.raw, result.standard, result.percentile].some(
+      (value) => typeof value === 'string' && value.trim() !== '',
+    );
+    const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
+    const hasQualitative =
+      (typeof result.qualitativeCode === 'string' && result.qualitativeCode.trim() !== '') ||
+      (typeof result.qualitativeLabel === 'string' && result.qualitativeLabel.trim() !== '');
+    const hasObservation = typeof result.observation === 'string' && result.observation.trim() !== '';
+    return hasScoreValue || hasZ || hasQualitative || hasObservation;
+  };
+
+  const filledScoresCount = useMemo(
+    () =>
+      Object.values(allResults).reduce((acc, testResults) => {
+        const filledInTest = Object.values(testResults).filter((res) => hasMeaningfulValue(res)).length;
+        return acc + filledInTest;
+      }, 0),
+    [allResults],
+  );
+
+  const canSave = selectedTests.length > 0 && filledScoresCount > 0;
+
+  const existingTests = useMemo(
+    () =>
+      selectedTests.reduce<Record<string, Record<string, ScoreResult>>>((acc, test) => {
+        acc[test.id] = allResults[test.id] || {};
+        return acc;
+      }, {}),
+    [selectedTests, allResults],
+  );
+
+  const handleAddTests = (selection: Record<string, string[]>) => {
+    const next = [...selectedTests];
+    Object.entries(selection).forEach(([id, subtestIds]) => {
+      const def = catalog.flatMap((c) => c.tests).find((t) => t.id === id);
+      if (!def) return;
+
+      const filtered = { ...def, subtests: def.subtests.filter((s) => subtestIds.includes(s.id)) };
+      const existingIndex = next.findIndex((t) => t.id === id);
+      if (existingIndex === -1) {
+        next.push(filtered);
+        return;
+      }
+
+      const mergedSubtests = [
+        ...next[existingIndex].subtests,
+        ...filtered.subtests.filter((s) => !next[existingIndex].subtests.some((existing) => existing.id === s.id)),
+      ];
+      next[existingIndex] = { ...next[existingIndex], subtests: mergedSubtests };
+    });
+    setSelectedTests(next);
   };
 
   const handleRemoveTest = (id: string) => {
-      setSelectedTests(prev => prev.filter(t => t.id !== id));
+    setSelectedTests((prev) => prev.filter((t) => t.id !== id));
+    setAllResults((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   const handleSubtestChange = (testId: string, subId: string, res: Partial<ScoreResult>) => {
-      const currentTestResults = allResults[testId] || {};
-      const currentSubResult = currentTestResults[subId] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
-      
-      setAllResults({
-          ...allResults,
-          [testId]: {
-              ...currentTestResults,
-              [subId]: { ...currentSubResult, ...res }
-          }
-      });
+    const currentTestResults = allResults[testId] || {};
+    const currentSubResult =
+      currentTestResults[subId] || { raw: '', standard: '', percentile: '', status: 'empty' as const, entryMetric: 'raw' as const, reviewState: 'not_reviewed' as const };
+
+    setAllResults({
+      ...allResults,
+      [testId]: {
+        ...currentTestResults,
+        [subId]: { ...currentSubResult, ...res },
+      },
+    });
   };
 
   const handleSave = () => {
+    if (!canSave) return;
+
     const flatResults: Record<string, ScoreResult> = {};
-    
-    Object.values(allResults).forEach(testRes => {
-        Object.entries(testRes).forEach(([subId, res]) => {
-            flatResults[subId] = res;
-        });
+
+    Object.values(allResults).forEach((testRes) => {
+      Object.entries(testRes).forEach(([subId, res]) => {
+        if (!hasMeaningfulValue(res)) return;
+        flatResults[subId] = {
+          raw: res.raw || '',
+          standard: res.standard || '',
+          percentile: res.percentile || '',
+          zScore: typeof res.zScore === 'number' ? res.zScore : undefined,
+          status:
+            res.status && res.status !== 'empty'
+              ? res.status
+              : (res.reviewState === 'reviewed' ? 'validated' : 'estimated'),
+          observation: res.observation,
+          validatedAt: res.validatedAt,
+          certifiedAt: res.certifiedAt,
+          scoreSource: res.scoreSource,
+          entryMetric: res.entryMetric,
+          reviewState: res.reviewState,
+          reviewedAt: res.reviewedAt,
+          qualitativeCode: res.qualitativeCode,
+          qualitativeLabel: res.qualitativeLabel,
+          derived: res.derived,
+        };
+      });
     });
 
-    const sessionName = selectedTests.length === 1 ? selectedTests[0].name : "Séance Multi-tests";
-    const mainTestId = selectedTests[0]?.id || 'multi';
+    if (Object.keys(flatResults).length === 0) return;
 
-    const session: TestSession = {
-        id: crypto.randomUUID(), // Utilisation d'un UUID valide même pour le stockage local (JSON Blob)
-        date: new Date().toISOString(),
-        testId: mainTestId,
-        testName: sessionName,
-        results: flatResults
+    const sessionName = selectedTests.length === 1 ? selectedTests[0].name : 'Mini-reevaluation multi-tests';
+    const assessment: PatientAssessment = {
+      id: crypto.randomUUID(),
+      date: new Date().toISOString(),
+      kind: 'mini_reevaluation',
+      hasFormalReport: false,
+      testName: selectedTests.length === 1 ? selectedTests[0].name : sessionName,
+      results: flatResults,
     };
-    onSave(session);
+    onSave(assessment);
   };
 
   const safePatient = patient || ({} as Patient);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
-        <div className="bg-[var(--app-bg)] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
-            
-            {/* Header */}
-            <div className="p-8 border-b border-stone-200 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-[#E07A5F]/10 rounded-2xl text-[#E07A5F]">
-                        <Zap size={28} fill="currentColor" />
-                    </div>
-                    <div>
-                        <h2 className="font-serif text-3xl font-bold text-[#3D405B]">Saisie Rapide</h2>
-                        <p className="text-sm text-stone-500 font-medium mt-1">Mode session active : saisissez à la volée.</p>
-                    </div>
-                </div>
-                <button onClick={onClose} className="p-3 bg-stone-50 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-all">
-                    <X size={24} />
-                </button>
+      <div className="bg-[var(--app-bg)] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
+        <div className="p-8 border-b border-stone-200 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-[#E07A5F]/10 rounded-2xl text-[#E07A5F]">
+              <Zap size={28} fill="currentColor" />
             </div>
-
-            <div className="flex-1 overflow-y-auto bg-[var(--app-bg)] p-8 custom-scrollbar">
-                <div className="max-w-3xl mx-auto space-y-12">
-                    
-                    {selectedTests.map(test => (
-                        <div key={test.id} className="bg-white rounded-[32px] p-6 border border-stone-100 shadow-sm animate-in slide-in-from-bottom-4">
-                            <div className="flex justify-between items-center mb-6 pb-4 border-b border-stone-50">
-                                <h3 className="font-serif font-bold text-2xl text-[#3D405B] flex items-center gap-3">
-                                    <span className="w-2 h-8 bg-[#F2CC8F] rounded-full"></span>
-                                    {test.name}
-                                </h3>
-                                <button onClick={() => handleRemoveTest(test.id)} className="text-stone-300 hover:text-rose-500 transition-colors p-2"><Trash2 size={18}/></button>
-                            </div>
-                            
-                            <div>
-                                {test.subtests.map(st => {
-                                    const res = allResults[test.id]?.[st.id] || { raw: '', standard: '', percentile: '', zScore: 0, status: 'empty' };
-                                    const uniqueId = `${test.id}-${st.id}`;
-                                    return (
-                                        <SubtestRowCheck 
-                                            key={st.id}
-                                            testId={test.id}
-                                            patient={safePatient}
-                                            subtest={st}
-                                            result={res}
-                                            onChange={(val) => handleSubtestChange(test.id, st.id, val)}
-                                            isExpanded={expandedSubtestId === uniqueId}
-                                            onToggleExpand={() => setExpandedSubtestId(expandedSubtestId === uniqueId ? null : uniqueId)}
-                                            onFocus={() => setExpandedSubtestId(null)}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Bouton Ajouter */}
-                    <button 
-                        onClick={() => setShowCatalog(true)}
-                        className="w-full py-6 border-2 border-dashed border-stone-300 rounded-[32px] flex flex-col items-center justify-center text-stone-400 hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all gap-2"
-                    >
-                        <Plus size={32} />
-                        <span className="font-bold text-lg">Ajouter un autre test à cette séance</span>
-                    </button>
-
-                    {/* Info Gratuite */}
-                    <div className="bg-white p-6 rounded-2xl border border-stone-100 flex gap-4 items-center shadow-sm">
-                        <div className="p-3 bg-emerald-50 rounded-full text-emerald-600">
-                            <Info size={24} />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-[#3D405B]">Sauvegarde automatique</h4>
-                            <p className="text-xs text-stone-500 mt-1">
-                                Les résultats sont stockés localement. Vous pourrez générer le rapport plus tard.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+            <div>
+              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">Mini-reevaluation</h2>
+              <p className="text-sm text-stone-500 font-medium mt-1">Capture rapide de scores intermediaires, sans document final.</p>
             </div>
-
-            {/* Footer Actions */}
-            <div className="p-6 bg-white border-t border-stone-200 flex justify-end gap-4 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-                <button onClick={onClose} className="px-8 py-4 font-bold text-stone-400 hover:text-stone-600 transition-all uppercase text-xs tracking-widest">
-                    Abandonner
-                </button>
-                <button onClick={handleSave} className="flex items-center gap-3 bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] transition-all hover:-translate-y-1">
-                    <Save size={20} /> Terminer la séance
-                </button>
-            </div>
+          </div>
+          <button onClick={onClose} className="p-3 bg-stone-50 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-all">
+            <X size={24} />
+          </button>
         </div>
 
-        <TestCatalogModal 
-            isOpen={showCatalog} 
-            onClose={() => setShowCatalog(false)} 
-            existingTests={{}} 
-            onAddTests={handleAddTests}
-        />
+        <div className="flex-1 overflow-y-auto bg-[var(--app-bg)] p-8 custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-8">
+            <div className="bg-white p-5 rounded-2xl border border-stone-100 flex gap-4 items-start shadow-sm">
+              <div className="p-3 bg-blue-50 rounded-full text-blue-600">
+                <Info size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-bold text-[#3D405B]">Regle clinique</h4>
+                <p className="text-xs text-stone-600">
+                  La mini-reevaluation enregistre des mesures intermediaires et n impacte pas automatiquement le rappel de reevaluation.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[28px] p-6 border border-stone-100 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="font-serif font-bold text-2xl text-[#3D405B]">1. Tests suivis</h3>
+                <button
+                  onClick={() => setShowCatalog(true)}
+                  className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-stone-500 hover:border-[#E07A5F] hover:text-[#E07A5F]"
+                >
+                  <Plus size={14} />
+                  Ajouter un test
+                </button>
+              </div>
+
+              {selectedTests.length === 0 ? (
+                <p className="text-sm text-stone-500">Aucun test selectionne. Ajoutez au moins un test pour commencer.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {selectedTests.map((test) => (
+                    <div key={test.id} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-[#3D405B]">
+                      {test.name}
+                      <button onClick={() => handleRemoveTest(test.id)} className="text-stone-400 hover:text-rose-500" aria-label={`Retirer ${test.name}`}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-serif font-bold text-2xl text-[#3D405B]">2. Saisir les scores</h3>
+              {selectedTests.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">
+                  Selectionnez des tests pour afficher la grille de saisie.
+                </div>
+              ) : (
+                selectedTests.map((test) => (
+                  <div key={test.id} className="bg-white rounded-[28px] p-6 border border-stone-100 shadow-sm animate-in slide-in-from-bottom-4">
+                    <div className="flex justify-between items-center mb-5 pb-4 border-b border-stone-50">
+                      <h4 className="font-serif font-bold text-xl text-[#3D405B] flex items-center gap-3">
+                        <span className="w-2 h-7 bg-[#F2CC8F] rounded-full"></span>
+                        {test.name}
+                      </h4>
+                      <span className="rounded-full bg-stone-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                        {test.subtests.length} sous-tests
+                      </span>
+                    </div>
+
+                    <div>
+                      {test.subtests.map((st) => {
+                        const res = allResults[test.id]?.[st.id] || { raw: '', standard: '', percentile: '', status: 'empty' as const };
+                        const uniqueId = `${test.id}-${st.id}`;
+                        return (
+                          <SubtestRowCheck
+                            key={st.id}
+                            testId={test.id}
+                            patient={safePatient}
+                            subtest={st}
+                            result={res}
+                            onChange={(val) => handleSubtestChange(test.id, st.id, val)}
+                            isExpanded={expandedSubtestId === uniqueId}
+                            onToggleExpand={() => setExpandedSubtestId(expandedSubtestId === uniqueId ? null : uniqueId)}
+                            onFocus={() => setExpandedSubtestId(null)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 bg-white border-t border-stone-200 flex items-center justify-between gap-4 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3 text-sm text-stone-500">
+            <CheckCircle2 size={16} className={canSave ? 'text-emerald-600' : 'text-stone-300'} />
+            <span>{filledScoresCount} score{filledScoresCount > 1 ? 's' : ''} saisi{filledScoresCount > 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <button onClick={onClose} className="px-8 py-4 font-bold text-stone-400 hover:text-stone-600 transition-all uppercase text-xs tracking-widest">
+              Annuler
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
+            >
+              <Save size={20} /> Enregistrer la mini-reevaluation
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <TestCatalogModal
+        isOpen={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        existingTests={existingTests}
+        onAddTests={handleAddTests}
+      />
     </div>
   );
 };
-

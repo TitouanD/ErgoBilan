@@ -1,991 +1,1131 @@
-
 import { supabase } from './db';
 import type {
-    PatientFile,
-    Patient,
-    ReportMetadata,
-    TestSession,
-    DraftPayload,
-    PatientDashboardPreviewMeta,
-    PatientDashboardProgressLabel,
-    PatientEncryptedPreviewV2,
-    ScoreResult,
+  DraftPayload,
+  Patient,
+  PatientAssessment,
+  PatientDashboardPreviewMeta,
+  PatientDashboardProgressLabel,
+  PatientEncryptedPreviewV2,
+  PatientFile,
+  PatientFollowup,
+  PatientFollowupStatus,
+  ScoreResult,
 } from '../types';
-import { encryptData, decryptData, generateSymetricKey, wrapKey, unwrapKey } from '../utils/crypto';
-import { Logger } from '../utils/logger';
+import { decryptData, encryptData, generateSymetricKey, unwrapKey, wrapKey } from '../utils/crypto';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
+import { Logger } from '../utils/logger';
 
-// --- HELPERS CHIFFREMENT ---
+const PATIENT_PAGE_SIZE = 50;
+const ASSESSMENTS_PAGE_SIZE = 60;
+
+let _isDemoMode = false;
 
 const encryptBlob = async (data: unknown, key: CryptoKey) => {
-    const res = await encryptData(data, key);
-    return { iv: res.iv, content: res.content };
+  const res = await encryptData(data, key);
+  return { iv: res.iv, content: res.content };
 };
 
 const decryptBlob = async (iv: string, content: string, key: CryptoKey) => {
-    return await decryptData({ iv, content }, key);
+  return decryptData({ iv, content }, key);
 };
 
-// --- DEMO MODE STATE ---
-let _isDemoMode = false;
-
-const PATIENT_PAGE_SIZE = 50;
-const SESSIONS_PAGE_SIZE = 30;
-
-// Helper pour éviter les objets undefined dans le UI
 const createEmptyPatient = (): Patient => ({
-    firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
-    parentNames: '', parentPhone: '', parentEmail: '', guardArrangement: '', siblings: [],
-    school: '', classLevel: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
-    prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '', medicalTracking: [],
-    reason: '', familyExpectations: '', goals: [],
-    pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
-    walkingAge: '', crawling: '', cleanliness: '', handDominance: '',
-    meals: '', dressing: '', continence: '', timeSpace: '',
-    clothingButtons: '', clothingLaces: '', clothingZippers: '',
-    schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
-    screenTime: '', emotionalRegulation: '',
-    remarks: '', priorities: ''
+  firstName: '',
+  lastName: '',
+  dob: '',
+  age: '',
+  gender: '',
+  address: '',
+  parentNames: '',
+  parentPhone: '',
+  parentEmail: '',
+  guardArrangement: '',
+  siblings: [],
+  school: '',
+  classLevel: '',
+  teacher: '',
+  carePlan: '',
+  avs: '',
+  avsDetails: '',
+  prescribingDoctor: '',
+  medicalDiagnosis: '',
+  medicalTreatments: '',
+  medicalFollowup: '',
+  medicalTracking: [],
+  reason: '',
+  familyExpectations: '',
+  goals: [],
+  pregnancyBirth: '',
+  developmentMotor: '',
+  developmentLanguage: '',
+  sleep: '',
+  sensory: '',
+  walkingAge: '',
+  crawling: '',
+  cleanliness: '',
+  handDominance: '',
+  meals: '',
+  dressing: '',
+  continence: '',
+  timeSpace: '',
+  clothingButtons: '',
+  clothingLaces: '',
+  clothingZippers: '',
+  schoolAttention: '',
+  writingIssues: '',
+  toolUsage: '',
+  schoolAccommodations: '',
+  screenTime: '',
+  emotionalRegulation: '',
+  remarks: '',
+  priorities: '',
 });
 
-type LegacyPreviewPayload = Partial<Patient> & { _archived?: boolean };
-
-const getLatestIsoDate = (dates: Array<string | null | undefined>): string | null => {
-    const timestamps = dates
-        .map((value) => (value ? new Date(value).getTime() : Number.NaN))
-        .filter((value) => Number.isFinite(value));
-
-    if (timestamps.length === 0) return null;
-    return new Date(Math.max(...timestamps)).toISOString();
-};
-
-const clampPercent = (value: number): number => {
-    if (!Number.isFinite(value)) return 0;
-    return Math.max(0, Math.min(100, Math.round(value)));
-};
-
-const buildWorkflowState = (
-    patient: Patient,
-    metrics: PatientDashboardPreviewMeta['metrics'],
-    hasInitialReport: boolean,
-    hasReevaluationOpportunity: boolean
-): PatientDashboardPreviewMeta['workflow'] => {
-    if (metrics.reportsCount > 0) {
-        return {
-            progressPercent: 100,
-            progressLabel: 'termine',
-            statusTone: 'success',
-            nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient',
-        };
-    }
-
-    if (metrics.sessionsCount > 0) {
-        return {
-            progressPercent: 60,
-            progressLabel: 'tests_saisis',
-            statusTone: 'neutral',
-            nextAction: 'open_patient',
-        };
-    }
-
-    const hasInitialInfos = Boolean(patient.reason || patient.school || patient.familyExpectations || patient.classLevel);
-    if (hasInitialInfos) {
-        return {
-            progressPercent: 35,
-            progressLabel: 'infos_recues',
-            statusTone: 'warning',
-            nextAction: 'complete_initial',
-        };
-    }
-
-    return {
-        progressPercent: 10,
-        progressLabel: 'created',
-        statusTone: 'warning',
-        nextAction: 'complete_initial',
-    };
-};
-
-const buildPreviewPayload = (
-    patient: Patient,
-    options: { archived?: boolean; reports?: ReportMetadata[]; sessions?: TestSession[] }
-): PatientEncryptedPreviewV2 => {
-    const reports = options.reports || [];
-    const sessions = options.sessions || [];
-    const hasInitialReport = reports.some((r) => r.type === 'initial');
-    const hasReevaluationReport = reports.some((r) => r.type === 'reevaluation');
-    const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
-
-    const metrics: PatientDashboardPreviewMeta['metrics'] = {
-        reportsCount: reports.length,
-        sessionsCount: sessions.length,
-        lastReportDate: getLatestIsoDate(reports.map((r) => r.date)),
-        lastSessionDate: getLatestIsoDate(sessions.map((s) => s.date)),
-    };
-
-    const workflow = buildWorkflowState(patient, metrics, hasInitialReport, hasReevaluationOpportunity);
-
-    return {
-        uiVersion: 2,
-        identity: {
-            firstName: patient.firstName || '',
-            lastName: patient.lastName || '',
-            age: patient.age || '',
-            classLevel: patient.classLevel || '',
-            gender: patient.gender || '',
-        },
-        workflow,
-        metrics,
-        flags: {
-            _archived: options.archived === true,
-            hasInitialReport,
-            hasReevaluationOpportunity,
-        },
-    };
-};
-
 const normalizePatientIdentity = (patient: Patient): Patient => ({
-    ...patient,
-    age: getPatientAgeForIdentity(patient),
+  ...patient,
+  age: getPatientAgeForIdentity(patient),
 });
 
 const toPreviewIdentity = (patient: Patient): PatientEncryptedPreviewV2['identity'] => ({
-    firstName: patient.firstName || '',
-    lastName: patient.lastName || '',
-    age: getPatientAgeForIdentity(patient),
-    classLevel: patient.classLevel || '',
-    gender: patient.gender || '',
+  firstName: patient.firstName || '',
+  lastName: patient.lastName || '',
+  age: getPatientAgeForIdentity(patient),
+  classLevel: patient.classLevel || '',
+  gender: patient.gender || '',
 });
 
+const clampPercent = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+};
+
+const getLatestIsoDate = (dates: Array<string | null | undefined>): string | null => {
+  const timestamps = dates
+    .map((value) => (value ? new Date(value).getTime() : Number.NaN))
+    .filter((value) => Number.isFinite(value));
+  if (timestamps.length === 0) return null;
+  return new Date(Math.max(...timestamps)).toISOString();
+};
+
+const addMonthsToIso = (value: string, months: number): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString();
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString();
+};
+
+const resolveTemporalFollowupStatus = (dueAt: string): PatientFollowupStatus => {
+  const dueDate = new Date(dueAt);
+  if (Number.isNaN(dueDate.getTime())) return 'upcoming';
+
+  const overdueDate = new Date(dueDate);
+  overdueDate.setMonth(overdueDate.getMonth() + 6);
+  const now = Date.now();
+
+  if (now < dueDate.getTime()) return 'upcoming';
+  if (now <= overdueDate.getTime()) return 'due';
+  return 'overdue';
+};
+
+type FollowupRow = {
+  id: string;
+  patient_id: string;
+  organization_id: string;
+  status: string;
+  due_at: string;
+  snoozed_until: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const mapFollowupRow = (row: FollowupRow): PatientFollowup => {
+  let normalizedStatus: PatientFollowupStatus;
+  if (row.status === 'completed' || row.status === 'scheduled') {
+    normalizedStatus = row.status;
+  } else if (row.status === 'snoozed') {
+    if (row.snoozed_until) {
+      const snoozedUntil = new Date(row.snoozed_until);
+      normalizedStatus = !Number.isNaN(snoozedUntil.getTime()) && Date.now() < snoozedUntil.getTime()
+        ? 'snoozed'
+        : resolveTemporalFollowupStatus(row.due_at);
+    } else {
+      normalizedStatus = resolveTemporalFollowupStatus(row.due_at);
+    }
+  } else {
+    normalizedStatus = resolveTemporalFollowupStatus(row.due_at);
+  }
+
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    organizationId: row.organization_id,
+    status: normalizedStatus,
+    dueAt: row.due_at,
+    snoozedUntil: row.snoozed_until,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+const buildFallbackFollowupFromAssessments = (
+  patientId: string,
+  organizationId: string,
+  assessments: PatientAssessment[],
+): PatientFollowup | null => {
+  const formalAssessments = assessments
+    .filter((item) => item.hasFormalReport)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const lastFormal = formalAssessments[0];
+  if (!lastFormal) return null;
+
+  const dueAt = addMonthsToIso(lastFormal.date, 6);
+  return {
+    id: `fallback-${patientId}`,
+    patientId,
+    organizationId,
+    status: resolveTemporalFollowupStatus(dueAt),
+    dueAt,
+    snoozedUntil: null,
+    note: null,
+    createdAt: lastFormal.date,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const buildWorkflowState = (
+  patient: Patient,
+  metrics: PatientDashboardPreviewMeta['metrics'],
+  hasInitialReport: boolean,
+  hasReevaluationOpportunity: boolean,
+): PatientDashboardPreviewMeta['workflow'] => {
+  if (metrics.formalReportsCount > 0) {
+    return {
+      progressPercent: 100,
+      progressLabel: 'termine',
+      statusTone: 'success',
+      nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient',
+    };
+  }
+
+  if (metrics.assessmentsCount > 0) {
+    return {
+      progressPercent: 60,
+      progressLabel: 'tests_saisis',
+      statusTone: 'neutral',
+      nextAction: 'open_patient',
+    };
+  }
+
+  const hasInitialInfos = Boolean(patient.reason || patient.school || patient.familyExpectations || patient.classLevel);
+  if (hasInitialInfos) {
+    return {
+      progressPercent: 35,
+      progressLabel: 'infos_recues',
+      statusTone: 'warning',
+      nextAction: 'complete_initial',
+    };
+  }
+
+  return {
+    progressPercent: 10,
+    progressLabel: 'created',
+    statusTone: 'warning',
+    nextAction: 'complete_initial',
+  };
+};
+
+const buildPreviewPayload = (
+  patient: Patient,
+  options: { archived?: boolean; assessments?: PatientAssessment[] },
+): PatientEncryptedPreviewV2 => {
+  const assessments = options.assessments || [];
+  const formalAssessments = assessments.filter((item) => item.hasFormalReport);
+  const hasInitialReport = formalAssessments.some((item) => item.kind === 'initial');
+  const hasReevaluationReport = formalAssessments.some((item) => item.kind === 'reevaluation');
+  const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
+
+  const metrics: PatientDashboardPreviewMeta['metrics'] = {
+    assessmentsCount: assessments.length,
+    formalReportsCount: formalAssessments.length,
+    lastAssessmentDate: getLatestIsoDate(assessments.map((item) => item.date)),
+    lastFormalReportDate: getLatestIsoDate(formalAssessments.map((item) => item.date)),
+  };
+
+  const workflow = buildWorkflowState(patient, metrics, hasInitialReport, hasReevaluationOpportunity);
+
+  return {
+    uiVersion: 2,
+    identity: toPreviewIdentity(patient),
+    workflow,
+    metrics,
+    flags: {
+      _archived: options.archived === true,
+      hasInitialReport,
+      hasReevaluationOpportunity,
+    },
+  };
+};
+
 const buildEncryptedPreview = async (
-    patient: Patient,
-    fileKey: CryptoKey,
-    options: { archived?: boolean; reports?: ReportMetadata[]; sessions?: TestSession[] }
+  patient: Patient,
+  fileKey: CryptoKey,
+  options: { archived?: boolean; assessments?: PatientAssessment[] },
 ) => {
-    const payload = buildPreviewPayload(patient, options);
-    return encryptBlob(payload, fileKey);
+  const payload = buildPreviewPayload(patient, options);
+  return encryptBlob(payload, fileKey);
 };
 
 const toPreviewMeta = (payload: PatientEncryptedPreviewV2): PatientDashboardPreviewMeta => ({
-    uiVersion: 2,
-    workflow: payload.workflow,
-    metrics: payload.metrics,
-    flags: payload.flags,
+  uiVersion: 2,
+  workflow: payload.workflow,
+  metrics: payload.metrics,
+  flags: payload.flags,
 });
 
-const buildFallbackPreviewMeta = (
-    patient: Patient,
-    archived: boolean
-): PatientDashboardPreviewMeta => {
-    const metrics: PatientDashboardPreviewMeta['metrics'] = {
-        reportsCount: 0,
-        sessionsCount: 0,
-        lastReportDate: null,
-        lastSessionDate: null,
-    };
+const buildFallbackPreviewMeta = (patient: Patient, archived: boolean): PatientDashboardPreviewMeta => {
+  const metrics: PatientDashboardPreviewMeta['metrics'] = {
+    assessmentsCount: 0,
+    formalReportsCount: 0,
+    lastAssessmentDate: null,
+    lastFormalReportDate: null,
+  };
+  const workflow = buildWorkflowState(patient, metrics, false, false);
 
-    const workflow = buildWorkflowState(patient, metrics, false, false);
-
-    return {
-        uiVersion: 2,
-        workflow,
-        metrics,
-        flags: {
-            _archived: archived,
-            hasInitialReport: false,
-            hasReevaluationOpportunity: false,
-        },
-    };
+  return {
+    uiVersion: 2,
+    workflow,
+    metrics,
+    flags: {
+      _archived: archived,
+      hasInitialReport: false,
+      hasReevaluationOpportunity: false,
+    },
+  };
 };
 
 const isPreviewV2 = (value: unknown): value is PatientEncryptedPreviewV2 => {
-    if (!value || typeof value !== 'object') return false;
-    const candidate = value as Partial<PatientEncryptedPreviewV2>;
-    return candidate.uiVersion === 2 && !!candidate.identity && typeof candidate.identity === 'object';
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<PatientEncryptedPreviewV2>;
+  return candidate.uiVersion === 2 && !!candidate.identity && typeof candidate.identity === 'object';
 };
 
 const parsePreviewPayload = (preview: unknown): { patient: Patient; previewMeta: PatientDashboardPreviewMeta; archived: boolean } => {
-    if (isPreviewV2(preview)) {
-        const archived = preview.flags?._archived === true;
-        const patient = {
-            ...createEmptyPatient(),
-            ...preview.identity,
-        };
-
-        const workflow = preview.workflow || buildFallbackPreviewMeta(patient, archived).workflow;
-        const metrics = preview.metrics || buildFallbackPreviewMeta(patient, archived).metrics;
-        const progressLabel: PatientDashboardProgressLabel = (
-            workflow.progressLabel === 'created' ||
-            workflow.progressLabel === 'infos_recues' ||
-            workflow.progressLabel === 'tests_saisis' ||
-            workflow.progressLabel === 'termine'
-        ) ? workflow.progressLabel : 'created';
-
-        const normalizedPreview: PatientEncryptedPreviewV2 = {
-            uiVersion: 2,
-            identity: preview.identity,
-            workflow: {
-                progressPercent: clampPercent(workflow.progressPercent),
-                progressLabel,
-                statusTone: workflow.statusTone === 'success' || workflow.statusTone === 'warning' ? workflow.statusTone : 'neutral',
-                nextAction: workflow.nextAction || 'open_patient',
-            },
-            metrics: {
-                reportsCount: Math.max(0, Number(metrics.reportsCount || 0)),
-                sessionsCount: Math.max(0, Number(metrics.sessionsCount || 0)),
-                lastReportDate: metrics.lastReportDate || null,
-                lastSessionDate: metrics.lastSessionDate || null,
-            },
-            flags: {
-                _archived: archived,
-                hasInitialReport: preview.flags?.hasInitialReport === true,
-                hasReevaluationOpportunity: preview.flags?.hasReevaluationOpportunity === true,
-            },
-        };
-
-        return { patient, previewMeta: toPreviewMeta(normalizedPreview), archived };
-    }
-
-    const legacyPreview = (preview || {}) as LegacyPreviewPayload;
-    const { _archived, ...legacyWithoutArchived } = legacyPreview;
+  if (!isPreviewV2(preview)) {
+    const legacy = (preview || {}) as Partial<Patient> & { _archived?: boolean };
+    const { _archived, ...identity } = legacy;
     const archived = _archived === true;
-    const patient = {
-        ...createEmptyPatient(),
-        ...(legacyWithoutArchived as Partial<Patient>),
+    const patient = { ...createEmptyPatient(), ...(identity as Partial<Patient>) };
+    return { patient, previewMeta: buildFallbackPreviewMeta(patient, archived), archived };
+  }
+
+  const archived = preview.flags?._archived === true;
+  const patient = { ...createEmptyPatient(), ...preview.identity };
+  const workflow = preview.workflow || buildFallbackPreviewMeta(patient, archived).workflow;
+  const metrics = preview.metrics || buildFallbackPreviewMeta(patient, archived).metrics;
+
+  const progressLabel: PatientDashboardProgressLabel =
+    workflow.progressLabel === 'created' ||
+    workflow.progressLabel === 'infos_recues' ||
+    workflow.progressLabel === 'tests_saisis' ||
+    workflow.progressLabel === 'termine'
+      ? workflow.progressLabel
+      : 'created';
+
+  const normalizedPreview: PatientEncryptedPreviewV2 = {
+    uiVersion: 2,
+    identity: preview.identity,
+    workflow: {
+      progressPercent: clampPercent(workflow.progressPercent),
+      progressLabel,
+      statusTone: workflow.statusTone === 'success' || workflow.statusTone === 'warning' ? workflow.statusTone : 'neutral',
+      nextAction: workflow.nextAction || 'open_patient',
+    },
+    metrics: {
+      assessmentsCount: Math.max(0, Number((metrics as Record<string, unknown>).assessmentsCount || (metrics as Record<string, unknown>).sessionsCount || 0)),
+      formalReportsCount: Math.max(0, Number((metrics as Record<string, unknown>).formalReportsCount || (metrics as Record<string, unknown>).reportsCount || 0)),
+      lastAssessmentDate:
+        ((metrics as Record<string, unknown>).lastAssessmentDate as string | null) ||
+        ((metrics as Record<string, unknown>).lastSessionDate as string | null) ||
+        null,
+      lastFormalReportDate:
+        ((metrics as Record<string, unknown>).lastFormalReportDate as string | null) ||
+        ((metrics as Record<string, unknown>).lastReportDate as string | null) ||
+        null,
+    },
+    flags: {
+      _archived: archived,
+      hasInitialReport: preview.flags?.hasInitialReport === true,
+      hasReevaluationOpportunity: preview.flags?.hasReevaluationOpportunity === true,
+    },
+  };
+
+  return { patient, previewMeta: toPreviewMeta(normalizedPreview), archived };
+};
+
+const mapAssessmentRowsToData = async (
+  rows: Array<{
+    id: string;
+    assessment_at: string;
+    kind: PatientAssessment['kind'];
+    has_formal_report: boolean;
+    test_name: string | null;
+    iv: string;
+    encrypted_payload: string;
+  }>,
+  fileKey: CryptoKey,
+): Promise<PatientAssessment[]> => {
+  return Promise.all(
+    rows.map(async (row) => {
+      const decrypted = (await decryptBlob(row.iv, row.encrypted_payload, fileKey)) as {
+        testName?: string | null;
+        results?: Record<string, ScoreResult> | null;
+        report?: PatientAssessment['report'] | null;
+      };
+      return {
+        id: row.id,
+        date: row.assessment_at,
+        kind: row.kind,
+        hasFormalReport: row.has_formal_report === true,
+        testName: decrypted?.testName || row.test_name || undefined,
+        results: decrypted?.results || undefined,
+        report: decrypted?.report || undefined,
+      } satisfies PatientAssessment;
+    }),
+  );
+};
+
+const buildDemoAssessments = (patientId: string): PatientAssessment[] => {
+  if (patientId === DEMO_PATIENTS.SARAH.id) {
+    const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & {
+      history?: Array<{ id: string; date: string; testName: string; results: Record<string, ScoreResult> }>;
+      reports?: Array<{ id: string; date: string; type: 'initial' | 'reevaluation'; patientName: string; sections: unknown[] }>;
     };
 
-    return {
-        patient,
-        previewMeta: buildFallbackPreviewMeta(patient, archived),
-        archived,
-    };
+    const history = sarahDemo.history || [];
+    const reports = sarahDemo.reports || [];
+
+    return [
+      ...reports.map((report) => ({
+        id: report.id,
+        date: report.date,
+        kind: report.type,
+        hasFormalReport: true,
+        testName: report.type === 'initial' ? 'Bilan initial' : 'Reevaluation',
+        report: { status: 'completed', patientName: report.patientName, sections: report.sections },
+      })),
+      ...history.map((entry) => ({
+        id: entry.id,
+        date: entry.date,
+        kind: 'mini_reevaluation',
+        hasFormalReport: false,
+        testName: entry.testName,
+        results: entry.results,
+      })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
+    return [
+      {
+        id: 'demo-assessment-leo',
+        date: new Date(Date.now() - 86400000 * 21).toISOString(),
+        kind: 'mini_reevaluation',
+        hasFormalReport: false,
+        testName: 'Bilan multi-tests',
+        results: DEMO_PATIENTS.LEO.tests as unknown as Record<string, ScoreResult>,
+      },
+    ];
+  }
+
+  return [];
 };
 
 export const StorageService = {
-    
-    setDemoMode: (active: boolean) => {
-        _isDemoMode = active;
-        Logger.warn('DB', `Storage Service switched to DEMO MODE: ${active}`);
-    },
+  setDemoMode: (active: boolean) => {
+    _isDemoMode = active;
+    Logger.warn('DB', `Storage Service switched to DEMO MODE: ${active}`);
+  },
 
-    /**
-     * NOUVEAU : CRÉATION STRICTE DU PATIENT (INSERT)
-     * Génère l'ID serveur et la FileKey.
-     * Appelé automatiquement dès que Nom/Prénom sont saisis.
-     */
-    createPatient: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
-        if (_isDemoMode) return 'demo-new-' + crypto.randomUUID();
+  createPatient: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
+    if (_isDemoMode) return `demo-new-${crypto.randomUUID()}`;
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("Utilisateur non connecté");
-        const normalizedPatient = normalizePatientIdentity(patientData);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Utilisateur non connecte');
 
-        // 1. Génération de la Clé de Dossier (FileKey)
-        const fileKey = await generateSymetricKey();
-        const wrapped = await wrapKey(fileKey, orgKey);
-        const encryptedFileKeyStr = `${wrapped.iv}:${wrapped.content}`;
+    const normalizedPatient = normalizePatientIdentity(patientData);
 
-        // 2. Chiffrement Identité (Full + Preview)
-        const encIdentity = await encryptBlob({ ...normalizedPatient, _archived: false }, fileKey);
-        
-        const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, { archived: false, reports: [], sessions: [] });
+    const fileKey = await generateSymetricKey();
+    const wrapped = await wrapKey(fileKey, orgKey);
+    const encryptedFileKeyStr = `${wrapped.iv}:${wrapped.content}`;
 
-        // 3. Récupération Org ID
-        let orgId = patientData.id ? undefined : undefined; // Pas d'ID connu au départ
-        if (!orgId) {
-             const { data: member } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id).limit(1).single();
-             if(member) orgId = member.organization_id;
-             else throw new Error("Organisation introuvable.");
-        }
+    const encIdentity = await encryptBlob({ ...normalizedPatient, _archived: false }, fileKey);
+    const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, { archived: false, assessments: [] });
 
-        // 4. INSERT en base
-        const { data, error } = await supabase.from('patients').insert({
-            organization_id: orgId,
-            updated_at: new Date().toISOString(),
-            last_interaction: new Date().toISOString(),
-            iv: encIdentity.iv,
-            encrypted_identity: encIdentity.content,
-            preview_iv: encPreview.iv,
-            encrypted_preview: encPreview.content,
-            encrypted_file_key: encryptedFileKeyStr
-        }).select('id').single();
+    const { data: member } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single();
 
-        if (error) {
-            Logger.error('DB', "Erreur création patient", error);
-            throw error;
-        }
+    if (!member?.organization_id) throw new Error('Organisation introuvable.');
 
-        Logger.info('DB', "Patient created with Server ID:", data.id);
-        return data.id;
-    },
-    ensurePatientId: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
-        if (patientData.id) return patientData.id;
-        if (!isPatientCreationReady(patientData)) {
-            throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
-        }
-        return StorageService.createPatient(patientData, orgKey);
-    },
+    const { data, error } = await supabase
+      .from('patients')
+      .insert({
+        organization_id: member.organization_id,
+        updated_at: new Date().toISOString(),
+        last_interaction: new Date().toISOString(),
+        iv: encIdentity.iv,
+        encrypted_identity: encIdentity.content,
+        preview_iv: encPreview.iv,
+        encrypted_preview: encPreview.content,
+        encrypted_file_key: encryptedFileKeyStr,
+      })
+      .select('id')
+      .single();
 
-    syncPatientIdentityPreview: async (patientId: string, patientData: Patient, orgKey: CryptoKey): Promise<void> => {
-        if (_isDemoMode) return;
+    if (error) throw error;
+    return data.id;
+  },
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("Utilisateur non connecté");
-        if (!patientId) throw new Error('Missing patient ID.');
+  ensurePatientId: async (patientData: Patient, orgKey: CryptoKey): Promise<string> => {
+    if (patientData.id) return patientData.id;
+    if (!isPatientCreationReady(patientData)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
+    return StorageService.createPatient(patientData, orgKey);
+  },
 
-        const { data: existingPatient, error: existingPatientError } = await supabase
-            .from('patients')
-            .select('encrypted_file_key, iv, encrypted_identity, preview_iv, encrypted_preview')
-            .eq('id', patientId)
-            .single();
+  syncPatientIdentityPreview: async (patientId: string, patientData: Patient, orgKey: CryptoKey): Promise<void> => {
+    if (_isDemoMode) return;
 
-        if (existingPatientError) throw existingPatientError;
-        if (!existingPatient?.encrypted_file_key) throw new Error("Dossier introuvable ou corrompu (Clé manquante).");
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Utilisateur non connecte');
 
-        const [iv, content] = existingPatient.encrypted_file_key.split(':');
-        const fileKey = await unwrapKey({ iv, content }, orgKey);
-        const normalizedPatient = normalizePatientIdentity(patientData);
+    const { data: existingPatient, error: existingPatientError } = await supabase
+      .from('patients')
+      .select('encrypted_file_key, iv, encrypted_identity, preview_iv, encrypted_preview')
+      .eq('id', patientId)
+      .single();
 
-        let archived = false;
-        if (existingPatient.iv && existingPatient.encrypted_identity) {
-            const decryptedIdentity = await decryptBlob(existingPatient.iv, existingPatient.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-            archived = decryptedIdentity?._archived === true;
-        }
+    if (existingPatientError) throw existingPatientError;
+    if (!existingPatient?.encrypted_file_key) throw new Error('Dossier introuvable ou corrompu (cle manquante).');
 
-        let previewPayload: PatientEncryptedPreviewV2;
-        if (existingPatient.preview_iv && existingPatient.encrypted_preview) {
-            const decryptedPreview = await decryptBlob(existingPatient.preview_iv, existingPatient.encrypted_preview, fileKey);
-            const parsedPreview = parsePreviewPayload(decryptedPreview);
-            previewPayload = {
-                uiVersion: 2,
-                identity: toPreviewIdentity(normalizedPatient),
-                workflow: parsedPreview.previewMeta.workflow,
-                metrics: parsedPreview.previewMeta.metrics,
-                flags: {
-                    ...parsedPreview.previewMeta.flags,
-                    _archived: archived,
-                },
-            };
-        } else {
-            const fallback = buildFallbackPreviewMeta(normalizedPatient, archived);
-            previewPayload = {
-                uiVersion: 2,
-                identity: toPreviewIdentity(normalizedPatient),
-                workflow: fallback.workflow,
-                metrics: fallback.metrics,
-                flags: fallback.flags,
-            };
-        }
+    const [kIv, kContent] = existingPatient.encrypted_file_key.split(':');
+    const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
+    const normalizedPatient = normalizePatientIdentity(patientData);
 
-        const patientToSave = { ...normalizedPatient, _archived: archived };
-        const encIdentity = await encryptBlob(patientToSave, fileKey);
-        const encPreview = await encryptBlob(previewPayload, fileKey);
+    let archived = false;
+    if (existingPatient.iv && existingPatient.encrypted_identity) {
+      const decryptedIdentity = (await decryptBlob(existingPatient.iv, existingPatient.encrypted_identity, fileKey)) as Patient & {
+        _archived?: boolean;
+      };
+      archived = decryptedIdentity?._archived === true;
+    }
 
-        const patientPayload = {
-            updated_at: new Date().toISOString(),
-            iv: encIdentity.iv,
-            encrypted_identity: encIdentity.content,
-            preview_iv: encPreview.iv,
-            encrypted_preview: encPreview.content,
-        };
+    let previewPayload: PatientEncryptedPreviewV2;
+    if (existingPatient.preview_iv && existingPatient.encrypted_preview) {
+      const decryptedPreview = await decryptBlob(existingPatient.preview_iv, existingPatient.encrypted_preview, fileKey);
+      const parsedPreview = parsePreviewPayload(decryptedPreview);
+      previewPayload = {
+        uiVersion: 2,
+        identity: toPreviewIdentity(normalizedPatient),
+        workflow: parsedPreview.previewMeta.workflow,
+        metrics: parsedPreview.previewMeta.metrics,
+        flags: {
+          ...parsedPreview.previewMeta.flags,
+          _archived: archived,
+        },
+      };
+    } else {
+      const fallback = buildFallbackPreviewMeta(normalizedPatient, archived);
+      previewPayload = {
+        uiVersion: 2,
+        identity: toPreviewIdentity(normalizedPatient),
+        workflow: fallback.workflow,
+        metrics: fallback.metrics,
+        flags: fallback.flags,
+      };
+    }
 
-        const { error: patError } = await supabase.from('patients').update(patientPayload).eq('id', patientId);
-        if (patError) throw patError;
-    },
+    const patientToSave = { ...normalizedPatient, _archived: archived };
+    const encIdentity = await encryptBlob(patientToSave, fileKey);
+    const encPreview = await encryptBlob(previewPayload, fileKey);
 
-    /**
-     * GESTION DES BROUILLONS
-     * Sécurisé : Ne sauvegarde QUE si patient_id est présent (pour éviter les orphelins).
-     */
-    saveDraft: async (draftData: DraftPayload, sessionKey: CryptoKey): Promise<void> => {
-        if (_isDemoMode) {
-            return;
-        }
+    const { error: patError } = await supabase
+      .from('patients')
+      .update({
+        updated_at: new Date().toISOString(),
+        iv: encIdentity.iv,
+        encrypted_identity: encIdentity.content,
+        preview_iv: encPreview.iv,
+        encrypted_preview: encPreview.content,
+      })
+      .eq('id', patientId);
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+    if (patError) throw patError;
+  },
 
-        const patientId = draftData?.patient?.id;
-        
-        // PROTECTION ORPHELINS : On refuse de sauvegarder un draft sans ID patient en base
-        if (!patientId) {
-            Logger.warn('DB', "Skipping draft save: Missing Patient ID (Wait for creation)");
-            return; 
-        }
+  saveDraft: async (draftData: DraftPayload, sessionKey: CryptoKey): Promise<void> => {
+    if (_isDemoMode) return;
 
-        Logger.debug('DB', 'Saving draft for patient', { patientId });
-        
-        const enc = await encryptBlob(draftData, sessionKey);
-        
-        // On écrase le brouillon existant pour ce patient (1 seul brouillon par patient par user)
-        const { data: existing } = await supabase
-            .from('drafts')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('patient_id', patientId)
-            .maybeSingle();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
 
-        const payload: Record<string, string> = {
+    const patientId = draftData?.patient?.id;
+    if (!patientId) return;
+
+    const enc = await encryptBlob(draftData, sessionKey);
+
+    const { data: existing } = await supabase
+      .from('drafts')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('patient_id', patientId)
+      .maybeSingle();
+
+    const payload: Record<string, string> = {
+      user_id: user.id,
+      updated_at: new Date().toISOString(),
+      iv: enc.iv,
+      encrypted_data: enc.content,
+      patient_id: patientId,
+    };
+
+    if (existing) await supabase.from('drafts').update(payload).eq('id', existing.id);
+    else await supabase.from('drafts').insert(payload);
+  },
+
+  getDraftsMetadata: async (): Promise<Record<string, string>> => {
+    if (_isDemoMode) return {};
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return {};
+
+    const { data, error } = await supabase.from('drafts').select('patient_id, updated_at').eq('user_id', user.id);
+    if (error || !data) return {};
+
+    const map: Record<string, string> = {};
+    data.forEach((row: { patient_id: string | null; updated_at: string }) => {
+      if (row.patient_id) map[row.patient_id] = row.updated_at;
+    });
+
+    return map;
+  },
+
+  getDraft: async (sessionKey: CryptoKey, patientId?: string): Promise<DraftPayload | null> => {
+    if (_isDemoMode) return null;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    let query = supabase.from('drafts').select('*').eq('user_id', user.id);
+    query = patientId ? query.eq('patient_id', patientId) : query.is('patient_id', null);
+
+    const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (error || !data) return null;
+
+    try {
+      return (await decryptBlob(data.iv, data.encrypted_data, sessionKey)) as DraftPayload;
+    } catch {
+      return null;
+    }
+  },
+
+  deleteDraft: async (patientId?: string): Promise<void> => {
+    if (_isDemoMode) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    let query = supabase.from('drafts').delete().eq('user_id', user.id);
+    query = patientId ? query.eq('patient_id', patientId) : query.is('patient_id', null);
+    await query;
+  },
+
+  saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
+    if (_isDemoMode) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Utilisateur non connecte');
+
+    const normalizedPatient = normalizePatientIdentity(file.patient);
+    if (!file.id) throw new Error('Patient ID manquant');
+
+    const { data: existingPatient } = await supabase
+      .from('patients')
+      .select('encrypted_file_key, organization_id')
+      .eq('id', file.id)
+      .single();
+
+    if (!existingPatient?.encrypted_file_key) {
+      throw new Error('Dossier introuvable ou corrompu (cle manquante).');
+    }
+
+    const [iv, content] = existingPatient.encrypted_file_key.split(':');
+    const fileKey = await unwrapKey({ iv, content }, orgKey);
+
+    const patientToSave = { ...normalizedPatient, _archived: file.archived === true };
+    const encIdentity = await encryptBlob(patientToSave, fileKey);
+    const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, {
+      archived: file.archived,
+      assessments: file.assessments,
+    });
+
+    const { error: patError } = await supabase
+      .from('patients')
+      .update({
+        updated_at: new Date().toISOString(),
+        last_interaction: file.lastInteraction,
+        iv: encIdentity.iv,
+        encrypted_identity: encIdentity.content,
+        preview_iv: encPreview.iv,
+        encrypted_preview: encPreview.content,
+      })
+      .eq('id', file.id);
+
+    if (patError) throw patError;
+
+    if (file.assessments.length > 0) {
+      const assessmentPayloads = await Promise.all(
+        file.assessments.map(async (assessment) => {
+          const enc = await encryptBlob(
+            {
+              testName: assessment.testName || null,
+              results: assessment.results || null,
+              report: assessment.report || null,
+            },
+            fileKey,
+          );
+
+          return {
+            id: assessment.id,
             user_id: user.id,
-            updated_at: new Date().toISOString(),
+            patient_id: file.id,
+            organization_id: existingPatient.organization_id,
+            kind: assessment.kind,
+            has_formal_report: assessment.hasFormalReport,
+            assessment_at: assessment.date,
+            test_name: assessment.testName || null,
             iv: enc.iv,
-            encrypted_data: enc.content,
-            patient_id: patientId
-        };
+            encrypted_payload: enc.content,
+          };
+        }),
+      );
 
-        if (existing) {
-            await supabase.from('drafts').update(payload).eq('id', existing.id);
-        } else {
-            await supabase.from('drafts').insert(payload);
-        }
-    },
+      const { error: assessmentsError } = await supabase.from('patient_assessments').upsert(assessmentPayloads);
+      if (assessmentsError) throw assessmentsError;
+    }
+  },
 
-    getDraftsMetadata: async (): Promise<Record<string, string>> => {
-        if (_isDemoMode) return {};
+  loadPatientListPage: async (
+    orgKey: CryptoKey,
+    options?: { orgId?: string; offset?: number; limit?: number },
+  ): Promise<{ files: PatientFile[]; hasMore: boolean; nextOffset: number }> => {
+    if (_isDemoMode) {
+      const assessments = buildDemoAssessments(DEMO_PATIENTS.SARAH.id);
+      const followup = buildFallbackFollowupFromAssessments(
+        DEMO_PATIENTS.SARAH.id,
+        DEMO_PATIENTS.SARAH.patient.organizationId || 'demo-org',
+        assessments,
+      );
+      const demoFile: PatientFile = {
+        id: DEMO_PATIENTS.SARAH.id,
+        patient: DEMO_PATIENTS.SARAH.patient,
+        assessments,
+        followup,
+        lastInteraction: assessments[0]?.date || new Date().toISOString(),
+        archived: false,
+      };
+      demoFile.previewMeta = toPreviewMeta(buildPreviewPayload(demoFile.patient, { archived: false, assessments }));
+      return { files: [demoFile], hasMore: false, nextOffset: 1 };
+    }
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return {};
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { files: [], hasMore: false, nextOffset: options?.offset ?? 0 };
 
-        const { data, error } = await supabase
-            .from('drafts')
-            .select('patient_id, updated_at')
-            .eq('user_id', user.id);
+    const pageSize = options?.limit ?? PATIENT_PAGE_SIZE;
+    const offset = options?.offset ?? 0;
 
-        if (error || !data) return {};
+    let resolvedOrgId = options?.orgId;
+    if (!resolvedOrgId) {
+      const { data: member } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      resolvedOrgId = member?.organization_id || undefined;
+    }
 
-        const map: Record<string, string> = {};
-        data.forEach((row: { patient_id: string | null; updated_at: string }) => {
-            if (row.patient_id) {
-                map[row.patient_id] = row.updated_at;
-            }
-        });
-        return map;
-    },
+    let query = supabase
+      .from('patients')
+      .select('id, last_interaction, encrypted_preview, preview_iv, encrypted_file_key, organization_id')
+      .order('last_interaction', { ascending: false })
+      .range(offset, offset + pageSize);
 
-    getDraft: async (sessionKey: CryptoKey, patientId?: string): Promise<DraftPayload | null> => {
-        if (_isDemoMode) return null;
+    if (resolvedOrgId) query = query.eq('organization_id', resolvedOrgId);
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
+    const { data: patients, error } = await query;
+    if (error) return { files: [], hasMore: false, nextOffset: offset };
 
-        let query = supabase.from('drafts').select('*').eq('user_id', user.id);
-        if (patientId) {
-            query = query.eq('patient_id', patientId);
-        } else {
-            // Fallback legacy (brouillons orphelins v1)
-            query = query.is('patient_id', null); 
-        }
+    const files: PatientFile[] = [];
+    const safePatients = patients || [];
+    const hasMore = safePatients.length > pageSize;
+    const pagePatients = safePatients.slice(0, pageSize);
+    const followupByPatientId = new Map<string, PatientFollowup>();
 
-        const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (pagePatients.length > 0) {
+      const patientIds = pagePatients.map((row) => row.id);
+      const { data: followups } = await supabase
+        .from('patient_followups')
+        .select('id, patient_id, organization_id, status, due_at, snoozed_until, note, created_at, updated_at')
+        .in('patient_id', patientIds);
 
-        if (error || !data) return null;
+      (followups || []).forEach((row) => {
+        const mapped = mapFollowupRow(row as FollowupRow);
+        followupByPatientId.set(mapped.patientId, mapped);
+      });
+    }
 
-        try {
-            return await decryptBlob(data.iv, data.encrypted_data, sessionKey);
-        } catch (e) {
-            Logger.error('CRYPTO', "Failed to decrypt draft", e);
-            return null;
-        }
-    },
-
-    deleteDraft: async (patientId?: string): Promise<void> => {
-        if (_isDemoMode) return;
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        let query = supabase.from('drafts').delete().eq('user_id', user.id);
-        if (patientId) {
-            query = query.eq('patient_id', patientId);
-        } else {
-            query = query.is('patient_id', null);
-        }
-        await query;
-    },
-
-    /**
-     * MISE À JOUR PATIENT (UPDATE)
-     * Utilise FileKey existante. Ne fait plus d'INSERT (rôle de createPatient).
-     */
-    saveFile: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
-        if (_isDemoMode) {
-            return;
-        }
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("Utilisateur non connecté");
-        const normalizedPatient = normalizePatientIdentity(file.patient);
-
-        if (!file.id) {
-            throw new Error("ERREUR CRITIQUE: Tentative de mise à jour d'un patient sans ID.");
-        }
-
-        // 1. Récupération Clé Dossier
-        const { data: existingPatient } = await supabase
-            .from('patients')
-            .select('encrypted_file_key, organization_id')
-            .eq('id', file.id)
-            .single();
-
-        if (!existingPatient || !existingPatient.encrypted_file_key) {
-            throw new Error("Dossier introuvable ou corrompu (Clé manquante).");
-        }
-
-        const [iv, content] = existingPatient.encrypted_file_key.split(':');
-        const fileKey = await unwrapKey({ iv, content }, orgKey);
-
-        Logger.info('DB', 'Updating patient file', { id: file.id });
-
-        // 2. Chiffrement Identité & Preview
-        const patientToSave = { ...normalizedPatient, _archived: file.archived };
-        const encIdentity = await encryptBlob(patientToSave, fileKey);
-
-        const encPreview = await buildEncryptedPreview(normalizedPatient, fileKey, {
-            archived: file.archived,
-            reports: file.reports,
-            sessions: file.sessions,
-        });
-
-        // 3. UPDATE ONLY
-        const patientPayload = {
-            updated_at: new Date().toISOString(),
-            last_interaction: file.lastInteraction,
-            iv: encIdentity.iv,
-            encrypted_identity: encIdentity.content,
-            preview_iv: encPreview.iv,
-            encrypted_preview: encPreview.content,
-        };
-
-        const { error: patError } = await supabase.from('patients').update(patientPayload).eq('id', file.id);
-        if (patError) throw patError;
-
-        // 4. Rapports (Upsert via ID)
-        if (file.reports.length > 0) {
-            const reportsPayloads = await Promise.all(file.reports.map(async (r) => {
-                const enc = await encryptBlob(r, fileKey);
-                return {
-                    id: r.id,
-                    user_id: user.id,
-                    patient_id: file.id,
-                    created_at: r.date,
-                    type: r.type,
-                    status: r.status,
-                    iv: enc.iv,
-                    encrypted_content: enc.content
-                };
-            }));
-            await supabase.from('reports').upsert(reportsPayloads);
-        }
-
-        // 5. Sessions (Upsert via ID)
-        if (file.sessions.length > 0) {
-            const sessionsPayloads = await Promise.all(file.sessions.map(async (s) => {
-                const enc = await encryptBlob(s.results, fileKey);
-                return {
-                    id: s.id,
-                    user_id: user.id,
-                    patient_id: file.id,
-                    date: s.date,
-                    test_id: s.testId,
-                    test_name: s.testName,
-                    iv: enc.iv,
-                    encrypted_results: enc.content
-                };
-            }));
-            await supabase.from('sessions').upsert(sessionsPayloads);
-        }
-    },
-
-    loadPatientListPage: async (
-        orgKey: CryptoKey,
-        options?: { orgId?: string; offset?: number; limit?: number }
-    ): Promise<{ files: PatientFile[]; hasMore: boolean; nextOffset: number }> => {
-        if (_isDemoMode) {
-            const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[]; reports?: ReportMetadata[] };
-            const history = sarahDemo.history || [];
-            const reports = sarahDemo.reports || [];
-            const sarahFile: PatientFile = {
-                id: DEMO_PATIENTS.SARAH.id,
-                patient: DEMO_PATIENTS.SARAH.patient,
-                reports,
-                sessions: history.length > 0 ? history : [{
-                    id: 'demo-session-sarah',
-                    date: new Date(Date.now() - 86400000 * 2).toISOString(),
-                    testId: 'multi',
-                    testName: 'Bilan Écriture',
-                    results: DEMO_PATIENTS.SARAH.tests as unknown as Record<string, ScoreResult>
-                }],
-                lastInteraction: history.length > 0 ? history[history.length - 1].date : new Date(Date.now() - 86400000 * 2).toISOString(),
-                archived: false
-            };
-            const demoPreview = buildPreviewPayload(sarahFile.patient, { archived: false, reports, sessions: sarahFile.sessions });
-            sarahFile.previewMeta = toPreviewMeta(demoPreview);
-            return { files: [sarahFile], hasMore: false, nextOffset: 1 };
-        }
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if(!user) return { files: [], hasMore: false, nextOffset: options?.offset ?? 0 };
-
-        const pageSize = options?.limit ?? PATIENT_PAGE_SIZE;
-        const offset = options?.offset ?? 0;
-
-        let resolvedOrgId = options?.orgId;
-        if (!resolvedOrgId) {
-            const { data: member } = await supabase
-                .from('organization_members')
-                .select('organization_id')
-                .eq('user_id', user.id)
-                .maybeSingle();
-            resolvedOrgId = member?.organization_id || undefined;
-        }
-
-        let query = supabase
-            .from('patients')
-            .select('id, last_interaction, encrypted_preview, preview_iv, encrypted_file_key, organization_id')
-            .order('last_interaction', { ascending: false })
-            .range(offset, offset + pageSize);
-
-        if (resolvedOrgId) {
-            query = query.eq('organization_id', resolvedOrgId);
-        }
-
-        const { data: patients, error } = await query;
-
-        if (error) {
-            Logger.error('DB', "Error loading patient list", error);
-            return { files: [], hasMore: false, nextOffset: offset };
-        }
-
-        const files: PatientFile[] = [];
-        const safePatients = patients || [];
-        const hasMore = safePatients.length > pageSize;
-        const pagePatients = safePatients.slice(0, pageSize);
-        const missingPreviewIds = pagePatients
-            .filter((row) => !row.encrypted_preview || !row.preview_iv)
-            .map((row) => row.id);
-        const identityById = new Map<string, { iv: string; encrypted_identity: string }>();
-
-        if (missingPreviewIds.length > 0) {
-            const { data: identities, error: identityError } = await supabase
-                .from('patients')
-                .select('id, iv, encrypted_identity')
-                .in('id', missingPreviewIds);
-
-            if (identityError) {
-                Logger.error('DB', 'Error loading patient identities', identityError);
-            } else {
-                (identities || []).forEach((row: { id: string; iv: string; encrypted_identity: string }) => {
-                    identityById.set(row.id, { iv: row.iv, encrypted_identity: row.encrypted_identity });
-                });
-            }
-        }
-
-        // Parallelize crypto operations with batching to avoid overwhelming Web Crypto
-        const BATCH_SIZE = 10;
-        const decryptPatient = async (row: typeof pagePatients[number]): Promise<PatientFile | null> => {
-            try {
-                if (!row.encrypted_file_key) return null;
-
-                const [kIv, kContent] = row.encrypted_file_key.split(':');
-                const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
-
-                let patientData: Patient;
-                let previewMeta: PatientDashboardPreviewMeta;
-                let isArchived = false;
-
-                if (row.encrypted_preview && row.preview_iv) {
-                    const decryptedPreview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
-                    const parsedPreview = parsePreviewPayload(decryptedPreview);
-                    isArchived = parsedPreview.archived;
-                    patientData = parsedPreview.patient;
-                    previewMeta = parsedPreview.previewMeta;
-                } else {
-                    const identityRow = identityById.get(row.id);
-                    if (!identityRow?.encrypted_identity) return null;
-                    const fullData = await decryptBlob(identityRow.iv, identityRow.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-                    const { _archived, ...identityData } = fullData;
-                    isArchived = _archived === true;
-                    patientData = { ...createEmptyPatient(), ...(identityData as Patient) };
-                    previewMeta = buildFallbackPreviewMeta(patientData, isArchived);
-                }
-
-                return {
-                    id: row.id,
-                    patient: { ...patientData, organizationId: row.organization_id },
-                    reports: [], 
-                    sessions: [],
-                    lastInteraction: row.last_interaction,
-                    archived: isArchived,
-                    encryptedFileKey: row.encrypted_file_key,
-                    previewMeta,
-                };
-            } catch (e) {
-                Logger.error('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
-                return null;
-            }
-        };
-
-        // Process in batches of BATCH_SIZE for controlled parallelism
-        for (let i = 0; i < pagePatients.length; i += BATCH_SIZE) {
-            const batch = pagePatients.slice(i, i + BATCH_SIZE);
-            const results = await Promise.allSettled(batch.map(decryptPatient));
-            for (const result of results) {
-                if (result.status === 'fulfilled' && result.value) {
-                    files.push(result.value);
-                }
-            }
-        }
-
-        return { files, hasMore, nextOffset: offset + pageSize };
-    },
-
-    loadPatientPreviewById: async (
-        patientId: string,
-        orgKey: CryptoKey,
-        options?: { orgId?: string }
-    ): Promise<PatientFile | null> => {
-        if (_isDemoMode) return null;
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
-
-        let query = supabase
-            .from('patients')
-            .select('id, last_interaction, encrypted_preview, preview_iv, encrypted_identity, iv, encrypted_file_key, organization_id')
-            .eq('id', patientId);
-
-        if (options?.orgId) {
-            query = query.eq('organization_id', options.orgId);
-        }
-
-        const { data: row, error } = await query.maybeSingle();
-        if (error || !row || !row.encrypted_file_key) return null;
-
-        try {
-            const [kIv, kContent] = row.encrypted_file_key.split(':');
-            const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
-
-            let patientData: Patient;
-            let previewMeta: PatientDashboardPreviewMeta;
-            let isArchived = false;
-
-            if (row.encrypted_preview && row.preview_iv) {
-                const decryptedPreview = await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey);
-                const parsedPreview = parsePreviewPayload(decryptedPreview);
-                patientData = parsedPreview.patient;
-                previewMeta = parsedPreview.previewMeta;
-                isArchived = parsedPreview.archived;
-            } else if (row.encrypted_identity && row.iv) {
-                const fullData = await decryptBlob(row.iv, row.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-                const { _archived, ...identityData } = fullData;
-                isArchived = _archived === true;
-                patientData = { ...createEmptyPatient(), ...(identityData as Patient) };
-                previewMeta = buildFallbackPreviewMeta(patientData, isArchived);
-            } else {
-                return null;
-            }
-
-            return {
-                id: row.id,
-                patient: { ...patientData, organizationId: row.organization_id },
-                reports: [],
-                sessions: [],
-                lastInteraction: row.last_interaction,
-                archived: isArchived,
-                encryptedFileKey: row.encrypted_file_key,
-                previewMeta,
-            };
-        } catch (e) {
-            Logger.error('CRYPTO', `Failed to decrypt patient ${patientId}`, e);
-            return null;
-        }
-    },
-
-    loadPatientHistoryPage: async (
-        patientId: string,
-        orgKey: CryptoKey,
-        options?: { encryptedFileKey?: string; reportOffset?: number; sessionOffset?: number; reportLimit?: number; sessionLimit?: number; skipReports?: boolean }
-    ): Promise<{ reports: ReportMetadata[]; sessions: TestSession[]; hasMoreReports: boolean; hasMoreSessions: boolean; nextReportOffset: number; nextSessionOffset: number }> => {
-        if (_isDemoMode) {
-            return { reports: [], sessions: [], hasMoreReports: false, hasMoreSessions: false, nextReportOffset: 0, nextSessionOffset: 0 };
-        }
-
-        const reportOffset = options?.reportOffset ?? 0;
-        const sessionOffset = options?.sessionOffset ?? 0;
-        const reportLimit = options?.reportLimit;
-        const sessionLimit = options?.sessionLimit ?? SESSIONS_PAGE_SIZE;
-        const shouldPageReports = typeof reportLimit === 'number';
-        const skipReports = options?.skipReports === true;
-
-        let encryptedFileKey = options?.encryptedFileKey;
-        if (!encryptedFileKey) {
-            const { data: patientRow, error: patientError } = await supabase
-                .from('patients')
-                .select('encrypted_file_key')
-                .eq('id', patientId)
-                .single();
-            if (patientError) throw patientError;
-            encryptedFileKey = patientRow?.encrypted_file_key || undefined;
-        }
-
-        if (!encryptedFileKey) {
-            throw new Error('Clé dossier introuvable.');
-        }
-
-        const [kIv, kContent] = encryptedFileKey.split(':');
+    for (const row of pagePatients) {
+      if (!row.encrypted_file_key) continue;
+      try {
+        const [kIv, kContent] = row.encrypted_file_key.split(':');
         const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
 
-        let reportRows: Record<string, string>[] = [];
-        if (!skipReports) {
-            let reportQuery = supabase
-                .from('reports')
-                .select('id, created_at, type, status, iv, encrypted_content')
-                .eq('patient_id', patientId)
-                .order('created_at', { ascending: false });
+        let patientData: Patient;
+        let previewMeta: PatientDashboardPreviewMeta;
+        let isArchived = false;
 
-            if (shouldPageReports) {
-                reportQuery = reportQuery.range(reportOffset, reportOffset + reportLimit);
-            }
-
-            const { data: reportsData, error: reportsError } = await reportQuery;
-
-            if (reportsError) throw reportsError;
-            reportRows = (reportsData || []) as Record<string, string>[];
+        if (row.encrypted_preview && row.preview_iv) {
+          const parsedPreview = parsePreviewPayload(await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey));
+          patientData = parsedPreview.patient;
+          previewMeta = parsedPreview.previewMeta;
+          isArchived = parsedPreview.archived;
+        } else {
+          patientData = createEmptyPatient();
+          previewMeta = buildFallbackPreviewMeta(patientData, false);
         }
 
-        const { data: sessionsData, error: sessionsError } = await supabase
-            .from('sessions')
-            .select('id, date, test_id, test_name, iv, encrypted_results')
-            .eq('patient_id', patientId)
-            .order('date', { ascending: false })
-            .range(sessionOffset, sessionOffset + sessionLimit);
-
-        if (sessionsError) throw sessionsError;
-
-        const sessionRows = sessionsData || [];
-        const hasMoreReports = !skipReports && shouldPageReports ? reportRows.length > reportLimit : false;
-        const hasMoreSessions = sessionRows.length > sessionLimit;
-
-        const reportSlice = skipReports ? [] : (shouldPageReports ? reportRows.slice(0, reportLimit) : reportRows);
-        const sessionSlice = sessionRows.slice(0, sessionLimit);
-
-        const reports = await Promise.all(reportSlice.map(async (r: Record<string, string>) => {
-            const decrypted = await decryptBlob(r.iv, r.encrypted_content, fileKey);
-            return { ...(decrypted as Record<string, unknown>), id: r.id, date: r.created_at, type: r.type, status: r.status } as ReportMetadata;
-        }));
-
-        const sessions = await Promise.all(sessionSlice.map(async (s: Record<string, string>) => {
-            const decryptedResults = await decryptBlob(s.iv, s.encrypted_results, fileKey);
-            return {
-                id: s.id,
-                date: s.date,
-                testId: s.test_id,
-                testName: s.test_name,
-                results: decryptedResults
-            } as TestSession;
-        }));
-
-        return {
-            reports,
-            sessions,
-            hasMoreReports,
-            hasMoreSessions,
-            nextReportOffset: !skipReports && shouldPageReports ? reportOffset + reportLimit : 0,
-            nextSessionOffset: sessionOffset + sessionLimit
-        };
-    },
-
-    loadPatientDetails: async (patientId: string, orgKey: CryptoKey, options?: { reportOffset?: number; sessionOffset?: number; reportLimit?: number; sessionLimit?: number; skipReports?: boolean }): Promise<{ reports: ReportMetadata[]; sessions: TestSession[]; patient: Patient; hasMoreReports: boolean; hasMoreSessions: boolean; nextReportOffset: number; nextSessionOffset: number }> => {
-        if (_isDemoMode) {
-            if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
-                return {
-                    reports: [],
-                    sessions: [],
-                    patient: DEMO_PATIENTS.LEO.patient,
-                    hasMoreReports: false,
-                    hasMoreSessions: false,
-                    nextReportOffset: 0,
-                    nextSessionOffset: 0
-                };
-            }
-            if (patientId === DEMO_PATIENTS.SARAH.id) {
-                const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & { history?: TestSession[]; reports?: ReportMetadata[] };
-                const history = sarahDemo.history || [];
-                const reports = sarahDemo.reports || [];
-                return {
-                    reports,
-                    sessions: history,
-                    patient: DEMO_PATIENTS.SARAH.patient,
-                    hasMoreReports: false,
-                    hasMoreSessions: false,
-                    nextReportOffset: 0,
-                    nextSessionOffset: 0
-                };
-            }
-            return {
-                reports: [],
-                sessions: [],
-                patient: DEMO_PATIENTS.SARAH.patient,
-                hasMoreReports: false,
-                hasMoreSessions: false,
-                nextReportOffset: 0,
-                nextSessionOffset: 0
-            };
-        }
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if(!user) throw new Error("Non connecté");
-
-        const { data: patientRow, error: pError } = await supabase
-            .from('patients')
-            .select('encrypted_file_key, encrypted_identity, iv, organization_id')
-            .eq('id', patientId)
-            .single();
-
-        if (pError || !patientRow || !patientRow.encrypted_file_key) {
-            throw new Error("Impossible de récupérer le dossier patient.");
-        }
-
-        const [kIv, kContent] = patientRow.encrypted_file_key.split(':');
-        const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
-
-        const decryptedIdentity = await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey) as Patient & { _archived?: boolean };
-        const { _archived, ...identityWithoutArchived } = decryptedIdentity;
-        const patientFull = { ...identityWithoutArchived, id: patientId, organizationId: patientRow.organization_id } as Patient;
-
-        const history = await StorageService.loadPatientHistoryPage(patientId, orgKey, {
-            encryptedFileKey: patientRow.encrypted_file_key,
-            reportOffset: options?.reportOffset,
-            sessionOffset: options?.sessionOffset,
-            reportLimit: options?.reportLimit,
-            sessionLimit: options?.sessionLimit
+        files.push({
+          id: row.id,
+          patient: { ...patientData, organizationId: row.organization_id },
+          assessments: [],
+          followup: followupByPatientId.get(row.id) || null,
+          lastInteraction: row.last_interaction,
+          archived: isArchived,
+          encryptedFileKey: row.encrypted_file_key,
+          previewMeta,
         });
+      } catch (e) {
+        Logger.warn('CRYPTO', `Failed to decrypt patient ${row.id}`, e);
+      }
+    }
 
+    return { files, hasMore, nextOffset: offset + pageSize };
+  },
+
+  loadPatientPreviewById: async (
+    patientId: string,
+    orgKey: CryptoKey,
+    options?: { orgId?: string },
+  ): Promise<PatientFile | null> => {
+    if (_isDemoMode) return null;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    let query = supabase
+      .from('patients')
+      .select('id, last_interaction, encrypted_preview, preview_iv, encrypted_identity, iv, encrypted_file_key, organization_id')
+      .eq('id', patientId);
+
+    if (options?.orgId) query = query.eq('organization_id', options.orgId);
+
+    const { data: row, error } = await query.maybeSingle();
+    if (error || !row?.encrypted_file_key) return null;
+
+    const [kIv, kContent] = row.encrypted_file_key.split(':');
+    const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
+
+    let patientData: Patient;
+    let previewMeta: PatientDashboardPreviewMeta;
+    let isArchived = false;
+
+    if (row.encrypted_preview && row.preview_iv) {
+      const parsedPreview = parsePreviewPayload(await decryptBlob(row.preview_iv, row.encrypted_preview, fileKey));
+      patientData = parsedPreview.patient;
+      previewMeta = parsedPreview.previewMeta;
+      isArchived = parsedPreview.archived;
+    } else if (row.encrypted_identity && row.iv) {
+      const fullData = (await decryptBlob(row.iv, row.encrypted_identity, fileKey)) as Patient & { _archived?: boolean };
+      const { _archived, ...identityData } = fullData;
+      patientData = { ...createEmptyPatient(), ...(identityData as Patient) };
+      previewMeta = buildFallbackPreviewMeta(patientData, _archived === true);
+      isArchived = _archived === true;
+    } else {
+      return null;
+    }
+
+    const { data: followupRow } = await supabase
+      .from('patient_followups')
+      .select('id, patient_id, organization_id, status, due_at, snoozed_until, note, created_at, updated_at')
+      .eq('patient_id', row.id)
+      .maybeSingle();
+
+    return {
+      id: row.id,
+      patient: { ...patientData, organizationId: row.organization_id },
+      assessments: [],
+      followup: followupRow ? mapFollowupRow(followupRow as FollowupRow) : null,
+      lastInteraction: row.last_interaction,
+      archived: isArchived,
+      encryptedFileKey: row.encrypted_file_key,
+      previewMeta,
+    };
+  },
+
+  loadPatientHistoryPage: async (
+    patientId: string,
+    orgKey: CryptoKey,
+    options?: { encryptedFileKey?: string; assessmentOffset?: number; assessmentLimit?: number },
+  ): Promise<{ assessments: PatientAssessment[]; hasMoreAssessments: boolean; nextAssessmentOffset: number }> => {
+    if (_isDemoMode) {
+      return {
+        assessments: buildDemoAssessments(patientId),
+        hasMoreAssessments: false,
+        nextAssessmentOffset: 0,
+      };
+    }
+
+    const assessmentOffset = options?.assessmentOffset ?? 0;
+    const assessmentLimit = options?.assessmentLimit ?? ASSESSMENTS_PAGE_SIZE;
+
+    let encryptedFileKey = options?.encryptedFileKey;
+    if (!encryptedFileKey) {
+      const { data: patientRow, error: patientError } = await supabase
+        .from('patients')
+        .select('encrypted_file_key')
+        .eq('id', patientId)
+        .single();
+      if (patientError) throw patientError;
+      encryptedFileKey = patientRow?.encrypted_file_key || undefined;
+    }
+
+    if (!encryptedFileKey) throw new Error('Cle dossier introuvable.');
+
+    const [kIv, kContent] = encryptedFileKey.split(':');
+    const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
+
+    const { data, error } = await supabase
+      .from('patient_assessments')
+      .select('id, assessment_at, kind, has_formal_report, test_name, iv, encrypted_payload')
+      .eq('patient_id', patientId)
+      .order('assessment_at', { ascending: false })
+      .range(assessmentOffset, assessmentOffset + assessmentLimit);
+
+    if (error) throw error;
+
+    const rows = data || [];
+    const hasMoreAssessments = rows.length > assessmentLimit;
+    const pageRows = rows.slice(0, assessmentLimit);
+    const assessments = await mapAssessmentRowsToData(pageRows, fileKey);
+
+    return {
+      assessments,
+      hasMoreAssessments,
+      nextAssessmentOffset: assessmentOffset + assessmentLimit,
+    };
+  },
+
+  loadPatientDetails: async (
+    patientId: string,
+    orgKey: CryptoKey,
+    options?: { assessmentOffset?: number; assessmentLimit?: number },
+  ): Promise<{ assessments: PatientAssessment[]; patient: Patient; followup: PatientFollowup | null; hasMoreAssessments: boolean; nextAssessmentOffset: number }> => {
+    if (_isDemoMode) {
+      if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
+        const assessments = buildDemoAssessments(patientId);
         return {
-            reports: history.reports,
-            sessions: history.sessions,
-            patient: patientFull,
-            hasMoreReports: history.hasMoreReports,
-            hasMoreSessions: history.hasMoreSessions,
-            nextReportOffset: history.nextReportOffset,
-            nextSessionOffset: history.nextSessionOffset
+          assessments,
+          patient: DEMO_PATIENTS.LEO.patient,
+          followup: buildFallbackFollowupFromAssessments(
+            patientId,
+            DEMO_PATIENTS.LEO.patient.organizationId || 'demo-org',
+            assessments,
+          ),
+          hasMoreAssessments: false,
+          nextAssessmentOffset: 0,
         };
-    },
+      }
+      const assessments = buildDemoAssessments(patientId);
+      return {
+        assessments,
+        patient: DEMO_PATIENTS.SARAH.patient,
+        followup: buildFallbackFollowupFromAssessments(
+          patientId,
+          DEMO_PATIENTS.SARAH.patient.organizationId || 'demo-org',
+          assessments,
+        ),
+        hasMoreAssessments: false,
+        nextAssessmentOffset: 0,
+      };
+    }
 
-    deleteFile: async (id: string): Promise<void> => {
-        if (_isDemoMode) return;
-        await supabase.from('reports').delete().eq('patient_id', id);
-        await supabase.from('sessions').delete().eq('patient_id', id);
-        await supabase.from('drafts').delete().eq('patient_id', id);
-        await supabase.from('patients').delete().eq('id', id);
-    },
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Non connecte');
 
-    toggleArchive: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
-        if (_isDemoMode) return;
-        const newFile = { ...file, archived: !file.archived };
-        await StorageService.saveFile(newFile, orgKey);
-    },
+    const { data: patientRow, error: pError } = await supabase
+      .from('patients')
+      .select('encrypted_file_key, encrypted_identity, iv, organization_id')
+      .eq('id', patientId)
+      .single();
 
-    
+    if (pError || !patientRow?.encrypted_file_key) {
+      throw new Error('Impossible de recuperer le dossier patient.');
+    }
+
+    const [kIv, kContent] = patientRow.encrypted_file_key.split(':');
+    const fileKey = await unwrapKey({ iv: kIv, content: kContent }, orgKey);
+
+    const decryptedIdentity = (await decryptBlob(patientRow.iv, patientRow.encrypted_identity, fileKey)) as Patient & {
+      _archived?: boolean;
+    };
+    const { _archived, ...identityWithoutArchived } = decryptedIdentity;
+    const patientFull = { ...identityWithoutArchived, id: patientId, organizationId: patientRow.organization_id } as Patient;
+
+    const history = await StorageService.loadPatientHistoryPage(patientId, orgKey, {
+      encryptedFileKey: patientRow.encrypted_file_key,
+      assessmentOffset: options?.assessmentOffset,
+      assessmentLimit: options?.assessmentLimit,
+    });
+
+    const { data: followupRow } = await supabase
+      .from('patient_followups')
+      .select('id, patient_id, organization_id, status, due_at, snoozed_until, note, created_at, updated_at')
+      .eq('patient_id', patientId)
+      .maybeSingle();
+
+    return {
+      assessments: history.assessments,
+      patient: patientFull,
+      followup: followupRow ? mapFollowupRow(followupRow as FollowupRow) : null,
+      hasMoreAssessments: history.hasMoreAssessments,
+      nextAssessmentOffset: history.nextAssessmentOffset,
+    };
+  },
+
+  deleteFile: async (id: string): Promise<void> => {
+    if (_isDemoMode) return;
+    await supabase.from('drafts').delete().eq('patient_id', id);
+    await supabase.from('patients').delete().eq('id', id);
+  },
+
+  toggleArchive: async (file: PatientFile, orgKey: CryptoKey): Promise<void> => {
+    if (_isDemoMode) return;
+    const newFile = { ...file, archived: !file.archived };
+    await StorageService.saveFile(newFile, orgKey);
+  },
+
+  getPatientFollowup: async (patientId: string): Promise<PatientFollowup | null> => {
+    if (_isDemoMode) return null;
+
+    const { data, error } = await supabase
+      .from('patient_followups')
+      .select('id, patient_id, organization_id, status, due_at, snoozed_until, note, created_at, updated_at')
+      .eq('patient_id', patientId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return mapFollowupRow(data as FollowupRow);
+  },
+
+  upsertPatientFollowup: async (input: {
+    patientId: string;
+    organizationId?: string;
+    status: PatientFollowupStatus;
+    dueAt: string;
+    snoozedUntil?: string | null;
+    note?: string | null;
+  }): Promise<void> => {
+    if (_isDemoMode) return;
+
+    let organizationId = input.organizationId;
+    if (!organizationId) {
+      const { data: patientRow, error: patientError } = await supabase
+        .from('patients')
+        .select('organization_id')
+        .eq('id', input.patientId)
+        .single();
+      if (patientError || !patientRow?.organization_id) throw patientError || new Error('Organisation patient introuvable.');
+      organizationId = patientRow.organization_id;
+    }
+
+    const { error } = await supabase.from('patient_followups').upsert(
+      {
+        patient_id: input.patientId,
+        organization_id: organizationId,
+        status: input.status,
+        due_at: input.dueAt,
+        snoozed_until: input.snoozedUntil || null,
+        note: input.note || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'patient_id' },
+    );
+
+    if (error) throw error;
+  },
+
+  markFollowupCompleted: async (patientId: string): Promise<void> => {
+    if (_isDemoMode) return;
+
+    const { error } = await supabase
+      .from('patient_followups')
+      .update({
+        status: 'completed',
+        snoozed_until: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('patient_id', patientId);
+
+    if (error) throw error;
+  },
+
+  snoozeFollowup: async (patientId: string, until: string): Promise<void> => {
+    if (_isDemoMode) return;
+
+    const { error } = await supabase
+      .from('patient_followups')
+      .update({
+        status: 'snoozed',
+        snoozed_until: until,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('patient_id', patientId);
+
+    if (error) throw error;
+  },
 };

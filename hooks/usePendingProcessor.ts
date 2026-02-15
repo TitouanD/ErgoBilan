@@ -48,7 +48,7 @@ export const usePendingProcessor = ({
             const newObs = { ...DEMO_PATIENTS.LEO.observations };
 
             setPatientFiles((prev) => [
-              { id: newId, patient: newPatient, reports: [], sessions: [], lastInteraction: new Date().toISOString() },
+              { id: newId, patient: newPatient, assessments: [], lastInteraction: new Date().toISOString() },
               ...prev,
             ]);
             setPendingQuestionnaires((prev) => prev.filter((i) => i.id !== q.id));
@@ -96,6 +96,7 @@ export const usePendingProcessor = ({
             observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' },
             synthesis: { diagnosticInput: '', recommendationsInput: '' },
             sections: [],
+            reportType: 'initial',
             step: 1,
             timestamp: new Date().toISOString(),
           };

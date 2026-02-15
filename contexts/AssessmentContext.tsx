@@ -11,6 +11,7 @@ interface AssessmentContextType {
   observations: Observations;
   synthesis: ClinicalSynthesis;
   sections: ReportSection[];
+  reportType: 'initial' | 'reevaluation';
   step: number;
   isAutoSaving: boolean;
 
@@ -28,6 +29,7 @@ interface AssessmentContextType {
 
   setSections: (s: ReportSection[]) => void;
   updateSection: (id: string, update: Partial<ReportSection>) => void;
+  setReportType: (t: 'initial' | 'reevaluation') => void;
 
   setStep: (s: number) => void;
   resetAssessment: () => void;
@@ -66,6 +68,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [observations, setObservations] = useState<Observations>(initialObs);
   const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis);
   const [sections, setSections] = useState<ReportSection[]>([]);
+  const [reportType, setReportType] = useState<'initial' | 'reevaluation'>('initial');
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
@@ -218,6 +221,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setObservations(initialObs);
     setSynthesis(initialSynthesis);
     setSections([]);
+    setReportType('initial');
     setStep(1);
   };
 
@@ -228,6 +232,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (draft.observations) setObservations({ ...draft.observations });
     if (draft.synthesis) setSynthesis({ ...draft.synthesis });
     if (draft.sections) setSections([...draft.sections]);
+    if (draft.reportType === 'initial' || draft.reportType === 'reevaluation') setReportType(draft.reportType);
     if (draft.step) setStep(draft.step);
   };
 
@@ -238,6 +243,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       observations, setObservations, updateObservations,
       synthesis, setSynthesis, updateSynthesis,
       sections, setSections, updateSection,
+      reportType, setReportType,
       step, setStep,
       isAutoSaving,
       resetAssessment, loadFromDraft
