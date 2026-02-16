@@ -19,7 +19,7 @@ interface AssessmentContextType {
   updatePatient: (p: Partial<Patient>) => void;
 
   setTests: (t: TestData) => void;
-  updateTests: (t: Partial<TestData>) => void;
+  updateTests: (t: TestData) => void;
 
   setObservations: (o: Observations) => void;
   updateObservations: (o: Partial<Observations>) => void;
@@ -201,7 +201,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setPatient(prev => ({ ...prev, ...data }));
   };
 
-  const updateTests = (data: Partial<TestData>) => setTests(prev => ({ ...prev, ...data }));
+  // Step 2 always sends the full tests object. Replace instead of merge so deletions persist.
+  const updateTests = (data: TestData) => setTests({ ...data });
   const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
   const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
 

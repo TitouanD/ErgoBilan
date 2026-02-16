@@ -133,10 +133,16 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           };
         };
 
+        const hasNonEmptyInputConfig = (value: unknown): boolean => {
+          if (!value || typeof value !== 'object') return false;
+          const raw = value as Record<string, unknown>;
+          return Object.keys(raw).length > 0;
+        };
+
         (subtestsData || []).forEach((s: any) => {
           let inputModel = normalizeInputModel(s.input_model);
           const inputConfig = normalizeInputConfig(s.input_config);
-          if (s.input_config && !inputConfig) {
+          if (hasNonEmptyInputConfig(s.input_config) && !inputConfig) {
             Logger.warn('DB', 'Invalid input_config for subtest, applying safe fallback', { subtestId: s.id, testId: s.test_id });
           }
           if (inputModel === 'qualitative_category' && (!inputConfig?.options || inputConfig.options.length === 0)) {
