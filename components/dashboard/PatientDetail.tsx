@@ -38,16 +38,16 @@ interface Props {
 
 const kindLabel: Record<PatientAssessment['kind'], string> = {
   initial: 'Bilan initial',
-  reevaluation: 'Reevaluation',
-  mini_reevaluation: 'Mini-reevaluation',
+  reevaluation: 'Réévaluation',
+  mini_reevaluation: 'Mini-réévaluation',
 };
 
 const followupLabel: Record<PatientFollowup['status'], string> = {
-  upcoming: 'A venir',
-  due: 'A planifier',
+  upcoming: 'À venir',
+  due: 'À planifier',
   overdue: 'En retard',
   scheduled: 'Planifie',
-  completed: 'Complete',
+  completed: 'Complété',
   snoozed: 'Reporte',
 };
 
@@ -111,7 +111,7 @@ const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () =>
           <Trash2 size={32} />
         </div>
         <h3 className="mb-2 font-serif text-2xl font-bold text-[#3D405B]">Zone de danger</h3>
-        <p className="mb-6 text-sm text-stone-500">Tapez \"supprimer\" pour confirmer la suppression definitive.</p>
+        <p className="mb-6 text-sm text-stone-500">Tapez \"supprimer\" pour confirmer la suppression définitive.</p>
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -285,13 +285,13 @@ export const PatientDetail: React.FC<Props> = ({
           organizationId: file.patient.organizationId,
           status: 'completed',
           dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 6),
-          note: 'Rappel cloture apres reevaluation formelle',
+          note: 'Rappel clôturé après réévaluation formelle',
         });
       }
       await refreshFollowup();
-      toast.success('Rappel marque comme complete.');
+      toast.success('Rappel marqué comme complété.');
     } catch {
-      toast.error('Impossible de mettre a jour le rappel.');
+      toast.error('Impossible de mettre à jour le rappel.');
     } finally {
       setIsFollowupBusy(false);
     }
@@ -304,7 +304,7 @@ export const PatientDetail: React.FC<Props> = ({
       await StorageService.toggleArchive(file, orgKey);
       onBack();
     } catch {
-      toast.error('Erreur lors de la mise a jour.');
+      toast.error('Erreur lors de la mise à jour.');
     } finally {
       setIsProcessing(false);
     }
@@ -347,15 +347,15 @@ export const PatientDetail: React.FC<Props> = ({
       <div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
         <div>
           <h1 className="font-serif text-4xl font-bold text-[#3D405B]">{file.patient.firstName} {file.patient.lastName}</h1>
-          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignee'}</p>
-          {followup && <p className="mt-2 text-sm font-semibold text-[#3D405B]">Rappel reevaluation: {followupLabel[followup.status]} (echeance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
+          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
+          {followup && <p className="mt-2 text-sm font-semibold text-[#3D405B]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
         </div>
         <div className="flex gap-3">
           <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-6 py-4 text-sm font-bold text-[#3D405B] hover:border-[#E07A5F]">
-            <Plus size={18} className="text-[#E07A5F]" /> Mini-reevaluation
+            <Plus size={18} className="text-[#E07A5F]" /> Mini-réévaluation
           </button>
           <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[#3D405B] px-8 py-4 text-sm font-bold text-white hover:bg-[#2c2e42]">
-            <Zap size={18} className="text-[#F2CC8F]" /> Reevaluation formelle
+            <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation formelle
           </button>
         </div>
       </div>
@@ -382,7 +382,7 @@ export const PatientDetail: React.FC<Props> = ({
           </div>
 
           <div className="rounded-[32px] border border-stone-100 bg-white p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[#3D405B]"><FileText size={20} className="text-[#3D405B]" /> Matrice resultats multi-tests</h2>
+            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[#3D405B]"><FileText size={20} className="text-[#3D405B]" /> Matrice résultats multi-tests</h2>
             {matrixSnapshots.length === 0 || matrixRows.length === 0 ? (
               <p className="text-sm text-stone-500">Aucun jeu de scores exploitable pour afficher la matrice.</p>
             ) : (
@@ -484,8 +484,8 @@ export const PatientDetail: React.FC<Props> = ({
                   {followupLabel[followup.status]}
                 </div>
                 <div className="text-xs text-stone-500">
-                  <p>Echeance: <span className="font-bold text-[#3D405B]">{new Date(followup.dueAt).toLocaleDateString('fr-FR')}</span></p>
-                  {followup.snoozedUntil && <p>Reporte jusqu'au: <span className="font-bold text-[#3D405B]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
+                  <p>Échéance : <span className="font-bold text-[#3D405B]">{new Date(followup.dueAt).toLocaleDateString('fr-FR')}</span></p>
+                  {followup.snoozedUntil && <p>Reporté jusqu'au : <span className="font-bold text-[#3D405B]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   <button onClick={handleScheduleFollowup} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
@@ -511,7 +511,7 @@ export const PatientDetail: React.FC<Props> = ({
             <div className="space-y-3">
               <button onClick={handleArchive} disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 text-xs font-bold uppercase tracking-wider text-stone-500 hover:bg-stone-200">
                 {file.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                {file.archived ? 'Desarchiver' : 'Archiver'}
+                {file.archived ? 'Désarchiver' : 'Archiver'}
               </button>
               <button onClick={() => setShowDeleteModal(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 bg-white py-3 text-xs font-bold uppercase tracking-wider text-rose-500 hover:bg-rose-50">
                 <Trash2 size={16} /> Supprimer

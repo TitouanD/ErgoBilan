@@ -116,6 +116,13 @@
         
         .break-inside-avoid { page-break-inside: avoid; }
       }
+
+      /* PDF EXPORT MODE (applied via body.pdf-mode by html2pdf.js) */
+      body.pdf-mode .no-print,
+      body.pdf-mode .no-print * { display: none !important; }
+      body.pdf-mode .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+      body.pdf-mode #printable-report { width: 794px !important; }
+      body.pdf-mode .page-a4 { box-shadow: none; margin: 0; border: none; }
     </style>
   <script type="importmap">
 {

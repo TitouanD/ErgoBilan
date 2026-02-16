@@ -1084,7 +1084,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="font-semibold">Aucune liste canonique trouvee : les sous-tests seront crees tels quels.</div>
+                                        <div className="font-semibold">Aucune liste canonique trouvée : les sous-tests seront créés tels quels.</div>
                                     )}
                                 </div>
                             )}
@@ -1275,7 +1275,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <BookOpen size={32} className="text-amber-600" />
                             </div>
                             <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Sous-tests non reconnus</h3>
-                            <p className="text-center text-sm text-stone-500 mb-4">Ces sous-tests ne correspondent pas a la liste canonique du test. Voulez-vous les creer quand meme ?</p>
+                            <p className="text-center text-sm text-stone-500 mb-4">Ces sous-tests ne correspondent pas à la liste canonique du test. Voulez-vous les créer quand même ?</p>
 
                             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 text-xs text-amber-800">
                                 {unmappedSubtests.join(', ')}
@@ -1292,7 +1292,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     onClick={() => { setShowUnmappedModal(false); setShowSaveModal(true); }}
                                     className="flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 hover:-translate-y-1"
                                 >
-                                    Creer quand meme
+                                    Créer quand même
                                 </button>
                             </div>
                         </div>

@@ -487,8 +487,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                             <table className="w-full border-collapse text-sm">
                                                 <thead>
                                                     <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
-                                                        <th className="pb-3 w-[35%]">Epreuves</th>
-                                                        <th className="pb-3 w-[15%] text-center">{showSelector ? `Score (${currentMode})` : 'Resultat'}</th>
+                                                        <th className="pb-3 w-[35%]">Épreuves</th>
+                                                        <th className="pb-3 w-[15%] text-center">{showSelector ? `Score (${currentMode})` : 'Résultat'}</th>
                                                         <th className="pb-3 w-[50%] pl-4">Observations</th>
                                                     </tr>
                                                 </thead>
@@ -509,7 +509,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
                                                                 <td className={`py-3 text-center ${isScoreable && (currentMode === 'ET' || currentMode === 'NS') ? colorClass : 'text-stone-500'}`}>{displayScore}</td>
                                                                 <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "-"}</td>
                                                             </tr>
@@ -526,9 +526,9 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                             <table className="w-full border-collapse text-sm">
                                                 <thead>
                                                     <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
-                                                        <th className="pb-3 w-[30%]">Epreuves</th>
-                                                        <th className="pb-3 w-[20%] text-center">Categorie</th>
-                                                        <th className="pb-3 w-[25%] pl-3">Interpretation</th>
+                                                        <th className="pb-3 w-[30%]">Épreuves</th>
+                                                        <th className="pb-3 w-[20%] text-center">Catégorie</th>
+                                                        <th className="pb-3 w-[25%] pl-3">Interprétation</th>
                                                         <th className="pb-3 w-[25%] pl-3">Observations</th>
                                                     </tr>
                                                 </thead>
@@ -545,7 +545,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
                                                                 <td className="py-3 text-center font-semibold text-[#3D405B]">{displayCategory}</td>
                                                                 <td className="py-3 pl-3 text-xs text-stone-600">{displayInterpretation}</td>
                                                                 <td className="py-3 pl-3 italic text-xs text-stone-500">{result.observation || "-"}</td>

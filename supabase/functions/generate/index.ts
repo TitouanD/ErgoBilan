@@ -15,6 +15,7 @@ type BuildResult = {
   contents: unknown;
   systemInstruction?: string;
   responseMimeType: string;
+  responseSchema?: Record<string, unknown>;
 };
 
 const corsHeaders = {
@@ -39,29 +40,95 @@ const safeRefund = async (
   }
 };
 
-const PEDIATRIC_SYSTEM = `Tu es un ergotherapeute pediatrique. Rends un texte clinique sobre, structure, professionnel.
-Regles: lien preuve->impact, langage clair, limites explicites si donnees manquantes, jamais de placeholders inventes.`;
+// ── SYSTEM PROMPTS (rich, restored from original ai.ts + improved) ──────────
 
-const ADULT_SYSTEM = `Tu es un ergotherapeute adulte. Focus autonomie, securite, retentissement fonctionnel.
-Regles: lien preuve->impact, ton clinique sobre, limites explicites si donnees manquantes.`;
+const SECURITY_INSTRUCTION = `REGLE DE SECURITE ABSOLUE : Tu ne dois JAMAIS modifier, supprimer ou inventer les placeholders anonymises (ex: {{PATIENT_PRENOM}}, {{PATIENT_NOM}}, {{ECOLE}}, {{MEDECIN}}). Ils doivent rester strictement intacts dans le texte genere. Ne genere aucun nouveau placeholder.`;
+
+const PEDIATRIC_SYSTEM = `Tu es un Ergotherapeute Expert en pediatrie (Modele PPH/MOH). Ton role est de rediger des bilans cliniques rigoureux mais pedagogiques.
+
+TES REGLES D'OR (Non negociables) :
+1. **Vulgarisation Intelligente (Priorite Absolue)** : Ton rapport est lu par des non-experts (Parents, Enseignants).
+   - Traduis le jargon clinique en impacts concrets sur la vie quotidienne.
+   - Si tu utilises un terme expert (ex: 'cout cognitif', 'praxies', 'efficience'), accompagne-le toujours d'une explication simple ou d'un exemple.
+   - Objectif : Etre "l'interprete" des difficultes de l'enfant pour son entourage.
+2. **Causalite & Preuves** : Ne liste pas juste des symptomes. Fais le lien : "Score faible au BHK (Preuve) -> Dysgraphie (Constat) -> Illisibilite et lenteur en classe (Impact)".
+3. **Discernement Therapeutique** : Ne pathologise pas tout.
+   - Si les scores sont limites (-1 ET) ou compenses, privilegie les 'Adaptations' ou une 'Guidance' plutot qu'une reeducation systematique.
+   - Valorise toujours les competences preservees et les strategies de l'enfant.
+4. **Nuance Comportementale** : Distingue le "ne sait pas faire" (trouble instrumental) du "ne le fait pas quand on veut" (trouble executif/comportemental).
+5. **Structure & Mise en page** :
+   - Aere le texte (double saut de ligne entre paragraphes).
+   - Utilise des tirets simples "-" pour les listes.
+   - Pas de listes a puces dans les paragraphes narratifs longs.
+   - Chaque section doit faire entre 150 et 400 mots.
+6. **Format** : Reponds toujours en JSON valide strict. Les valeurs sont des strings Markdown.
+7. **Scores** : Quand tu cites un score, utilise le format "NS = X" ou "z = X" suivi de l'interpretation qualitative. Ne noie pas le lecteur sous les chiffres : cite les scores cles, interprete qualitativement les autres.
+8. **Limites** : Si des donnees sont manquantes ou partielles, mentionne-le explicitement. Ne comble jamais un manque par une invention.`;
+
+const ADULT_SYSTEM = `Tu es un Ergotherapeute Expert en readaptation adulte et maintien a domicile. Ton role est de rediger des bilans cliniques axes sur l'autonomie et la qualite de vie.
+
+TES REGLES D'OR (Non negociables) :
+1. **Approche Fonctionnelle** : Centre ton analyse sur les habitudes de vie (Soins personnels, Travail, Loisirs, Conduite). Le jargon medical doit servir a expliquer une limitation d'activite.
+2. **Vulgarisation & Respect** : Le rapport est lu par le patient, sa famille et les medecins. Adopte un ton adulte, respectueux et collaboratif.
+3. **Securite & Prevention** : Identifie clairement les risques (Chutes, Oublis, Epuisement de l'aidant) et propose des solutions concretes (Aides techniques, Amenagement du logement).
+4. **Causalite & Preuves** : Base tes conclusions sur les observations et les scores. Format : Preuve -> Constat -> Impact fonctionnel.
+5. **Structure & Mise en page** : Aere le texte. Utilise des tirets simples "-". Chaque section entre 150 et 400 mots.
+6. **Format** : Reponds toujours en JSON valide strict. Les valeurs sont des strings Markdown.
+7. **Limites** : Mentionne explicitement les donnees manquantes. Ne comble jamais un manque par une invention.`;
+
+// ── JSON Schemas for Gemini responseSchema constraint ──────────────────────
+
+const BIO_RESPONSE_SCHEMA = {
+  type: 'OBJECT' as const,
+  properties: {
+    mandat_referencement: { type: 'STRING' as const, description: 'Contexte de la demande de bilan : qui adresse, pourquoi, inquietudes rapportees. Markdown.' },
+    mandat_evaluation: { type: 'STRING' as const, description: 'Objectifs precis de l\'evaluation ergotherapique, outils utilises. Markdown.' },
+    profil_occupationnel: { type: 'STRING' as const, description: 'Synthese du profil : anamnese, habitudes de vie, environnement, autonomie. Markdown.' },
+  },
+  required: ['mandat_referencement', 'mandat_evaluation', 'profil_occupationnel'],
+};
+
+const DIAG_RESPONSE_SCHEMA = {
+  type: 'OBJECT' as const,
+  properties: {
+    synthese_diagnostic: { type: 'STRING' as const, description: 'Synthese clinique argumentee : lien scores -> constats -> impacts. Markdown.' },
+    recommandations: { type: 'STRING' as const, description: 'Recommandations concretes : adaptations, reeducation, guidance. Markdown.' },
+    objectifs_generaux: { type: 'STRING' as const, description: 'Projet d\'intervention structure avec objectifs mesurables. Markdown.' },
+  },
+  required: ['synthese_diagnostic', 'recommandations', 'objectifs_generaux'],
+};
 
 const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
   const profile = String(payload.profile || 'pediatric');
   const context = String(payload.childContext || '');
   const questionnaire = String(payload.safeQuestionnaire || '');
 
+  const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
+
   const userPrompt = [
-    'TACHE: produire un JSON valide uniquement.',
-    'Champs requis: mandat_referencement, mandat_evaluation, profil_occupationnel.',
-    'Style: clinique, structure claire, argumente.',
-    `Contexte: ${context}`,
-    `Questionnaire: ${questionnaire}`,
+    SECURITY_INSTRUCTION,
+    '',
+    `CONTEXTE ${subjectLabel} : ${context}`,
+    '',
+    `DONNEES BRUTES (questionnaire/anamnese) :\n${questionnaire}`,
+    '',
+    'TACHE : Redige un JSON valide avec 3 champs (valeurs = strings Markdown aere) :',
+    '1. "mandat_referencement" : Qui adresse et pourquoi. Reprends les inquietudes rapportees par la famille/le medecin. Contextualise la demande.',
+    '2. "mandat_evaluation" : Objectifs precis du bilan, outils et approches utilises.',
+    `3. "profil_occupationnel" : Synthese riche du profil de ${profile === 'adult' ? 'la personne' : "l'enfant"} : anamnese, developpement, habitudes de vie, environnement scolaire/professionnel, autonomie dans les actes du quotidien. Mets en evidence les elements pertinents pour l'analyse clinique a venir.`,
+    '',
+    'CONSIGNES DE STYLE :',
+    '- Chaque section : 150-400 mots, paragraphes aeres (double saut de ligne).',
+    '- Ton clinique mais accessible. Pas de jargon non explique.',
+    '- Utilise des tirets "-" pour les listes, pas de puces Unicode.',
+    '- Ne repete pas les memes informations entre sections.',
   ].join('\n');
 
   return {
     contents: userPrompt,
     systemInstruction: profile === 'adult' ? ADULT_SYSTEM : PEDIATRIC_SYSTEM,
     responseMimeType: 'application/json',
+    responseSchema: BIO_RESPONSE_SCHEMA,
   };
 };
 
@@ -74,30 +141,57 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   const diagnosticInput = String(synthesis.diagnosticInput || '').trim();
   const recommendationsInput = String(synthesis.recommendationsInput || '').trim();
 
-  const diagnosticDirective = diagnosticInput.length > 3
-    ? `Le praticien a pose: "${diagnosticInput}". Justifie ce positionnement avec les preuves disponibles.`
-    : 'Si aucun diagnostic n est fourni, propose une synthese prudente et argumentee sans sur-conclusion.';
+  // Directive diagnostique conditionnelle (forte)
+  let diagnosticDirective: string;
+  if (diagnosticInput.length > 5) {
+    diagnosticDirective = [
+      `IMPORTANT : Le praticien a POSE le diagnostic suivant : "${diagnosticInput}".`,
+      'Ta tache est de rediger la synthese clinique en JUSTIFIANT ce diagnostic par les scores et observations fournis.',
+      'Ne contredis PAS ce diagnostic. Argumente-le avec les preuves disponibles.',
+      'Si certaines preuves sont faibles ou manquantes, mentionne-le avec nuance mais maintiens le diagnostic pose.',
+    ].join(' ');
+  } else {
+    diagnosticDirective = 'Aucun diagnostic n\'a ete pose par le praticien. Tu dois DEDUIRE une synthese clinique prudente et argumentee a partir des scores et observations. Ne sur-conclus pas. Si les scores sont limites (-1 ET), privilegie une formulation nuancee.';
+  }
 
-  const recommendationsDirective = recommendationsInput.length > 3
-    ? `Le praticien propose: "${recommendationsInput}". Structure et complete ces recommandations.`
-    : 'Formule des recommandations concretes et proportionnees aux preuves.';
+  // Directive recommandations conditionnelle
+  let recommendationsDirective: string;
+  if (recommendationsInput.length > 5) {
+    recommendationsDirective = `Le praticien propose le projet suivant : "${recommendationsInput}". Integre et structure ces elements dans les sections recommandations et objectifs. Complete avec des conseils concrets supplementaires si pertinent.`;
+  } else {
+    recommendationsDirective = 'Formule des recommandations concretes et proportionnees aux preuves. Distingue les adaptations immediates (ecole, maison) de la prise en charge therapeutique.';
+  }
 
   const userPrompt = [
-    'TACHE: produire un JSON valide uniquement.',
-    'Champs requis: synthese_diagnostic, recommandations, objectifs_generaux.',
-    'Format attendu: markdown sobre, sections courtes, liens preuve->impact explicites.',
-    diagnosticDirective,
-    recommendationsDirective,
-    `Profil occupationnel deja etabli: ${profilContext}`,
-    `Observations: ${safeObservations}`,
-    `Scores (evidence-ready): ${scoresEvidence}`,
-    'Important: mentionner explicitement les limites quand des donnees sont absentes ou partielles.',
-  ].join('\n\n');
+    SECURITY_INSTRUCTION,
+    '',
+    `PROFIL OCCUPATIONNEL DEJA ETABLI :\n${profilContext}`,
+    '',
+    `OBSERVATIONS CLINIQUES :\n${safeObservations}`,
+    '',
+    `RESULTATS DES TESTS (scores standardises) :\n${scoresEvidence}`,
+    '',
+    `DIRECTIVE DIAGNOSTIQUE :\n${diagnosticDirective}`,
+    '',
+    `DIRECTIVE RECOMMANDATIONS :\n${recommendationsDirective}`,
+    '',
+    'TACHE : Redige un JSON valide avec 3 champs (valeurs = strings Markdown aere) :',
+    '1. "synthese_diagnostic" : Analyse clinique argumentee. Pour chaque domaine evalue, fais le lien : Score (preuve) -> Constat clinique -> Impact sur la vie quotidienne/scolaire. Commence par les points forts puis les difficultes.',
+    '2. "recommandations" : Conseils concrets organises en categories (Adaptations scolaires, Amenagements quotidiens, Prise en charge therapeutique, Guidance parentale). Chaque recommandation doit etre actionnable.',
+    '3. "objectifs_generaux" : Projet d\'intervention structure avec objectifs mesurables a court terme (3 mois) et moyen terme (6-12 mois).',
+    '',
+    'CONSIGNES DE STYLE :',
+    '- Chaque section : 200-500 mots, paragraphes aeres.',
+    '- Cite les scores cles (format "NS = X" ou "z = X") mais interprete qualitativement.',
+    '- Mentionne explicitement les limites quand des donnees sont absentes ou partielles.',
+    '- Ton professionnel mais accessible aux parents et enseignants.',
+  ].join('\n');
 
   return {
     contents: userPrompt,
     systemInstruction: profile === 'adult' ? ADULT_SYSTEM : PEDIATRIC_SYSTEM,
     responseMimeType: 'application/json',
+    responseSchema: DIAG_RESPONSE_SCHEMA,
   };
 };
 
@@ -225,11 +319,18 @@ Deno.serve(async (req: Request) => {
 
     const built = buildTask(task, payload);
 
+    const generationConfig: Record<string, unknown> = {
+      responseMimeType: built.responseMimeType,
+    };
+    if (built.responseSchema) {
+      generationConfig.responseSchema = built.responseSchema;
+    }
+
     const geminiBody: Record<string, unknown> = {
       contents: Array.isArray(built.contents)
         ? built.contents
         : [{ role: 'user', parts: [{ text: String(built.contents || '') }] }],
-      generationConfig: { responseMimeType: built.responseMimeType },
+      generationConfig,
     };
 
     if (built.systemInstruction) {

@@ -158,7 +158,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } finally {
         endAutoSave();
       }
-    }, 8000);
+    }, 3000);
 
     return () => {
       if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);

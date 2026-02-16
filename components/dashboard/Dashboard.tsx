@@ -180,16 +180,16 @@ const buildFollowupProgress = (followup: PatientFollowup): ReevaluationProgress 
   if (followup.status === 'due') {
     return {
       progressPercent: 100,
-      label: 'Fenetre de reevaluation ouverte',
+      label: 'Fenêtre de réévaluation ouverte',
       targetDateLabel: dueDateLabel,
-      badgeLabel: 'Reevaluation',
+      badgeLabel: 'Réévaluation',
       statusTone: 'warning',
     };
   }
   if (followup.status === 'overdue') {
     return {
       progressPercent: 100,
-      label: 'Reevaluation en retard',
+      label: 'Réévaluation en retard',
       targetDateLabel: dueDateLabel,
       badgeLabel: 'Retard',
       statusTone: 'warning',
@@ -198,9 +198,9 @@ const buildFollowupProgress = (followup: PatientFollowup): ReevaluationProgress 
   if (followup.status === 'scheduled') {
     return {
       progressPercent: 80,
-      label: `Reevaluation planifiee (${dueDateLabel})`,
+      label: `Réévaluation planifiée (${dueDateLabel})`,
       targetDateLabel: dueDateLabel,
-      badgeLabel: 'Planifie',
+      badgeLabel: 'Planifié',
       statusTone: 'neutral',
     };
   }
@@ -210,18 +210,18 @@ const buildFollowupProgress = (followup: PatientFollowup): ReevaluationProgress 
       : dueDateLabel;
     return {
       progressPercent: 70,
-      label: `Rappel reporte jusqu'au ${snoozedDateLabel}`,
+      label: `Rappel reporté jusqu'au ${snoozedDateLabel}`,
       targetDateLabel: dueDateLabel,
-      badgeLabel: 'Reporte',
+      badgeLabel: 'Reporté',
       statusTone: 'neutral',
     };
   }
   if (followup.status === 'completed') {
     return {
       progressPercent: 100,
-      label: 'Rappel complete',
+      label: 'Rappel complété',
       targetDateLabel: dueDateLabel,
-      badgeLabel: 'Complete',
+      badgeLabel: 'Complété',
       statusTone: 'success',
     };
   }
@@ -373,7 +373,7 @@ export const Dashboard: React.FC<Props> = ({
           id: `draft-${patientId}`,
           kind: 'draft',
           title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom',
-          subtitle: 'Brouillon a reprendre',
+          subtitle: 'Brouillon à reprendre',
           date: draftDate,
           actionHint: 'Reprendre',
           onClick: () => onResumeDraft && onResumeDraft(patientId),
@@ -386,8 +386,8 @@ export const Dashboard: React.FC<Props> = ({
       .map((item) => ({
         id: `pending-completed-${item.id}`,
         kind: 'pending_done',
-        title: item.label || 'Questionnaire recu',
-        subtitle: 'Questionnaire complete a importer',
+        title: item.label || 'Questionnaire reçu',
+        subtitle: 'Questionnaire complété — à importer',
         date: item.createdAt,
         actionHint: 'Importer',
         isBusy: processingQueueId === item.id,
@@ -409,7 +409,7 @@ export const Dashboard: React.FC<Props> = ({
           id: `followup-${file.id}`,
           kind: 'followup',
           title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient',
-          subtitle: followup.status === 'overdue' ? 'Reevaluation en retard' : 'Reevaluation a planifier',
+          subtitle: followup.status === 'overdue' ? 'Réévaluation en retard' : 'Réévaluation à planifier',
           date: followup.dueAt,
           actionHint: 'Ouvrir',
           onClick: () => onOpenPatient(file.id),
@@ -424,7 +424,7 @@ export const Dashboard: React.FC<Props> = ({
         id: `pending-waiting-${item.id}`,
         kind: 'pending_waiting',
         title: item.label || 'Questionnaire en attente',
-        subtitle: 'Lien envoye, en attente de reponse famille',
+        subtitle: 'Lien envoyé, en attente de réponse famille',
         date: item.createdAt,
         actionHint: 'Copier lien',
         onClick: () => onCopyLink(item),

@@ -419,18 +419,19 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
             const fileName = `Bilan_${patient.lastName}_${patient.firstName}_${new Date().toISOString().split('T')[0]}.pdf`;
 
             await html2pdf().set({
-                margin: 0,
+                margin: [10, 0, 10, 0], // top, right, bottom, left in mm
                 filename: fileName,
                 image: { type: 'jpeg', quality: 0.98 },
                 html2canvas: {
                     scale: 2,
                     useCORS: true,
                     letterRendering: true,
-                    windowWidth: 794, // Force A4 width (approx 794px at 96dpi)
+                    windowWidth: 794,
                     scrollY: 0,
+                    logging: false,
                 },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.page-break-before', after: '.page-break-after', avoid: '.break-inside-avoid' }
             } as any).from(element).save();
 
             toast.show('PDF exporté avec succès ✓', 'success');

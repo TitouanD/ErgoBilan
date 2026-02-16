@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import type { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info } from 'lucide-react';
+import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info, CheckCheck } from 'lucide-react';
 
 interface Props {
   sections: ReportSection[];
@@ -206,7 +206,17 @@ const SectionCard: React.FC<{
 };
 
 export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidateSection, onNext, onBack }) => {
-  const allValidated = sections.every(s => s.status === 'validated');
+  const validatedCount = sections.filter(s => s.status === 'validated').length;
+  const allValidated = validatedCount === sections.length && sections.length > 0;
+  const pendingCount = sections.length - validatedCount;
+
+  const handleValidateAll = () => {
+    sections.forEach(s => {
+      if (s.status !== 'validated') {
+        onValidateSection(s.id, s.content);
+      }
+    });
+  };
 
   return (
     <div className="max-w-4xl mx-auto pb-40 animate-in fade-in duration-500">
@@ -214,9 +224,26 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
       <div className="bg-white sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 border border-stone-200 mb-12 flex items-center justify-between ring-1 ring-white transition-all">
         <div className="space-y-1">
             <h2 className="text-2xl font-serif font-bold text-stone-900">Relecture</h2>
-            <p className="text-stone-500 font-medium text-sm">Vérifiez le contenu généré par l'IA.</p>
+            <p className="text-stone-500 font-medium text-sm">Vérifiez et ajustez le contenu généré par l’IA.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+              allValidated
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`}>
+              {validatedCount}/{sections.length} validé(s)
+            </div>
+            {pendingCount > 0 && sections.length > 0 && (
+              <button
+                type="button"
+                onClick={handleValidateAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+              >
+                <CheckCheck size={14} />
+                Tout valider
+              </button>
+            )}
             <FileCheck size={24} className={allValidated ? 'text-emerald-500' : 'text-stone-300'} />
         </div>
       </div>
@@ -247,7 +274,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
             
             <button 
                 onClick={onNext}
-                disabled={!allValidated || sections.length === 0}
+                disabled={sections.length === 0}
                 className="flex items-center gap-3 px-8 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm disabled:opacity-40 disabled:grayscale transition-all hover:bg-rose-700 shadow-lg"
             >
                 <Download size={18} />

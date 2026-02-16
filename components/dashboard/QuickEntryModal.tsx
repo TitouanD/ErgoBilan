@@ -133,7 +133,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
 
     if (Object.keys(flatResults).length === 0) return;
 
-    const sessionName = selectedTests.length === 1 ? selectedTests[0].name : 'Mini-reevaluation multi-tests';
+    const sessionName = selectedTests.length === 1 ? selectedTests[0].name : 'Mini-réévaluation multi-tests';
     const assessment: PatientAssessment = {
       id: crypto.randomUUID(),
       date: new Date().toISOString(),
@@ -156,8 +156,8 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
               <Zap size={28} fill="currentColor" />
             </div>
             <div>
-              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">Mini-reevaluation</h2>
-              <p className="text-sm text-stone-500 font-medium mt-1">Capture rapide de scores intermediaires, sans document final.</p>
+              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">Mini-réévaluation</h2>
+              <p className="text-sm text-stone-500 font-medium mt-1">Capture rapide de scores intermédiaires, sans document final.</p>
             </div>
           </div>
           <button onClick={onClose} className="p-3 bg-stone-50 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-all">
@@ -172,9 +172,9 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                 <Info size={20} />
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-[#3D405B]">Regle clinique</h4>
+                <h4 className="font-bold text-[#3D405B]">Règle clinique</h4>
                 <p className="text-xs text-stone-600">
-                  La mini-reevaluation enregistre des mesures intermediaires et n impacte pas automatiquement le rappel de reevaluation.
+                  La mini-réévaluation enregistre des mesures intermédiaires et n’impacte pas automatiquement le rappel de réévaluation.
                 </p>
               </div>
             </div>
@@ -192,7 +192,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
               </div>
 
               {selectedTests.length === 0 ? (
-                <p className="text-sm text-stone-500">Aucun test selectionne. Ajoutez au moins un test pour commencer.</p>
+                <p className="text-sm text-stone-500">Aucun test sélectionné. Ajoutez au moins un test pour commencer.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {selectedTests.map((test) => (
@@ -266,7 +266,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
               disabled={!canSave}
               className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
             >
-              <Save size={20} /> Enregistrer la mini-reevaluation
+              <Save size={20} /> Enregistrer la mini-réévaluation
             </button>
           </div>
         </div>

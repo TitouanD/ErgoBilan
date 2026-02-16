@@ -229,7 +229,7 @@ export const AdminLibrary: React.FC = () => {
       if (field === 'name') {
         const normalized = normalizeSubtestName(String(value || ''));
         if (normalized && prev.subtests.some(s => s.id !== subtestId && normalizeSubtestName(s.name) === normalized)) {
-          toast.error('Ce nom de sous-test existe deja pour ce test.');
+          toast.error('Ce nom de sous-test existe déjà pour ce test.');
           return prev;
         }
       }

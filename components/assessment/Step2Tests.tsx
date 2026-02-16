@@ -1,20 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../types';
-import { ICON_MAP, type SubtestDef, type TestDef } from '../../data/testCatalog';
+import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef } from '../../data/testCatalog';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { calculateFromPercentile, calculateFromStandard, calculateFromZ } from '../../utils/scoring';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
+import { supabase } from '../../services/db';
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  CheckCheck,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Circle,
   CircleCheck,
   FilePlus,
-  GripVertical,
   Layers,
   Loader2,
   MessageSquare,
@@ -51,6 +53,17 @@ const METRIC_OPTIONS: Array<{ key: Metric; label: string }> = [
 const parseNum = (value: string): number | null => {
   const n = parseFloat(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
+};
+
+const SCALE_LABELS: Record<string, string> = {
+  scaled: 'NS (m=10, \u03c3=3)',
+  standard: 'QI (m=100, \u03c3=15)',
+  't-score': 'T (m=50, \u03c3=10)',
+};
+
+const getScaleLabel = (scoreType?: ScoreType): string | null => {
+  if (!scoreType) return null;
+  return SCALE_LABELS[scoreType] || null;
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
@@ -146,7 +159,7 @@ const VoiceObservation: React.FC<{
           {isListening ? <MicOff size={12} /> : <Mic size={12} />}
         </button>
       )}
-      {isListening && interimText && <div className="mt-1 px-2 py-1 bg-red-50 border border-red-100 rounded text-[10px] text-red-500 italic">Dictee: {interimText}...</div>}
+      {isListening && interimText && <div className="mt-1 px-2 py-1 bg-red-50 border border-red-100 rounded text-[10px] text-red-500 italic">Dictée : {interimText}…</div>}
     </div>
   );
 };
@@ -169,21 +182,14 @@ const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<Sc
         }
         onChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: hasValue(result) ? 'validated' : 'empty', certifiedAt: undefined });
       }}
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${
         isReviewed
-          ? 'border-emerald-200 bg-gradient-to-r from-emerald-50 to-emerald-100/60 text-emerald-700 shadow-sm'
-          : 'border-stone-200 bg-white text-stone-500 hover:border-[#E07A5F] hover:text-[#E07A5F] hover:shadow-sm'
-      } ${!canReview ? 'cursor-not-allowed opacity-50' : ''}`}
+          ? 'bg-emerald-50 text-emerald-600'
+          : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
+      } ${!canReview ? 'cursor-not-allowed opacity-40' : ''}`}
     >
-      <span
-        className={`inline-flex h-4 w-4 items-center justify-center rounded-full ${
-          isReviewed ? 'bg-emerald-600 text-white' : 'border border-stone-300 text-stone-400'
-        }`}
-      >
-        {isReviewed ? <CircleCheck size={10} /> : <Circle size={10} />}
-      </span>
-      <span>{isReviewed ? 'Revu' : 'Marquer revu'}</span>
-      {isReviewed && reviewedAtText && <span className="text-[9px] font-semibold normal-case tracking-normal text-emerald-700/80">{reviewedAtText}</span>}
+      {isReviewed ? <CircleCheck size={12} /> : <Circle size={12} />}
+      {isReviewed ? 'Revu' : 'Valider'}
     </button>
   );
 };
@@ -191,8 +197,8 @@ const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<Sc
 const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
   if (z === null || !Number.isFinite(z)) {
     return (
-      <div className="rounded-xl border border-stone-200 bg-white px-3 py-3">
-        <div className="h-2 rounded-full bg-stone-200" />
+      <div className="flex items-center gap-3 py-1">
+        <div className="flex-1 h-1.5 rounded-full bg-stone-100" />
       </div>
     );
   }
@@ -201,25 +207,22 @@ const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
   const left = ((clamped + 3.5) / 7) * 100;
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2">
+    <div className="flex items-center gap-3 py-1">
       <div
-        className="relative h-2 rounded-full"
+        className="flex-1 relative h-1.5 rounded-full"
         style={{
           background:
             'linear-gradient(to right, #f87171 0%, #f87171 21.4%, #fbbf24 21.4%, #fbbf24 35.7%, #34d399 35.7%, #34d399 100%)',
         }}
       >
         <span
-          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[#3D405B] shadow"
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[#3D405B] shadow-sm"
           style={{ left: `${left}%` }}
         />
       </div>
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <span className="text-[11px] font-semibold text-stone-500">
-          ET {z > 0 ? '+' : ''}
-          {z.toFixed(2)}
-        </span>
-      </div>
+      <span className="text-[11px] font-bold text-stone-500 tabular-nums shrink-0">
+        ET {z > 0 ? '+' : ''}{z.toFixed(2)}
+      </span>
     </div>
   );
 };
@@ -232,7 +235,8 @@ const NumericRow: React.FC<{
   onChange: (patch: Partial<ScoreResult>) => void;
   readOnly?: boolean;
   onFocus?: () => void;
-}> = ({ testId, patient, subtest, result, onChange, readOnly, onFocus }) => {
+  hasNorms?: boolean;
+}> = ({ testId, patient, subtest, result, onChange, readOnly, onFocus, hasNorms }) => {
   const [isComputing, setIsComputing] = useState(false);
   const [warn, setWarn] = useState<string | null>(null);
   const active = result.entryMetric || subtest.inputConfig?.defaultMetric || 'raw';
@@ -241,7 +245,7 @@ const NumericRow: React.FC<{
 
   const computeRaw = async (raw: string, value: number) => {
     if ((subtest.computationMode || 'LOOKUP') === 'NONE') {
-      setWarn('Pas de calcul automatique pour cette epreuve.');
+      setWarn('Pas de calcul automatique pour cette épreuve.');
       setPatch({ raw, derived: { source: 'manual' } });
       return;
     }
@@ -251,7 +255,7 @@ const NumericRow: React.FC<{
       const dbSubtestId = subtest.id.includes('_') ? subtest.id : `${testId}_${subtest.id}`;
       const out = await ScoringEngine.compute(dbSubtestId, value, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
       if (!out || !out.normFound) {
-        setWarn('Normes introuvables. Continuez en saisie manuelle.');
+        setWarn('Normes introuvables — poursuivez en saisie manuelle.');
         setPatch({ raw, derived: { source: 'manual' } });
         return;
       }
@@ -270,7 +274,7 @@ const NumericRow: React.FC<{
         scoreSource: 'auto',
       });
     } catch (e) {
-      setWarn('Erreur calcul automatique.');
+      setWarn('Erreur lors du calcul automatique.');
       setPatch({ raw, derived: { source: 'manual' } });
       console.error(e);
     } finally {
@@ -335,70 +339,92 @@ const NumericRow: React.FC<{
   }
 
   return (
-    <div className="border-b border-stone-100 last:border-0 bg-white">
+    <div className="bg-white/60">
       <div className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="hidden md:block text-stone-300"><GripVertical size={16} /></div>
-            <div className="min-w-0">
-              <h4 className="font-bold text-[#3D405B] text-sm md:text-base truncate">{subtest.name}</h4>
+        {/* Header: name + meta badges */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <h4 className="font-semibold text-[#3D405B] text-sm md:text-base">{subtest.name}</h4>
+            <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{subtest.unit}</span>
+              {getScaleLabel(subtest.scoreType) && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">
+                  {getScaleLabel(subtest.scoreType)}
+                </span>
+              )}
+              {hasNorms && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">
+                  Normes
+                </span>
+              )}
             </div>
           </div>
-          <ReviewButton result={result} onChange={onChange} />
+          {isComputing && <Loader2 size={14} className="animate-spin text-[#E07A5F]" />}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-          {METRIC_OPTIONS.map((m) => {
+        {/* Metric selector tabs */}
+        <div className="flex gap-1 mb-3">
+          {METRIC_OPTIONS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => { setPatch({ entryMetric: m.key }); onFocus?.(); }}
+              className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                active === m.key
+                  ? 'bg-[#3D405B] text-white shadow-sm'
+                  : 'text-stone-400 hover:bg-stone-100 hover:text-stone-600'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Hero input */}
+        <input
+          value={metricValue(active)}
+          disabled={readOnly}
+          inputMode="decimal"
+          onFocus={() => onFocus?.()}
+          onChange={(e) => void onMetricInput(active, e.target.value)}
+          className={`w-full text-center text-4xl font-bold text-[#3D405B] bg-transparent outline-none py-2 border-b-2 border-stone-100 focus:border-[#E07A5F] transition-colors placeholder:text-stone-200 ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
+          placeholder="–"
+        />
+
+        {/* Derived readouts */}
+        <div className="flex items-center justify-center gap-4 mt-3 mb-1">
+          {METRIC_OPTIONS.filter(m => m.key !== active).map(m => {
             const val = metricValue(m.key);
-            const isActive = active === m.key;
             return (
-              <div
+              <button
                 key={m.key}
-                className={`rounded-lg border px-2 py-2 transition-all ${
-                  isActive
-                    ? 'border-[#3D405B] bg-[#3D405B] text-white'
-                    : 'border-stone-200 bg-white text-stone-500'
-                }`}
+                type="button"
+                onClick={() => { setPatch({ entryMetric: m.key }); onFocus?.(); }}
+                className="text-xs text-stone-400 hover:text-[#3D405B] transition-colors tabular-nums"
               >
-                <p className={`text-[10px] font-bold uppercase tracking-wider text-center ${isActive ? 'text-white' : 'text-stone-500'}`}>{m.label}</p>
-                <input
-                  value={val}
-                  disabled={readOnly}
-                  inputMode="decimal"
-                  onFocus={() => {
-                    setPatch({ entryMetric: m.key });
-                    onFocus?.();
-                  }}
-                  onChange={(e) => {
-                    void onMetricInput(m.key, e.target.value);
-                  }}
-                  className={`mt-1 w-full text-center text-lg font-bold bg-transparent outline-none ${
-                    isActive ? 'text-white placeholder:text-white/70' : 'text-[#3D405B] placeholder:text-stone-300'
-                  } ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
-                  placeholder="-"
-                />
-              </div>
+                <span className="font-bold uppercase text-[10px]">{m.label}</span>{' '}
+                <span className="font-semibold text-stone-600">{val || '–'}</span>
+              </button>
             );
           })}
         </div>
 
-        <div className="mb-2 flex items-center justify-end">
-          {isComputing && <Loader2 size={13} className="animate-spin text-[#E07A5F]" />}
-        </div>
-
+        {/* Gauss inline */}
         <GaussBand z={visualZ} />
 
         {warn && (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
-            <div className="inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              {warn}
-            </div>
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
+            <AlertTriangle size={12} />
+            {warn}
           </div>
         )}
 
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
+
+        {/* Review toggle */}
+        <div className="mt-2 flex items-center justify-end">
+          <ReviewButton result={result} onChange={onChange} />
+        </div>
       </div>
     </div>
   );
@@ -411,17 +437,11 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
 
   return (
-    <div className="border-b border-stone-100 last:border-0 bg-white">
+    <div className="bg-white/60">
       <div className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="hidden md:block text-stone-300"><GripVertical size={16} /></div>
-            <div className="min-w-0">
-              <h4 className="font-bold text-[#3D405B] text-sm md:text-base leading-tight truncate">{subtest.name}</h4>
-              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Categorie normative</p>
-            </div>
-          </div>
-          <ReviewButton result={result} onChange={onChange} />
+        <div className="mb-4">
+          <h4 className="font-semibold text-[#3D405B] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mt-1">Catégorie normative</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
@@ -444,9 +464,9 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
                     scoreSource: 'manual_ns',
                   })
                 }
-                className={`text-left rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all ${
+                className={`text-left rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
                   active
-                    ? 'border-[#3D405B] bg-[#3D405B] text-white'
+                    ? 'border-[#3D405B] bg-[#3D405B] text-white shadow-sm'
                     : 'border-stone-200 bg-white text-stone-600 hover:border-[#E07A5F]'
                 } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
               >
@@ -462,6 +482,10 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
         </div>
 
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
+
+        <div className="mt-2 flex items-center justify-end">
+          <ReviewButton result={result} onChange={onChange} />
+        </div>
       </div>
     </div>
   );
@@ -470,17 +494,11 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
 const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void }> = ({ subtest, result, onChange, readOnly, onFocus }) => {
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
   return (
-    <div className="border-b border-stone-100 last:border-0 bg-white">
+    <div className="bg-white/60">
       <div className="p-4 md:p-5">
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="hidden md:block text-stone-300"><GripVertical size={16} /></div>
-            <div className="min-w-0">
-              <h4 className="font-bold text-[#3D405B] text-sm md:text-base leading-tight truncate">{subtest.name}</h4>
-              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Saisie brute manuelle</p>
-            </div>
-          </div>
-          <ReviewButton result={result} onChange={onChange} />
+        <div className="mb-4">
+          <h4 className="font-semibold text-[#3D405B] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mt-1">Saisie brute manuelle</p>
         </div>
 
         <input
@@ -489,20 +507,63 @@ const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange:
           onFocus={onFocus}
           disabled={readOnly}
           placeholder="Entrer la valeur brute"
-          className="w-full rounded-lg border border-stone-200 bg-white px-3 py-3 text-center text-2xl font-bold text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none"
+          className="w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-center text-3xl font-bold text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
         />
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
+
+        <div className="mt-2 flex items-center justify-end">
+          <ReviewButton result={result} onChange={onChange} />
+        </div>
       </div>
     </div>
   );
 };
 
-const FlexibleSubtestRow = React.memo((props: { testId: string; patient: Patient; subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void; isExpanded?: boolean; onToggleExpand?: () => void }) => {
+const FlexibleSubtestRow = React.memo((props: { testId: string; patient: Patient; subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void; isExpanded?: boolean; onToggleExpand?: () => void; hasNorms?: boolean }) => {
   const model = props.subtest.inputModel || 'numeric_4mode';
   if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'raw_only' || props.subtest.scoreType === 'none') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
-  return <NumericRow testId={props.testId} patient={props.patient} subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
+  return <NumericRow testId={props.testId} patient={props.patient} subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} hasNorms={props.hasNorms} />;
 });
+
+const CompactSubtestRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onClick: () => void;
+}> = ({ subtest, result, onClick }) => {
+  const isReviewed = reviewed(result);
+  const hasData = hasValue(result);
+  const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
+  const tone = scoreToneFromZ(hasZ ? result.zScore! : null);
+
+  const parts: string[] = [];
+  if (result.standard) parts.push(`NS ${result.standard}`);
+  if (hasZ) parts.push(`ET ${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`);
+  if (result.percentile) parts.push(`${result.percentile}\u202F%`);
+  if (result.qualitativeLabel) parts.push(result.qualitativeLabel);
+  if (result.raw && parts.length === 0 && result.raw.trim()) parts.push(`Brut\u00a0: ${result.raw}`);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/80 transition-colors group"
+    >
+      <ChevronRight size={14} className="text-stone-300 group-hover:text-[#E07A5F] transition-colors shrink-0" />
+      <span className="font-medium text-sm text-[#3D405B] truncate min-w-0 flex-1">{subtest.name}</span>
+      {hasData && parts.length > 0 && (
+        <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${
+          tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-stone-500'
+        }`}>
+          {parts.join(' \u00b7 ')}
+        </span>
+      )}
+      <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${
+        isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-stone-200'
+      }`} />
+    </button>
+  );
+};
 
 const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
   const { catalog } = useCatalog();
@@ -538,7 +599,7 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
     <div className="sticky top-24 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
       <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2">
         <Activity size={14} />
-        Resume par test
+        Résumé par test
       </h4>
 
       {testRows.length === 0 ? (
@@ -579,7 +640,7 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
                   <div className="h-2 rounded-full bg-stone-200" />
                 )}
                 <div className="mt-1 flex items-center justify-between text-[10px] text-stone-400">
-                  <span>{subtestCount} epreuve(s)</span>
+                  <span>{subtestCount} épreuve(s)</span>
                 </div>
               </div>
             );
@@ -621,7 +682,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
     });
   };
 
-  const totalSelected = Object.values(selected).reduce((acc, ids) => acc + ids.length, 0);
+  const totalSelected = Object.values(selected).reduce((acc: number, ids: string[]) => acc + ids.length, 0);
   const categoryTabs = useMemo(() => [{ id: 'all', label: 'Tous' }, ...catalog.map((c) => ({ id: c.id, label: c.name }))], [catalog]);
   const testsToRender = useMemo(() => {
     if (searchTerm.trim()) return searchTests(searchTerm.trim());
@@ -641,7 +702,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                 <Layers size={24} className="text-[#E07A5F]" />
                 Catalogue tests
               </h2>
-              <p className="text-sm text-stone-500 mt-1">Selection rapide des tests et sous-tests.</p>
+              <p className="text-sm text-stone-500 mt-1">Sélection rapide des tests et sous-tests.</p>
             </div>
             <button onClick={onClose} className="p-2 rounded-full bg-stone-100 hover:bg-stone-200 transition-colors text-stone-500">
               <X size={20} />
@@ -679,7 +740,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
 
         <div className="flex-1 overflow-y-auto p-5 bg-[var(--app-bg)] custom-scrollbar">
           {loading && testsToRender.length === 0 && <p className="text-sm text-stone-400">Chargement...</p>}
-          {testsToRender.length === 0 && !loading && <p className="text-sm text-stone-500">Aucun test trouve pour ce filtre.</p>}
+          {testsToRender.length === 0 && !loading && <p className="text-sm text-stone-500">Aucun test trouvé pour ce filtre.</p>}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
             {testsToRender.map((test) => {
@@ -709,7 +770,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                       <p className="text-[11px] text-stone-500">{test.subtests.length} sous-tests</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {alreadyCount > 0 && <span className="rounded-full bg-stone-100 text-stone-500 px-2 py-0.5 text-[10px] font-bold">{alreadyCount} deja</span>}
+                      {alreadyCount > 0 && <span className="rounded-full bg-stone-100 text-stone-500 px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
                       {selectedCount > 0 && <span className="rounded-full bg-[#E07A5F] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
                       {isExpanded ? <ChevronUp size={16} className="text-stone-400" /> : <ChevronDown size={16} className="text-stone-400" />}
                     </div>
@@ -747,13 +808,13 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                               className="accent-[#E07A5F]"
                             />
                             <span className="truncate">{st.name}</span>
-                            {already && <span className="ml-auto text-[10px] uppercase font-bold">ajoute</span>}
+                            {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
                           </label>
                         );
                         })}
                       </div>
                       {filteredSubtests.length === 0 && (
-                        <p className="text-xs text-stone-400 px-1 py-2">Aucun sous-test ne correspond a la recherche.</p>
+                        <p className="text-xs text-stone-400 px-1 py-2">Aucun sous-test ne correspond à la recherche.</p>
                       )}
                     </div>
                   )}
@@ -772,7 +833,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
         </div>
 
         <div className="p-4 border-t border-stone-100 bg-white flex flex-wrap justify-between items-center gap-3">
-          <span className="text-xs text-stone-500 font-semibold">{totalSelected} epreuve(s) selectionnee(s)</span>
+          <span className="text-xs text-stone-500 font-semibold">{totalSelected} épreuve(s) sélectionnée(s)</span>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 font-bold text-stone-400">Annuler</button>
             <button
@@ -801,10 +862,37 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const [editMode, setEditMode] = useState<Record<string, boolean>>({});
   const [subtestFilters, setSubtestFilters] = useState<Record<string, string>>({});
   const [showWarning, setShowWarning] = useState(false);
+  const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
+  const [normsMap, setNormsMap] = useState<Record<string, boolean>>({});
+  const normsLoadedRef = useRef<string>('');
 
   useEffect(() => {
     ensureCatalogLoaded();
   }, [ensureCatalogLoaded]);
+
+  // Load norms availability for all current subtests (black-box: returns only booleans)
+  useEffect(() => {
+    const allSubtestIds: string[] = [];
+    Object.entries(tests).forEach(([testId, subtests]) => {
+      Object.keys(subtests).forEach((subId) => {
+        const dbId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        allSubtestIds.push(dbId);
+      });
+    });
+    const key = allSubtestIds.sort().join(',');
+    if (!key || key === normsLoadedRef.current) return;
+    normsLoadedRef.current = key;
+
+    supabase.rpc('check_norms_availability', { p_subtest_ids: allSubtestIds })
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, boolean> = {};
+        (data as Array<{ subtest_id: string; has_norms: boolean }>).forEach((r) => {
+          map[r.subtest_id] = r.has_norms;
+        });
+        setNormsMap(map);
+      }, () => { /* silent */ });
+  }, [tests]);
 
   const addTests = useCallback((selection: Record<string, string[]>) => {
     const next = { ...tests };
@@ -885,13 +973,33 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               Tests & mesures
             </h2>
             <p className="text-stone-500 text-sm font-medium mt-1">
-              Saisie simple: automatique si normes disponibles, sinon assistee.
+              Saisie fluide : automatique si normes disponibles, assistée sinon.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
               {stat.rev}/{stat.total} revus
             </div>
+            {stat.pending > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = { ...tests };
+                  Object.entries(next).forEach(([testId, subtests]) => {
+                    Object.entries(subtests).forEach(([subId, res]) => {
+                      if (hasValue(res) && !reviewed(res)) {
+                        next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
+                      }
+                    });
+                  });
+                  updateTests(next);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+              >
+                <CheckCheck size={14} />
+                Tout revu
+              </button>
+            )}
             <button
               onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
               className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
@@ -913,8 +1021,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               <div className="mx-auto mb-4 h-14 w-14 rounded-2xl bg-[#E07A5F]/10 text-[#E07A5F] flex items-center justify-center">
                 <Layers size={24} />
               </div>
-              <p className="text-[#3D405B] font-bold text-lg">Aucun test selectionne</p>
-              <p className="mt-1 text-sm text-stone-500">Ajoute des tests pour demarrer la saisie guidee.</p>
+              <p className="text-[#3D405B] font-bold text-lg">Aucun test sélectionné</p>
+              <p className="mt-1 text-sm text-stone-500">Ajoutez des tests depuis le catalogue pour démarrer la saisie guidée.</p>
               <button
                 type="button"
                 onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
@@ -933,7 +1041,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               <section key={catId}>
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 shadow-sm">
                   <CatIcon size={16} className="text-[#3D405B]" />
-                  <h3 className="font-bold text-stone-600 uppercase text-xs tracking-[0.14em]">{cat?.name || 'Divers'}</h3>
+                  <h3 className="font-bold text-stone-600 uppercase text-xs tracking-[0.14em]">{cat?.name || 'Autres'}</h3>
                 </div>
                 {defs.map((test) => {
                   const collapsed = collapsedTests[test.id];
@@ -947,16 +1055,16 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                   const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
                   const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
                   return (
-                    <div key={test.id} className="mb-6 overflow-hidden rounded-[26px] border border-stone-200 bg-white shadow-[0_10px_24px_rgba(61,64,91,0.06)]">
-                      <div className="px-4 py-4 border-b border-stone-100 bg-gradient-to-r from-stone-50 to-white">
+                    <div key={test.id} className="mb-6 overflow-hidden rounded-[28px] border border-stone-100 bg-gradient-to-b from-white to-stone-50/60 shadow-[0_8px_30px_rgba(61,64,91,0.05)]">
+                      <div className="px-5 py-4 border-b border-stone-100/80 bg-gradient-to-r from-stone-50/80 to-transparent">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0 flex items-center gap-3">
-                            <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-stone-400 rounded-lg p-1.5 hover:bg-white">
+                            <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-stone-400 rounded-xl p-1.5 hover:bg-white hover:shadow-sm transition-all">
                               {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
                             </button>
                             <div className="min-w-0">
                               <h4 className="font-bold text-[#3D405B] truncate">{test.name}</h4>
-                              <p className="text-[11px] text-stone-500">{visibleSubtests.length} epreuve(s) | {testFilledCount} saisie(s) | {testReviewedCount} revue(s)</p>
+                              <p className="text-[11px] text-stone-400">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s) · {testReviewedCount} revue(s)</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -972,23 +1080,41 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                       {!collapsed && (
                         <div>
                           {visibleSubtests.length > 1 && (
-                            <div className="px-4 pt-3">
+                            <div className="px-5 pt-3">
                               <input
                                 value={subtestFilters[test.id] || ''}
                                 onChange={(e) => setSubtestFilters((prev) => ({ ...prev, [test.id]: e.target.value }))}
                                 placeholder="Filtrer les sous-tests..."
-                                className="w-full rounded-lg border border-stone-200 px-3 py-2 text-xs text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none"
+                                className="w-full rounded-xl border border-stone-100 bg-white/80 px-3 py-2 text-xs text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
                               />
                             </div>
                           )}
-                          {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-stone-400">Aucune epreuve selectionnee.</div>}
+                          {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-stone-400">Aucune épreuve sélectionnée.</div>}
                           {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-stone-400">Aucun sous-test ne correspond au filtre.</div>}
                           {filteredSubtests.map((st) => {
                             const res = tests[test.id]?.[st.id] || emptyScore();
+                            const dbSubId = st.id.includes('_') ? st.id : `${test.id}_${st.id}`;
+                            const subKey = `${test.id}__${st.id}`;
+                            const isSubExpanded = expandedSubKey === subKey;
+                            const isSubReviewed = reviewed(res);
+                            const hasData = hasValue(res);
                             return (
-                              <div key={st.id} className="relative">
-                                <FlexibleSubtestRow testId={test.id} patient={patient} subtest={st} result={res} onChange={(patch) => updateSubtest(test.id, st.id, patch)} />
-                                {editing && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
+                              <div
+                                key={st.id}
+                                className={`relative border-l-[3px] transition-all ${
+                                  isSubReviewed
+                                    ? 'border-l-emerald-400'
+                                    : hasData
+                                      ? 'border-l-amber-300'
+                                      : 'border-l-transparent'
+                                } ${isSubExpanded ? 'bg-stone-50/40' : ''}`}
+                              >
+                                {isSubExpanded ? (
+                                  <FlexibleSubtestRow testId={test.id} patient={patient} subtest={st} result={res} onChange={(patch) => updateSubtest(test.id, st.id, patch)} hasNorms={normsMap[dbSubId] === true} onFocus={() => setExpandedSubKey(subKey)} />
+                                ) : (
+                                  <CompactSubtestRow subtest={st} result={res} onClick={() => setExpandedSubKey(subKey)} />
+                                )}
+                                {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
                               </div>
                             );
                           })}
@@ -1023,9 +1149,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       {showWarning && (
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[#3D405B]/75 backdrop-blur-sm">
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-stone-100">
-            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[#3D405B]">Elements non revus</h4></div>
-            <p className="text-sm text-stone-600">{stat.pending} element(s) saisi(s) ne sont pas encore marques comme revus. Vous pouvez continuer ou revenir verifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-stone-200 text-stone-500 font-bold text-xs uppercase">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase">Continuer</button></div>
+            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[#3D405B]">Éléments non revus</h4></div>
+            <p className="text-sm text-stone-600">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
+            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-stone-200 text-stone-500 font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
           </div>
         </div>
       )}
