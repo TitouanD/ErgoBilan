@@ -239,6 +239,7 @@ const NumericRow: React.FC<{
 }> = ({ testId, patient, subtest, result, onChange, readOnly, onFocus, hasNorms }) => {
   const [isComputing, setIsComputing] = useState(false);
   const [warn, setWarn] = useState<string | null>(null);
+  const [localText, setLocalText] = useState<string | null>(null);
   const active = result.entryMetric || subtest.inputConfig?.defaultMetric || 'raw';
 
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
@@ -284,6 +285,22 @@ const NumericRow: React.FC<{
 
   const onMetricInput = async (metric: Metric, text: string) => {
     if (readOnly) return;
+    if (metric === 'z') {
+      // Allow intermediate states like '-', '-0.', '0.' without clearing
+      setLocalText(text);
+      const n = parseNum(text);
+      if (n === null) {
+        // Don't wipe the store yet — user is still typing
+        if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
+        setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+        return;
+      }
+      const c = calculateFromZ(n, subtest.scoreType || 'standard');
+      setWarn(null);
+      setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et' });
+      return;
+    }
+    setLocalText(null); // Not z metric, clear local buffer
     const n = parseNum(text);
     if (metric === 'raw') {
       setPatch({ entryMetric: 'raw', raw: text });
@@ -300,23 +317,15 @@ const NumericRow: React.FC<{
       setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns' });
       return;
     }
-    if (metric === 'z') {
+    if (metric === 'percentile') {
       if (n === null) {
-        setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+        setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_ns' });
         return;
       }
-      const c = calculateFromZ(n, subtest.scoreType || 'standard');
+      const c = calculateFromPercentile(n, subtest.scoreType || 'standard');
       setWarn(null);
-      setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et' });
-      return;
+      setPatch({ entryMetric: 'percentile', percentile: text, standard: c.standard, zScore: c.zScore, derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns' });
     }
-    if (n === null) {
-      setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_ns' });
-      return;
-    }
-    const c = calculateFromPercentile(n, subtest.scoreType || 'standard');
-    setWarn(null);
-    setPatch({ entryMetric: 'percentile', percentile: text, standard: c.standard, zScore: c.zScore, derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns' });
   };
 
   const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
@@ -324,7 +333,11 @@ const NumericRow: React.FC<{
   const metricValue = (metric: Metric): string => {
     if (metric === 'raw') return result.raw || '';
     if (metric === 'standard') return result.standard || '';
-    if (metric === 'z') return hasZ ? String(result.zScore) : '';
+    if (metric === 'z') {
+      // Use local text buffer if user is actively typing
+      if (localText !== null && active === 'z') return localText;
+      return hasZ ? String(result.zScore) : '';
+    }
     return result.percentile || '';
   };
 
@@ -387,6 +400,16 @@ const NumericRow: React.FC<{
           inputMode="decimal"
           onFocus={() => onFocus?.()}
           onChange={(e) => void onMetricInput(active, e.target.value)}
+          onBlur={() => {
+            if (localText !== null) {
+              // Commit: if the local buffer is an incomplete number, finalize it
+              const n = parseNum(localText);
+              if (n === null && active === 'z') {
+                setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+              }
+              setLocalText(null);
+            }
+          }}
           className={`w-full text-center text-4xl font-bold text-[#3D405B] bg-transparent outline-none py-2 border-b-2 border-stone-100 focus:border-[#E07A5F] transition-colors placeholder:text-stone-200 ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
           placeholder="–"
         />

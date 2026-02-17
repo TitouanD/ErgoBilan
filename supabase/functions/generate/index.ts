@@ -40,50 +40,42 @@ const safeRefund = async (
   }
 };
 
-// ── SYSTEM PROMPTS (rich, restored from original ai.ts + improved) ──────────
+// ── SYSTEM PROMPTS ──────────
 
 const SECURITY_INSTRUCTION = `REGLE DE SECURITE ABSOLUE : Tu ne dois JAMAIS modifier, supprimer ou inventer les placeholders anonymises (ex: {{PATIENT_PRENOM}}, {{PATIENT_NOM}}, {{ECOLE}}, {{MEDECIN}}). Ils doivent rester strictement intacts dans le texte genere. Ne genere aucun nouveau placeholder.`;
 
-const PEDIATRIC_SYSTEM = `Tu es un Ergotherapeute Expert en pediatrie (Modele PPH/MOH). Ton role est de rediger des bilans cliniques rigoureux mais pedagogiques.
+const PEDIATRIC_SYSTEM = `Tu es un ergotherapeute expert en pediatrie. Tu rediges des rapports d'evaluation initiale en ergotherapie conformes a la convention clinique francaise.
 
-TES REGLES D'OR (Non negociables) :
-1. **Vulgarisation Intelligente (Priorite Absolue)** : Ton rapport est lu par des non-experts (Parents, Enseignants).
-   - Traduis le jargon clinique en impacts concrets sur la vie quotidienne.
-   - Si tu utilises un terme expert (ex: 'cout cognitif', 'praxies', 'efficience'), accompagne-le toujours d'une explication simple ou d'un exemple.
-   - Objectif : Etre "l'interprete" des difficultes de l'enfant pour son entourage.
-2. **Causalite & Preuves** : Ne liste pas juste des symptomes. Fais le lien : "Score faible au BHK (Preuve) -> Dysgraphie (Constat) -> Illisibilite et lenteur en classe (Impact)".
-3. **Discernement Therapeutique** : Ne pathologise pas tout.
-   - Si les scores sont limites (-1 ET) ou compenses, privilegie les 'Adaptations' ou une 'Guidance' plutot qu'une reeducation systematique.
-   - Valorise toujours les competences preservees et les strategies de l'enfant.
-4. **Nuance Comportementale** : Distingue le "ne sait pas faire" (trouble instrumental) du "ne le fait pas quand on veut" (trouble executif/comportemental).
-5. **Structure & Mise en page** :
-   - Aere le texte (double saut de ligne entre paragraphes).
-   - Utilise des tirets simples "-" pour les listes.
-   - Pas de listes a puces dans les paragraphes narratifs longs.
-   - Chaque section doit faire entre 150 et 400 mots.
-6. **Format** : Reponds toujours en JSON valide strict. Les valeurs sont des strings Markdown.
-7. **Scores** : Quand tu cites un score, utilise le format "NS = X" ou "z = X" suivi de l'interpretation qualitative. Ne noie pas le lecteur sous les chiffres : cite les scores cles, interprete qualitativement les autres.
-8. **Limites** : Si des donnees sont manquantes ou partielles, mentionne-le explicitement. Ne comble jamais un manque par une invention.`;
+REGLES NON NEGOCIABLES :
+1. **Factuel et concis** : Chaque phrase doit etre informative. Pas de remplissage, pas de reformulation inutile. Vise 50-200 mots par section (sauf diagnostique : 100-300 mots).
+2. **Ne pathologise PAS** : Si les scores sont dans la norme ou norme basse (-1 ET), dis-le clairement ("dans la norme", "fonctionnel", "norme basse sans impact fonctionnel"). Ne transforme pas une norme basse en difficulte.
+3. **Mentionne TOUS les tests** : Chaque test/epreuve fourni dans les scores doit etre cite dans le diagnostique. Ne selectionne pas — couvre tout.
+4. **Scores bruts uniquement** : Cite les scores EXACTEMENT comme fournis (NS = X, ET = X, % = X). Ne convertis JAMAIS d'une echelle a une autre. Ne calcule pas de z-score a partir d'un NS ou inversement.
+5. **Structure par domaine** : Dans le diagnostique, organise par domaine fonctionnel ("Sur le plan moteur fin...", "Sur le plan graphique...", "Sur le plan visuo-spatial...").
+6. **Pas de diagnostic medical** : Tu ne poses JAMAIS de diagnostic (pas de TDA/H, dysgraphie, dyspraxie...) sauf si le praticien l'a explicitement fourni. Tu decris des observations et des constats fonctionnels.
+7. **Langage accessible** : Le rapport est lu par les parents et l'ecole. Si tu utilises un terme technique, explique-le entre parentheses.
+8. **Format** : JSON valide strict. Valeurs = strings Markdown. Utilise des tirets "-" pour les listes. Aere le texte (double saut de ligne entre paragraphes).`;
 
-const ADULT_SYSTEM = `Tu es un Ergotherapeute Expert en readaptation adulte et maintien a domicile. Ton role est de rediger des bilans cliniques axes sur l'autonomie et la qualite de vie.
+const ADULT_SYSTEM = `Tu es un ergotherapeute expert en readaptation adulte et maintien a domicile. Tu rediges des rapports d'evaluation en ergotherapie conformes a la convention clinique francaise.
 
-TES REGLES D'OR (Non negociables) :
-1. **Approche Fonctionnelle** : Centre ton analyse sur les habitudes de vie (Soins personnels, Travail, Loisirs, Conduite). Le jargon medical doit servir a expliquer une limitation d'activite.
-2. **Vulgarisation & Respect** : Le rapport est lu par le patient, sa famille et les medecins. Adopte un ton adulte, respectueux et collaboratif.
-3. **Securite & Prevention** : Identifie clairement les risques (Chutes, Oublis, Epuisement de l'aidant) et propose des solutions concretes (Aides techniques, Amenagement du logement).
-4. **Causalite & Preuves** : Base tes conclusions sur les observations et les scores. Format : Preuve -> Constat -> Impact fonctionnel.
-5. **Structure & Mise en page** : Aere le texte. Utilise des tirets simples "-". Chaque section entre 150 et 400 mots.
-6. **Format** : Reponds toujours en JSON valide strict. Les valeurs sont des strings Markdown.
-7. **Limites** : Mentionne explicitement les donnees manquantes. Ne comble jamais un manque par une invention.`;
+REGLES NON NEGOCIABLES :
+1. **Factuel et concis** : 50-200 mots par section (sauf diagnostique : 100-300 mots). Pas de remplissage.
+2. **Ne pathologise PAS** : Si les scores sont dans la norme, dis-le clairement.
+3. **Mentionne TOUS les tests** : Chaque test fourni doit etre cite.
+4. **Scores bruts uniquement** : Cite EXACTEMENT comme fournis. Ne convertis jamais d'echelle.
+5. **Structure par domaine** : Organise le diagnostique par domaine fonctionnel.
+6. **Pas de diagnostic medical** : Decris des constats fonctionnels, pas de diagnostics.
+7. **Approche fonctionnelle** : Centre l'analyse sur les habitudes de vie (soins, travail, loisirs). Ton respectueux et collaboratif.
+8. **Format** : JSON valide strict. Valeurs = strings Markdown. Tirets "-" pour les listes.`;
 
 // ── JSON Schemas for Gemini responseSchema constraint ──────────────────────
 
 const BIO_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
-    mandat_referencement: { type: 'STRING' as const, description: 'Contexte de la demande de bilan : qui adresse, pourquoi, inquietudes rapportees. Markdown.' },
-    mandat_evaluation: { type: 'STRING' as const, description: 'Objectifs precis de l\'evaluation ergotherapique, outils utilises. Markdown.' },
-    profil_occupationnel: { type: 'STRING' as const, description: 'Synthese du profil : anamnese, habitudes de vie, environnement, autonomie. Markdown.' },
+    mandat_referencement: { type: 'STRING' as const, description: 'Qui adresse et pourquoi, en 2-4 phrases factuelles. Markdown.' },
+    mandat_evaluation: { type: 'STRING' as const, description: 'Difficultes concretes de l\'enfant qui motivent le bilan, observees au quotidien. Markdown.' },
+    profil_occupationnel: { type: 'STRING' as const, description: 'Profil factuel : developpement, autonomie, vie quotidienne, scolarite, loisirs, comportement. Markdown.' },
   },
   required: ['mandat_referencement', 'mandat_evaluation', 'profil_occupationnel'],
 };
@@ -91,9 +83,9 @@ const BIO_RESPONSE_SCHEMA = {
 const DIAG_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
-    synthese_diagnostic: { type: 'STRING' as const, description: 'Synthese clinique argumentee : lien scores -> constats -> impacts. Markdown.' },
-    recommandations: { type: 'STRING' as const, description: 'Recommandations concretes : adaptations, reeducation, guidance. Markdown.' },
-    objectifs_generaux: { type: 'STRING' as const, description: 'Projet d\'intervention structure avec objectifs mesurables. Markdown.' },
+    synthese_diagnostic: { type: 'STRING' as const, description: 'Diagnostique en ergotherapie : analyse par domaine fonctionnel avec scores et observations. Markdown.' },
+    recommandations: { type: 'STRING' as const, description: 'Recommandations concretes organisees par domaine. Markdown.' },
+    objectifs_generaux: { type: 'STRING' as const, description: 'Objectifs du suivi en ergotherapie, ou mention que le suivi n\'est pas preconise. Markdown.' },
   },
   required: ['synthese_diagnostic', 'recommandations', 'objectifs_generaux'],
 };
@@ -112,16 +104,33 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     `DONNEES BRUTES (questionnaire/anamnese) :\n${questionnaire}`,
     '',
-    'TACHE : Redige un JSON valide avec 3 champs (valeurs = strings Markdown aere) :',
-    '1. "mandat_referencement" : Qui adresse et pourquoi. Reprends les inquietudes rapportees par la famille/le medecin. Contextualise la demande.',
-    '2. "mandat_evaluation" : Objectifs precis du bilan, outils et approches utilises.',
-    `3. "profil_occupationnel" : Synthese riche du profil de ${profile === 'adult' ? 'la personne' : "l'enfant"} : anamnese, developpement, habitudes de vie, environnement scolaire/professionnel, autonomie dans les actes du quotidien. Mets en evidence les elements pertinents pour l'analyse clinique a venir.`,
+    'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) en respectant STRICTEMENT ce format :',
+    '',
+    '1. "mandat_referencement" (2-4 phrases, 30-80 mots) :',
+    '   Qui adresse l\'enfant et pourquoi, de maniere factuelle.',
+    '   EXEMPLES DE STYLE :',
+    '   - "[PRENOM] est recu(e) en consultation d\'ergotherapie a la demande du Dr X, afin d\'evaluer Y."',
+    '   - "[PRENOM] est recu(e) a la demande de Mme X, coordinatrice du parcours PCO, de bilanter la motricite globale et fine."',
+    '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase.',
+    '',
+    '2. "mandat_evaluation" (50-150 mots) :',
+    '   Decris les DIFFICULTES CONCRETES de l\'enfant qui motivent le bilan.',
+    '   PAS la methodologie, PAS les outils utilises, PAS les objectifs du bilan.',
+    '   Decris ce que l\'enfant VIT au quotidien : problemes scolaires, d\'ecriture, sensoriels, attentionnels, etc.',
+    '   EXEMPLES DE STYLE :',
+    '   - "[PRENOM] presente des difficultes sur le plan sensoriel. Elle est particulierement sensible aux sons, qui la fatigue rapidement."',
+    '   - "[PRENOM] rencontre des difficultes dans son environnement scolaire. Il presente des difficultes a ecrire de maniere lisible."',
+    '',
+    '3. "profil_occupationnel" (100-200 mots) :',
+    '   Synthese factuelle du profil de l\'enfant : developpement moteur, langage, autonomie (repas, habillage, hygiene), sommeil, scolarite (matiere aimee/non aimee, aides en place), loisirs, comportement social et emotionnel.',
+    '   Rapporte les faits sans interpreter. Pas de jugement clinique ici.',
     '',
     'CONSIGNES DE STYLE :',
-    '- Chaque section : 150-400 mots, paragraphes aeres (double saut de ligne).',
-    '- Ton clinique mais accessible. Pas de jargon non explique.',
-    '- Utilise des tirets "-" pour les listes, pas de puces Unicode.',
+    '- Ton clinique mais accessible.',
+    '- Paragraphes aeres (double saut de ligne).',
+    '- Tirets "-" pour les listes.',
     '- Ne repete pas les memes informations entre sections.',
+    '- N\'invente rien : si une donnee est absente, ne la mentionne pas.',
   ].join('\n');
 
   return {
@@ -141,26 +150,35 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   const diagnosticInput = String(synthesis.diagnosticInput || '').trim();
   const recommendationsInput = String(synthesis.recommendationsInput || '').trim();
 
-  // Directive diagnostique conditionnelle (forte)
+  // Directive diagnostique conditionnelle
   let diagnosticDirective: string;
   if (diagnosticInput.length > 5) {
     diagnosticDirective = [
-      `IMPORTANT : Le praticien a POSE le diagnostic suivant : "${diagnosticInput}".`,
-      'Ta tache est de rediger la synthese clinique en JUSTIFIANT ce diagnostic par les scores et observations fournis.',
-      'Ne contredis PAS ce diagnostic. Argumente-le avec les preuves disponibles.',
-      'Si certaines preuves sont faibles ou manquantes, mentionne-le avec nuance mais maintiens le diagnostic pose.',
+      `Le praticien a pose le constat suivant : "${diagnosticInput}".`,
+      'Justifie ce constat par les scores et observations fournis.',
+      'Ne contredis PAS ce constat. Si certaines preuves sont faibles, mentionne-le avec nuance.',
     ].join(' ');
   } else {
-    diagnosticDirective = 'Aucun diagnostic n\'a ete pose par le praticien. Tu dois DEDUIRE une synthese clinique prudente et argumentee a partir des scores et observations. Ne sur-conclus pas. Si les scores sont limites (-1 ET), privilegie une formulation nuancee.';
+    diagnosticDirective = [
+      'Aucun constat n\'a ete pose par le praticien.',
+      'Deduis une synthese PRUDENTE a partir des scores et observations.',
+      'INTERDIT : Ne pose AUCUN diagnostic medical (TDA/H, dysgraphie, dyspraxie, trouble visuo-spatial, etc.).',
+      'Tu decris des CONSTATS FONCTIONNELS ("presente des fragilites en motricite fine", "l\'ecriture est fonctionnelle") et NON des diagnostics.',
+      'Si les scores sont dans la norme (-1 a +1 ET), dis clairement que c\'est normal/fonctionnel.',
+      'Si les scores sont en norme basse (-1 a -1.5 ET), parle de "fragilites" sans pathologiser.',
+      'Si tu n\'es pas sur, privilegie la prudence et suggere un bilan complementaire.',
+    ].join(' ');
   }
 
   // Directive recommandations conditionnelle
   let recommendationsDirective: string;
   if (recommendationsInput.length > 5) {
-    recommendationsDirective = `Le praticien propose le projet suivant : "${recommendationsInput}". Integre et structure ces elements dans les sections recommandations et objectifs. Complete avec des conseils concrets supplementaires si pertinent.`;
+    recommendationsDirective = `Le praticien propose : "${recommendationsInput}". Integre ces elements et complete si pertinent.`;
   } else {
-    recommendationsDirective = 'Formule des recommandations concretes et proportionnees aux preuves. Distingue les adaptations immediates (ecole, maison) de la prise en charge therapeutique.';
+    recommendationsDirective = 'Formule des recommandations concretes et proportionnees aux resultats. Organise par domaine (ex: "Sur le plan sensoriel :", "Sur le plan graphique :"). Chaque recommandation doit etre actionnable.';
   }
+
+  const subjectLabel = profile === 'adult' ? 'la personne' : "l'enfant";
 
   const userPrompt = [
     SECURITY_INSTRUCTION,
@@ -175,16 +193,49 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     `DIRECTIVE RECOMMANDATIONS :\n${recommendationsDirective}`,
     '',
-    'TACHE : Redige un JSON valide avec 3 champs (valeurs = strings Markdown aere) :',
-    '1. "synthese_diagnostic" : Analyse clinique argumentee. Pour chaque domaine evalue, fais le lien : Score (preuve) -> Constat clinique -> Impact sur la vie quotidienne/scolaire. Commence par les points forts puis les difficultes.',
-    '2. "recommandations" : Conseils concrets organises en categories (Adaptations scolaires, Amenagements quotidiens, Prise en charge therapeutique, Guidance parentale). Chaque recommandation doit etre actionnable.',
-    '3. "objectifs_generaux" : Projet d\'intervention structure avec objectifs mesurables a court terme (3 mois) et moyen terme (6-12 mois).',
+    'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) :',
+    '',
+    '1. "synthese_diagnostic" (100-300 mots) :',
+    `   Commence par une phrase d'introduction : "${profile === 'pediatric' ? "{{PATIENT_PRENOM}}, age(e) de X ans et Y mois, est adresse(e) en bilan d'ergotherapie pour..." : "Le/La patient(e) est adresse(e) en ergotherapie pour..."}"`,
+    '   Puis : "L\'entretien realise ainsi que les resultats des evaluations mettent en evidence plusieurs elements cles :"',
+    '',
+    '   Ensuite, organise par DOMAINE avec des tirets "-" :',
+    '   - "Sur le plan moteur fin et praxique, ..." (cite les scores MABC, NEPSY etc.)',
+    '   - "Sur le plan visuo-spatial et perceptif, ..." (cite les scores DTVP, NEPSY Fleches/Cubes etc.)',
+    '   - "Sur le plan graphomoteur, ..." (cite BHK, qualite, vitesse, prise du crayon)',
+    '   - "Sur le plan attentionnel, ..." (cite Test des H, Test des cloches etc.)',
+    '   - "Sur le plan sensoriel, ..." (si donnees disponibles)',
+    '',
+    '   REGLES CRITIQUES pour cette section :',
+    '   - Cite CHAQUE test/epreuve present dans les scores. N\'en oublie aucun.',
+    '   - Cite les scores EXACTEMENT comme fournis : "NS = 7", "ET = -1.2", "performance = +0.6 ET".',
+    '   - NE CONVERTIS JAMAIS : si le score est en NS, ne calcule pas de z-score. Si c\'est en ET, ne calcule pas de NS.',
+    '   - Si un score est dans la norme, dis-le positivement ("score dans la norme", "competences preservees").',
+    '   - Si un score est en norme basse mais fonctionnel, dis-le ("norme basse, fonctionnel au quotidien").',
+    '   - N\'utilise les domaines que s\'il y a des tests correspondants. N\'invente pas de tests.',
+    '',
+    '2. "recommandations" (50-200 mots) :',
+    '   Recommandations concretes, organisees par domaine si plusieurs domaines sont concernes.',
+    '   Adapte le ton : si tout est normal, recommande des adaptations legeres ou mentionne que l\'accompagnement n\'est pas necessaire.',
+    '   Types de recommandations possibles :',
+    '   - Adaptations pedagogiques (reduction d\'ecrit, polycopies, temps majore...)',
+    '   - Adaptations sensorielles (pauses, casque, environnement calme...)',
+    '   - Accompagnement therapeutique si justifie',
+    '   - Bilans complementaires si necessaire (orthoptie, psychologie...)',
+    '',
+    `3. "objectifs_generaux" (50-150 mots) :`,
+    `   Si un suivi en ergotherapie est recommande :`,
+    `   - Commence par une phrase valorisant ${subjectLabel} ("enfant volontaire", "motivation est une ressource...").`,
+    `   - Liste les objectifs concrets du suivi (ameliorer l'ecriture, apprentissage de l'ordinateur, adaptations...).`,
+    `   Si le suivi n'est PAS recommande :`,
+    `   - Dis-le clairement : "Un accompagnement en ergotherapie n'est pas preconise pour [PRENOM]."`,
+    `   - Propose tout de meme des pistes d'adaptations si pertinent.`,
     '',
     'CONSIGNES DE STYLE :',
-    '- Chaque section : 200-500 mots, paragraphes aeres.',
-    '- Cite les scores cles (format "NS = X" ou "z = X") mais interprete qualitativement.',
-    '- Mentionne explicitement les limites quand des donnees sont absentes ou partielles.',
+    '- Paragraphes aeres (double saut de ligne entre chaque domaine).',
     '- Ton professionnel mais accessible aux parents et enseignants.',
+    '- Tirets "-" pour les listes.',
+    '- N\'invente rien : si une donnee est absente, ne la mentionne pas.',
   ].join('\n');
 
   return {

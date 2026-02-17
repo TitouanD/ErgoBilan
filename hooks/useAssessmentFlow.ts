@@ -165,9 +165,12 @@ export const useAssessmentFlow = ({
       const avs = p.avs === 'OUI' ? `AVS: ${p.avsHours || '?'}h, Missions: ${p.avsMissions || '?'}` : '';
       const medical = `Diagnostic médical: ${p.medicalDiagnosis || 'Aucun'}, Traitements: ${p.medicalTreatments || 'Aucun'}`;
 
+      const schoolStr = p.school && p.classLevel && p.school.toLowerCase().includes(p.classLevel.toLowerCase())
+        ? p.school
+        : `${p.school} ${p.classLevel}`;
       const rawQ = `
 Motif: ${p.reason}
-Scolarité: ${p.school} ${p.classLevel} (Plan: ${p.carePlan})
+Scolarit\u00e9: ${schoolStr} (Plan: ${p.carePlan})
 ${school}
 ${avs}
 Vie Quotidienne: ${p.meals} ${p.dressing} ${p.continence}

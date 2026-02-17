@@ -106,7 +106,7 @@ const AppRouter = () => {
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'authenticated') {
-            setMode('dashboard');
+            setMode(prev => (prev === 'assessment' || prev === 'portal') ? prev : 'dashboard');
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
