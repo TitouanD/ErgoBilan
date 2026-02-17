@@ -327,7 +327,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const knownSubtestNames: string[] = [];
 
             // PARALLEL PROCESSING: Extract all files at once for much faster processing
-            Logger.info('Extraction', `Starting parallel extraction of ${inputFiles.length} file(s)`);
+            Logger.info('ADMIN', `Starting parallel extraction of ${inputFiles.length} file(s)`);
             
             const extractionPromises = inputFiles.map(async (file, i) => {
                 try {
@@ -342,7 +342,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     
                     return { result, index: i, success: true };
                 } catch (error) {
-                    Logger.error('Extraction', `Failed to extract ${file.name}`, error);
+                    Logger.error('ADMIN', `Failed to extract ${file.name}`, error);
                     return { result: null, index: i, success: false, error };
                 }
             });

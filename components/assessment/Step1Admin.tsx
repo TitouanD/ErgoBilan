@@ -1,8 +1,8 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import type { Patient } from '../../types';
 import { calculateAge, getPatientAgeForIdentity, isPatientCreationReady } from '../../utils';
-import { User, Lock, AlertTriangle, Database, CheckCircle2, Mic, MicOff, Edit3, Check, FileText } from 'lucide-react';
+import { User, Lock, AlertTriangle, Database, CheckCircle2, Mic, MicOff, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAssessment } from '../../contexts/AssessmentContext';
@@ -71,44 +71,104 @@ export const VoiceTextarea: React.FC<{
     );
 };
 
-// --- SECTION SUMMARY (read-only condensed view) ---
+// --- Human-readable label maps for chip/select values ---
+const LABEL_MAP: Record<string, string> = {
+    // Guard mode
+    commune: 'Garde commune', alternate: 'Garde alternée', exclusive_mere: 'Exclusive (mère)',
+    exclusive_pere: 'Exclusive (père)', exclusive: 'Exclusive', third: 'Tiers / Foyer',
+    // Crawling
+    oui: 'Oui', non: 'Non', atypique: 'Atypique (fesses)', inconnu: 'Ne sais pas',
+    // Cleanliness
+    acquise: 'Acquise jour/nuit', jour_seul: 'Jour uniquement', en_cours: 'En cours',
+    accidents: 'Accidents fréquents', enuresie: 'Énurésie nocturne',
+    // Language
+    standard: 'Apparition standard', retard: 'Retard simple', suivi_ortho: 'Suivi ortho',
+    inintelligible: 'Difficile à comprendre', begaiement: 'Bégaiement',
+    // Sleep
+    ok: 'Paisible', endormissement: 'Endormissement long', reveils: 'Réveils multiples',
+    agite: 'Agité / Cauchemars', fatigue_diurne: 'Fatigue en journée',
+    // Eating
+    seul: 'Mange seul', aide: 'A besoin d\'aide', couverts_ok: 'Bonne utilisation couverts',
+    doigts: 'Mange avec les doigts', selectif: 'Très sélectif', salit: 'Salit beaucoup',
+    // Clothing
+    acquis: 'Facile', difficile: 'Difficile', aide_totale: 'Impossible',
+    // Scissors
+    hache: 'Hache le papier', tenue_incorrecte: 'Tenue incorrecte',
+    ne_sait_pas: 'Ne sait pas utiliser', refuse: 'Refuse',
+    // Writing pain
+    oui_long: 'Sur longues tâches', oui_vite: 'Au bout de 5 min', oui_constante: 'Immédiate',
+    // Hand
+    Droitier: 'Droitier', Gaucher: 'Gaucher', 'Indeterminé': 'Change encore',
+    // Gender
+    M: 'Garçon', F: 'Fille',
+};
+const humanize = (raw?: string): string => {
+    if (!raw) return '';
+    return raw.split(',').map(v => LABEL_MAP[v.trim()] || v.trim()).join(' / ');
+};
+
+// --- SECTION SUMMARY (read-only condensed view with expand) ---
 const SectionSummary: React.FC<{
     title: string;
-    fields: { label: string; value?: string }[];
+    fields: { label: string; value?: string; raw?: boolean }[];
     isFilled: boolean;
-    onToggleEdit: () => void;
-}> = ({ title, fields, isFilled, onToggleEdit }) => {
+    onEditSection: () => void;
+}> = ({ title, fields, isFilled, onEditSection }) => {
+    const [expanded, setExpanded] = useState(false);
     const filledFields = fields.filter(f => f.value?.trim());
+    const emptyFields = fields.filter(f => !f.value?.trim());
+    const preview = filledFields.slice(0, 4);
+    const hasMore = filledFields.length > 4;
     
     return (
         <div className={`border rounded-2xl transition-all ${isFilled ? 'border-stone-100 bg-white' : 'border-amber-200 bg-amber-50/30'}`}>
-            <div className="flex items-center justify-between p-4 cursor-pointer" onClick={onToggleEdit}>
-                <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between p-4">
+                <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => setExpanded(!expanded)}>
                     <div className={`p-2 rounded-xl ${isFilled ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
                         <FileText size={16} />
                     </div>
-                    <div>
+                    <div className="flex-1">
                         <h4 className="font-bold text-sm text-[#3D405B]">{title}</h4>
                         <span className={`text-[10px] font-bold uppercase tracking-wider ${isFilled ? 'text-emerald-500' : 'text-amber-500'}`}>
-                            {isFilled ? '✓ Rempli par la famille' : '⚠ À compléter'}
+                            {isFilled ? `✓ ${filledFields.length} champ${filledFields.length > 1 ? 's' : ''} renseigné${filledFields.length > 1 ? 's' : ''}` : '⚠ À compléter'}
+                            {emptyFields.length > 0 && isFilled && <span className="text-stone-300 ml-2">· {emptyFields.length} vide{emptyFields.length > 1 ? 's' : ''}</span>}
                         </span>
                     </div>
+                    <div className="p-1 text-stone-300">
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
                 </div>
-                <button className="p-2 hover:bg-stone-100 rounded-xl transition-colors text-stone-400 hover:text-[#3D405B]">
+                <button onClick={onEditSection} className="p-2 hover:bg-stone-100 rounded-xl transition-colors text-stone-400 hover:text-[#E07A5F] ml-2" title="Modifier cette section">
                     <Edit3 size={16} />
                 </button>
             </div>
-            {filledFields.length > 0 && (
-                <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {filledFields.slice(0, 6).map((f, i) => (
-                        <div key={i} className="text-xs">
-                            <span className="text-stone-400">{f.label}: </span>
-                            <span className="text-stone-600 font-medium">{(f.value?.length || 0) > 40 ? f.value?.slice(0, 40) + '…' : f.value}</span>
+            
+            {/* Preview (collapsed) — always show top fields */}
+            {!expanded && filledFields.length > 0 && (
+                <div className="px-4 pb-3 flex flex-wrap gap-x-4 gap-y-1">
+                    {preview.map((f, i) => (
+                        <span key={i} className="text-xs text-stone-500">
+                            <span className="text-stone-400">{f.label}:</span>{' '}
+                            <span className="font-medium text-stone-600">{(f.value?.length || 0) > 50 ? f.value?.slice(0, 50) + '…' : f.value}</span>
+                        </span>
+                    ))}
+                    {hasMore && <span className="text-xs text-stone-300 italic">+{filledFields.length - 4}</span>}
+                </div>
+            )}
+
+            {/* Expanded — all fields displayed */}
+            {expanded && (
+                <div className="px-4 pb-4 pt-1 border-t border-stone-50 space-y-2 animate-in slide-in-from-top-2">
+                    {fields.map((f, i) => (
+                        <div key={i} className="flex gap-2 text-xs">
+                            <span className="text-stone-400 min-w-[90px] shrink-0 text-right">{f.label}</span>
+                            {f.value?.trim() ? (
+                                <span className="font-medium text-stone-700 whitespace-pre-wrap">{f.value}</span>
+                            ) : (
+                                <span className="italic text-stone-300">—</span>
+                            )}
                         </div>
                     ))}
-                    {filledFields.length > 6 && (
-                        <div className="text-xs text-stone-400 italic">+{filledFields.length - 6} autres champs</div>
-                    )}
                 </div>
             )}
         </div>
@@ -151,50 +211,66 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   const hasParentData = !!(data.firstName && data.lastName && data.dob && hasQuestionnaireData);
   
   // Section fill status checks
-  const sectionDefs = [
+  const sectionDefs = useMemo(() => [
       { title: 'État Civil', filled: !!(data.firstName && data.lastName && data.dob), fields: [
           { label: 'Prénom', value: data.firstName }, { label: 'Nom', value: data.lastName },
-          { label: 'Date de naissance', value: data.dob }, { label: 'Genre', value: data.gender },
-          { label: 'Adresse', value: data.address },
+          { label: 'Naissance', value: data.dob }, { label: 'Genre', value: humanize(data.gender) },
+          { label: 'Âge', value: data.age }, { label: 'Adresse', value: data.address },
       ]},
       { title: 'Situation Familiale', filled: !!(data.parentNames || data.guardMode), fields: [
           { label: 'Parents', value: data.parentNames }, { label: 'Téléphone', value: data.parentPhone },
           { label: 'Email', value: data.parentEmail },
-          { label: 'Garde', value: data.guardMode?.replace('_', ' ') || data.guardArrangement },
-          { label: 'Fratrie', value: data.siblings?.map(s => `${s.firstName} (${s.relation}, ${s.age})`).join(', ') },
+          { label: 'Garde', value: humanize(data.guardMode) || data.guardArrangement },
+          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans${s.livesWithChild ? ', au domicile' : ''})`).join(' · ') : undefined },
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
           { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel },
-          { label: 'Dispositifs', value: data.carePlan?.replace(/,/g, ' / ') }, { label: 'AVS', value: data.avs },
+          { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
+          { label: 'AVS/AESH', value: data.avs === 'OUI' ? `Oui — ${data.avsHours || '?'}h (${data.avsMissions || '?'})` : data.avs === 'NON' ? 'Non' : undefined },
           { label: 'Attention', value: data.schoolAttention },
+          { label: 'Comportement social', value: data.socialBehavior },
           { label: 'Aménagements', value: data.schoolAccommodations },
       ]},
       { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
           { label: 'Médecin', value: data.prescribingDoctor }, { label: 'Diagnostic', value: data.medicalDiagnosis },
           { label: 'Traitements', value: data.medicalTreatments },
-          { label: 'Suivis', value: data.medicalTracking?.map(t => `${t.type}${t.name ? ` (${t.name})` : ''}`).join(', ') },
+          { label: 'Suivis', value: data.medicalTracking?.length ? data.medicalTracking.map(t => `${t.type}${t.name ? ` (${t.name})` : ''} — ${t.frequency}${t.reason ? `, motif: ${t.reason}` : ''}`).join(' · ') : undefined },
       ]},
       { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth), fields: [
           { label: 'Grossesse', value: data.pregnancyBirth },
-          { label: 'Marche', value: data.walkingAge }, { label: 'Moteur', value: data.developmentMotor },
-          { label: 'Langage', value: data.languageStatus?.replace(/,/g, ' / ') || data.developmentLanguage },
-          { label: 'Sommeil', value: data.sleepStatus?.replace(/,/g, ' / ') || data.sleep },
+          { label: 'Marche', value: data.walkingAge }, { label: '4 pattes', value: humanize(data.crawling) },
+          { label: 'Motricité', value: data.developmentMotor },
+          { label: 'Propreté', value: humanize(data.cleanliness) },
+          { label: 'Langage', value: humanize(data.languageStatus) || data.developmentLanguage },
+          { label: 'Langage (détails)', value: data.developmentLanguage && data.languageStatus ? data.developmentLanguage : undefined },
+          { label: 'Sommeil', value: humanize(data.sleepStatus) },
+          { label: 'Sommeil (détails)', value: data.sleep },
           { label: 'Sensoriel', value: data.sensory },
       ]},
       { title: 'Vie Quotidienne', filled: !!(data.meals || data.dressing || data.eatingHabits || data.continence), fields: [
-          { label: 'Repas', value: data.eatingHabits?.replace(/,/g, ' / ') || data.meals },
+          { label: 'Repas', value: humanize(data.eatingHabits) },
+          { label: 'Repas (détails)', value: data.meals },
+          { label: 'Boutons', value: humanize(data.clothingButtons) },
+          { label: 'Lacets', value: humanize(data.clothingLaces) },
+          { label: 'Fermetures', value: humanize(data.clothingZippers) },
           { label: 'Habillage', value: data.dressing },
           { label: 'Hygiène', value: data.continence },
-          { label: 'Écriture', value: data.writingIssues }, { label: 'Douleur', value: data.writingPain },
-          { label: 'Latéralité', value: data.handDominance },
-          { label: 'Écrans', value: data.screenTime }, { label: 'Émotions', value: data.emotionalRegulation },
+          { label: 'Temps/Espace', value: data.timeSpace },
+          { label: 'Latéralité', value: humanize(data.handDominance) },
+          { label: 'Ciseaux', value: humanize(data.toolScissors) },
+          { label: 'Outils', value: data.toolUsage },
+          { label: 'Écriture', value: data.writingIssues },
+          { label: 'Douleur écriture', value: humanize(data.writingPain) },
+          { label: 'Écrans', value: data.screenTime },
+          { label: 'Émotions', value: data.emotionalRegulation },
       ]},
       { title: 'Motif & Priorités', filled: !!(data.reason || data.familyExpectations || (data.goals?.length ?? 0) > 0 || data.remarks), fields: [
-          { label: 'Motif', value: data.reason }, { label: 'Attentes', value: data.familyExpectations },
-          { label: 'Objectifs', value: data.goals?.join(', ') },
+          { label: 'Motif', value: data.reason },
+          { label: 'Attentes', value: data.familyExpectations },
+          { label: 'Objectifs', value: data.goals?.length ? data.goals.map((g, i) => `${i + 1}. ${g}`).join(' · ') : undefined },
           { label: 'Remarques', value: data.remarks },
       ]},
-  ];
+  ], [data]);
 
   const filledSections = sectionDefs.filter(s => s.filled).length;
   const totalSections = sectionDefs.length;
@@ -326,7 +402,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       {hasParentData && viewMode === 'review' ? (
           <div className="space-y-3 mb-8">
               <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider">Données du questionnaire famille</h3>
+                  <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2">
+                      <Eye size={14} /> Résumé du questionnaire famille
+                  </h3>
                   <button 
                       onClick={() => setViewMode('edit')}
                       className="text-xs font-bold text-[#E07A5F] hover:underline flex items-center gap-1"
@@ -340,7 +418,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
                       title={sec.title}
                       fields={sec.fields}
                       isFilled={sec.filled}
-                      onToggleEdit={() => setViewMode('edit')}
+                      onEditSection={() => setViewMode('edit')}
                   />
               ))}
           </div>

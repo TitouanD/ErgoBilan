@@ -226,6 +226,7 @@ export const useDataLoader = ({
     pendingQuestionnaires,
     setPendingQuestionnaires,
     draftsIndex,
+    setDraftsIndex,
     hasMorePatients,
     isLoadingMorePatients,
     loadMorePatients,

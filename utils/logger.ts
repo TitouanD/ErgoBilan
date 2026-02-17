@@ -14,6 +14,7 @@ const SCOPES = {
     CRYPTO: '🛡️ [SECURITY]',
     UI:     '🖥️ [UI]',
     SYSTEM: '⚙️ [SYSTEM]',
+    ADMIN:  '🛠️ [ADMIN]',
 } as const;
 
 type LogScope = keyof typeof SCOPES;
