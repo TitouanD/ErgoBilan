@@ -9,7 +9,7 @@ const MAX_REQUESTS_PER_HOUR = 15;
 const GEMINI_MAX_RETRIES = 2;
 const GEMINI_RETRY_BASE_MS = 2_000;
 
-type AITask = 'report_bio' | 'report_diagnostic' | 'extract_norms';
+type AITask = 'report_bio' | 'report_diagnostic';
 
 type BuildResult = {
   contents: unknown;
@@ -195,37 +195,13 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   };
 };
 
-const buildExtractNormsTask = (payload: Record<string, unknown>): BuildResult => {
-  const filename = String(payload.filename || 'document');
-  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
-  const imagePart = payload.imagePart;
-
-  const knownNamesBlock = knownSubtestNames.length > 0
-    ? `Sous-tests deja connus a reutiliser quand pertinent: ${JSON.stringify(knownSubtestNames)}`
-    : 'Aucun sous-test pre-connu.';
-
-  const prompt = [
-    'ROLE: extraction de normes cliniques en ergotherapie.',
-    `Contexte fichier: ${filename}`,
-    knownNamesBlock,
-    'Sortie JSON stricte uniquement (pas de markdown).',
-    'Classer la structure: PARAMETRIC ou LOOKUP.',
-    'Extraire et normaliser: age_min_months, age_max_months, raw_min, raw_max.',
-    'Schema JSON:',
-    '{"test_context":"string","structure_type":"PARAMETRIC|LOOKUP","tables":[{"subtest_id":"string","rows":[{"label":"string","mean":"string","sd":"string","raw_range":"string","standard":"string","percentile":"string","z_score":"string","age_min_months":number,"age_max_months":number,"raw_min":number,"raw_max":number}]}]}',
-    'Consignes qualite: noms de sous-tests stables en francais, pas de code technique, garder les plages brutes en texte pour LOOKUP.',
-  ].join('\n');
-
-  return {
-    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-    responseMimeType: 'application/json',
-  };
-};
+// NOTE: Vision/OCR extraction has been moved to dedicated 'extract-norms' edge function
+// for better performance (parallel processing), separate rate limits, and no credit consumption.
 
 const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult => {
   if (task === 'report_bio') return buildBioTask(payload);
   if (task === 'report_diagnostic') return buildDiagnosticTask(payload);
-  return buildExtractNormsTask(payload);
+  throw new Error(`Invalid task: ${task}`);
 };
 
 Deno.serve(async (req: Request) => {
@@ -277,7 +253,7 @@ Deno.serve(async (req: Request) => {
     const payload = (body.payload || {}) as Record<string, unknown>;
     const providedGenId = typeof body.generation_id === 'string' ? body.generation_id : null;
 
-    if (!['report_bio', 'report_diagnostic', 'extract_norms'].includes(task)) {
+    if (!['report_bio', 'report_diagnostic'].includes(task)) {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
