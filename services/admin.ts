@@ -420,12 +420,6 @@ export const AdminService = {
                 });
             }, 500);
         });
-    },
-
-    getAIFailures: async () => {
-        return new Promise<any[]>(resolve => {
-            setTimeout(() => resolve(MOCK_AI_STATS.failures), 500);
-        });
     }
 };
 

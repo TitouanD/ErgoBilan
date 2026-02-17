@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Activity, Cpu, AlertOctagon, Zap, Bug, RefreshCw, Terminal } from 'lucide-react';
+import { Activity, Cpu, AlertOctagon, Zap, RefreshCw, Terminal } from 'lucide-react';
 import { AdminService } from '../../services/admin';
 import { Logger } from '../../utils/logger';
 
 export const OpsMonitoring: React.FC = () => {
     const [stats, setStats] = useState<any>(null);
-    const [failures, setFailures] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -16,12 +15,8 @@ export const OpsMonitoring: React.FC = () => {
     const loadOpsData = async () => {
         setLoading(true);
         try {
-            const [health, errors] = await Promise.all([
-                AdminService.getAIHealthStats(),
-                AdminService.getAIFailures()
-            ]);
+            const health = await AdminService.getAIHealthStats();
             setStats(health);
-            setFailures(errors);
         } catch (e) {
             Logger.error('SYSTEM', "Ops Data Load Failed", e);
         } finally {
@@ -109,42 +104,6 @@ export const OpsMonitoring: React.FC = () => {
                             />
                         </LineChart>
                     </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* DEAD LETTER QUEUE */}
-            <div className="col-span-4 bg-[#1A1C23] border border-white/5 rounded-2xl p-6 flex flex-col">
-                <h3 className="text-white font-bold mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Bug size={18} className="text-rose-500" /> Échecs Récents
-                    </div>
-                    <span className="bg-white/5 text-stone-400 text-[10px] px-2 py-1 rounded-full">{failures.length}</span>
-                </h3>
-                
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                    {failures.length === 0 ? (
-                        <div className="text-center py-10 text-stone-600 italic text-xs">
-                            Aucune erreur récente.
-                        </div>
-                    ) : (
-                        failures.map((err, idx) => (
-                            <div key={idx} className="bg-white/5 border border-white/5 p-3 rounded-lg hover:border-rose-500/30 transition-all group">
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 px-1.5 rounded">{err.type}</span>
-                                    <span className="text-[10px] text-stone-600">{new Date(err.date).toLocaleTimeString()}</span>
-                                </div>
-                                <p className="text-xs text-stone-300 font-mono mb-2 line-clamp-2">
-                                    {err.context}
-                                </p>
-                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                    <span className="text-[10px] text-stone-500 truncate max-w-[100px]">{err.user}</span>
-                                    <button className="text-[10px] bg-white/5 hover:bg-white/10 text-stone-300 px-2 py-1 rounded flex items-center gap-1 transition-colors">
-                                        <Terminal size={10} /> Inspect
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    )}
                 </div>
             </div>
 

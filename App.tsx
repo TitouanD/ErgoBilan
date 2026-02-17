@@ -403,6 +403,16 @@ const AppRouter = () => {
                         <PatientDetail
                             file={selectedFile}
                             onBack={() => setMode('dashboard')}
+                            onDelete={(patientId) => {
+                                setPatientFiles((prev) => prev.filter((item) => item.id !== patientId));
+                                setDraftsIndex((prev) => {
+                                    if (!prev[patientId]) return prev;
+                                    const next = { ...prev };
+                                    delete next[patientId];
+                                    return next;
+                                });
+                                setSelectedFile(null);
+                            }}
                             onQuickEntry={() => setShowQuickEntry(true)}
                             onNewBilan={(type) => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); assessment.setReportType(type); setMode('assessment'); }}
                             onOpenReport={(reportId) => {

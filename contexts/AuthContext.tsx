@@ -409,8 +409,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
           // 1. Charger le Praticien (seul appel réseau bloquant)
+          // Select only required columns: identity, crypto setup, contact fields
           const userResult = await withTimeout(
-              supabase.from('practitioners').select('*').eq('id', userId).maybeSingle(),
+              supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator').eq('id', userId).maybeSingle(),
               15000
           );
           if (userResult.timedOut) {
@@ -451,7 +452,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               );
               if (!repairResult.timedOut && !repairResult.value?.error) {
                   const retryResult = await withTimeout(
-                      supabase.from('practitioners').select('*').eq('id', userId).maybeSingle(),
+                      supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator').eq('id', userId).maybeSingle(),
                       5000
                   );
                   if (!retryResult.timedOut && retryResult.value?.data) {

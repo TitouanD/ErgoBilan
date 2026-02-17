@@ -47,9 +47,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         Logger.info('DB', 'Initializing Unified Catalog (Black Box Strategy)...');
 
+        // Select only required columns: test metadata + category/icon info for display
         const { data: viewRows, error: viewError } = await supabase
           .from('view_unified_catalog')
-          .select('*')
+          .select('id, label, category_id, category_label, icon_key, sort_order')
           .order('sort_order', { ascending: true });
 
         if (viewError) throw viewError;

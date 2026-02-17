@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Patient, TestData, Observations, ReportSection, ClinicalSynthesis } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
@@ -90,6 +90,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, []);
 
+  // Create patient ID when identity is ready
+  // Uses ref to prevent multiple simultaneous creation attempts
   const ensurePatientId = useCallback(async (patientSnapshot: Patient): Promise<string | null> => {
     if (patientSnapshot.id) return patientSnapshot.id;
     if (!orgKey || isDemoMode) return null;
@@ -117,14 +119,41 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [orgKey, isDemoMode]);
 
-  // Effect A: creation immediate de l'ID patient des que les champs requis sont saisis
+  // Memoize patient identity fields to optimize Effect A & C dependencies
+  // Only changes when actual identity fields change, not entire patient object
+  const patientIdentity = useMemo(() => ({
+    id: patient.id,
+    firstName: patient.firstName,
+    lastName: patient.lastName,
+    dob: patient.dob,
+    age: patient.age,
+    classLevel: patient.classLevel,
+    gender: patient.gender,
+  }), [patient.id, patient.firstName, patient.lastName, patient.dob, patient.age, patient.classLevel, patient.gender]);
+
+  // Memoize all assessment data for Effect B (draft autosave)
+  // Consolidates all state changes into single dependency
+  const assessmentData = useMemo(() => ({
+    patient,
+    tests,
+    observations,
+    synthesis,
+    sections,
+    step,
+  }), [patient, tests, observations, synthesis, sections, step]);
+
+  // EFFECT A: Create patient ID when sufficient identity fields are present
+  // Runs once per unique identity + auth state change
+  // Does NOT run on every keystroke — only when identity actually changes
   useEffect(() => {
     if (!sessionKey && !isDemoMode) return;
-    if (patient.id || !isPatientCreationReady(patient)) return;
+    if (patientIdentity.id || !isPatientCreationReady(patient)) return;
     void ensurePatientId(patient);
-  }, [patient, patient.id, patient.firstName, patient.lastName, patient.dob, patient.age, sessionKey, isDemoMode, ensurePatientId]);
+  }, [patientIdentity, sessionKey, isDemoMode, patient, ensurePatientId]);
 
-  // Effect B: autosave draft uniquement (sans saveFile)
+  // EFFECT B: Autosave draft with debounce (3s)
+  // Runs when assessment data changes, debounced to avoid excessive saves
+  // Stabilized by assessmentData memo to avoid re-debouncing unnecessarily
   useEffect(() => {
     if (!sessionKey && !isDemoMode) return;
     if (!isPatientCreationReady(patient)) return;
@@ -134,19 +163,19 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     draftSaveTimeoutRef.current = setTimeout(async () => {
       beginAutoSave();
       try {
-        const currentPatientId = patient.id || await ensurePatientId(patient);
+        const currentPatientId = assessmentData.patient.id || await ensurePatientId(assessmentData.patient);
         if (!currentPatientId) {
           Logger.warn('DB', 'Autosave skipped: patient ID unavailable');
           return;
         }
 
         const draftData = {
-          patient: { ...patient, id: currentPatientId, age: getPatientAgeForIdentity(patient) },
-          tests,
-          observations,
-          synthesis,
-          sections,
-          step,
+          patient: { ...assessmentData.patient, id: currentPatientId, age: getPatientAgeForIdentity(assessmentData.patient) },
+          tests: assessmentData.tests,
+          observations: assessmentData.observations,
+          synthesis: assessmentData.synthesis,
+          sections: assessmentData.sections,
+          step: assessmentData.step,
           timestamp: new Date().toISOString(),
         };
 
@@ -163,11 +192,13 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => {
       if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
     };
-  }, [patient, tests, observations, synthesis, sections, step, sessionKey, isDemoMode, ensurePatientId, beginAutoSave, endAutoSave]);
+  }, [assessmentData, sessionKey, isDemoMode, ensurePatientId, beginAutoSave, endAutoSave]);
 
-  // Effect C: sync identite patient + preview sans toucher aux compteurs
+  // EFFECT C: Sync patient identity (encrypted preview) when identity changes
+  // Separate from draft autosave to isolate identity mutations
+  // Uses patientIdentity memo to avoid excessive syncs
   useEffect(() => {
-    if (!patient.id || !orgKey || isDemoMode) return;
+    if (!patientIdentity.id || !orgKey || isDemoMode) return;
 
     const identitySignature = buildPatientIdentitySignature(patient);
     if (identitySignature === lastSyncedIdentityRef.current) return;
@@ -177,7 +208,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       beginAutoSave();
       try {
         const patientToSync = { ...patient, age: getPatientAgeForIdentity(patient) };
-        await StorageService.syncPatientIdentityPreview(patient.id!, patientToSync, orgKey);
+        await StorageService.syncPatientIdentityPreview(patientIdentity.id, patientToSync, orgKey);
         lastSyncedIdentityRef.current = buildPatientIdentitySignature(patientToSync);
       } catch (e) {
         Logger.warn('DB', 'Identity preview sync failed (silently)', e);
@@ -189,13 +220,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => {
       if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);
     };
-  }, [patient, patient.id, patient.firstName, patient.lastName, patient.dob, patient.age, patient.classLevel, patient.gender, orgKey, isDemoMode, beginAutoSave, endAutoSave]);
-
-  useEffect(() => {
-    if (!patient.id) {
-      lastSyncedIdentityRef.current = '';
-    }
-  }, [patient.id]);
+  }, [patientIdentity, patient, orgKey, isDemoMode, beginAutoSave, endAutoSave]);
 
   const updatePatient = (data: Partial<Patient>) => {
     setPatient(prev => ({ ...prev, ...data }));
