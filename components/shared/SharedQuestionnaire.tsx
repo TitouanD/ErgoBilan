@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
-import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone } from 'lucide-react';
+import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone, Heart, Monitor, Droplets, PenTool, Brain } from 'lucide-react';
 
 interface Props {
   data: Patient;
@@ -11,7 +11,7 @@ interface Props {
   mode: 'family' | 'practitioner';
 }
 
-type SectionKey = 'identity' | 'parents' | 'school' | 'medical' | 'dev' | 'daily' | 'behavior' | 'reason';
+type SectionKey = 'identity' | 'parents' | 'school' | 'medical' | 'dev' | 'daily' | 'reason';
 
 const SECTIONS_CONFIG: { id: SectionKey; title: string; icon: any }[] = [
     { id: 'identity', title: "Identité de l'enfant", icon: User },
@@ -36,28 +36,41 @@ const SCHOOL_LEVELS = [
 const ChipGroup = ({ 
     options, 
     value, 
-    onChange 
+    onChange,
+    multi = false
 }: { 
     options: { value: string; label: string }[]; 
     value?: string; 
-    onChange: (val: string) => void; 
-}) => (
-    <div className="flex flex-wrap gap-2">
-        {options.map(opt => (
-            <button
-                key={opt.value}
-                onClick={() => onChange(opt.value)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
-                    value === opt.value 
-                    ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md' 
-                    : 'bg-white text-stone-500 border-stone-200 hover:border-[#3D405B]'
-                }`}
-            >
-                {opt.label}
-            </button>
-        ))}
-    </div>
-);
+    onChange: (val: string) => void;
+    multi?: boolean;
+}) => {
+    const selected = multi ? (value || '').split(',').filter(Boolean) : [];
+    const handleClick = (optValue: string) => {
+        if (!multi) { onChange(optValue); return; }
+        const newSelected = selected.includes(optValue)
+            ? selected.filter(v => v !== optValue)
+            : [...selected, optValue];
+        onChange(newSelected.join(','));
+    };
+    const isSelected = (optValue: string) => multi ? selected.includes(optValue) : value === optValue;
+    return (
+        <div className="flex flex-wrap gap-2">
+            {options.map(opt => (
+                <button
+                    key={opt.value}
+                    onClick={() => handleClick(opt.value)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                        isSelected(opt.value) 
+                        ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md' 
+                        : 'bg-white text-stone-500 border-stone-200 hover:border-[#3D405B]'
+                    }`}
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
+};
 
 const SelectCard = ({ 
     selected, 
@@ -114,8 +127,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       medical: false,
       reason: false,
       dev: false,
-      daily: false,
-      behavior: false
+      daily: false
   });
 
   const [progress, setProgress] = useState(0);
@@ -124,14 +136,21 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   useEffect(() => {
       if (mode === 'family') {
           let filled = 0;
-          if (data.lastName) filled++;
-          if (data.school) filled++;
+          const total = 12;
+          if (data.lastName && data.firstName) filled++;
+          if (data.parentNames) filled++;
+          if (data.guardMode) filled++;
+          if (data.school && data.classLevel) filled++;
+          if (data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0) filled++;
+          if (data.walkingAge || data.developmentMotor) filled++;
+          if (data.clothingButtons || data.eatingHabits) filled++;
           if (data.reason) filled++;
-          if (data.medicalTracking?.length) filled++;
-          if (data.walkingAge) filled++;
-          if (data.clothingButtons) filled++;
+          if ((data.goals?.length ?? 0) > 0) filled++;
+          if (data.sensory || data.sleepStatus) filled++;
+          if (data.writingPain || data.writingIssues) filled++;
+          if (data.continence || data.dressing) filled++;
           
-          setProgress(Math.round((filled / 8) * 100));
+          setProgress(Math.round((filled / total) * 100));
       }
   }, [data, mode]);
 
@@ -316,13 +335,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <div className="space-y-5">
                                             <div className="space-y-2">
                                                 <label className={labelClass}>Mode de Garde</label>
-                                                <div className="flex flex-col md:flex-row gap-3">
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                     <SelectCard 
-                                                        selected={data.guardMode === 'exclusive'} 
-                                                        onClick={() => handleFieldChange('guardMode', 'exclusive')}
-                                                        label="Garde Exclusive" 
-                                                        value="exclusive" 
-                                                        icon={Home} 
+                                                        selected={data.guardMode === 'commune'} 
+                                                        onClick={() => handleFieldChange('guardMode', 'commune')}
+                                                        label="Garde Commune" 
+                                                        value="commune" 
+                                                        icon={Heart} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'alternate'} 
@@ -332,6 +351,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         icon={Scale} 
                                                     />
                                                     <SelectCard 
+                                                        selected={(data.guardMode || '').startsWith('exclusive')} 
+                                                        onClick={() => handleFieldChange('guardMode', data.guardMode?.startsWith('exclusive') ? data.guardMode : 'exclusive_mere')}
+                                                        label="Garde Exclusive" 
+                                                        value="exclusive" 
+                                                        icon={Home} 
+                                                    />
+                                                    <SelectCard 
                                                         selected={data.guardMode === 'third'} 
                                                         onClick={() => handleFieldChange('guardMode', 'third')}
                                                         label="Tiers / Foyer" 
@@ -339,6 +365,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         icon={HelpingHand} 
                                                     />
                                                 </div>
+                                                {(data.guardMode || '').startsWith('exclusive') && (
+                                                    <div className="flex gap-4 mt-3 ml-1 animate-in slide-in-from-top-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="exclusiveParent" value="exclusive_mere" checked={data.guardMode === 'exclusive_mere'} onChange={() => handleFieldChange('guardMode', 'exclusive_mere')} className="accent-[#E07A5F] w-4 h-4"/> Chez la mère</label>
+                                                        <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-600"><input type="radio" name="exclusiveParent" value="exclusive_pere" checked={data.guardMode === 'exclusive_pere'} onChange={() => handleFieldChange('guardMode', 'exclusive_pere')} className="accent-[#E07A5F] w-4 h-4"/> Chez le père</label>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div><label className={labelClass}>Noms des responsables</label><DebouncedInput name="parentNames" value={data.parentNames || ''} onChange={(v) => handleFieldChange('parentNames', v)} className={inputClass} placeholder="Mme X et M. Y" /></div>
@@ -372,6 +404,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <div key={idx} className="flex gap-2 items-center animate-in slide-in-from-left-2">
                                                     <input placeholder="Prénom" value={sib.firstName} onChange={e => updateSibling(idx, 'firstName', e.target.value)} className="flex-1 p-2 bg-white rounded-lg text-sm border border-stone-200 outline-none focus:border-[#E07A5F]" />
                                                     <input placeholder="Âge" value={sib.age} onChange={e => updateSibling(idx, 'age', e.target.value)} className="w-16 p-2 bg-white rounded-lg text-sm border border-stone-200 outline-none focus:border-[#E07A5F]" />
+                                                    <select value={sib.relation} onChange={e => updateSibling(idx, 'relation', e.target.value)} className="p-2 bg-white rounded-lg text-xs font-bold border border-stone-200 outline-none focus:border-[#E07A5F]">
+                                                        <option value="Frère">Frère</option>
+                                                        <option value="Sœur">Sœur</option>
+                                                        <option value="Demi-frère">Demi-frère</option>
+                                                        <option value="Demi-sœur">Demi-sœur</option>
+                                                    </select>
                                                     
                                                     {/* BOUTON VIT AVEC ENFANT */}
                                                     <button 
@@ -443,14 +481,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     </div>
 
                                     <div>
-                                        <label className={labelClass}>Dispositifs (PAP, PAI, PPS)</label>
-                                        <select name="carePlan" value={data.carePlan || ''} onChange={handleChange} className={inputClass}>
-                                            <option value="">Aucun</option>
-                                            <option value="PAP">PAP</option>
-                                            <option value="PAI">PAI</option>
-                                            <option value="PPS">PPS</option>
-                                            <option value="PPRE">PPRE</option>
-                                        </select>
+                                        <label className={labelClass}>Dispositifs scolaires</label>
+                                        <ChipGroup 
+                                            options={[{value: 'PAP', label: 'PAP'}, {value: 'PAI', label: 'PAI'}, {value: 'PPS', label: 'PPS'}, {value: 'PPRE', label: 'PPRE'}]}
+                                            value={data.carePlan}
+                                            onChange={(v) => handleFieldChange('carePlan', v)}
+                                            multi
+                                        />
                                     </div>
 
                                     {/* COMPORTEMENT SCOLAIRE (Page 4 PDF) */}
@@ -500,7 +537,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <div key={track.id || idx} className="bg-white p-3 rounded-xl border border-emerald-100 shadow-sm flex flex-col md:flex-row gap-3 items-start md:items-center">
                                                     <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-2 w-full">
                                                         <select value={track.type} onChange={(e) => updateMedicalTracking(idx, 'type', e.target.value)} className="p-2 bg-stone-50 rounded-lg text-xs font-bold text-[#3D405B] border border-stone-200 outline-none">
-                                                            <option>Orthophoniste</option><option>Psychomotricien</option><option>Psychologue</option><option>Kiné</option><option>Orthoptiste</option><option>Autre</option>
+                                                            <option>Orthophoniste</option><option>Psychomotricien</option><option>Psychologue</option><option>Neuropsychologue</option><option>Kiné</option><option>Orthoptiste</option><option>Ergothérapeute</option><option>Pédopsychiatre</option><option>Neuropédiatre</option><option>Ophtalmologue</option><option>Podologue</option><option>ORL</option><option>Autre</option>
                                                         </select>
                                                         <input 
                                                             placeholder="Nom" 
@@ -522,9 +559,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 </div>
                             )}
 
-                            {/* --- 5. DÉVELOPPEMENT (SIMPLIFIÉ) --- */}
+                            {/* --- 5. DÉVELOPPEMENT --- */}
                             {section.id === 'dev' && (
                                 <div className="space-y-6">
+                                    {/* Grossesse / naissance */}
+                                    <div>
+                                        <label className={labelClass}>Grossesse & Naissance (particularités)</label>
+                                        <DebouncedTextarea name="pregnancyBirth" value={data.pregnancyBirth || ''} onChange={(v) => handleFieldChange('pregnancyBirth', v)} className={inputClass} placeholder="Naissance à terme, prématuré, complications, césarienne, poids de naissance..." rows={2} />
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
                                             <label className={labelClass}>Âge de la marche</label>
@@ -536,41 +579,60 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <div>
                                             <label className={labelClass}>4 pattes / Ramper ?</label>
                                             <ChipGroup 
-                                                options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'atypique', label: 'Atypique (Fesses)'}]}
+                                                options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'atypique', label: 'Atypique (Fesses)'}, {value: 'inconnu', label: 'Ne sais pas'}]}
                                                 value={data.crawling} 
                                                 onChange={(v) => handleFieldChange('crawling', v)} 
                                             />
                                         </div>
                                     </div>
 
+                                    {/* Développement moteur */}
+                                    <div>
+                                        <label className={labelClass}>Développement moteur</label>
+                                        <DebouncedTextarea name="developmentMotor" value={data.developmentMotor || ''} onChange={(v) => handleFieldChange('developmentMotor', v)} className={inputClass} placeholder="Marcher, courir, grimper, sauter, pédaler, équilibre..." rows={2} />
+                                    </div>
+
+                                    {/* Propreté */}
                                     <div>
                                         <label className={labelClass}>Propreté</label>
                                         <ChipGroup 
-                                            options={[{value: 'acquise', label: 'Acquise jour/nuit'}, {value: 'jour_seul', label: 'Jour uniquement'}, {value: 'en_cours', label: 'En cours'}, {value: 'accidents', label: 'Accidents fréquents'}]}
+                                            options={[{value: 'acquise', label: 'Acquise jour/nuit'}, {value: 'jour_seul', label: 'Jour uniquement'}, {value: 'en_cours', label: 'En cours'}, {value: 'accidents', label: 'Accidents fréquents'}, {value: 'enuresie', label: 'Énurésie nocturne'}]}
                                             value={data.cleanliness} 
                                             onChange={(v) => handleFieldChange('cleanliness', v)} 
                                         />
                                     </div>
 
+                                    {/* Langage */}
                                     <div>
-                                        <label className={labelClass}>Langage</label>
+                                        <label className={labelClass}>Langage (plusieurs choix possibles)</label>
                                         <ChipGroup 
-                                            options={[{value: 'standard', label: 'Apparition standard'}, {value: 'retard', label: 'Retard simple'}, {value: 'suivi_ortho', label: 'Suivi Ortho'}, {value: 'inintelligible', label: 'Difficile à comprendre'}]}
+                                            options={[{value: 'standard', label: 'Apparition standard'}, {value: 'retard', label: 'Retard simple'}, {value: 'suivi_ortho', label: 'Suivi Ortho'}, {value: 'inintelligible', label: 'Difficile à comprendre'}, {value: 'begaiement', label: 'Bégaiement'}]}
                                             value={data.languageStatus} 
-                                            onChange={(v) => handleFieldChange('languageStatus', v)} 
+                                            onChange={(v) => handleFieldChange('languageStatus', v)}
+                                            multi
                                         />
                                     </div>
-
                                     <div>
-                                        <label className={labelClass}>Sommeil</label>
-                                        <ChipGroup 
-                                            options={[{value: 'ok', label: 'Paisible'}, {value: 'endormissement', label: 'Endormissement long'}, {value: 'reveils', label: 'Réveils multiples'}, {value: 'agite', label: 'Agité / Cauchemars'}]}
-                                            value={data.sleepStatus} 
-                                            onChange={(v) => handleFieldChange('sleepStatus', v)} 
-                                        />
+                                        <label className={labelClass}>Développement du langage (détails)</label>
+                                        <DebouncedTextarea name="developmentLanguage" value={data.developmentLanguage || ''} onChange={(v) => handleFieldChange('developmentLanguage', v)} className={inputClass} placeholder="Premiers mots, phrases, compréhension, bilinguisme..." rows={2} />
                                     </div>
 
-                                    {/* AJOUT SENSORIEL */}
+                                    {/* Sommeil */}
+                                    <div>
+                                        <label className={labelClass}>Sommeil (plusieurs choix possibles)</label>
+                                        <ChipGroup 
+                                            options={[{value: 'ok', label: 'Paisible'}, {value: 'endormissement', label: 'Endormissement long'}, {value: 'reveils', label: 'Réveils multiples'}, {value: 'agite', label: 'Agité / Cauchemars'}, {value: 'fatigue_diurne', label: 'Fatigue en journée'}]}
+                                            value={data.sleepStatus} 
+                                            onChange={(v) => handleFieldChange('sleepStatus', v)}
+                                            multi
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Détails sommeil (heures, rituels...)</label>
+                                        <DebouncedInput name="sleep" value={data.sleep || ''} onChange={(v) => handleFieldChange('sleep', v)} className={inputClass} placeholder="Heure coucher/lever, durée, rituel..." />
+                                    </div>
+
+                                    {/* Sensoriel */}
                                     <div>
                                         <label className={labelClass}>Particularités Sensorielles</label>
                                         <DebouncedTextarea name="sensory" value={data.sensory || ''} onChange={(v) => handleFieldChange('sensory', v)} className={inputClass} placeholder="Hypersensibilité (Bruit, Lumière, Étiquettes, Textures alimentaires...)" rows={2} />
@@ -589,11 +651,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Utensils size={14}/> Repas</h4>
                                         <div className="space-y-4">
                                             <div>
-                                                <label className={labelClass}>Autonomie & Habitudes</label>
+                                                <label className={labelClass}>Autonomie & Habitudes (plusieurs choix possibles)</label>
                                                 <ChipGroup 
-                                                    options={[{value: 'seul', label: 'Mange seul'}, {value: 'aide', label: 'A besoin d\'aide'}, {value: 'doigts', label: 'Mange avec les doigts'}, {value: 'selectif', label: 'Très sélectif'}, {value: 'salit', label: 'Salit beaucoup'}]}
+                                                    options={[{value: 'seul', label: 'Mange seul'}, {value: 'aide', label: 'A besoin d\'aide'}, {value: 'couverts_ok', label: 'Bonne utilisation couverts'}, {value: 'doigts', label: 'Mange avec les doigts'}, {value: 'selectif', label: 'Très sélectif'}, {value: 'salit', label: 'Salit beaucoup'}]}
                                                     value={data.eatingHabits} 
-                                                    onChange={(v) => handleFieldChange('eatingHabits', v)} 
+                                                    onChange={(v) => handleFieldChange('eatingHabits', v)}
+                                                    multi
                                                 />
                                             </div>
                                             <div>
@@ -622,13 +685,28 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     </div>
                                                 </div>
                                             ))}
+                                            <div className="mt-2">
+                                                <label className={labelClass}>Commentaire habillage (choix des vêtements, autonomie...)</label>
+                                                <DebouncedTextarea name="dressing" value={data.dressing || ''} onChange={(v) => handleFieldChange('dressing', v)} className={inputClass} placeholder="Choisit-il ses vêtements ? Met-il ses chaussures seul ? Enfile un manteau ?" rows={2} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* HYGIÈNE & CONTINENCE */}
+                                    <div className="bg-[#f0fdf4] border border-emerald-100 p-4 rounded-2xl">
+                                        <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Droplets size={14}/> Hygiène & Continence</h4>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className={labelClass}>Toilettes, douche/bain, brossage des dents...</label>
+                                                <DebouncedTextarea name="continence" value={data.continence || ''} onChange={(v) => handleFieldChange('continence', v)} className={inputClass} placeholder="Va-t-il aux toilettes seul ? Se lave les mains ? Se brosse les dents seul ? Douche autonome ?" rows={2} />
+                                            </div>
                                         </div>
                                     </div>
 
                                     {/* AJOUT TEMPS/ESPACE */}
                                     <div>
                                         <label className={labelClass}>Repérage Temps & Espace</label>
-                                        <DebouncedTextarea name="timeSpace" value={data.timeSpace || ''} onChange={(v) => handleFieldChange('timeSpace', v)} className={inputClass} placeholder="Se repère-t-il dans la journée ? La semaine ? Retrouve-t-il son chemin ?" rows={2} />
+                                        <DebouncedTextarea name="timeSpace" value={data.timeSpace || ''} onChange={(v) => handleFieldChange('timeSpace', v)} className={inputClass} placeholder="Se repère-t-il dans la journée ? La semaine ? Retrouve-t-il son chemin ? Lit-il l’heure ?" rows={2} />
                                     </div>
 
                                     {/* OUTILS SCOLAIRES */}
@@ -642,11 +720,34 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Découpage (Ciseaux)</label>
-                                                <ChipGroup options={[{value: 'ok', label: 'Suit la ligne'}, {value: 'hache', label: 'Hache le papier'}, {value: 'tenue_incorrecte', label: 'Tenue incorrecte'}]} value={data.toolScissors} onChange={(v) => handleFieldChange('toolScissors', v)} />
+                                                <ChipGroup options={[{value: 'ok', label: 'Suit la ligne'}, {value: 'hache', label: 'Hache le papier'}, {value: 'tenue_incorrecte', label: 'Tenue incorrecte'}, {value: 'ne_sait_pas', label: 'Ne sait pas utiliser'}, {value: 'refuse', label: 'Refuse'}]} value={data.toolScissors} onChange={(v) => handleFieldChange('toolScissors', v)} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Autres outils scolaires (compas, règle, gomme...)</label>
+                                                <DebouncedTextarea name="toolUsage" value={data.toolUsage || ''} onChange={(v) => handleFieldChange('toolUsage', v)} className={inputClass} placeholder="Utilise-t-il le compas, la règle, la gomme correctement ?" rows={2} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Difficultés d’écriture</label>
+                                                <DebouncedTextarea name="writingIssues" value={data.writingIssues || ''} onChange={(v) => handleFieldChange('writingIssues', v)} className={inputClass} placeholder="Lettres en miroir, saut de lignes, lisibilité, tenue du crayon, lenteur..." rows={2} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Douleur en écrivant ?</label>
-                                                <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
+                                                <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_long', label: 'Sur longues tâches'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* COMPORTEMENT & ÉCRANS */}
+                                    <div className="bg-[#faf5ff] border border-purple-100 p-4 rounded-2xl">
+                                        <h4 className="text-xs font-bold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Brain size={14}/> Comportement & Émotions</h4>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className={labelClass}>Temps d’écran quotidien estimé</label>
+                                                <DebouncedInput name="screenTime" value={data.screenTime || ''} onChange={(v) => handleFieldChange('screenTime', v)} className={inputClass} placeholder="Ex: 1h tablette, 30 min TV..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Régulation émotionnelle</label>
+                                                <DebouncedTextarea name="emotionalRegulation" value={data.emotionalRegulation || ''} onChange={(v) => handleFieldChange('emotionalRegulation', v)} className={inputClass} placeholder="Colères, frustrations, anxiété, difficulté à gérer les transitions..." rows={2} />
                                             </div>
                                         </div>
                                     </div>
@@ -658,6 +759,19 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             {/* --- 7. PRIORITÉS (LISTE 1-5) --- */}
                             {section.id === 'reason' && (
                                 <div className="space-y-6">
+                                    {/* Motif de consultation */}
+                                    <div className="bg-[#f8fafc] border border-slate-200 p-5 rounded-2xl space-y-4">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><MessageSquare size={14}/> Motif de consultation</h4>
+                                        <div>
+                                            <label className={labelClass}>Pourquoi consultez-vous en ergothérapie ?</label>
+                                            <DebouncedTextarea name="reason" value={data.reason || ''} onChange={(v) => handleFieldChange('reason', v)} className={inputClass} placeholder="Décrivez ce qui vous amène à consulter (difficultés scolaires, motrices, comportementales...)" rows={3} />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Attentes de la famille</label>
+                                            <DebouncedTextarea name="familyExpectations" value={data.familyExpectations || ''} onChange={(v) => handleFieldChange('familyExpectations', v)} className={inputClass} placeholder="Qu’attendez-vous de ce bilan ? Quels changements espérez-vous ?" rows={2} />
+                                        </div>
+                                    </div>
+
                                     <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
                                         <h4 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-2">
                                             <Smile size={18} /> Vos Objectifs Prioritaires
@@ -688,15 +802,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
                                         {/* Suggestions */}
                                         <div className="flex flex-wrap gap-2">
-                                            {["Écriture lisible", "Faire ses lacets", "Manger proprement", "Rester assis", "Moins de colères", "Utiliser la règle", "S'habiller seul"].map(sug => (
+                                            {["\u00c9criture lisible", "Faire ses lacets", "Manger proprement", "Rester assis", "Moins de col\u00e8res", "Utiliser la r\u00e8gle", "S'habiller seul", "Autonomie toilettes", "Organiser son cartable", "Lire l'heure", "Se concentrer en classe", "G\u00e9rer ses \u00e9motions", "D\u00e9couper proprement", "Tenir son crayon", "Copier du tableau"].map(sug => (
                                                 <button key={sug} onClick={() => addGoal(sug)} className="px-3 py-1 bg-white border border-amber-100 rounded-full text-xs font-bold text-amber-600 hover:bg-amber-100 transition-all">+ {sug}</button>
                                             ))}
                                         </div>
                                     </div>
 
                                     <div>
-                                        <label className={labelClass}>Autres remarques</label>
-                                        <DebouncedTextarea name="remarks" value={data.remarks || ''} onChange={(v) => handleFieldChange('remarks', v)} className={inputClass} rows={2} placeholder="Quelque chose d'autre à signaler ?" />
+                                        <label className={labelClass}>Remarques complémentaires</label>
+                                        <DebouncedTextarea name="remarks" value={data.remarks || ''} onChange={(v) => handleFieldChange('remarks', v)} className={inputClass} rows={3} placeholder="Informations sensibles, contexte particulier, éléments difficiles à évoquer devant l’enfant..." />
                                     </div>
 
                                     <FamilyNextButton sectionId={section.id} />

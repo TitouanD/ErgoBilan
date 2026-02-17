@@ -96,7 +96,7 @@ export const usePendingProcessor = ({
             observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' },
             synthesis: { diagnosticInput: '', recommendationsInput: '' },
             sections: [],
-            reportType: 'initial',
+            reportType: 'initial' as const,
             step: 1,
             timestamp: new Date().toISOString(),
           };

@@ -157,32 +157,42 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Date de naissance', value: data.dob }, { label: 'Genre', value: data.gender },
           { label: 'Adresse', value: data.address },
       ]},
-      { title: 'Situation Familiale', filled: !!data.parentNames, fields: [
+      { title: 'Situation Familiale', filled: !!(data.parentNames || data.guardMode), fields: [
           { label: 'Parents', value: data.parentNames }, { label: 'Téléphone', value: data.parentPhone },
-          { label: 'Email', value: data.parentEmail }, { label: 'Garde', value: data.guardArrangement },
+          { label: 'Email', value: data.parentEmail },
+          { label: 'Garde', value: data.guardMode?.replace('_', ' ') || data.guardArrangement },
+          { label: 'Fratrie', value: data.siblings?.map(s => `${s.firstName} (${s.relation}, ${s.age})`).join(', ') },
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
           { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel },
-          { label: 'Plan', value: data.carePlan }, { label: 'AVS', value: data.avs },
+          { label: 'Dispositifs', value: data.carePlan?.replace(/,/g, ' / ') }, { label: 'AVS', value: data.avs },
           { label: 'Attention', value: data.schoolAttention },
+          { label: 'Aménagements', value: data.schoolAccommodations },
       ]},
       { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
           { label: 'Médecin', value: data.prescribingDoctor }, { label: 'Diagnostic', value: data.medicalDiagnosis },
           { label: 'Traitements', value: data.medicalTreatments },
-          { label: 'Suivis', value: data.medicalTracking?.map(t => t.type).join(', ') },
+          { label: 'Suivis', value: data.medicalTracking?.map(t => `${t.type}${t.name ? ` (${t.name})` : ''}`).join(', ') },
       ]},
-      { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor), fields: [
+      { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth), fields: [
+          { label: 'Grossesse', value: data.pregnancyBirth },
           { label: 'Marche', value: data.walkingAge }, { label: 'Moteur', value: data.developmentMotor },
-          { label: 'Langage', value: data.developmentLanguage }, { label: 'Sommeil', value: data.sleepStatus || data.sleep },
+          { label: 'Langage', value: data.languageStatus?.replace(/,/g, ' / ') || data.developmentLanguage },
+          { label: 'Sommeil', value: data.sleepStatus?.replace(/,/g, ' / ') || data.sleep },
+          { label: 'Sensoriel', value: data.sensory },
       ]},
-      { title: 'Vie Quotidienne', filled: !!(data.meals || data.dressing), fields: [
-          { label: 'Repas', value: data.meals }, { label: 'Habillage', value: data.dressing },
+      { title: 'Vie Quotidienne', filled: !!(data.meals || data.dressing || data.eatingHabits || data.continence), fields: [
+          { label: 'Repas', value: data.eatingHabits?.replace(/,/g, ' / ') || data.meals },
+          { label: 'Habillage', value: data.dressing },
+          { label: 'Hygiène', value: data.continence },
           { label: 'Écriture', value: data.writingIssues }, { label: 'Douleur', value: data.writingPain },
           { label: 'Latéralité', value: data.handDominance },
+          { label: 'Écrans', value: data.screenTime }, { label: 'Émotions', value: data.emotionalRegulation },
       ]},
       { title: 'Motif & Priorités', filled: !!(data.reason || data.familyExpectations || (data.goals?.length ?? 0) > 0 || data.remarks), fields: [
-          { label: 'Motif', value: data.reason || data.remarks }, { label: 'Attentes', value: data.familyExpectations },
+          { label: 'Motif', value: data.reason }, { label: 'Attentes', value: data.familyExpectations },
           { label: 'Objectifs', value: data.goals?.join(', ') },
+          { label: 'Remarques', value: data.remarks },
       ]},
   ];
 

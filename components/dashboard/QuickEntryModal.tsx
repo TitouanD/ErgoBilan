@@ -37,7 +37,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
 
   const filledScoresCount = useMemo(
     () =>
-      Object.values(allResults).reduce((acc, testResults) => {
+      Object.values(allResults).reduce<number>((acc, testResults) => {
         const filledInTest = Object.values(testResults).filter((res) => hasMeaningfulValue(res)).length;
         return acc + filledInTest;
       }, 0),

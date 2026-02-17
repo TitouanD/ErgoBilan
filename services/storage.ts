@@ -3,12 +3,14 @@ import type {
   DraftPayload,
   Patient,
   PatientAssessment,
+  PatientAssessmentKind,
   PatientDashboardPreviewMeta,
   PatientDashboardProgressLabel,
   PatientEncryptedPreviewV2,
   PatientFile,
   PatientFollowup,
   PatientFollowupStatus,
+  ReportSection,
   ScoreResult,
 } from '../types';
 import { decryptData, encryptData, generateSymetricKey, unwrapKey, wrapKey } from '../utils/crypto';
@@ -411,18 +413,18 @@ const buildDemoAssessments = (patientId: string): PatientAssessment[] => {
       ...reports.map((report) => ({
         id: report.id,
         date: report.date,
-        kind: report.type,
+        kind: report.type as PatientAssessmentKind,
         hasFormalReport: true,
         testName: report.type === 'initial' ? 'Bilan initial' : 'Reevaluation',
-        report: { status: 'completed', patientName: report.patientName, sections: report.sections },
+        report: { status: 'completed' as const, patientName: report.patientName, sections: report.sections as ReportSection[] },
       })),
       ...history.map((entry) => ({
         id: entry.id,
         date: entry.date,
-        kind: 'mini_reevaluation',
+        kind: 'mini_reevaluation' as const,
         hasFormalReport: false,
         testName: entry.testName,
-        results: entry.results,
+        results: entry.results as Record<string, ScoreResult>,
       })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
