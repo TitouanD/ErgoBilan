@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
 import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
 import { callExtractionTask } from '../../services/extractionProxy';
-import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
+import { fileToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
 import { AdminService } from '../../services/admin';
@@ -275,9 +275,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             filename,
             imagePart,
             knownSubtestNames: knownSubtestNames || [],
+            canonicalSubtestNames: canonicalSubtests.map(s => s.name),
         });
 
-        const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
+        const expandedData = expandCompactKeys(cleanAndParseJson(response.text));
+        const extractedData = expandedData as AIExtractionResult | null;
         const flatRows: ExtractedRow[] = [];
         const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
 

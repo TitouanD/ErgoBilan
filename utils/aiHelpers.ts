@@ -1,5 +1,61 @@
 ﻿import { Logger } from './logger';
 
+// ── COMPACT KEY EXPANSION ──────────────────────────────────────────────────
+// The edge function tells Gemini to use short keys to save output tokens.
+// This map restores them to the full names expected by the client.
+
+const COMPACT_ROW_KEYS: Record<string, string> = {
+  l: 'label',
+  m: 'mean',
+  s: 'sd',
+  r: 'raw_range',
+  n: 'standard',
+  p: 'percentile',
+  z: 'z_score',
+  a0: 'age_min_months',
+  a1: 'age_max_months',
+  r0: 'raw_min',
+  r1: 'raw_max',
+};
+
+const COMPACT_TOP_KEYS: Record<string, string> = {
+  tc: 'test_context',
+  st: 'structure_type',
+  sid: 'subtest_id',
+};
+
+/**
+ * Expand compact JSON keys returned by the edge function back to the full
+ * property names expected by the client-side types (AIExtractionResult, etc.).
+ * Handles both compact and already-expanded keys gracefully.
+ */
+export const expandCompactKeys = (raw: unknown): unknown => {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return raw;
+
+  if (Array.isArray(raw)) {
+    return raw.map(expandCompactKeys);
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const expanded: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    const mappedKey = COMPACT_TOP_KEYS[key] || COMPACT_ROW_KEYS[key] || key;
+
+    if (key === 'tables' && Array.isArray(value)) {
+      expanded[key] = value.map((table: unknown) => expandCompactKeys(table));
+    } else if (key === 'rows' && Array.isArray(value)) {
+      expanded[key] = value.map((row: unknown) => expandCompactKeys(row));
+    } else if (typeof value === 'object' && value !== null) {
+      expanded[mappedKey] = expandCompactKeys(value);
+    } else {
+      expanded[mappedKey] = value;
+    }
+  }
+
+  return expanded;
+};
+
 /**
  * Convert a File (Blob) to a Base64 payload compatible with Gemini APIs.
  */

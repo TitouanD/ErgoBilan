@@ -9,6 +9,7 @@ export interface ExtractionParams {
   filename: string;
   imagePart: unknown;
   knownSubtestNames?: string[];
+  canonicalSubtestNames?: string[];
 }
 
 export interface ExtractionResponse {

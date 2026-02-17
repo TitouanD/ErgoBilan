@@ -31,14 +31,16 @@ interface GeminiResponse {
   candidates?: GeminiCandidate[];
 }
 
+// Gemini now returns compact keys (sid, tc, st) to save output tokens.
+// Internal types use the compact form since they process Gemini output directly.
 interface ExtractedTable {
-  subtest_id: string;
+  sid: string;           // subtest_id
   rows: Record<string, unknown>[];
 }
 
 interface ExtractionResult {
-  test_context?: string;
-  structure_type?: string;
+  tc?: string;           // test_context
+  st?: string;           // structure_type
   tables?: ExtractedTable[];
 }
 
@@ -48,8 +50,8 @@ interface InventoryDomain {
 }
 
 interface InventoryResult {
-  test_context?: string;
-  structure_type?: string;
+  tc?: string;           // test_context
+  st?: string;           // structure_type
   domains: InventoryDomain[];
 }
 
@@ -153,24 +155,40 @@ Only create a NEW subtest name if the subtest is genuinely different from all of
 `;
 };
 
+const buildCanonicalNamesBlock = (canonicalSubtestNames: string[]): string => {
+  if (!canonicalSubtestNames || canonicalSubtestNames.length === 0) return '';
+  return `
+--- EXPECTED SUBTESTS (CANONICAL NAMES) ---
+The user has identified this image as belonging to a known test. The canonical subtest names for this test are:
+${JSON.stringify(canonicalSubtestNames)}
+YOU MUST match the column headers or abbreviations visible on the image to one of these canonical names.
+Use your clinical knowledge to resolve abbreviations (e.g. "AA" → "Attention Auditive", "FD" → "Fluidité de dessin").
+If a column clearly matches one of the canonical names above, use that EXACT canonical name as the "sid" value.
+Only invent a new name if the column genuinely does not match ANY canonical name.
+`;
+};
+
 const EXTRACTION_RULES = `
---- STEP 1: CLASSIFICATION (structure_type) ---
+--- STEP 1: CLASSIFICATION (st) ---
 A) "PARAMETRIC": Contains statistical constants per group (Mean/Moyenne/M AND SD/Ecart-Type/Sigma).
    The table does NOT map raw scores to percentiles directly. It gives the formula constants.
 B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, Scaled) or Percentiles.
 
 --- STEP 2: EXTRACTION RULES ---
 1. PIVOT: If columns represent Ages/Grades and rows represent Stats (M, SD), YOU MUST PIVOT. Create ONE object per Age/Grade.
-2. VALUES:
-   - If Parametric: Extract "mean" and "sd".
-   - If Lookup: Extract "raw_range", "standard", "percentile".
-3. ACCURACY:
+2. INVERTED LOOKUP: Some LOOKUP tables are printed with ROWS = standard/scaled scores and COLUMNS = age groups.
+   In that case, the cell value is the raw score. You MUST still output one object per age group (column) with "r" = cell value, "n" = row header.
+3. VALUES:
+   - If Parametric: Extract "m" and "s".
+   - If Lookup: Extract "r", "n", "p".
+4. ACCURACY:
    - Clean units (sec, pts).
    - Keep decimals.
    - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
-4. SUBTEST NAMING (CRITICAL):
+5. SUBTEST NAMING (CRITICAL):
    - NEVER use abbreviated column headers as subtest names (e.g. "AA", "FD", "MV", "ST", "IP", "CF", "MD", "DT").
    - You MUST expand every abbreviation to its FULL FRENCH clinical name.
+   - If EXPECTED SUBTESTS are provided above, match to those canonical names.
    - Use the test name (visible in the title or header), the domain section headers, and your clinical knowledge of standardized tests to determine the full subtest name.
    - The image always contains enough context: test title, domain groupings, and column abbreviations — combine them to resolve the full name.
    - Do NOT use English code-style names — use the French clinical name instead.
@@ -180,43 +198,45 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
 
 --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
 You must calculate specific numeric values for the database:
-1. AGE NORMALIZATION (age_min_months, age_max_months):
+1. AGE NORMALIZATION (a0, a1):
    - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
-   - Convert range "4;0 - 4;5" -> min: 48, max: 53.
+   - Convert range "4;0 - 4;5" -> a0: 48, a1: 53.
    - If only grade is available (e.g. "CP"), estimate typical age (CP = 6 years = 72 months).
-2. RAW SCORE NORMALIZATION (raw_min, raw_max):
-   - "15-16" -> min: 15, max: 16
-   - "7" -> min: 7, max: 7
-   - "<5" -> min: 0, max: 5
-   - ">19" or "19+" -> min: 19, max: 999 (use a high number for infinity)
+2. RAW SCORE NORMALIZATION (r0, r1):
+   - "15-16" -> r0: 15, r1: 16
+   - "7" -> r0: 7, r1: 7
+   - "<5" -> r0: 0, r1: 5
+   - ">19" or "19+" -> r0: 19, r1: 999 (use a high number for infinity)
 `;
 
 const JSON_SCHEMA = `
---- JSON OUTPUT SCHEMA ---
+--- JSON OUTPUT SCHEMA (compact keys to save tokens) ---
 {
-  "test_context": "string (Detected name of the test)",
-  "structure_type": "PARAMETRIC" | "LOOKUP",
+  "tc": "string (Detected name of the test)",
+  "st": "PARAMETRIC" | "LOOKUP",
   "tables": [
     {
-      "subtest_id": "string (Subtest name)",
+      "sid": "string (Subtest name — FULL French clinical name)",
       "rows": [
         {
-          "label": "string (Display Label, e.g. '4;0 - 4;5')",
-          "mean": "string (Only if PARAMETRIC)",
-          "sd": "string (Only if PARAMETRIC)",
-          "raw_range": "string (Only if LOOKUP: Raw Score as displayed)",
-          "standard": "string (Only if LOOKUP: Standard Score)",
-          "percentile": "string (Only if LOOKUP: Percentile)",
-          "z_score": "string (Z-Score if explicit)",
-          "age_min_months": number | null,
-          "age_max_months": number | null,
-          "raw_min": number | null,
-          "raw_max": number | null
+          "l": "string (Display Label, e.g. '4;0 - 4;5' for age group)",
+          "m": "string (Only if PARAMETRIC: Mean)",
+          "s": "string (Only if PARAMETRIC: SD)",
+          "r": "string (Only if LOOKUP: Raw Score as displayed)",
+          "n": "string (Only if LOOKUP: Standard Score / Note Étalonnée)",
+          "p": "string (Percentile if explicit)",
+          "z": "string (Z-Score if explicit)",
+          "a0": number | null (age_min in months),
+          "a1": number | null (age_max in months),
+          "r0": number | null (raw_min),
+          "r1": number | null (raw_max)
         }
       ]
     }
   ]
 }
+
+KEY LEGEND: tc=test_context, st=structure_type, sid=subtest_id, l=label, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
 
 OUTPUT RULES:
 - Output valid JSON only.
@@ -230,12 +250,13 @@ OUTPUT RULES:
 const buildFullExtractionTask = (payload: Record<string, unknown>) => {
   const filename = String(payload.filename || 'document');
   const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
   const imagePart = payload.imagePart;
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
-${buildKnownNamesBlock(knownSubtestNames)}
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "l" (label) if it's not explicitly in the table headers.
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
 TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE ALL data from ALL tables on this page.
 
 CRITICAL: This page may contain MULTIPLE tables or sections (e.g. upper table + lower table). You MUST extract data from ALL of them, not just the first one.
@@ -251,16 +272,18 @@ ${JSON_SCHEMA}`;
 
 const buildInventoryScanTask = (payload: Record<string, unknown>) => {
   const filename = String(payload.filename || 'document');
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
   const imagePart = payload.imagePart;
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
-
+${buildCanonicalNamesBlock(canonicalSubtestNames)}
 TASK: List ALL subtest column headers visible on this page image, grouped by their domain/section header.
 
 For each domain section visible (e.g. "Attention et fonctions exécutives", "Mémoire et apprentissage", etc.), list the subtests under it.
 
 IMPORTANT: Do NOT use abbreviated column headers (e.g. "AA", "FD", "MV"). You MUST expand each abbreviation to its FULL FRENCH clinical subtest name using your knowledge of the test. For example: AA → "Attention auditive", FD → "Fluidité de dessins", ST → "Statue", etc.
+If EXPECTED SUBTESTS are provided above, match abbreviations to those canonical names.
 
 Also detect the table structure type:
 - "PARAMETRIC" if the table contains Mean/SD statistical constants
@@ -268,8 +291,8 @@ Also detect the table structure type:
 
 JSON OUTPUT SCHEMA:
 {
-  "test_context": "string (Name of the test, e.g. NEPSY-II)",
-  "structure_type": "PARAMETRIC" | "LOOKUP",
+  "tc": "string (Name of the test, e.g. NEPSY-II)",
+  "st": "PARAMETRIC" | "LOOKUP",
   "domains": [
     {
       "domain": "string (Domain section header)",
@@ -298,12 +321,13 @@ const buildFocusedExtractionTask = (
 ) => {
   const filename = String(payload.filename || 'document');
   const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
   const imagePart = payload.imagePart;
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "label" if it's not explicitly in the table headers.
-${buildKnownNamesBlock(knownSubtestNames)}
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "l" (label) if it's not explicitly in the table headers.
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
 FOCUS CONSTRAINT: Extract data ONLY for these specific subtest columns: ${JSON.stringify(focusSubtests)}
 These belong to the domain section: "${domainHint}".
 IGNORE all other columns entirely. Only output data for the listed subtests.
@@ -321,8 +345,8 @@ ${JSON_SCHEMA}`;
 
 const mergeExtractionResults = (results: ExtractionResult[]): ExtractionResult => {
   const merged: ExtractionResult = {
-    test_context: '',
-    structure_type: 'LOOKUP',
+    tc: '',
+    st: 'LOOKUP',
     tables: [],
   };
 
@@ -330,20 +354,20 @@ const mergeExtractionResults = (results: ExtractionResult[]): ExtractionResult =
 
   for (const result of results) {
     if (!result) continue;
-    if (result.test_context && !merged.test_context) merged.test_context = result.test_context;
-    if (result.structure_type) merged.structure_type = result.structure_type;
+    if (result.tc && !merged.tc) merged.tc = result.tc;
+    if (result.st) merged.st = result.st;
 
     if (Array.isArray(result.tables)) {
       for (const table of result.tables) {
-        if (!table.subtest_id) continue;
+        if (!table.sid) continue;
         // Deduplicate: keep the version with more rows
-        if (seenSubtests.has(table.subtest_id)) {
-          const existing = merged.tables!.find((t) => t.subtest_id === table.subtest_id);
+        if (seenSubtests.has(table.sid)) {
+          const existing = merged.tables!.find((t) => t.sid === table.sid);
           if (existing && table.rows.length > existing.rows.length) {
             existing.rows = table.rows;
           }
         } else {
-          seenSubtests.add(table.subtest_id);
+          seenSubtests.add(table.sid);
           merged.tables!.push(table);
         }
       }
