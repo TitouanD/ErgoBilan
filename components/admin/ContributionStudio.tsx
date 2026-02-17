@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
 import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
-import { callAIProxyTask } from '../../services/aiProxy';
+import { callExtractionTask } from '../../services/extractionProxy';
 import { fileToGenerativePart, cleanAndParseJson } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
@@ -265,19 +265,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }, {} as Record<string, ExtractedRow[]>)
     );
 
-    // --- PROCESSING FUNCTION ---
+    // --- PROCESSING FUNCTION (now uses dedicated extract-norms edge function with restored prompts) ---
 
     const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
         const imagePart = await fileToGenerativePart(file);
         const filename = file.name;
 
-        const response = await callAIProxyTask({
-            task: 'extract_norms',
-            payload: {
-                filename,
-                knownSubtestNames: knownSubtestNames || [],
-                imagePart,
-            },
+        const response = await callExtractionTask({
+            filename,
+            imagePart,
+            knownSubtestNames: knownSubtestNames || [],
         });
 
         const extractedData = cleanAndParseJson(response.text) as AIExtractionResult | null;
@@ -329,16 +326,38 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             let resolvedTestName = testName;
             const knownSubtestNames: string[] = [];
 
-            for (let i = 0; i < inputFiles.length; i += 1) {
-                setCurrentFileIndex(i);
-                const result = await processSingleExtraction(inputFiles[i], knownSubtestNames.length > 0 ? knownSubtestNames : undefined);
-
-                // Collect unique subtest names from this page for subsequent prompts
-                const pageSubtests = new Set(result.rows.map(r => r.subtest).filter(Boolean));
-                pageSubtests.forEach(name => {
-                    if (!knownSubtestNames.includes(name)) knownSubtestNames.push(name);
-                });
-
+            // PARALLEL PROCESSING: Extract all files at once for much faster processing
+            Logger.info('Extraction', `Starting parallel extraction of ${inputFiles.length} file(s)`);
+            
+            const extractionPromises = inputFiles.map(async (file, i) => {
+                try {
+                    setCurrentFileIndex(i);
+                    const result = await processSingleExtraction(file, knownSubtestNames.length > 0 ? knownSubtestNames : undefined);
+                    
+                    // Collect unique subtest names from this page
+                    const pageSubtests = new Set(result.rows.map(r => r.subtest).filter(Boolean));
+                    pageSubtests.forEach(name => {
+                        if (!knownSubtestNames.includes(name)) knownSubtestNames.push(name);
+                    });
+                    
+                    return { result, index: i, success: true };
+                } catch (error) {
+                    Logger.error('Extraction', `Failed to extract ${file.name}`, error);
+                    return { result: null, index: i, success: false, error };
+                }
+            });
+            
+            const results = await Promise.all(extractionPromises);
+            
+            // Process results in order
+            for (let i = 0; i < results.length; i += 1) {
+                const { result, success, error } = results[i];
+                
+                if (!success || !result) {
+                    toast.error(`Erreur sur la page ${i + 1}: ${error instanceof Error ? error.message : 'Extraction échouée'}`);
+                    continue;
+                }
+                
                 if (resolvedStructure === 'UNKNOWN') {
                     resolvedStructure = result.detectedStructure;
                 } else if (result.detectedStructure !== resolvedStructure) {
@@ -910,9 +929,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <div className="py-12">
                             <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
                             <p className="font-bold text-[#3D405B]">Extraction des données...</p>
-                            <p className="text-xs text-stone-400">Structuration en cours...</p>
+                            <p className="text-xs text-stone-400">Analyse en parallèle pour un traitement ultra-rapide</p>
                             {files.length > 1 && (
-                                <p className="text-xs text-stone-400 mt-2">Page {Math.min(currentFileIndex + 1, files.length)} / {files.length}</p>
+                                <p className="text-xs text-stone-400 mt-2">{files.length} page{files.length > 1 ? 's' : ''} en cours...</p>
                             )}
                         </div>
                     )}

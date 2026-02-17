@@ -25,6 +25,7 @@ import { useToast } from '../../contexts/ToastContext';
 interface Props {
   file: PatientFile;
   onBack: () => void;
+  onDelete?: (patientId: string) => void;
   onNewBilan: (type: 'initial' | 'reevaluation') => void;
   onQuickEntry: () => void;
   onOpenReport: (reportId: string) => void;
@@ -111,7 +112,7 @@ const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () =>
           <Trash2 size={32} />
         </div>
         <h3 className="mb-2 font-serif text-2xl font-bold text-[#3D405B]">Zone de danger</h3>
-        <p className="mb-6 text-sm text-stone-500">Tapez \"supprimer\" pour confirmer la suppression définitive.</p>
+        <p className="mb-6 text-sm text-stone-500">Tapez "supprimer" pour confirmer la suppression définitive.</p>
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -138,6 +139,7 @@ const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () =>
 export const PatientDetail: React.FC<Props> = ({
   file,
   onBack,
+  onDelete,
   onNewBilan,
   onQuickEntry,
   onOpenReport,
@@ -315,6 +317,7 @@ export const PatientDetail: React.FC<Props> = ({
     setIsProcessing(true);
     try {
       await StorageService.deleteFile(file.id);
+      onDelete?.(file.id);
       onBack();
     } catch {
       toast.error('Erreur lors de la suppression.');

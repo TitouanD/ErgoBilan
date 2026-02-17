@@ -154,7 +154,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                     )}
                 </div>
 
-                <h2 className="text-2xl font-serif font-bold text-white mb-2">Bonjour Dr. {practitioner.lastName}</h2>
+                <h2 className="text-2xl font-serif font-bold text-white mb-2">Bonjour {practitioner.firstName}</h2>
                 <p className="text-white/60 text-sm mb-10">Entrez votre code PIN pour déchiffrer vos dossiers.</p>
 
                 {/* PIN Input Visualizer */}

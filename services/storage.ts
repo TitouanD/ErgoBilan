@@ -373,7 +373,6 @@ const mapAssessmentRowsToData = async (
     assessment_at: string;
     kind: PatientAssessment['kind'];
     has_formal_report: boolean;
-    test_name: string | null;
     iv: string;
     encrypted_payload: string;
   }>,
@@ -391,7 +390,7 @@ const mapAssessmentRowsToData = async (
         date: row.assessment_at,
         kind: row.kind,
         hasFormalReport: row.has_formal_report === true,
-        testName: decrypted?.testName || row.test_name || undefined,
+        testName: decrypted?.testName || undefined,
         results: decrypted?.results || undefined,
         report: decrypted?.report || undefined,
       } satisfies PatientAssessment;
@@ -724,7 +723,6 @@ export const StorageService = {
             kind: assessment.kind,
             has_formal_report: assessment.hasFormalReport,
             assessment_at: assessment.date,
-            test_name: assessment.testName || null,
             iv: enc.iv,
             encrypted_payload: enc.content,
           };
@@ -941,7 +939,7 @@ export const StorageService = {
 
     const { data, error } = await supabase
       .from('patient_assessments')
-      .select('id, assessment_at, kind, has_formal_report, test_name, iv, encrypted_payload')
+      .select('id, assessment_at, kind, has_formal_report, iv, encrypted_payload')
       .eq('patient_id', patientId)
       .order('assessment_at', { ascending: false })
       .range(assessmentOffset, assessmentOffset + assessmentLimit);
