@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
 import { ToastProvider, useToast } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
@@ -14,6 +15,7 @@ import { GenerationLoader } from './components/shared/GenerationLoader';
 import { AssessmentStepper } from './components/assessment/AssessmentStepper';
 import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
+import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types'; 
@@ -240,43 +242,46 @@ const AppRouter = () => {
     if (mode === 'landing') {
         return (
             <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+                <div className="absolute top-6 right-6 z-10">
+                    <ThemeToggle />
+                </div>
                 <div className="absolute inset-0 bg-gradient-to-br from-[#E07A5F]/5 to-[#3D405B]/5 pointer-events-none"></div>
                 <div className="text-center space-y-8 z-10 animate-in fade-in zoom-in-95 duration-700">
                     <div className="flex justify-center">
-                        <div className="w-24 h-24 bg-white rounded-[32px] shadow-xl shadow-[#3D405B]/10 flex items-center justify-center text-[#E07A5F] transform rotate-3 transition-transform hover:rotate-0">
+                        <div className="w-24 h-24 bg-[var(--card-bg)] rounded-[32px] shadow-xl shadow-[var(--shadow)] flex items-center justify-center text-[#E07A5F] transform rotate-3 transition-transform hover:rotate-0">
                             <Sparkles size={48} fill="currentColor" className="text-[#E07A5F]/20" stroke="currentColor" />
                             <Sparkles size={48} className="absolute text-[#E07A5F]" />
                         </div>
                     </div>
                     <div>
-                        <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#3D405B] mb-2">ErgoBilan<span className="text-[#E07A5F]">.</span></h1>
-                        <p className="text-lg text-stone-500 font-medium">L'assistant clinique intelligent pour Ergothérapeutes.</p>
+                        <h1 className="text-5xl md:text-7xl font-serif font-bold text-[var(--text-main)] mb-2">ErgoBilan<span className="text-[#E07A5F]">.</span></h1>
+                        <p className="text-lg text-[var(--text-light)] font-medium">L'assistant clinique intelligent pour Ergothérapeutes.</p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-4 mt-8 justify-center">
                         <button onClick={() => { if(authState==='locked') setMode('dashboard'); else setShowAuthModal(true); }} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
                             Accès Praticien <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                         </button>
-                        <button onClick={() => setMode('portal')} className="bg-white text-[#3D405B] px-10 py-4 rounded-2xl font-bold shadow-md hover:shadow-lg border border-stone-100 hover:border-[#E07A5F]/30 transition-all flex items-center justify-center gap-2">
+                        <button onClick={() => setMode('portal')} className="bg-[var(--card-bg)] text-[var(--text-main)] px-10 py-4 rounded-2xl font-bold shadow-md hover:shadow-lg border border-[var(--border-color)] hover:border-[#E07A5F]/30 transition-all flex items-center justify-center gap-2">
                             Espace Famille <User size={20}/>
                         </button>
                     </div>
                     <div className="mt-8 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-500">
                         {/* UPDATE : Appel du nouveau handler handleStartDemo */}
-                        <p className="text-stone-400 text-sm">Pas encore de compte ? <button onClick={handleStartDemo} className="font-bold text-[#3D405B] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">Explorer l'interface sans inscription</button></p>
+                        <p className="text-[var(--text-light)] text-sm">Pas encore de compte ? <button onClick={handleStartDemo} className="font-bold text-[var(--text-main)] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">Explorer l'interface sans inscription</button></p>
                     </div>
                 </div>
                 {showAuthModal && (
                     <div className="fixed inset-0 z-50 bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                         {authMode === 'login' && authState !== 'registering' ? (
-                            <div className="bg-white p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-white/20 animate-in zoom-in-95 duration-300">
-                                <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 p-2 bg-stone-50 rounded-full hover:bg-stone-100 text-stone-400 transition-colors"><X size={20}/></button>
-                                <div className="text-center mb-8"><h2 className="text-3xl font-serif font-bold text-[#3D405B]">Connexion</h2><p className="text-stone-400 text-sm font-medium mt-1">Heureux de vous revoir.</p></div>
+                            <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
+                                <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <div className="text-center mb-8"><h2 className="text-3xl font-serif font-bold text-[var(--text-main)]">Connexion</h2><p className="text-[var(--text-light)] text-sm font-medium mt-1">Heureux de vous revoir.</p></div>
                                 <form onSubmit={(e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get('email') as string, fd.get('pass') as string); }} className="space-y-5">
-                                    <div className="space-y-1"><label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-2">Email</label><input name="email" type="email" placeholder="votre@email.com" className="w-full p-4 bg-stone-50 border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[#3D405B] transition-all" required /></div>
-                                    <div className="space-y-1"><label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider ml-2">Mot de passe</label><input name="pass" type="password" placeholder="••••••••" className="w-full p-4 bg-stone-50 border border-transparent focus:bg-white focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[#3D405B] transition-all" required /></div>
+                                    <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Email</label><input name="email" type="email" placeholder="votre@email.com" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
+                                    <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Mot de passe</label><input name="pass" type="password" placeholder="••••••••" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
                                     <button type="submit" disabled={isLoggingIn} className="w-full py-4 bg-[#3D405B] text-white rounded-2xl font-bold text-lg shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] hover:shadow-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-4">{isLoggingIn ? <Loader2 size={24} className="animate-spin" /> : "Se connecter"}</button>
                                 </form>
-                                <div className="mt-8 text-center pt-6 border-t border-stone-100"><p className="text-xs text-stone-400 font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
+                                <div className="mt-8 text-center pt-6 border-t border-[var(--border-color)]"><p className="text-xs text-[var(--text-light)] font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
                             </div>
                         ) : (
                             <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={handleWizardComplete} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
@@ -298,11 +303,12 @@ const AppRouter = () => {
 
     return (
         <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
-            <header className="relative z-40 bg-white/90 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between no-print shadow-sm">
-                <div className="font-serif font-bold text-xl text-[#3D405B] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
+            <header className="relative z-40 bg-[var(--card-bg)]/90 backdrop-blur-md border-b border-[var(--border-color)] px-6 h-20 flex items-center justify-between no-print shadow-sm">
+                <div className="font-serif font-bold text-xl text-[var(--text-main)] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> ErgoBilan.
                 </div>
                 <div className="flex items-center gap-3">
+                    <ThemeToggle />
                     {mode === 'assessment' ? (
                         <>
                             {assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg mr-2"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
@@ -316,25 +322,25 @@ const AppRouter = () => {
                             <div className="relative z-50" ref={accountMenuRef} onMouseDown={(event) => event.stopPropagation()}>
                                 <button
                                     onClick={() => setShowAccountMenu((prev) => !prev)}
-                                    className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-2 py-1.5 transition-colors hover:border-[#3D405B]"
+                                    className="flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 transition-colors hover:border-[var(--text-main)]"
                                 >
                                     <div className="h-8 w-8 rounded-full bg-[#3D405B] text-white text-xs font-bold flex items-center justify-center">
                                         {accountInitials}
                                     </div>
-                                    <ChevronDown size={14} className={`text-stone-500 transition-transform ${showAccountMenu ? 'rotate-180' : ''}`} />
+                                    <ChevronDown size={14} className={`text-[var(--text-light)] transition-transform ${showAccountMenu ? 'rotate-180' : ''}`} />
                                 </button>
 
                                 {showAccountMenu && (
-                                    <div className="absolute right-0 z-[60] mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
-                                        <div className="px-3 py-2 border-b border-stone-100">
-                                            <p className="text-sm font-bold text-[#3D405B] truncate">{accountDisplayName}</p>
-                                            <p className="text-xs text-stone-400 truncate">{userProfile.email}</p>
+                                    <div className="absolute right-0 z-[60] mt-2 w-64 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-2 shadow-xl">
+                                        <div className="px-3 py-2 border-b border-[var(--border-color)]">
+                                            <p className="text-sm font-bold text-[var(--text-main)] truncate">{accountDisplayName}</p>
+                                            <p className="text-xs text-[var(--text-light)] truncate">{userProfile.email}</p>
                                         </div>
 
-                                        <button onClick={() => { setShowAccountMenu(false); handleContributionAccess(); }} className="w-full mt-1 px-3 py-2 text-left text-sm font-medium text-[#3D405B] hover:bg-stone-50 rounded-xl flex items-center gap-2">
+                                        <button onClick={() => { setShowAccountMenu(false); handleContributionAccess(); }} className="w-full mt-1 px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <FilePlus size={14} /> Créer un test
                                         </button>
-                                        <button onClick={() => { setShowAccountMenu(false); setPricingModalMode('plans'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[#3D405B] hover:bg-stone-50 rounded-xl flex items-center gap-2">
+                                        <button onClick={() => { setShowAccountMenu(false); setPricingModalMode('plans'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <Crown size={14} /> Mon abonnement
                                         </button>
                                         {userProfile.isAdmin && (
@@ -544,15 +550,17 @@ const AppRouter = () => {
 };
 
 const App = () => (
-    <AuthProvider>
-        <CatalogProvider>
-            <ToastProvider>
-                <AssessmentProvider>
-                    <AppRouter />
-                </AssessmentProvider>
-            </ToastProvider>
-        </CatalogProvider>
-    </AuthProvider>
+    <ThemeProvider>
+        <AuthProvider>
+            <CatalogProvider>
+                <ToastProvider>
+                    <AssessmentProvider>
+                        <AppRouter />
+                    </AssessmentProvider>
+                </ToastProvider>
+            </CatalogProvider>
+        </AuthProvider>
+    </ThemeProvider>
 );
 
 export default App;
