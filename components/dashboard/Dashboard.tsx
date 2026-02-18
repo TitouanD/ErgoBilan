@@ -135,16 +135,16 @@ const nextActionLabelMap: Record<PatientDashboardPreviewMeta['workflow']['nextAc
 };
 
 const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTone']) => {
-  if (tone === 'success') return { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', progress: 'bg-emerald-500' };
-  if (tone === 'warning') return { badge: 'bg-amber-50 text-amber-700 border-amber-200', progress: 'bg-amber-500' };
-  return { badge: 'bg-[#3D405B]/10 text-[#3D405B] border-[#3D405B]/20', progress: 'bg-[#3D405B]' };
+  if (tone === 'success') return { badge: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700/40', progress: 'bg-emerald-500' };
+  if (tone === 'warning') return { badge: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700/40', progress: 'bg-amber-500' };
+  return { badge: 'bg-[#3D405B]/10 text-[var(--text-heading)] border-[#3D405B]/20', progress: 'bg-[#3D405B]' };
 };
 
 const getUrgencyTone = (kind: UrgencyKind) => {
-  if (kind === 'draft') return { card: 'border-rose-200 bg-rose-50/60 hover:border-rose-300', icon: 'bg-rose-100 text-rose-600', action: 'text-rose-700' };
-  if (kind === 'pending_done') return { card: 'border-amber-200 bg-amber-50/60 hover:border-amber-300', icon: 'bg-amber-100 text-amber-600', action: 'text-amber-700' };
-  if (kind === 'followup') return { card: 'border-orange-200 bg-orange-50/60 hover:border-orange-300', icon: 'bg-orange-100 text-orange-600', action: 'text-orange-700' };
-  return { card: 'border-stone-200 bg-white hover:border-stone-300', icon: 'bg-stone-100 text-stone-500', action: 'text-stone-600' };
+  if (kind === 'draft') return { card: 'border-rose-200 dark:border-rose-800/40 bg-rose-50/60 dark:bg-rose-950/20 hover:border-rose-300 dark:hover:border-rose-700/50', icon: 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400', action: 'text-rose-700 dark:text-rose-400' };
+  if (kind === 'pending_done') return { card: 'border-amber-200 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 hover:border-amber-300 dark:hover:border-amber-700/50', icon: 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400', action: 'text-amber-700 dark:text-amber-400' };
+  if (kind === 'followup') return { card: 'border-orange-200 dark:border-orange-800/40 bg-orange-50/60 dark:bg-orange-950/20 hover:border-orange-300 dark:hover:border-orange-700/50', icon: 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400', action: 'text-orange-700 dark:text-orange-400' };
+  return { card: 'border-[var(--border-color)] bg-[var(--card-bg)] hover:border-[var(--text-light)]', icon: 'bg-[var(--hover-bg)] text-[var(--text-secondary)]', action: 'text-[var(--text-main)]' };
 };
 
 const buildSyntheticFollowup = (file: PatientFile): PatientFollowup | null => {
@@ -289,15 +289,15 @@ const KpiCard = ({
   subtext: string;
   colorClass: string;
 }) => (
-  <div className="rounded-[24px] border border-stone-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+  <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
     <div className="mb-4 flex items-center gap-3">
       <div className={`rounded-2xl p-3 ${colorClass}`}>
         <Icon size={22} />
       </div>
-      <div className="text-3xl font-serif font-bold text-[#3D405B]">{value}</div>
+      <div className="text-3xl font-serif font-bold text-[var(--text-heading)]">{value}</div>
     </div>
-    <div className="text-xs font-bold uppercase tracking-wide text-[#3D405B]">{label}</div>
-    <div className="mt-1 text-xs text-stone-500">{subtext}</div>
+    <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-main)]">{label}</div>
+    <div className="mt-1 text-xs text-[var(--text-secondary)]">{subtext}</div>
   </div>
 );
 
@@ -583,14 +583,14 @@ export const Dashboard: React.FC<Props> = ({
       <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} />
       {pendingLinkConfirmation && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-[#3D405B]/45 p-4 backdrop-blur-sm" onMouseDown={handleLinkConfirmationKeep}>
-          <div className="w-full max-w-[520px] rounded-[24px] border border-stone-200 bg-white p-6 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
-            <h3 className="font-serif text-2xl font-bold text-[#3D405B]">Lien copié</h3>
-            <p className="mt-2 text-sm text-stone-600">Avez-vous bien envoyé le lien au parent pour <span className="font-semibold text-[#3D405B]">{pendingLinkConfirmation.title}</span> ?</p>
+          <div className="w-full max-w-[520px] rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <h3 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Lien copié</h3>
+            <p className="mt-2 text-sm text-[var(--text-main)]">Avez-vous bien envoyé le lien au parent pour <span className="font-semibold text-[var(--text-heading)]">{pendingLinkConfirmation.title}</span> ?</p>
             <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={handleLinkConfirmationKeep}
-                className="rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm font-semibold text-stone-600 transition-colors hover:border-stone-300 hover:text-[#3D405B]"
+                className="rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--text-light)] hover:text-[var(--text-main)]"
               >
                 Garder dans À traiter
               </button>
@@ -620,29 +620,29 @@ export const Dashboard: React.FC<Props> = ({
       <div className="mx-auto max-w-7xl px-6 py-8 md:px-8 md:py-10">
         <section className="mb-9 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)] lg:items-start">
           <div>
-            <h1 className="font-serif text-[38px] font-bold leading-[1.05] text-[#3D405B] md:text-[44px]">Bonjour, {practitionerFirstName} <span className="align-middle text-2xl opacity-75">👋</span></h1>
-            <p className="mt-2 text-sm font-medium text-stone-400">Votre journée clinique est prête.</p>
+            <h1 className="font-serif text-[38px] font-bold leading-[1.05] text-[var(--text-heading)] md:text-[44px]">Bonjour, {practitionerFirstName} <span className="align-middle text-2xl opacity-75">👋</span></h1>
+            <p className="mt-2 text-sm font-medium text-[var(--text-secondary)]">Votre journée clinique est prête.</p>
           </div>
           <div className="w-full lg:pt-1"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <div className="relative w-full md:flex-1">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-              <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-24 text-sm font-medium text-[#3D405B] shadow-sm outline-none transition-all focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 motion-reduce:transition-none" />
-              <button type="button" onClick={() => setIsPaletteOpen(true)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-stone-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-500 transition-colors hover:border-[#E07A5F] hover:text-[#E07A5F] motion-reduce:transition-none">{shortcutLabel}</button>
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" size={18} />
+              <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] pl-10 pr-24 text-sm font-medium text-[var(--text-main)] shadow-sm outline-none transition-all focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 motion-reduce:transition-none" />
+              <button type="button" onClick={() => setIsPaletteOpen(true)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--border-color)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] transition-colors hover:border-[#E07A5F] hover:text-[#E07A5F] motion-reduce:transition-none">{shortcutLabel}</button>
             </div>
             <button onClick={() => setIsNewPatientChoiceOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#E07A5F] px-5 text-sm font-bold text-white shadow-lg shadow-orange-200 transition-all hover:-translate-y-0.5 hover:bg-[#d0694e] motion-reduce:transform-none motion-reduce:transition-none"><Plus size={18} /> Nouveau patient</button>
           </div></div>
         </section>
 
         <section className="mb-10 grid grid-cols-1 gap-5 md:grid-cols-3">
-          <KpiCard icon={Clock} value={`${kpis.hoursSaved}h`} label="Temps économisé" subtext="Ce mois-ci" colorClass="bg-blue-50 text-blue-600" />
-          <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-orange-50 text-[#E07A5F]" />
-          <KpiCard icon={Calendar} value={`${kpis.dueFollowups}`} label="Rappels actifs" subtext={`${kpis.reevaluationOpportunities} opportunités de suivi`} colorClass="bg-emerald-50 text-emerald-600" />
+          <KpiCard icon={Clock} value={`${kpis.hoursSaved}h`} label="Temps économisé" subtext="Ce mois-ci" colorClass="bg-blue-500/10 text-blue-500" />
+          <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-[#E07A5F]/10 text-[#E07A5F]" />
+          <KpiCard icon={Calendar} value={`${kpis.dueFollowups}`} label="Rappels actifs" subtext={`${kpis.reevaluationOpportunities} opportunités de suivi`} colorClass="bg-emerald-500/10 text-emerald-500" />
         </section>
 
         <section className="mb-10">
           <div className="mb-4 flex items-center justify-between gap-3 px-1">
             <div className="flex items-center gap-2">
-              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">À traiter</h2>
+              <h2 className="font-serif text-3xl font-bold text-[var(--text-heading)]">À traiter</h2>
               {visibleUrgencyItems.length > 0 && <span className="rounded-full bg-[#3D405B] px-2 py-0.5 text-[10px] font-bold text-white">{visibleUrgencyItems.length}</span>}
             </div>
             {railCanScroll && (
@@ -652,7 +652,7 @@ export const Dashboard: React.FC<Props> = ({
                   aria-label="Voir les actions précédentes"
                   onClick={() => scrollTodoRailBy(-360)}
                   disabled={railAtStart}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:text-[#3D405B] disabled:cursor-not-allowed disabled:opacity-35"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] transition-colors hover:border-[var(--text-light)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -661,7 +661,7 @@ export const Dashboard: React.FC<Props> = ({
                   aria-label="Voir les actions suivantes"
                   onClick={() => scrollTodoRailBy(360)}
                   disabled={railAtEnd}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:text-[#3D405B] disabled:cursor-not-allowed disabled:opacity-35"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] transition-colors hover:border-[var(--text-light)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -670,9 +670,9 @@ export const Dashboard: React.FC<Props> = ({
           </div>
 
           {visibleUrgencyItems.length === 0 ? (
-            <div className="flex items-center justify-between gap-4 rounded-[24px] border border-emerald-100 bg-emerald-50/40 p-6 shadow-sm">
-              <div className="flex items-center gap-4"><div className="rounded-2xl bg-emerald-100 p-3 text-emerald-600"><Coffee size={24} /></div><div><h3 className="font-serif text-xl font-bold text-[#3D405B]">Tout est à jour</h3><p className="text-xs font-medium text-stone-500">Aucun brouillon ni urgence en attente.</p></div></div>
-              <button onClick={() => setIsNewPatientChoiceOpen(true)} className="hidden items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-xs font-bold text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50 md:flex"><Plus size={14} /> Nouveau patient</button>
+            <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm">
+              <div className="flex items-center gap-4"><div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-500"><Coffee size={24} /></div><div><h3 className="font-serif text-xl font-bold text-[var(--text-heading)]">Tout est à jour</h3><p className="text-xs font-medium text-[var(--text-secondary)]">Aucun brouillon ni urgence en attente.</p></div></div>
+              <button onClick={() => setIsNewPatientChoiceOpen(true)} className="hidden items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2.5 text-xs font-bold text-emerald-600 shadow-sm transition-all hover:border-emerald-300 hover:bg-[var(--hover-bg)] md:flex"><Plus size={14} /> Nouveau patient</button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -702,11 +702,11 @@ export const Dashboard: React.FC<Props> = ({
                       } ${item.isBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none'} ${isRewarded ? 'scale-[0.985] ring-2 ring-emerald-300 bg-emerald-50/75 shadow-lg shadow-emerald-200/70' : ''}`}
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="min-w-0"><h3 className="truncate text-lg font-serif font-bold text-[#3D405B]">{item.title}</h3><p className="truncate text-xs text-stone-600">{item.subtitle}</p></div>
+                        <div className="min-w-0"><h3 className="truncate text-lg font-serif font-bold text-[var(--text-heading)]">{item.title}</h3><p className="truncate text-xs text-[var(--text-main)]">{item.subtitle}</p></div>
                         <div className={`rounded-lg p-1.5 ${tone.icon}`}>{item.kind === 'draft' ? <Edit3 size={13} /> : item.kind === 'pending_done' ? <ClipboardList size={13} /> : item.kind === 'followup' ? <Calendar size={13} /> : <AlertCircle size={13} />}</div>
                       </div>
                       <div className="flex items-end justify-between border-t border-black/5 pt-2.5">
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400"><Clock size={10} /> {monthDate(item.date)}</div>
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]"><Clock size={10} /> {monthDate(item.date)}</div>
                         <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${tone.action}`}>
                           {item.isBusy ? <Loader2 size={12} className="animate-spin" /> : <ActionIcon size={12} />}
                           <span>{item.isBusy ? 'Import...' : item.actionHint}</span>
@@ -721,26 +721,26 @@ export const Dashboard: React.FC<Props> = ({
               </div></div>
                 {railCanScroll && (
                   <div className="mt-1 px-1">
-                    <div className="relative h-1 rounded-full bg-stone-200/80">
+                    <div className="relative h-1 rounded-full bg-[var(--border-color)]">
                       <div
-                        className="absolute top-0 h-1 w-16 rounded-full bg-stone-400 transition-all"
+                        className="absolute top-0 h-1 w-16 rounded-full bg-[var(--text-secondary)] transition-all"
                         style={{ left: `${railScrollProgress * (100 - 12)}%` }}
                       />
                     </div>
                   </div>
                 )}
               </div>
-              <p className="px-1 text-[11px] font-medium text-stone-400">Faites défiler pour voir toutes les actions prioritaires.</p>
+              <p className="px-1 text-[11px] font-medium text-[var(--text-secondary)]">Faites défiler pour voir toutes les actions prioritaires.</p>
             </div>
           )}
         </section>
 
         <section className="max-w-6xl">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
-            <h2 className="font-serif text-3xl font-bold text-[#3D405B]">{showArchived ? 'Patients archivés' : 'Patients suivis'}</h2>
+            <h2 className="font-serif text-3xl font-bold text-[var(--text-heading)]">{showArchived ? 'Patients archivés' : 'Patients suivis'}</h2>
             <div className="flex items-center gap-2">
-              <button onClick={() => setShowArchived((prev) => !prev)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${showArchived ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-200 bg-white text-stone-500 hover:border-[#3D405B] hover:text-[#3D405B]'}`}><Archive size={12} /> {showArchived ? 'Voir patients suivis' : 'Voir archives'}</button>
-              <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-white hover:text-[#3D405B]"><Filter size={12} /> Trier par date</button>
+              <button onClick={() => setShowArchived((prev) => !prev)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-all ${showArchived ? 'border-stone-800 bg-stone-800 text-white' : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] hover:border-[var(--text-heading)] hover:text-[var(--text-heading)]'}`}><Archive size={12} /> {showArchived ? 'Voir patients suivis' : 'Voir archives'}</button>
+              <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--text-main)]"><Filter size={12} /> Trier par date</button>
             </div>
           </div>
 
@@ -762,23 +762,23 @@ export const Dashboard: React.FC<Props> = ({
               const statusBadgeLabel = hasDraft ? 'Brouillon' : followUpProgress ? followUpProgress.badgeLabel : nextActionLabelMap[previewMeta.workflow.nextAction];
 
               return (
-                <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-stone-200 opacity-80 hover:opacity-100' : 'border-stone-100 hover:border-[#E07A5F]/30'}`}>
+                <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-[var(--card-bg)] p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-[var(--border-color)] opacity-80 hover:opacity-100' : 'border-[var(--border-color)] hover:border-[#E07A5F]/30'}`}>
                   <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(220px,1.55fr)_minmax(220px,1.1fr)_minmax(170px,0.95fr)_auto] lg:items-center lg:gap-4">
                     <div className="flex items-center gap-3">
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-stone-200 text-stone-500' : 'bg-[#3D405B] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
-                      <div className="min-w-0"><h3 className="truncate text-base font-bold text-[#3D405B] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-[var(--hover-bg)] text-[var(--text-secondary)]' : 'bg-[#3D405B] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
+                      <div className="min-w-0"><h3 className="truncate text-base font-bold text-[var(--text-heading)] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
                     </div>
                     <div>
-                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-stone-100"><div className={`h-full ${tone.progress}`} style={{ width: `${progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{progressPercent}%</span></div>
-                      <p className="text-[11px] text-stone-500">{progressLabel}</p>
-                      {followUpTargetDateLabel && <p className="mt-0.5 text-[10px] text-stone-400">Cible: {followUpTargetDateLabel}</p>}
+                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-[var(--progress-bg)]"><div className={`h-full ${tone.progress}`} style={{ width: `${progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{progressPercent}%</span></div>
+                      <p className="text-[11px] text-[var(--text-secondary)]">{progressLabel}</p>
+                      {followUpTargetDateLabel && <p className="mt-0.5 text-[10px] text-[var(--text-secondary)]">Cible: {followUpTargetDateLabel}</p>}
                     </div>
-                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">Dernière modif.</p><p className="text-xs font-bold text-[#3D405B]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-stone-200 bg-stone-50 text-stone-600' : tone.badge}`}>{statusBadgeLabel}</span></div>
+                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">Dernière modif.</p><p className="text-xs font-bold text-[var(--text-heading)]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-main)]' : tone.badge}`}>{statusBadgeLabel}</span></div>
                     <div className="flex items-center justify-end gap-2">
                       {hasDraft && !file.archived && onResumeDraft ? (
                         <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre</button>
                       ) : (
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-50 text-stone-300 transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)] transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>
                       )}
                     </div>
                   </div>
@@ -787,16 +787,16 @@ export const Dashboard: React.FC<Props> = ({
             })}
 
             {filteredFiles.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-stone-200 bg-white py-10 text-center">
-                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-stone-50 text-stone-300"><Search size={22} /></div>
-                <p className="text-sm font-medium text-stone-500">{showArchived ? 'Aucun patient archivé.' : searchQuery ? `Aucun patient trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
+              <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--card-bg)] py-10 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)]"><Search size={22} /></div>
+                <p className="text-sm font-medium text-[var(--text-secondary)]">{showArchived ? 'Aucun patient archivé.' : searchQuery ? `Aucun patient trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
                 {!showArchived && <button onClick={() => setIsNewPatientChoiceOpen(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#E07A5F]/30 bg-[#E07A5F]/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-[#E07A5F] transition-colors hover:bg-[#E07A5F] hover:text-white"><Plus size={14} /> Nouveau patient</button>}
               </div>
             )}
 
             {hasMorePatients && !showArchived && (
               <div className="flex justify-center pt-4">
-                <button onClick={() => onLoadMorePatients && onLoadMorePatients()} disabled={isLoadingMorePatients || !onLoadMorePatients} className="rounded-xl border border-stone-200 px-6 py-2.5 text-[10px] font-bold uppercase tracking-widest text-stone-500 transition-all hover:border-[#3D405B] hover:bg-white hover:text-[#3D405B] disabled:opacity-50">
+                  <button onClick={() => onLoadMorePatients && onLoadMorePatients()} disabled={isLoadingMorePatients || !onLoadMorePatients} className="rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-2.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] transition-all hover:border-[var(--text-heading)] hover:text-[var(--text-heading)] disabled:opacity-50">
                   {isLoadingMorePatients ? <span className="inline-flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Chargement...</span> : 'Voir plus'}
                 </button>
               </div>

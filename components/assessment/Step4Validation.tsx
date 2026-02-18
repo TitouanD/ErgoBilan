@@ -14,35 +14,35 @@ const parseBold = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i} className="font-bold text-stone-900">{part.slice(2, -2)}</strong>;
+            return <strong key={i} className="font-bold text-stone-900 dark:text-[var(--text-heading)]">{part.slice(2, -2)}</strong>;
         }
         return part;
     });
 };
 
 const renderMarkdown = (text: string) => {
-    if (!text) return <p className="text-stone-400 italic">Aucun contenu.</p>;
+    if (!text) return <p className="text-stone-400 dark:text-[var(--text-disabled)] italic">Aucun contenu.</p>;
 
     return text.split('\n').map((line, idx) => {
         const trimmed = line.trim();
         if (!trimmed) return <div key={idx} className="h-4"></div>;
         if (trimmed.startsWith('### ')) {
-            return <h4 key={idx} className="text-lg font-bold text-stone-800 mt-6 mb-2">{trimmed.replace('### ', '')}</h4>;
+            return <h4 key={idx} className="text-lg font-bold text-stone-800 dark:text-[var(--text-heading)] mt-6 mb-2">{trimmed.replace('### ', '')}</h4>;
         }
         if (trimmed.startsWith('## ')) {
-            return <h3 key={idx} className="text-xl font-serif font-bold text-stone-900 mt-8 mb-4 border-b border-stone-100 pb-2">{trimmed.replace('## ', '')}</h3>;
+            return <h3 key={idx} className="text-xl font-serif font-bold text-stone-900 dark:text-[var(--text-heading)] mt-8 mb-4 border-b border-stone-100 dark:border-[var(--border-color)] pb-2">{trimmed.replace('## ', '')}</h3>;
         }
         if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
              return (
                 <div key={idx} className="flex gap-3 ml-2 mb-2 items-start">
                     <div className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2.5 shrink-0"></div>
-                    <p className="text-stone-700 leading-relaxed text-base text-justify">
+                    <p className="text-stone-700 dark:text-[var(--text-main)] leading-relaxed text-base text-justify">
                          {parseBold(trimmed.replace(/^[*-]\s+/, ''))}
                     </p>
                 </div>
             );
         }
-        return <p key={idx} className="text-stone-700 leading-relaxed text-base mb-2 text-justify">{parseBold(line)}</p>;
+        return <p key={idx} className="text-stone-700 dark:text-[var(--text-main)] leading-relaxed text-base mb-2 text-justify">{parseBold(line)}</p>;
     });
 };
 
@@ -126,24 +126,24 @@ const SectionCard: React.FC<{
     const isValidated = section.status === 'validated';
 
     return (
-        <div className={`group rounded-2xl border transition-all duration-300 p-8 mb-6 ${isValidated ? 'bg-white border-emerald-200 shadow-sm' : 'bg-white border-stone-200 shadow-lg shadow-rose-100/50'}`}>
+        <div className={`group rounded-2xl border transition-all duration-300 p-8 mb-6 ${isValidated ? 'bg-[var(--card-bg)] border-emerald-200 shadow-sm' : 'bg-[var(--card-bg)] border-[var(--border-color)] shadow-lg shadow-rose-100/50 dark:shadow-black/20'}`}>
             {/* Header Style Harmonisé avec ReportView */}
-            <div className="flex justify-between items-center mb-6 border-b-2 border-stone-100 pb-2">
+            <div className="flex justify-between items-center mb-6 border-b-2 border-[var(--border-color)] pb-2">
                 <div className="flex items-center gap-2">
                     <div className="text-[#E07A5F]">
                         <FileText size={18} />
                     </div>
-                    <h3 className="text-lg font-bold text-[#3D405B] uppercase tracking-wide">
+                    <h3 className="text-lg font-bold text-[var(--text-heading)] uppercase tracking-wide">
                         {section.title}
                     </h3>
                 </div>
                 
                 {isValidated ? (
-                    <div className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                    <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                         <Check size={14} /> Validé
                     </div>
                 ) : (
-                    <div className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2 animate-pulse">
+                    <div className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2 animate-pulse">
                         <AlertCircle size={14} /> À relire
                     </div>
                 )}
@@ -156,22 +156,22 @@ const SectionCard: React.FC<{
                         <EditorToolbar onAction={handleFormat} />
                         <textarea 
                             ref={textareaRef}
-                            className="w-full p-6 bg-stone-50 rounded-xl border border-stone-200 focus:bg-white focus:ring-4 focus:ring-rose-50 focus:border-rose-300 outline-none text-stone-900 leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
+                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
                             value={editContent}
                             onChange={(e) => setEditContent(e.target.value)}
                             placeholder="Rédigez votre contenu ici..."
                         />
                     </div>
                     
-                    <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
-                        <div className="flex items-center gap-2 text-xs text-blue-800">
+                    <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800/30">
+                        <div className="flex items-center gap-2 text-xs text-blue-800 dark:text-blue-300">
                             <Info size={14} />
                             <span>Utilisez la barre d'outils pour mettre en forme.</span>
                         </div>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-2">
-                        <button onClick={() => setIsEditing(false)} className="px-5 py-2 text-stone-400 font-bold text-xs uppercase tracking-wider hover:text-stone-700">Annuler</button>
+                        <button onClick={() => setIsEditing(false)} className="px-5 py-2 text-stone-400 dark:text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider hover:text-stone-700 dark:hover:text-[var(--text-heading)]">Annuler</button>
                         <button onClick={handleSave} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-colors shadow-md flex items-center gap-2">
                             <Check size={16} /> Enregistrer
                         </button>
@@ -183,10 +183,10 @@ const SectionCard: React.FC<{
                         {renderMarkdown(section.content)}
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-6 border-t border-stone-50">
+                    <div className="flex justify-end gap-3 pt-6 border-t border-[var(--border-color)]">
                         <button 
                             onClick={() => setIsEditing(true)}
-                            className="flex items-center gap-2 text-stone-400 hover:text-stone-900 px-4 py-2 rounded-lg hover:bg-stone-50 transition-all font-bold text-xs uppercase tracking-wider"
+                            className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-heading)] px-4 py-2 rounded-lg hover:bg-[var(--hover-bg)] transition-all font-bold text-xs uppercase tracking-wider"
                         >
                             <Edit2 size={14} /> Modifier
                         </button>
@@ -221,16 +221,16 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
   return (
     <div className="max-w-4xl mx-auto pb-40 animate-in fade-in duration-500">
       
-      <div className="bg-white sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 border border-stone-200 mb-12 flex items-center justify-between ring-1 ring-white transition-all">
+      <div className="bg-[var(--card-bg)] sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 dark:shadow-black/20 border border-[var(--border-color)] mb-12 flex items-center justify-between ring-1 ring-[var(--card-bg)] transition-all">
         <div className="space-y-1">
-            <h2 className="text-2xl font-serif font-bold text-stone-900">Relecture</h2>
-            <p className="text-stone-500 font-medium text-sm">Vérifiez et ajustez le contenu généré par l’IA.</p>
+            <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
+            <p className="text-[var(--text-secondary)] font-medium text-sm">Vérifiez et ajustez le contenu généré par l'IA.</p>
         </div>
         <div className="flex items-center gap-3">
             <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
               allValidated
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
+                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700/40'
+                : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-500 border-amber-200 dark:border-amber-700/40'
             }`}>
               {validatedCount}/{sections.length} validé(s)
             </div>
@@ -238,7 +238,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
               <button
                 type="button"
                 onClick={handleValidateAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 dark:border-emerald-700/40 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
               >
                 <CheckCheck size={14} />
                 Tout valider
@@ -250,7 +250,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
 
       <div className="space-y-4">
         {sections.length === 0 ? (
-            <div className="text-center py-20 text-stone-400 italic">
+            <div className="text-center py-20 text-stone-400 dark:text-[var(--text-disabled)] italic">
                 Génération en attente...
             </div>
         ) : (
@@ -261,16 +261,16 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
       </div>
 
       <div className="fixed bottom-10 left-0 right-0 z-40 pointer-events-none flex justify-center">
-        <div className="bg-white p-3 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3 border border-stone-200">
+        <div className="bg-[var(--card-bg)] p-3 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3 border border-[var(--border-color)]">
             
             <button 
                 onClick={onBack} 
-                className="px-6 py-3 rounded-xl flex items-center gap-2 text-stone-400 hover:text-stone-800 hover:bg-stone-50 transition-colors font-bold text-sm uppercase tracking-wider"
+                className="px-6 py-3 rounded-xl flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--hover-bg)] transition-colors font-bold text-sm uppercase tracking-wider"
             >
                 <ArrowLeft size={18} /> Retour
             </button>
             
-            <div className="h-8 w-px bg-stone-100"></div>
+            <div className="h-8 w-px bg-[var(--border-color)] mx-1"></div>
             
             <button 
                 onClick={onNext}

@@ -8,7 +8,7 @@ export const ThemeToggle: React.FC = () => {
   return (
     <button
       onClick={toggleTheme}
-      className="relative h-8 w-8 rounded-full flex items-center justify-center transition-all hover:bg-stone-100 dark:hover:bg-stone-800"
+      className="relative h-8 w-8 rounded-full flex items-center justify-center transition-all hover:bg-[var(--hover-bg)]"
       title={theme === 'light' ? 'Activer le mode nuit' : 'Activer le mode jour'}
       aria-label={theme === 'light' ? 'Activer le mode nuit' : 'Activer le mode jour'}
     >

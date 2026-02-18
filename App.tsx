@@ -312,12 +312,12 @@ const AppRouter = () => {
                     {mode === 'assessment' ? (
                         <>
                             {assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg mr-2"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
-                            <button onClick={onSaveAndQuit} className="flex items-center gap-2 px-4 py-2 bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border border-stone-200 hover:border-rose-200"><Save size={16} /> <span className="hidden md:inline">Sauvegarder & Quitter</span></button>
+                            <button onClick={onSaveAndQuit} className="flex items-center gap-2 px-4 py-2 bg-[var(--btn-secondary-bg)] hover:bg-rose-50 text-[var(--btn-secondary-text)] hover:text-rose-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border border-[var(--border-color)] hover:border-rose-200"><Save size={16} /> <span className="hidden md:inline">Sauvegarder &amp; Quitter</span></button>
                         </>
                     ) : (
                         <>
                             <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
-                            <div className="h-8 w-px bg-stone-200 mx-1"></div>
+                            <div className="h-8 w-px bg-[var(--border-color)] mx-1"></div>
 
                             <div className="relative z-50" ref={accountMenuRef} onMouseDown={(event) => event.stopPropagation()}>
                                 <button
@@ -524,18 +524,18 @@ const AppRouter = () => {
             {/* POPUP CONFIRMATION IA */}
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white p-8 rounded-[32px] max-w-md text-center shadow-2xl">
+                    <div className="bg-[var(--card-bg)] p-8 rounded-[32px] max-w-md text-center shadow-2xl border border-[var(--border-color)]">
                         <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]"><FileText size={40} /></div>
-                        <h3 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Vérification avant analyse</h3>
-                        <p className="text-stone-500 text-sm mb-4 font-medium leading-relaxed">
+                        <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Vérification avant analyse</h3>
+                        <p className="text-[var(--text-secondary)] text-sm mb-4 font-medium leading-relaxed">
                             La qualité du rapport dépend de la précision de vos observations et du diagnostic posé. Avez-vous tout relu ?
                         </p>
-                        <div className="bg-stone-50 p-3 rounded-xl mb-8 border border-stone-100 flex gap-2 text-left">
+                        <div className="bg-[var(--card-bg-raised)] p-3 rounded-xl mb-8 border border-[var(--border-color)] flex gap-2 text-left">
                             <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
-                            <div className="space-y-1"><p className="text-[10px] text-stone-500 leading-relaxed"><strong>Confidentialité :</strong> Les données sont anonymisées automatiquement avant l'envoi.</p></div>
+                            <div className="space-y-1"><p className="text-[10px] text-[var(--text-secondary)] leading-relaxed"><strong>Confidentialité :</strong> Les données sont anonymisées automatiquement avant l'envoi.</p></div>
                         </div>
                         <div className="flex gap-4">
-                            <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-xs uppercase tracking-wider">Retourner ajouter des détails</button>
+                            <button onClick={() => setShowConfirmGeneration(false)} className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-xs uppercase tracking-wider">Retourner ajouter des détails</button>
                             <button id="demo-btn-generate" onClick={onTriggerGeneration} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">
                                 {isDemoMode ? "Générer" : "Générer (1 crédit)"}
                             </button>

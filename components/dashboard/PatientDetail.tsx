@@ -58,7 +58,7 @@ const followupTone: Record<PatientFollowup['status'], string> = {
   overdue: 'border-rose-200 bg-rose-50 text-rose-700',
   scheduled: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  snoozed: 'border-stone-200 bg-stone-50 text-stone-700',
+  snoozed: 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-main)]',
 };
 
 const addMonths = (dateIso: string, months: number): string => {
@@ -104,29 +104,29 @@ const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () =>
   const isValid = input.toLowerCase() === 'supprimer';
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#3D405B]/80 p-4 backdrop-blur-md">
-      <div className="relative w-full max-w-md rounded-[32px] bg-white p-8 text-center shadow-2xl">
-        <button onClick={onCancel} className="absolute right-6 top-6 text-stone-300 hover:text-stone-500">
+      <div className="relative w-full max-w-md rounded-[32px] bg-[var(--card-bg)] p-8 text-center shadow-2xl">
+        <button onClick={onCancel} className="absolute right-6 top-6 text-[var(--text-disabled)] hover:text-[var(--text-secondary)]">
           <X size={24} />
         </button>
         <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-rose-50 text-rose-500">
           <Trash2 size={32} />
         </div>
-        <h3 className="mb-2 font-serif text-2xl font-bold text-[#3D405B]">Zone de danger</h3>
-        <p className="mb-6 text-sm text-stone-500">Tapez "supprimer" pour confirmer la suppression définitive.</p>
+        <h3 className="mb-2 font-serif text-2xl font-bold text-[var(--text-heading)]">Zone de danger</h3>
+        <p className="mb-6 text-sm text-[var(--text-secondary)]">Tapez "supprimer" pour confirmer la suppression définitive.</p>
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          className="w-full rounded-xl border-2 border-stone-200 p-4 text-center font-bold text-rose-500 outline-none focus:border-rose-500"
+          className="w-full rounded-xl border-2 border-[var(--input-border)] p-4 text-center font-bold text-rose-500 outline-none focus:border-rose-500 bg-[var(--input-bg)]"
           placeholder="supprimer"
         />
         <div className="mt-6 flex gap-3">
-          <button onClick={onCancel} className="flex-1 rounded-xl py-3 font-bold text-stone-400 hover:bg-stone-50">
+          <button onClick={onCancel} className="flex-1 rounded-xl py-3 font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
             Annuler
           </button>
           <button
             onClick={onConfirm}
             disabled={!isValid}
-            className={`flex-1 rounded-xl py-3 font-bold text-white ${isValid ? 'bg-rose-500 hover:bg-rose-600' : 'cursor-not-allowed bg-stone-300'}`}
+            className={`flex-1 rounded-xl py-3 font-bold text-white ${isValid ? 'bg-rose-500 hover:bg-rose-600' : 'cursor-not-allowed bg-[var(--card-bg-raised)] text-[var(--text-disabled)]'}`}
           >
             Supprimer
           </button>
@@ -328,7 +328,7 @@ export const PatientDetail: React.FC<Props> = ({
 
   return (
     <div className="mx-auto max-w-7xl animate-in slide-in-from-right px-6 py-10 duration-500">
-      <button onClick={onBack} className="mb-8 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-stone-400 hover:text-[#3D405B]">
+      <button onClick={onBack} className="mb-8 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-heading)]">
         <ArrowLeft size={16} /> Retour Dashboard
       </button>
 
@@ -349,12 +349,12 @@ export const PatientDetail: React.FC<Props> = ({
 
       <div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
         <div>
-          <h1 className="font-serif text-4xl font-bold text-[#3D405B]">{file.patient.firstName} {file.patient.lastName}</h1>
-          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-stone-400">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
-          {followup && <p className="mt-2 text-sm font-semibold text-[#3D405B]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
+          <h1 className="font-serif text-4xl font-bold text-[var(--text-heading)]">{file.patient.firstName} {file.patient.lastName}</h1>
+          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
+          {followup && <p className="mt-2 text-sm font-semibold text-[var(--text-heading)]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
         </div>
         <div className="flex gap-3">
-          <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-6 py-4 text-sm font-bold text-[#3D405B] hover:border-[#E07A5F]">
+          <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-4 text-sm font-bold text-[var(--text-heading)] hover:border-[#E07A5F]">
             <Plus size={18} className="text-[#E07A5F]" /> Mini-réévaluation
           </button>
           <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[#3D405B] px-8 py-4 text-sm font-bold text-white hover:bg-[#2c2e42]">
@@ -365,8 +365,8 @@ export const PatientDetail: React.FC<Props> = ({
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-8 lg:col-span-2">
-          <div className="rounded-[32px] border border-stone-100 bg-white p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[#3D405B]"><TrendingUp size={22} className="text-[#E07A5F]" /> Evolution</h2>
+          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] p-8 shadow-sm">
+            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><TrendingUp size={22} className="text-[#E07A5F]" /> Evolution</h2>
             {chartData.length >= 3 ? (
               <div className="h-[280px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -380,22 +380,22 @@ export const PatientDetail: React.FC<Props> = ({
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="text-sm text-stone-500">Pas assez de points comparables (minimum 3) pour afficher une courbe pertinente.</p>
+              <p className="text-sm text-[var(--text-secondary)]">Pas assez de points comparables (minimum 3) pour afficher une courbe pertinente.</p>
             )}
           </div>
 
-          <div className="rounded-[32px] border border-stone-100 bg-white p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[#3D405B]"><FileText size={20} className="text-[#3D405B]" /> Matrice résultats multi-tests</h2>
+          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] p-8 shadow-sm">
+            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><FileText size={20} className="text-[var(--text-heading)]" /> Matrice résultats multi-tests</h2>
             {matrixSnapshots.length === 0 || matrixRows.length === 0 ? (
-              <p className="text-sm text-stone-500">Aucun jeu de scores exploitable pour afficher la matrice.</p>
+              <p className="text-sm text-[var(--text-secondary)]">Aucun jeu de scores exploitable pour afficher la matrice.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-stone-400">Sous-test</th>
+                      <th className="sticky left-0 z-10 bg-[var(--card-bg)] px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Sous-test</th>
                       {matrixSnapshots.map((snapshot) => (
-                        <th key={snapshot.id} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                        <th key={snapshot.id} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                           {new Date(snapshot.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                         </th>
                       ))}
@@ -403,10 +403,10 @@ export const PatientDetail: React.FC<Props> = ({
                   </thead>
                   <tbody>
                     {matrixRows.map((subtestId) => (
-                      <tr key={subtestId} className="odd:bg-stone-50/60">
-                        <td className="sticky left-0 bg-inherit px-3 py-2 text-xs font-semibold text-[#3D405B]">{subtestId}</td>
+                      <tr key={subtestId} className="odd:bg-[var(--hover-bg)]">
+                        <td className="sticky left-0 bg-inherit px-3 py-2 text-xs font-semibold text-[var(--text-heading)]">{subtestId}</td>
                         {matrixSnapshots.map((snapshot) => (
-                          <td key={`${snapshot.id}-${subtestId}`} className="px-3 py-2 text-xs text-stone-600">
+                          <td key={`${snapshot.id}-${subtestId}`} className="px-3 py-2 text-xs text-[var(--text-secondary)]">
                             {getScoreValue(snapshot.results?.[subtestId])}
                           </td>
                         ))}
@@ -418,33 +418,33 @@ export const PatientDetail: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="rounded-[32px] border border-stone-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-stone-100 p-5">
-              <h2 className="flex items-center gap-2 font-serif text-2xl font-bold text-[#3D405B]"><Calendar size={22} /> Evenements cliniques</h2>
+          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-sm">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] p-5">
+              <h2 className="flex items-center gap-2 font-serif text-2xl font-bold text-[var(--text-heading)]"><Calendar size={22} /> Evenements cliniques</h2>
               <div className="flex gap-2">
                 {(['all', 'formal', 'mini'] as const).map((tab) => (
-                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[#3D405B] bg-[#3D405B] text-white' : 'border-stone-200 text-stone-400'}`}>
+                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[#3D405B] bg-[#3D405B] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}>
                     {tab === 'all' ? 'Tout' : tab === 'formal' ? 'Formels' : 'Mini'}
                   </button>
                 ))}
               </div>
             </div>
             {filteredTimeline.length === 0 ? (
-              <p className="p-8 text-center text-sm text-stone-400">Aucun evenement.</p>
+              <p className="p-8 text-center text-sm text-[var(--text-secondary)]">Aucun evenement.</p>
             ) : (
-              <div className="divide-y divide-stone-100">
+              <div className="divide-y divide-[var(--border-color)]">
                 {filteredTimeline.map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-5">
                     <div>
-                      <p className="text-sm font-bold text-[#3D405B]">{kindLabel[item.kind]}</p>
-                      <p className="text-xs text-stone-400">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} • {item.testName || 'Sans libelle'}</p>
+                      <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} • {item.testName || 'Sans libelle'}</p>
                     </div>
                     {item.hasFormalReport ? (
                       <button onClick={() => onOpenReport(item.id)} className="flex items-center gap-2 rounded-lg bg-[#E07A5F]/10 px-3 py-1 text-[10px] font-bold uppercase text-[#E07A5F]">
                         <FileText size={12} /> Document
                       </button>
                     ) : (
-                      <span className="text-[10px] font-bold uppercase text-stone-400">{Object.keys(item.results || {}).length} scores</span>
+                      <span className="text-[10px] font-bold uppercase text-[var(--text-secondary)]">{Object.keys(item.results || {}).length} scores</span>
                     )}
                   </div>
                 ))}
@@ -453,7 +453,7 @@ export const PatientDetail: React.FC<Props> = ({
           </div>
           {hasMoreHistory && onLoadMoreHistory && (
             <div className="flex justify-center">
-              <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-stone-200 px-6 py-3 text-xs font-bold uppercase tracking-wider text-stone-500 hover:border-[#E07A5F] hover:text-[#3D405B] disabled:opacity-50">
+              <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-[var(--border-color)] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[#E07A5F] hover:text-[var(--text-heading)] disabled:opacity-50">
                 {isLoadingMoreHistory ? 'Chargement...' : 'Charger plus'}
               </button>
             </div>
@@ -462,61 +462,61 @@ export const PatientDetail: React.FC<Props> = ({
 
         <div className="space-y-6">
           <div className="space-y-3">
-            <h3 className="font-serif text-lg font-bold text-[#3D405B]">Documents formels</h3>
+            <h3 className="font-serif text-lg font-bold text-[var(--text-heading)]">Documents formels</h3>
             {formalAssessments.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-stone-200 p-4 text-xs text-stone-400">Aucun document formel.</p>
+              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)]">Aucun document formel.</p>
             ) : (
               formalAssessments.map((item) => (
-                <button key={item.id} onClick={() => onOpenReport(item.id)} className="flex w-full items-center justify-between rounded-2xl border border-stone-100 bg-white p-4 text-left hover:border-[#E07A5F]">
+                <button key={item.id} onClick={() => onOpenReport(item.id)} className="flex w-full items-center justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left hover:border-[#E07A5F]">
                   <div>
-                    <p className="text-sm font-bold text-[#3D405B]">{kindLabel[item.kind]}</p>
-                    <p className="text-[10px] font-bold text-stone-400">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                    <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
+                    <p className="text-[10px] font-bold text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
                   </div>
-                  <ChevronRight size={16} className="text-stone-300" />
+                  <ChevronRight size={16} className="text-[var(--text-disabled)]" />
                 </button>
               ))
             )}
           </div>
 
-          <div className="rounded-[24px] border border-stone-100 bg-white p-6">
-            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-stone-400">Rappel reevaluation</h4>
+          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6">
+            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Rappel reevaluation</h4>
             {followup ? (
               <div className="space-y-4">
                 <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${followupTone[followup.status]}`}>
                   <Clock3 size={12} />
                   {followupLabel[followup.status]}
                 </div>
-                <div className="text-xs text-stone-500">
-                  <p>Échéance : <span className="font-bold text-[#3D405B]">{new Date(followup.dueAt).toLocaleDateString('fr-FR')}</span></p>
-                  {followup.snoozedUntil && <p>Reporté jusqu'au : <span className="font-bold text-[#3D405B]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
+                <div className="text-xs text-[var(--text-secondary)]">
+                  <p>Échéance : <span className="font-bold text-[var(--text-heading)]">{new Date(followup.dueAt).toLocaleDateString('fr-FR')}</span></p>
+                  {followup.snoozedUntil && <p>Reporté jusqu'au : <span className="font-bold text-[var(--text-heading)]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   <button onClick={handleScheduleFollowup} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
                     <Calendar size={12} /> Planifier
                   </button>
-                  <button onClick={handleSnoozeFollowup} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white py-2 text-[10px] font-bold uppercase tracking-wider text-stone-600 hover:bg-stone-50 disabled:opacity-60">
+                  <button onClick={handleSnoozeFollowup} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] py-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-main)] hover:bg-[var(--hover-bg)] disabled:opacity-60">
                     <BellOff size={12} /> Reporter 1 mois
                   </button>
                   {latestFormalIsReevaluation && (
-                    <button onClick={handleMarkFollowupCompleted} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
+                    <button onClick={handleMarkFollowupCompleted} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-[var(--card-bg)] py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
                       <CheckCircle2 size={12} /> Marquer complete
                     </button>
                   )}
                 </div>
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-stone-200 p-4 text-xs text-stone-400">Aucun rappel actif. Creez un bilan formel pour demarrer le suivi.</p>
+              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)]">Aucun rappel actif. Creez un bilan formel pour demarrer le suivi.</p>
             )}
           </div>
 
-          <div className="rounded-[24px] border border-stone-100 bg-white p-6">
-            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-stone-400">Actions dossier</h4>
+          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6">
+            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Actions dossier</h4>
             <div className="space-y-3">
-              <button onClick={handleArchive} disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 text-xs font-bold uppercase tracking-wider text-stone-500 hover:bg-stone-200">
+              <button onClick={handleArchive} disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--progress-bg)] py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--border-color)]">
                 {file.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
                 {file.archived ? 'Désarchiver' : 'Archiver'}
               </button>
-              <button onClick={() => setShowDeleteModal(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 bg-white py-3 text-xs font-bold uppercase tracking-wider text-rose-500 hover:bg-rose-50">
+              <button onClick={() => setShowDeleteModal(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 bg-[var(--card-bg)] py-3 text-xs font-bold uppercase tracking-wider text-rose-500 hover:bg-rose-50">
                 <Trash2 size={16} /> Supprimer
               </button>
             </div>

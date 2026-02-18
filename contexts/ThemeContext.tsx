@@ -24,6 +24,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (error) {
       Logger.warn('THEME', 'Failed to load theme from localStorage', error);
     }
+    // Fall back to OS preference
+    try {
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        Logger.info('THEME', 'Defaulting to dark via OS preference');
+        return 'dark';
+      }
+    } catch {
+      // matchMedia not available
+    }
     return 'light';
   });
 

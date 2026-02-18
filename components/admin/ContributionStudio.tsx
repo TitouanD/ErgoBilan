@@ -844,44 +844,44 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     if (step === 'intro') {
         return (
             <div className="fixed inset-0 z-[50] bg-[#3D405B]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
-                <div className="bg-white max-w-4xl w-full rounded-[40px] overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
-                    <button onClick={onClose} className="absolute top-6 right-6 text-stone-300 hover:text-stone-500 z-10"><X size={24} /></button>
+                <div className="bg-[var(--card-bg)] max-w-4xl w-full rounded-[40px] overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
+                    <button onClick={onClose} className="absolute top-6 right-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] z-10"><X size={24} /></button>
                     <div className="w-full md:w-2/5 bg-[var(--app-bg)] p-10 flex flex-col justify-center items-center relative overflow-hidden">
                         <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-[#E07A5F]/10 rounded-full blur-3xl"></div>
                         <div className="relative z-10 text-center">
                             <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-8 mx-auto transform -rotate-6">
                                 <Scan size={48} className="text-[#E07A5F]" />
                             </div>
-                            <h2 className="font-serif font-bold text-2xl text-[#3D405B] mb-2">Studio de Numérisation</h2>
-                            <p className="text-stone-500 text-sm font-medium">Transformez vos manuels papiers en outils numériques interactifs.</p>
+                            <h2 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Studio de Numérisation</h2>
+                            <p className="text-[var(--text-secondary)] text-sm font-medium">Transformez vos manuels papiers en outils numériques interactifs.</p>
                         </div>
                     </div>
                     <div className="w-full md:w-3/5 p-10 md:p-12">
-                        <h3 className="text-2xl font-bold text-[#3D405B] mb-8">Comment ça marche ?</h3>
+                        <h3 className="text-2xl font-bold text-[var(--text-heading)] mb-8">Comment ça marche ?</h3>
                         <div className="space-y-8">
                             <div className="flex gap-4">
-                                <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">1</div>
+                                <div className="w-10 h-10 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-[var(--text-heading)] font-bold text-lg shrink-0">1</div>
                                 <div>
-                                    <h4 className="font-bold text-[#3D405B]">Usage Personnel & Privé</h4>
-                                    <p className="text-sm text-stone-500 leading-relaxed">Le test est chiffré et stocké dans le silo sécurisé de votre organisation. Il n'est <strong>jamais partagé</strong> avec d'autres utilisateurs.</p>
+                                    <h4 className="font-bold text-[var(--text-heading)]">Usage Personnel & Privé</h4>
+                                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Le test est chiffré et stocké dans le silo sécurisé de votre organisation. Il n'est <strong>jamais partagé</strong> avec d'autres utilisateurs.</p>
                                 </div>
                             </div>
                             <div className="flex gap-4">
-                                <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">2</div>
+                                <div className="w-10 h-10 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-[var(--text-heading)] font-bold text-lg shrink-0">2</div>
                                 <div>
-                                    <h4 className="font-bold text-[#3D405B]">Extraction par IA</h4>
-                                    <p className="text-sm text-stone-500 leading-relaxed">Prenez en photo vos tableaux d'étalonnage. Notre moteur extrait les valeurs et crée une grille de saisie interactive.</p>
+                                    <h4 className="font-bold text-[var(--text-heading)]">Extraction par IA</h4>
+                                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Prenez en photo vos tableaux d'étalonnage. Notre moteur extrait les valeurs et crée une grille de saisie interactive.</p>
                                 </div>
                             </div>
                             <div className="flex gap-4">
-                                <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-[#3D405B] font-bold text-lg shrink-0">3</div>
+                                <div className="w-10 h-10 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-[var(--text-heading)] font-bold text-lg shrink-0">3</div>
                                 <div>
-                                    <h4 className="font-bold text-[#3D405B]">Respect des Droits</h4>
-                                    <p className="text-sm text-stone-500 leading-relaxed">Conformément à l'exception d'interopérabilité, vous devez posséder l'original du test numérisé.</p>
+                                    <h4 className="font-bold text-[var(--text-heading)]">Respect des Droits</h4>
+                                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Conformément à l'exception d'interopérabilité, vous devez posséder l'original du test numérisé.</p>
                                 </div>
                             </div>
                         </div>
-                        <div className="mt-10 pt-6 border-t border-stone-100 flex justify-end">
+                        <div className="mt-10 pt-6 border-t border-[var(--border-color)] flex justify-end">
                             <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
                                 Numériser un test <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                             </button>
@@ -895,8 +895,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     if (step === 'upload' || step === 'processing') {
         return (
             <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
-                <div className="w-full max-w-2xl bg-white rounded-[32px] shadow-xl p-10 text-center relative overflow-hidden">
-                    <button onClick={onClose} className="absolute top-6 left-6 text-stone-400 hover:text-stone-600 flex items-center gap-2 font-bold text-sm uppercase tracking-wider">
+                <div className="w-full max-w-2xl bg-[var(--card-bg)] rounded-[32px] shadow-xl p-10 text-center relative overflow-hidden">
+                    <button onClick={onClose} className="absolute top-6 left-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-2 font-bold text-sm uppercase tracking-wider">
                         <ArrowLeft size={16} /> Annuler
                     </button>
                     <div className="mb-8 flex justify-center">
@@ -904,36 +904,36 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <Camera size={40} />
                         </div>
                     </div>
-                    <h1 className="font-serif text-3xl font-bold text-[#3D405B] mb-4">Scanner un tableau</h1>
-                    <p className="text-stone-500 mb-10 max-w-md mx-auto leading-relaxed">Prenez en photo une page de votre manuel (Tableau des Moyennes/ET ou Table de conversion).</p>
+                    <h1 className="font-serif text-3xl font-bold text-[var(--text-heading)] mb-4">Scanner un tableau</h1>
+                    <p className="text-[var(--text-secondary)] mb-10 max-w-md mx-auto leading-relaxed">Prenez en photo une page de votre manuel (Tableau des Moyennes/ET ou Table de conversion).</p>
                     {step === 'upload' ? (
                         <div className="space-y-6 max-w-md mx-auto">
                             <div className="text-left">
-                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider ml-1">Nom du Test <span className="text-rose-500">*</span></label>
+                                <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1">Nom du Test <span className="text-rose-500">*</span></label>
                                 <input
                                     value={testName}
                                     onChange={(e) => { setTestName(e.target.value); setTestNameError(false); }}
                                     placeholder="Ex: Mon Test Perso"
-                                    className={`w-full p-4 bg-stone-50 rounded-xl border outline-none focus:border-[#E07A5F] font-bold text-[#3D405B] ${testNameError ? 'border-rose-500 bg-rose-50' : 'border-stone-200'}`}
+                                    className={`w-full p-4 bg-[var(--input-bg)] rounded-xl border outline-none focus:border-[#E07A5F] font-bold text-[var(--text-heading)] ${testNameError ? 'border-rose-500 bg-rose-50' : 'border-[var(--input-border)]'}`}
                                 />
                                 {testNameError && <p className="text-xs text-rose-500 font-bold mt-1 ml-1">Le nom est obligatoire.</p>}
                             </div>
-                            <div className="border-3 border-dashed border-stone-200 rounded-[24px] p-10 hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all cursor-pointer group relative">
+                            <div className="border-3 border-dashed border-[var(--border-color)] rounded-[24px] p-10 hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all cursor-pointer group relative">
                                 <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" multiple />
                                 <div className="relative z-10 pointer-events-none">
-                                    <Upload size={32} className="text-stone-300 group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
-                                    <p className="font-bold text-[#3D405B]">Importer la photo</p>
-                                    <p className="text-xs text-stone-400 mt-1">Plusieurs images possibles. L'IA détectera la structure.</p>
+                                    <Upload size={32} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
+                                    <p className="font-bold text-[var(--text-heading)]">Importer la photo</p>
+                                    <p className="text-xs text-[var(--text-secondary)] mt-1">Plusieurs images possibles. L'IA détectera la structure.</p>
                                 </div>
                             </div>
                         </div>
                     ) : (
                         <div className="py-12">
                             <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
-                            <p className="font-bold text-[#3D405B]">Extraction des données...</p>
-                            <p className="text-xs text-stone-400">Analyse en parallèle pour un traitement ultra-rapide</p>
+                            <p className="font-bold text-[var(--text-heading)]">Extraction des données...</p>
+                            <p className="text-xs text-[var(--text-secondary)]">Analyse en parallèle pour un traitement ultra-rapide</p>
                             {files.length > 1 && (
-                                <p className="text-xs text-stone-400 mt-2">{files.length} page{files.length > 1 ? 's' : ''} en cours...</p>
+                                <p className="text-xs text-[var(--text-secondary)] mt-2">{files.length} page{files.length > 1 ? 's' : ''} en cours...</p>
                             )}
                         </div>
                     )}
@@ -949,8 +949,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
                         <Check size={48} strokeWidth={4} />
                     </div>
-                    <h2 className="font-serif text-4xl font-bold text-[#3D405B] mb-4">Test Numérisé !</h2>
-                    <p className="text-stone-500 text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue personnel.</p>
+                    <h2 className="font-serif text-4xl font-bold text-[var(--text-heading)] mb-4">Test Numérisé !</h2>
+                    <p className="text-[var(--text-secondary)] text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue personnel.</p>
                     <button onClick={onClose} className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all">Retour au Dashboard</button>
                 </div>
             </div>
@@ -958,13 +958,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     }
 
     return (
-        <div className="fixed inset-0 z-[50] bg-white flex flex-col h-screen animate-in fade-in duration-300">
-            <div className="h-16 border-b border-stone-200 flex items-center justify-between px-6 bg-white shrink-0 z-20">
+        <div className="fixed inset-0 z-[50] bg-[var(--card-bg)] flex flex-col h-screen animate-in fade-in duration-300">
+            <div className="h-16 border-b border-[var(--border-color)] flex items-center justify-between px-6 bg-[var(--card-bg)] shrink-0 z-20">
                 <div className="flex items-center gap-4">
-                    <button onClick={onClose} className="p-2 hover:bg-stone-100 rounded-lg text-stone-400 hover:text-stone-600 transition-colors"><X size={20} /></button>
+                    <button onClick={onClose} className="p-2 hover:bg-[var(--hover-bg)] rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors"><X size={20} /></button>
                     <div>
                         <div className="flex items-center gap-2">
-                            <h2 className="font-bold text-[#3D405B] max-w-[200px] truncate">{testName || "Nouveau Test"}</h2>
+                            <h2 className="font-bold text-[var(--text-heading)] max-w-[200px] truncate">{testName || "Nouveau Test"}</h2>
                             {tableStructure === 'PARAMETRIC' && (
                                 <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded flex items-center gap-1">
                                     <Calculator size={10} /> Paramétrique (Moy/SD)
@@ -976,7 +976,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </span>
                             )}
                         </div>
-                        <p className="text-xs text-stone-400 flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Chiffré)</p>
+                        <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Chiffré)</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -985,32 +985,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             </div>
 
             <div className="flex-1 flex overflow-hidden">
-                <div className="w-1/2 bg-stone-100 border-r border-stone-200 relative flex flex-col">
+                <div className="w-1/2 bg-[var(--hover-bg)] border-r border-[var(--border-color)] relative flex flex-col">
                     {pages.length > 1 && (
-                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur rounded-full shadow-sm border border-stone-200 px-3 py-1 flex items-center gap-2 z-10">
+                        <div className="absolute top-4 right-4 bg-[var(--card-bg)]/90 backdrop-blur rounded-full shadow-sm border border-[var(--border-color)] px-3 py-1 flex items-center gap-2 z-10">
                             <button
                                 onClick={() => setCurrentFileIndex(Math.max(0, currentFileIndex - 1))}
                                 disabled={currentFileIndex === 0}
-                                className="p-1 rounded-full text-stone-500 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                                className="p-1 rounded-full text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40 disabled:hover:bg-transparent"
                             >
                                 <ArrowLeft size={14} />
                             </button>
-                            <span className="text-xs font-bold text-stone-500">
+                            <span className="text-xs font-bold text-[var(--text-secondary)]">
                                 Page {currentFileIndex + 1} / {pages.length}
                             </span>
                             <button
                                 onClick={() => setCurrentFileIndex(Math.min(pages.length - 1, currentFileIndex + 1))}
                                 disabled={currentFileIndex >= pages.length - 1}
-                                className="p-1 rounded-full text-stone-500 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                                className="p-1 rounded-full text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] disabled:opacity-40 disabled:hover:bg-transparent"
                             >
                                 <ArrowRight size={14} />
                             </button>
                         </div>
                     )}
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur rounded-full shadow-sm border border-stone-200 p-1 flex gap-1 z-10">
-                        <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} className="p-2 hover:bg-stone-100 rounded-full text-stone-500"><ZoomOut size={16} /></button>
-                        <span className="text-xs font-mono font-bold text-stone-400 py-2 px-1 w-12 text-center">{Math.round(zoom * 100)}%</span>
-                        <button onClick={() => setZoom(Math.min(2, zoom + 0.1))} className="p-2 hover:bg-stone-100 rounded-full text-stone-500"><ZoomIn size={16} /></button>
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[var(--card-bg)]/90 backdrop-blur rounded-full shadow-sm border border-[var(--border-color)] p-1 flex gap-1 z-10">
+                        <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} className="p-2 hover:bg-[var(--hover-bg)] rounded-full text-[var(--text-secondary)]"><ZoomOut size={16} /></button>
+                        <span className="text-xs font-mono font-bold text-[var(--text-secondary)] py-2 px-1 w-12 text-center">{Math.round(zoom * 100)}%</span>
+                        <button onClick={() => setZoom(Math.min(2, zoom + 0.1))} className="p-2 hover:bg-[var(--hover-bg)] rounded-full text-[var(--text-secondary)]"><ZoomIn size={16} /></button>
                     </div>
                     <div className="flex-1 overflow-auto flex items-center justify-center p-10 cursor-grab active:cursor-grabbing">
                         <div className="bg-white shadow-2xl transition-transform duration-200 ease-out origin-center relative" style={{ width: 'auto', height: 'auto', transform: `scale(${zoom})` }}>
@@ -1019,28 +1019,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     </div>
                 </div>
 
-                <div className="w-1/2 bg-white flex flex-col">
+                <div className="w-1/2 bg-[var(--card-bg)] flex flex-col">
                     <div className="flex-1 overflow-y-auto p-8">
                         <div className="max-w-3xl mx-auto space-y-12">
 
-                            <div className={`p-4 rounded-xl border flex items-center gap-3 bg-stone-50 border-stone-100`}>
-                                <div className="p-2 rounded-lg bg-white text-[#E07A5F]">
+                            <div className={`p-4 rounded-xl border flex items-center gap-3 bg-[var(--hover-bg)] border-[var(--border-color)]`}>
+                                <div className="p-2 rounded-lg bg-[var(--card-bg)] text-[#E07A5F]">
                                     <FileText size={20} />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block text-stone-400">Nom Global du Test</label>
+                                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block text-[var(--text-secondary)]">Nom Global du Test</label>
                                     <input
                                         value={testName}
                                         onChange={(e) => { setTestName(e.target.value); setTestNameError(false); }}
                                         placeholder="Ex: WISC-V"
-                                        className="bg-transparent font-bold text-[#3D405B] w-full outline-none placeholder:text-stone-300"
+                                        className="bg-transparent font-bold text-[var(--text-heading)] w-full outline-none placeholder:text-[var(--text-disabled)]"
                                     />
                                 </div>
                             </div>
 
                             {/* CATEGORY SELECTOR */}
                             <div>
-                                <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-stone-400">Catégorie du Test</label>
+                                <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-[var(--text-secondary)]">Catégorie du Test</label>
                                 <div className="flex flex-wrap gap-2">
                                     {categoryOptions.map(cat => (
                                         <button
@@ -1048,7 +1048,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             onClick={() => setSelectedCategory(cat.id)}
                                             className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedCategory === cat.id
                                                     ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
-                                                    : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300'
+                                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
                                                 }`}
                                         >
                                             {cat.label}
@@ -1063,12 +1063,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             </div>
 
                             {pages.length > 0 && (
-                                <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
+                                <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 flex flex-col gap-3">
                                     <div className="flex items-center justify-between gap-3">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Pages</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Pages</span>
                                         <button
                                             onClick={handleValidateCurrentPage}
-                                            className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${currentPage?.validated ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-white text-stone-500 border-stone-200 hover:border-[#E07A5F] hover:text-[#E07A5F]'}`}
+                                            className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${currentPage?.validated ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[#E07A5F] hover:text-[#E07A5F]'}`}
                                         >
                                             {currentPage?.validated ? 'Page validée' : 'Valider cette page'}
                                         </button>
@@ -1078,7 +1078,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             <button
                                                 key={page.id}
                                                 onClick={() => setCurrentFileIndex(index)}
-                                                className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:border-stone-300'}`}
+                                                className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'}`}
                                             >
                                                 {`Page ${index + 1}`}
                                                 {page.validated && <Check size={12} className="text-emerald-200" />}
@@ -1089,7 +1089,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             )}
 
                             {testName.trim() && (
-                                <div className={`border rounded-xl p-4 text-sm ${canonicalTest ? 'bg-indigo-50 border-indigo-200 text-indigo-900' : 'bg-stone-50 border-stone-200 text-stone-600'}`}>
+                                <div className={`border rounded-xl p-4 text-sm ${canonicalTest ? 'bg-indigo-50 border-indigo-200 text-indigo-900' : 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-main)]'}`}>
                                     {isCanonicalLoading ? (
                                         <div className="flex items-center gap-2">
                                             <Loader2 size={14} className="animate-spin" />
@@ -1111,23 +1111,23 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             )}
 
                             {currentGroupedEntries.map(([subtest, subRows]) => (
-                                <div key={subtest} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
-                                    <div className="bg-stone-50 px-4 py-3 border-b border-stone-200 flex justify-between items-center">
+                                <div key={subtest} className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
+                                    <div className="bg-[var(--hover-bg)] px-4 py-3 border-b border-[var(--border-color)] flex justify-between items-center">
                                         <div className="flex items-center gap-2 flex-1">
-                                            <Layers size={14} className="text-stone-400" />
+                                            <Layers size={14} className="text-[var(--text-secondary)]" />
                                             <input
                                                 value={subtest}
                                                 onChange={(e) => handleSubtestNameChange(subtest, e.target.value)}
-                                                className="bg-transparent font-bold text-[#3D405B] text-sm w-full outline-none focus:bg-white rounded px-1 transition-all"
+                                                className="bg-transparent font-bold text-[var(--text-heading)] text-sm w-full outline-none focus:bg-[var(--input-bg)] rounded px-1 transition-all"
                                             />
                                         </div>
-                                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">{subRows.length} entrées</span>
+                                        <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{subRows.length} entrées</span>
                                     </div>
 
                                     <div className="p-2">
                                         {/* HEADERS CONDITIONNELS */}
                                         {tableStructure === 'PARAMETRIC' && (
-                                            <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-2 px-3">
+                                            <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-3">
                                                 <div className="col-span-3">Âge / Classe</div>
                                                 <div className="col-span-4 text-center" title="Moyenne Statistique">Moyenne (M)</div>
                                                 <div className="col-span-4 text-center" title="Ecart-Type Statistique">Ecart-Type (SD)</div>
@@ -1146,27 +1146,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                         return entryMap;
                                                     }, new Map<string, ExtractedRow[]>())
                                                 ).map(([label, batchRows], batchIdx) => (
-                                                    <div key={`${subtest}-${batchIdx}`} className="bg-stone-50/50 rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+                                                    <div key={`${subtest}-${batchIdx}`} className="bg-[var(--hover-bg)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm">
 
                                                         {/* BATCH HEADER (L'ÂGE EST ICI UNE SEULE FOIS) */}
-                                                        <div className="bg-stone-100 px-4 py-2 border-b border-stone-200 flex items-center justify-between group/header hover:bg-stone-200/50 transition-colors">
+                                                        <div className="bg-[var(--card-bg-raised)] px-4 py-2 border-b border-[var(--border-color)] flex items-center justify-between group/header hover:bg-[var(--hover-bg)] transition-colors">
                                                             <div className="flex items-center gap-3 flex-1">
-                                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider shrink-0">Groupe :</span>
+                                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider shrink-0">Groupe :</span>
                                                                 <input
                                                                     value={label}
                                                                     onChange={(e) => handleBatchLabelChange(subtest, label, e.target.value)}
-                                                                    className="font-bold text-[#3D405B] text-sm bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
+                                                                    className="font-bold text-[var(--text-heading)] text-sm bg-transparent outline-none focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
                                                                     placeholder="Ex: 4;0 à 4;5 ans"
                                                                 />
                                                             </div>
                                                             <div className="flex items-center gap-2">
-                                                                <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider bg-white px-2 py-0.5 rounded border border-stone-200">{batchRows.length} lignes</span>
+                                                                <span className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider bg-[var(--card-bg)] px-2 py-0.5 rounded border border-[var(--border-color)]">{batchRows.length} lignes</span>
                                                             </div>
                                                         </div>
 
                                                         {/* BATCH ROWS (JUSTE LES SCORES) */}
-                                                        <div className="p-2 bg-white">
-                                                            <div className="grid grid-cols-9 gap-2 text-[9px] font-bold text-stone-400 uppercase tracking-wider mb-2 px-2 text-center bg-stone-50/50 py-1 rounded-lg mx-1">
+                                                        <div className="p-2 bg-[var(--card-bg)]">
+                                                            <div className="grid grid-cols-9 gap-2 text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-2 text-center bg-[var(--hover-bg)] py-1 rounded-lg mx-1">
                                                                 <div className="col-span-2">Brut</div>
                                                                 <div className="col-span-2">NS</div>
                                                                 <div className="col-span-2">ET / Z</div>
@@ -1177,27 +1177,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                             {batchRows.map((row) => {
                                                                 const isConsistent = checkConsistency(row);
                                                                 return (
-                                                                    <div key={row.id} className="grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row hover:bg-stone-50 rounded-lg p-1 transition-colors">
+                                                                    <div key={row.id} className="grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row hover:bg-[var(--hover-bg)] rounded-lg p-1 transition-colors">
                                                                         <div className="col-span-2">
-                                                                            <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-stone-600 transition-all" />
+                                                                            <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
                                                                         </div>
                                                                         <div className="col-span-2">
-                                                                            <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[#3D405B] transition-all" />
+                                                                            <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[var(--text-heading)] transition-all" />
                                                                         </div>
                                                                         <div className="col-span-2">
-                                                                            <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
+                                                                            <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
                                                                         </div>
                                                                         <div className="col-span-2">
-                                                                            <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-white border border-stone-200 rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[#3D405B]'}`} />
+                                                                            <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
                                                                         </div>
                                                                         <div className="col-span-1 text-center">
-                                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-stone-300 hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
+                                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
                                                                         </div>
                                                                     </div>
                                                                 );
                                                             })}
 
-                                                            <button onClick={() => handleAddRowToBatch(subtest, label)} className="mt-2 w-full py-2 border border-dashed border-stone-200 rounded-lg text-stone-400 text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
+                                                            <button onClick={() => handleAddRowToBatch(subtest, label)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
                                                                 <Plus size={12} /> Ajouter une ligne à ce groupe
                                                             </button>
                                                         </div>
@@ -1208,9 +1208,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             // MODE 2 : PARAMETRIC (LISTE PLATE CLASSIQUE)
                                             <>
                                                 {subRows.map((row) => (
-                                                    <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1 hover:bg-stone-50 p-1 rounded-lg transition-colors">
+                                                    <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1 hover:bg-[var(--hover-bg)] p-1 rounded-lg transition-colors">
                                                         <div className="col-span-3">
-                                                            <input value={row.label} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-white rounded-lg border border-stone-200 focus:border-[#E07A5F] outline-none text-sm font-bold text-[#3D405B] transition-all" />
+                                                            <input value={row.label} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
                                                         </div>
                                                         <div className="col-span-4">
                                                             <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
@@ -1219,12 +1219,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                             <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
                                                         </div>
                                                         <div className="col-span-1 text-center">
-                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-stone-300 hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
+                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
                                                         </div>
                                                     </div>
                                                 ))}
 
-                                                <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border dashed border-stone-200 rounded-lg text-stone-400 text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
+                                                <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
                                                     <Plus size={12} /> Ajouter une ligne
                                                 </button>
                                             </>
@@ -1233,7 +1233,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             ))}
 
-                            <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-stone-300 rounded-xl text-stone-400 font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
+                            <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-secondary)] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
                                 <Plus size={18} /> Créer un nouveau bloc (Sous-test)
                             </button>
 
@@ -1245,15 +1245,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             {/* --- MODAL CONFIRMATION LÉGALE --- */}
             {showSaveModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className="w-16 h-16 bg-[#3D405B] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-stone-300">
                                 <Scale size={32} className="text-white" />
                             </div>
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Certification Légale</h3>
-                            <p className="text-center text-sm text-stone-500 mb-6">Pour valider cette numérisation, votre engagement est requis.</p>
-
-                            <div className="bg-stone-50 p-4 rounded-xl border border-stone-100 mb-6">
+                            <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">Certification Légale</h3>
+                            <p className="text-center text-sm text-[var(--text-secondary)] mb-6">Pour valider cette numérisation, votre engagement est requis.</p>
+                            <div className="bg-[var(--hover-bg)] p-4 rounded-xl border border-[var(--border-color)] mb-6">
                                 <label className="flex gap-3 cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -1261,16 +1260,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                         checked={legalConsent}
                                         onChange={(e) => setLegalConsent(e.target.checked)}
                                     />
-                                    <span className="text-xs text-stone-600 font-medium leading-relaxed text-justify">
+                                    <span className="text-xs text-[var(--text-main)] font-medium leading-relaxed text-justify">
                                         Je certifie sur l'honneur être en possession de l'original papier de ce test (Manuel + Cahiers). Cette numérisation est effectuée au titre de l'exception d'interopérabilité (Code de la Propriété Intellectuelle) pour mon usage professionnel personnel et exclusif.
                                     </span>
                                 </label>
                             </div>
-
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowSaveModal(false)}
-                                    className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm"
+                                    className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm"
                                 >
                                     Annuler
                                 </button>
@@ -1290,13 +1288,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             {showUnmappedModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-amber-100">
                                 <BookOpen size={32} className="text-amber-600" />
                             </div>
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Sous-tests non reconnus</h3>
-                            <p className="text-center text-sm text-stone-500 mb-4">Ces sous-tests ne correspondent pas à la liste canonique du test. Voulez-vous les créer quand même ?</p>
+                            <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">Sous-tests non reconnus</h3>
+                            <p className="text-center text-sm text-[var(--text-secondary)] mb-4">Ces sous-tests ne correspondent pas à la liste canonique du test. Voulez-vous les créer quand même ?</p>
 
                             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 text-xs text-amber-800">
                                 {unmappedSubtests.join(', ')}
@@ -1305,7 +1303,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowUnmappedModal(false)}
-                                    className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                                    className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm border border-[var(--border-color)]"
                                 >
                                     Revenir
                                 </button>
@@ -1324,16 +1322,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             {/* --- MODAL MERGE / ATTACH CONFIRMATION --- */}
             {showMergeModal && mergeTarget && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg ${mergeTarget.isPublic ? 'bg-blue-100 shadow-blue-100' : 'bg-amber-100 shadow-amber-100'}`}>
                                 {mergeTarget.isPublic ? <Globe size={32} className="text-blue-600" /> : <Database size={32} className="text-amber-600" />}
                             </div>
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">
+                            <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">
                                 {mergeTarget.isPublic ? 'Test public existant' : 'Test existant détecté'}
                             </h3>
-                            <p className="text-center text-sm text-stone-500 mb-2">
-                                Le test <strong className="text-[#3D405B]">« {mergeTarget.name} »</strong> existe déjà avec {mergeTarget.subtestCount} sous-test{mergeTarget.subtestCount > 1 ? 's' : ''}.
+                            <p className="text-center text-sm text-[var(--text-secondary)] mb-2">
+                                Le test <strong className="text-[var(--text-heading)]">« {mergeTarget.name} »</strong> existe déjà avec {mergeTarget.subtestCount} sous-test{mergeTarget.subtestCount > 1 ? 's' : ''}.
                             </p>
                             {mergeTarget.isPublic && (
                                 <p className="text-center text-xs text-blue-600 bg-blue-50 rounded-lg p-2 mb-4">
@@ -1345,9 +1343,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <div className={`border p-4 rounded-xl mb-6 space-y-2 ${mergeTarget.isPublic ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
                                 <div className="flex items-center gap-2 text-sm">
                                     <Layers size={14} className={`shrink-0 ${mergeTarget.isPublic ? 'text-blue-600' : 'text-amber-600'}`} />
-                                    <span className="text-stone-600">
-                                        <strong className="text-[#3D405B]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à {mergeTarget.isPublic ? 'rattacher' : 'fusionner'}
-                                        {mergeNewSubtests > 0 && <> dont <strong className="text-[#3D405B]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
+                                    <span className="text-[var(--text-main)]">
+                                        <strong className="text-[var(--text-heading)]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à {mergeTarget.isPublic ? 'rattacher' : 'fusionner'}
+                                        {mergeNewSubtests > 0 && <> dont <strong className="text-[var(--text-heading)]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
                                     </span>
                                 </div>
                                 <p className={`text-xs leading-relaxed ${mergeTarget.isPublic ? 'text-blue-700' : 'text-amber-700'}`}>
@@ -1359,7 +1357,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <button
                                     onClick={handleForceCreate}
                                     disabled={isSaving}
-                                    className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                                    className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm border border-[var(--border-color)]"
                                 >
                                     Créer séparé
                                 </button>
@@ -1380,14 +1378,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             {/* --- MODAL FUZZY MATCHES (multiple similar tests found) --- */}
             {showFuzzyModal && fuzzyMatches.length > 0 && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-lg rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                    <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-indigo-100">
                                 <Scale size={32} className="text-indigo-600" />
                             </div>
-                            <h3 className="font-serif font-bold text-xl text-[#3D405B] text-center mb-2">Tests similaires détectés</h3>
-                            <p className="text-center text-sm text-stone-500 mb-6">
-                                Nous avons trouvé des tests qui ressemblent à <strong className="text-[#3D405B]">« {testName} »</strong>. Voulez-vous rattacher vos données à l'un d'eux ?
+                            <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">Tests similaires détectés</h3>
+                            <p className="text-center text-sm text-[var(--text-secondary)] mb-6">
+                                Nous avons trouvé des tests qui ressemblent à <strong className="text-[var(--text-heading)]">« {testName} »</strong>. Voulez-vous rattacher vos données à l'un d'eux ?
                             </p>
 
                             <div className="space-y-2 max-h-[300px] overflow-y-auto mb-6 custom-scrollbar">
@@ -1396,7 +1394,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                         key={match.id}
                                         onClick={() => handleSelectFuzzyMatch(match)}
                                         disabled={isSaving}
-                                        className="w-full text-left p-4 rounded-xl border border-stone-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all group"
+                                        className="w-full text-left p-4 rounded-xl border border-[var(--border-color)] hover:border-indigo-400 hover:bg-indigo-50/50 transition-all group"
                                     >
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-center gap-2">
@@ -1405,15 +1403,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 ) : (
                                                     <Lock size={14} className="text-amber-500 shrink-0" />
                                                 )}
-                                                <span className="font-bold text-sm text-[#3D405B] group-hover:text-indigo-700">
+                                                <span className="font-bold text-sm text-[var(--text-heading)] group-hover:text-indigo-700">
                                                     {match.name}
                                                 </span>
                                             </div>
-                                            <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded font-bold">
+                                            <span className="text-[10px] bg-[var(--hover-bg)] text-[var(--text-secondary)] px-2 py-0.5 rounded font-bold">
                                                 {Math.round(match.similarity_score * 100)}%
                                             </span>
                                         </div>
-                                        <div className="flex gap-3 mt-1 text-xs text-stone-400">
+                                        <div className="flex gap-3 mt-1 text-xs text-[var(--text-secondary)]">
                                             <span>{match.subtests_count} sous-test{match.subtests_count > 1 ? 's' : ''}</span>
                                             <span>{match.organization_id === null ? 'Public' : 'Privé (votre cabinet)'}</span>
                                         </div>
@@ -1424,7 +1422,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowFuzzyModal(false)}
-                                    className="flex-1 py-3 text-stone-400 font-bold hover:bg-stone-50 rounded-xl transition-colors text-sm border border-stone-200"
+                                    className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm border border-[var(--border-color)]"
                                 >
                                     Annuler
                                 </button>

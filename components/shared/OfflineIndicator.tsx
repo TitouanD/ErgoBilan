@@ -39,7 +39,7 @@ export const OfflineIndicator: React.FC = () => {
                             <span className="font-bold">Mode Hors-Ligne.</span> Votre connexion semble interrompue.
                         </div>
                     </div>
-                    <div className="hidden md:block text-xs text-stone-400 bg-white/10 px-3 py-1 rounded-full">
+                    <div className="hidden md:block text-xs text-[var(--text-secondary)] bg-white/10 px-3 py-1 rounded-full">
                         Sauvegarde locale active
                     </div>
                 </div>

@@ -67,7 +67,7 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
     return (
         <div className="fixed inset-0 z-[200] bg-[#3D405B]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
             
-            <div className="w-full max-w-md bg-white rounded-[40px] p-8 shadow-2xl relative overflow-hidden">
+            <div className="w-full max-w-md bg-[var(--card-bg)] rounded-[40px] p-8 shadow-2xl relative overflow-hidden">
                 
                 {/* Header Animé */}
                 <div className="flex flex-col items-center mb-10">
@@ -75,8 +75,8 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                         <div className="absolute inset-0 border-4 border-[#E07A5F]/20 rounded-full border-t-[#E07A5F] animate-spin"></div>
                         <Sparkles size={40} className="text-[#E07A5F] animate-pulse" />
                     </div>
-                    <h2 className="font-serif text-2xl font-bold text-[#3D405B] text-center">Génération en cours</h2>
-                    <div className="flex items-center gap-2 mt-2 text-stone-400 text-xs font-mono bg-stone-50 px-3 py-1 rounded-full">
+                    <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)] text-center">Génération en cours</h2>
+                    <div className="flex items-center gap-2 mt-2 text-[var(--text-secondary)] text-xs font-mono bg-[var(--hover-bg)] px-3 py-1 rounded-full">
                         <Clock size={12} />
                         <span>{Math.floor(elapsed / 1000)}s écoulées</span>
                     </div>
@@ -85,7 +85,7 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                 {/* Stepper Vertical */}
                 <div className="space-y-6 relative mb-10 pl-4">
                     {/* Ligne de connexion */}
-                    <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-stone-100 -z-10"></div>
+                    <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-[var(--border-color)] -z-10"></div>
 
                     {STEPS.map((step, idx) => {
                         const isActive = idx === currentStep;
@@ -96,12 +96,12 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all shadow-sm z-10 ${
                                     isActive ? 'bg-[#E07A5F] border-[#E07A5F] text-white scale-110' : 
                                     isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 
-                                    'bg-white border-stone-200 text-stone-300'
+                                    'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'
                                 }`}>
                                     <step.icon size={14} strokeWidth={3} />
                                 </div>
                                 <div>
-                                    <p className={`text-sm font-bold ${isActive ? 'text-[#3D405B]' : 'text-stone-500'}`}>{step.label}</p>
+                                    <p className={`text-sm font-bold ${isActive ? 'text-[var(--text-heading)]' : 'text-[var(--text-secondary)]'}`}>{step.label}</p>
                                     {isActive && <p className="text-[10px] text-[#E07A5F] font-bold animate-pulse">Traitement...</p>}
                                 </div>
                             </div>
@@ -110,7 +110,7 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                 </div>
 
                 {/* ROI Message Carousel */}
-                <div className="bg-[#fffdf5] border border-[#F2CC8F]/30 p-4 rounded-2xl text-center relative overflow-hidden min-h-[80px] flex items-center justify-center">
+                <div className="bg-[#fffdf5] dark:bg-amber-950/30 border border-[#F2CC8F]/30 dark:border-amber-800/30 p-4 rounded-2xl text-center relative overflow-hidden min-h-[80px] flex items-center justify-center">
                     <p className="text-sm font-medium text-[#d97706] italic animate-in slide-in-from-bottom-2 fade-in duration-500 key={messageIndex}">
                         "{ROI_MESSAGES[messageIndex]}"
                     </p>
@@ -118,13 +118,13 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
 
                 {/* Timeout / Cancel Action */}
                 {showCancel && (
-                    <div className="mt-6 pt-6 border-t border-stone-100 text-center animate-in fade-in slide-in-from-bottom-4">
+                    <div className="mt-6 pt-6 border-t border-[var(--border-color)] text-center animate-in fade-in slide-in-from-bottom-4">
                         <p className="text-xs text-rose-500 font-bold mb-3 flex items-center justify-center gap-2">
                             <XCircle size={14} /> Le traitement est plus long que prévu.
                         </p>
                         <button 
                             onClick={onCancel}
-                            className="text-xs font-bold text-stone-400 hover:text-[#3D405B] underline decoration-stone-300 underline-offset-4 transition-colors"
+                            className="text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)] underline decoration-[var(--border-color)] underline-offset-4 transition-colors"
                         >
                             Annuler et réessayer
                         </button>

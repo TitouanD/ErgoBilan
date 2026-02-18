@@ -26,8 +26,8 @@ export const NetworkErrorScreen: React.FC<Props> = ({ onRetry, onLogout }) => {
                 </div>
 
                 <div className="space-y-2">
-                    <h2 className="text-2xl font-serif font-bold text-[#3D405B]">Connexion échouée</h2>
-                    <p className="text-stone-500 text-sm leading-relaxed">
+                    <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)]">Connexion échouée</h2>
+                    <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                         Impossible de joindre le serveur. Vérifiez votre connexion internet et réessayez.
                     </p>
                 </div>
@@ -47,7 +47,7 @@ export const NetworkErrorScreen: React.FC<Props> = ({ onRetry, onLogout }) => {
                     </button>
                     <button
                         onClick={onLogout}
-                        className="w-full py-3.5 bg-white text-stone-500 rounded-2xl font-medium border border-stone-200 hover:border-stone-300 hover:text-stone-600 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3.5 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-2xl font-medium border border-[var(--border-color)] hover:border-[var(--text-light)] hover:text-[var(--text-main)] transition-all flex items-center justify-center gap-2"
                     >
                         <LogOut size={16} />
                         Se déconnecter

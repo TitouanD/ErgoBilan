@@ -41,15 +41,15 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
   if (view === 'paywall') {
       return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative p-8">
-                <button onClick={onClose} className="absolute top-4 right-4 text-stone-300 hover:text-stone-500"><X size={24} /></button>
+            <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative p-8">
+                <button onClick={onClose} className="absolute top-4 right-4 text-[var(--text-disabled)] hover:text-[var(--text-secondary)]"><X size={24} /></button>
                 
                 <div className="text-center mb-6">
                     <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
                         <Lock size={32} />
                     </div>
-                    <h2 className="font-serif text-2xl font-bold text-[#3D405B]">Plus de crédits disponibles.</h2>
-                    <p className="text-stone-500 mt-2 text-sm">Pour exporter ce bilan, choisissez une option.</p>
+                    <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Plus de crédits disponibles.</h2>
+                    <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour exporter ce bilan, choisissez une option.</p>
                 </div>
 
                 {/* Options d'Action */}
@@ -78,22 +78,22 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                     {/* Option B : One-Off */}
                     <div 
                         onClick={onUnlockOneOff}
-                        className="bg-stone-50 rounded-2xl p-5 border border-stone-100 hover:bg-stone-100 transition-colors cursor-pointer group"
+                        className="bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group"
                     >
                         <div className="flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-white text-stone-400 rounded-lg border border-stone-200"><Coins size={20}/></div>
+                                <div className="p-2 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-lg border border-[var(--border-color)]"><Coins size={20}/></div>
                                 <div>
-                                    <h3 className="font-bold text-stone-600 text-sm">Achat unique (Hors-forfait)</h3>
-                                    <p className="text-xs text-stone-400 font-medium">Débloquer ce bilan pour 15€</p>
+                                    <h3 className="font-bold text-[var(--text-heading)] text-sm">Achat unique (Hors-forfait)</h3>
+                                    <p className="text-xs text-[var(--text-secondary)] font-medium">Débloquer ce bilan pour 15€</p>
                                 </div>
                             </div>
-                            <ArrowRight size={20} className="text-stone-300 group-hover:translate-x-1 transition-transform"/>
+                            <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform"/>
                         </div>
                     </div>
                 </div>
 
-                <p className="text-center text-[10px] text-stone-300">
+                <p className="text-center text-[10px] text-[var(--text-disabled)]">
                     Paiement sécurisé via Stripe. Facture disponible immédiatement.
                 </p>
             </div>
@@ -104,15 +104,15 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
   // --- VUE 2 : LES PLANS (Pricing Table Responsive) ---
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/60 backdrop-blur-sm animate-in fade-in duration-300">
-        <div className="bg-white/95 backdrop-blur-xl w-full max-w-7xl rounded-[32px] shadow-2xl relative flex flex-col h-auto max-h-[95vh]">
+        <div className="bg-[var(--card-bg)] backdrop-blur-xl w-full max-w-7xl rounded-[32px] shadow-2xl relative flex flex-col h-auto max-h-[95vh]">
             
             {/* Header Sticky Mobile */}
-            <div className="p-6 pb-2 md:p-8 flex justify-between items-start shrink-0 border-b border-stone-100 md:border-none">
+            <div className="p-6 pb-2 md:p-8 flex justify-between items-start shrink-0 border-b border-[var(--border-color)] md:border-none">
                 <div>
-                     <h2 className="font-serif text-2xl md:text-3xl font-bold text-[#3D405B]">Votre abonnement</h2>
-                     <p className="text-sm text-stone-500 hidden md:block">Changez de plan à tout moment. Sans engagement.</p>
+                     <h2 className="font-serif text-2xl md:text-3xl font-bold text-[var(--text-heading)]">Votre abonnement</h2>
+                     <p className="text-sm text-[var(--text-secondary)] hidden md:block">Changez de plan à tout moment. Sans engagement.</p>
                 </div>
-                <button onClick={onClose} className="p-2 bg-stone-100 rounded-full text-stone-400 hover:text-[#3D405B]">
+                <button onClick={onClose} className="p-2 bg-[var(--hover-bg)] rounded-full text-[var(--text-secondary)] hover:text-[var(--text-heading)]">
                     <X size={20} />
                 </button>
             </div>
@@ -123,14 +123,14 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                 <div className="flex flex-col lg:flex-row gap-6 items-center justify-center lg:items-stretch xl:items-center">
 
                     {/* COLONNE 1: ESSENTIEL */}
-                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-stone-200 bg-white flex flex-col items-center text-center hover:border-stone-300 transition-colors shadow-sm order-2 lg:order-1">
-                        <h3 className="font-bold text-lg text-[#3D405B]">Essentiel</h3>
+                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] flex flex-col items-center text-center hover:border-[var(--text-secondary)] transition-colors shadow-sm order-2 lg:order-1">
+                        <h3 className="font-bold text-lg text-[var(--text-heading)]">Essentiel</h3>
                         <div className="my-2">
-                            <span className="text-4xl font-serif font-bold text-[#3D405B]">19€</span><span className="text-stone-400 text-sm">/mois</span>
+                            <span className="text-4xl font-serif font-bold text-[var(--text-heading)]">19€</span><span className="text-[var(--text-secondary)] text-sm">/mois</span>
                         </div>
-                        <p className="text-xs text-stone-400 font-medium mb-6">Pour débuter ou compléter</p>
+                        <p className="text-xs text-[var(--text-secondary)] font-medium mb-6">Pour débuter ou compléter</p>
                         
-                        <ul className="space-y-4 text-sm text-stone-600 mb-8 text-left w-full px-2">
+                        <ul className="space-y-4 text-sm text-[var(--text-main)] mb-8 text-left w-full px-2">
                             <FeatureWithTooltip 
                                 icon={Check} 
                                 tooltip="2 dossiers complets inclus chaque mois. Idéal pour une activité complémentaire."
@@ -148,13 +148,13 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 <span className="text-xs text-amber-800 font-bold leading-tight">Reports crédits inclus</span>
                             </FeatureWithTooltip>
 
-                            <li className="flex gap-3"><Coins size={18} className="text-stone-400 shrink-0"/> <span>Hors-forfait : <strong>15€</strong> / bilan</span></li>
+                            <li className="flex gap-3"><Coins size={18} className="text-[var(--text-secondary)] shrink-0"/> <span>Hors-forfait : <strong>15€</strong> / bilan</span></li>
                             
-                            <div className="w-full h-px bg-stone-100 my-2"></div>
+                            <div className="w-full h-px bg-[var(--border-color)] my-2"></div>
 
                             <FeatureWithTooltip 
                                 icon={Check} 
-                                highlightColor="text-[#3D405B]"
+                                highlightColor="text-[var(--text-main)]"
                                 tooltip="Fini les prises de tête avec les manuels. Saisissez le score brut, obtenez instantanément la Note Standard et le Percentile."
                             >
                                 <span>Calculs automatiques inclus</span>
@@ -162,15 +162,15 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
 
                             <FeatureWithTooltip 
                                 icon={Zap} 
-                                highlightColor="text-[#3D405B]"
+                                highlightColor="text-[var(--text-main)]"
                                 tooltip="L'IA génère les paragraphes rédactionnels basés sur vos observations."
                             >
                                 <span>Aide à la rédaction (IA)</span>
                             </FeatureWithTooltip>
                             
-                            <li className="flex gap-3 text-stone-400 line-through decoration-stone-400"><Palette size={18} className="shrink-0"/> <span>Personnalisation (Logo...)</span></li>
+                            <li className="flex gap-3 text-[var(--text-disabled)] line-through decoration-[var(--text-disabled)]"><Palette size={18} className="shrink-0"/> <span>Personnalisation (Logo...)</span></li>
                         </ul>
-                        <button onClick={() => onSelectPlan('essential')} className="mt-auto w-full py-3 border-2 border-[#3D405B] text-[#3D405B] font-bold rounded-xl hover:bg-[#3D405B] hover:text-white transition-all text-sm">Choisir Essentiel</button>
+                        <button onClick={() => onSelectPlan('essential')} className="mt-auto w-full py-3 border-2 border-[var(--text-heading)] text-[var(--text-heading)] font-bold rounded-xl hover:bg-[var(--text-heading)] hover:text-white transition-all text-sm">Choisir Essentiel</button>
                     </div>
 
                     {/* COLONNE 2: PERFORMANCE (LE BEST-SELLER) */}
@@ -237,20 +237,20 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                     </div>
 
                     {/* COLONNE 3: EXPERT (Ex-Premium Illimité, maintenant 20 crédits) */}
-                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-stone-200 bg-white flex flex-col items-center text-center hover:border-stone-300 transition-colors shadow-sm order-3">
-                        <div className="mb-2 p-2 bg-stone-100 text-stone-400 rounded-xl"><Crown size={20}/></div>
-                        <h3 className="font-bold text-lg text-[#3D405B]">Expert</h3>
+                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] flex flex-col items-center text-center hover:border-[var(--text-secondary)] transition-colors shadow-sm order-3">
+                        <div className="mb-2 p-2 bg-[var(--hover-bg)] text-[var(--text-secondary)] rounded-xl"><Crown size={20}/></div>
+                        <h3 className="font-bold text-lg text-[var(--text-heading)]">Expert</h3>
                         <div className="my-2">
-                            <span className="text-4xl font-serif font-bold text-[#3D405B]">89€</span><span className="text-stone-400 text-sm">/mois</span>
+                            <span className="text-4xl font-serif font-bold text-[var(--text-heading)]">89€</span><span className="text-[var(--text-secondary)] text-sm">/mois</span>
                         </div>
-                        <p className="text-xs text-stone-400 font-medium mb-6">Pour les cabinets intensifs</p>
-                        <ul className="space-y-4 text-sm text-stone-600 mb-8 text-left w-full px-2">
+                        <p className="text-xs text-[var(--text-secondary)] font-medium mb-6">Pour les cabinets intensifs</p>
+                        <ul className="space-y-4 text-sm text-[var(--text-main)] mb-8 text-left w-full px-2">
                             <FeatureWithTooltip 
                                 icon={Check} 
                                 highlightColor="text-[#81B29A]"
                                 tooltip="Un volume énorme pour les spécialistes. Coût par bilan : 4,45€. Le tarif le plus bas du marché."
                             >
-                                <span className="text-lg font-bold text-[#3D405B]">20 bilans / mois</span>
+                                <span className="text-lg font-bold text-[var(--text-heading)]">20 bilans / mois</span>
                             </FeatureWithTooltip>
 
                             <li className="flex gap-3"><Check size={18} className="text-[#81B29A] shrink-0"/> <span>Gros volume d'activité</span></li>
@@ -266,7 +266,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                             <li className="flex gap-3"><Sparkles size={18} className="text-[#81B29A] shrink-0"/> <span>Accès Prioritaire IA</span></li>
                             <li className="flex gap-3"><Coins size={18} className="text-[#81B29A] shrink-0"/> <span>Hors-forfait : <strong>5€</strong> / bilan</span></li>
                         </ul>
-                        <button onClick={() => onSelectPlan('expert')} className="mt-auto w-full py-3 border-2 border-stone-200 text-stone-400 font-bold rounded-xl hover:border-[#3D405B] hover:text-[#3D405B] transition-all text-sm">Choisir Expert</button>
+                        <button onClick={() => onSelectPlan('expert')} className="mt-auto w-full py-3 border-2 border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:border-[var(--text-heading)] hover:text-[var(--text-heading)] transition-all text-sm">Choisir Expert</button>
                     </div>
 
                 </div>

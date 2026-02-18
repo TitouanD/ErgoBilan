@@ -5,43 +5,75 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ErgoBilan</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Roboto:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Open+Sans:wght@400;600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
     <style>
       /* Light Theme (Default) */
       :root, body.light-theme {
-        --app-bg: #F9F9F9; /* Coquille d'oeuf */
-        --primary: #E07A5F; /* Terracotta */
-        --secondary: #3D405B; /* Bleu Nuit Profond (Texte) */
-        --success: #81B29A; /* Vert Sauge */
-        --warning: #F2CC8F; /* Ocre / Orange Brûlé */
+        --app-bg: #F9F9F9;
+        --primary: #E07A5F;
+        --secondary: #3D405B;
+        --success: #81B29A;
+        --warning: #F2CC8F;
         --text-main: #3D405B;
+        --text-heading: #1C1C1E;
+        --text-secondary: #6B7280;
         --text-light: #9CA3AF;
+        --text-disabled: #D1D5DB;
         --card-bg: #FFFFFF;
+        --card-bg-raised: #F9F9F9;
         --border-color: #E5E7EB;
         --input-bg: #FFFFFF;
+        --input-border: #D1D5DB;
         --hover-bg: #F3F4F6;
         --shadow: rgba(0, 0, 0, 0.1);
+        --badge-neutral-bg: #F3F4F6;
+        --badge-neutral-text: #374151;
+        --btn-secondary-bg: #F3F4F6;
+        --btn-secondary-text: #374151;
+        --progress-bg: #E5E7EB;
+        --modal-overlay: rgba(61, 64, 91, 0.7);
+        color-scheme: light;
       }
 
       /* Dark Theme */
       body.dark-theme {
-        --app-bg: #1A1A1A; /* Dark background */
-        --primary: #E07A5F; /* Terracotta - keep brand color */
-        --secondary: #8B9DC3; /* Lighter blue for dark mode */
-        --success: #81B29A; /* Vert Sauge - keep as is */
-        --warning: #F2CC8F; /* Ocre - keep as is */
-        --text-main: #E5E7EB; /* Light text */
-        --text-light: #9CA3AF; /* Gray text */
-        --card-bg: #2A2A2A; /* Dark card background */
-        --border-color: #404040;
-        --input-bg: #333333;
-        --hover-bg: #3A3A3A;
-        --shadow: rgba(0, 0, 0, 0.3);
+        --app-bg: #12131F;
+        --primary: #E07A5F;
+        --secondary: #8B9DC3;
+        --success: #81B29A;
+        --warning: #F2CC8F;
+        --text-main: #C8CFE0;
+        --text-heading: #E8EBF4;
+        --text-secondary: #8892AA;
+        --text-light: #5A6278;
+        --text-disabled: #3A4055;
+        --card-bg: #1C1E30;
+        --card-bg-raised: #242640;
+        --border-color: rgba(100, 116, 180, 0.18);
+        --input-bg: #242640;
+        --input-border: rgba(100, 116, 180, 0.25);
+        --hover-bg: #242640;
+        --shadow: rgba(0, 0, 0, 0.45);
+        --badge-neutral-bg: #1E2038;
+        --badge-neutral-text: #C8CFE0;
+        --btn-secondary-bg: #1E2038;
+        --btn-secondary-text: #C8CFE0;
+        --progress-bg: #1E2038;
+        --modal-overlay: rgba(12, 13, 25, 0.8);
+        color-scheme: dark;
       }
       
+      /* Global smooth theme transition */
+      *, *::before, *::after {
+        transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease;
+      }
+      /* Exclude transitions that should remain instant */
+      .no-theme-transition, .no-theme-transition * {
+        transition: none !important;
+      }
+
       body {
         font-family: 'Quicksand', sans-serif;
         background-color: var(--app-bg);
@@ -80,21 +112,28 @@
 
       .custom-scrollbar::-webkit-scrollbar { width: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 10px; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #D1D5DB; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--input-border); }
 
       /* --- STYLES WYSIWYG A4 (Item 1) --- */
       
       /* Vue Écran : On simule le papier sur un fond gris */
+      /* NOTE: .page-a4 intentionally stays white (print canvas) */
       .page-a4 {
         width: 210mm;
         min-height: 297mm;
         padding: 15mm;
         margin: 10mm auto;
         background: white;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1), 0 10px 30px rgba(0,0,0,0.05); /* Ombre portée réaliste */
+        color: #1C1C1E;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15), 0 10px 30px rgba(0,0,0,0.08);
         position: relative;
         box-sizing: border-box;
+        transition: none !important;
+      }
+      /* PDF viewer panel (wraps .page-a4) gets themed; canvas stays white */
+      .pdf-viewer-panel {
+        background-color: var(--app-bg);
       }
 
       /* STYLES D'IMPRESSION */

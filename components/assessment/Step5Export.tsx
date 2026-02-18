@@ -33,7 +33,7 @@ const DebouncedColorInput: React.FC<{
     }, [value]);
 
     return (
-        <div className="h-10 rounded-lg border border-stone-200 relative overflow-hidden mb-1 shadow-sm group">
+        <div className="h-10 rounded-lg border border-[var(--border-color)] relative overflow-hidden mb-1 shadow-sm group">
             <input
                 type="color"
                 value={localValue}
@@ -60,8 +60,8 @@ const ReportToolbar: React.FC<{
     ];
 
     return (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-700 bg-white rounded-full p-2 pl-6 shadow-2xl border border-stone-100 flex items-center gap-4 print:hidden">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#3D405B]">
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-700 bg-[var(--card-bg)] rounded-full p-2 pl-6 shadow-2xl border border-[var(--border-color)] flex items-center gap-4 print:hidden">
+            <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-heading)]">
                 <Palette size={16} className="text-[#E07A5F]" />
                 <span className="hidden md:inline">Styles Rapides :</span>
             </div>
@@ -91,7 +91,7 @@ const ReportToolbar: React.FC<{
                 ))}
             </div>
 
-            <div className="h-6 w-px bg-stone-200 mx-2"></div>
+            <div className="h-6 w-px bg-[var(--border-color)] mx-2"></div>
 
             <button onClick={onOpenEditor} className="bg-[#3D405B] text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-[#2c2e42] transition-colors flex items-center gap-2">
                 <Brush size={12} /> <span className="hidden sm:inline">Éditeur Complet</span>
@@ -119,12 +119,12 @@ const BrandingEditor: React.FC<{
     };
 
     return (
-        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-[150] animate-in slide-in-from-right duration-300 flex flex-col no-print border-l border-stone-200">
-            <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
-                <h3 className="font-serif font-bold text-xl text-[#3D405B] flex items-center gap-2">
+        <div className="fixed inset-y-0 right-0 w-96 bg-[var(--card-bg)] shadow-2xl z-[150] animate-in slide-in-from-right duration-300 flex flex-col no-print border-l border-[var(--border-color)]">
+            <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--card-bg-raised)]">
+                <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] flex items-center gap-2">
                     <Palette size={24} className="text-[#E07A5F]" /> Studio Design
                 </h3>
-                <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-2 hover:bg-stone-200 rounded-full transition-colors"><X size={20} /></button>
+                <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] p-2 hover:bg-[var(--border-color)] rounded-full transition-colors"><X size={20} /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
@@ -150,7 +150,7 @@ const BrandingEditor: React.FC<{
                                 value={branding.documentTitle || "Bilan d'Ergothérapie"}
                                 onChange={(e) => onUpdate({ ...branding, documentTitle: e.target.value })}
                                 placeholder="Bilan d'Ergothérapie"
-                                className="w-full p-3 text-sm border border-stone-200 rounded-xl bg-white focus:bg-white outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[#3D405B] font-bold"
+                                className="w-full p-3 text-sm border border-[var(--border-color)] rounded-xl bg-[var(--input-bg)] focus:bg-[var(--card-bg)] outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[var(--text-heading)] font-bold"
                             />
                         </div>
 
@@ -165,7 +165,7 @@ const BrandingEditor: React.FC<{
                             <div className="grid grid-cols-2 gap-3 mb-4">
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'classic', headerLayout: 'row', headerAlignment: 'left' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center gap-1">
                                         <div className="w-4 h-4 bg-stone-200 rounded-sm"></div>
@@ -176,7 +176,7 @@ const BrandingEditor: React.FC<{
 
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'corporate', headerLayout: 'row', headerAlignment: 'right' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex items-center justify-between gap-1">
                                         <div className="w-1/2 h-2 bg-stone-100 rounded-sm"></div>
@@ -187,7 +187,7 @@ const BrandingEditor: React.FC<{
 
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'centered', headerLayout: 'column', headerAlignment: 'center' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-stone-100 bg-stone-50 hover:border-stone-300'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-white rounded border border-stone-200 p-1 flex flex-col items-center justify-center gap-1">
                                         <div className="w-4 h-4 bg-stone-200 rounded-sm"></div>
@@ -521,7 +521,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
             </div>
 
             {/* Report Preview */}
-            <div className="bg-white shadow-xl shadow-stone-200/50 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full">
+            <div className="pdf-viewer-panel shadow-xl shadow-black/20 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full">
                 <ReportView
                     patient={patient}
                     sections={sections}

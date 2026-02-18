@@ -38,14 +38,14 @@ export const VoiceTextarea: React.FC<{
 
     return (
         <div className="relative">
-            {label && <label className="block text-xs font-bold text-stone-400 uppercase tracking-wider mb-2">{label}</label>}
+            {label && <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{label}</label>}
             <div className="relative">
                 <textarea
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={placeholder}
                     rows={rows}
-                    className={`w-full bg-white border rounded-xl p-4 text-stone-700 placeholder:text-stone-300 outline-none focus:ring-2 focus:ring-[#E07A5F]/30 focus:border-[#E07A5F]/50 resize-none leading-relaxed pr-12 ${className}`}
+                    className={`w-full bg-[var(--input-bg)] border rounded-xl p-4 text-[var(--text-main)] placeholder:text-[var(--text-disabled)] outline-none focus:ring-2 focus:ring-[#E07A5F]/30 focus:border-[#E07A5F]/50 resize-none leading-relaxed pr-12 ${className}`}
                 />
                 {isSupported && (
                     <button
@@ -54,7 +54,7 @@ export const VoiceTextarea: React.FC<{
                         className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${
                             isListening 
                                 ? 'bg-red-100 text-red-600 animate-pulse shadow-lg shadow-red-200' 
-                                : 'bg-stone-100 text-stone-400 hover:bg-[#E07A5F]/10 hover:text-[#E07A5F]'
+                                : 'bg-[var(--progress-bg)] text-[var(--text-secondary)] hover:bg-[#E07A5F]/10 hover:text-[#E07A5F]'
                         }`}
                         title={isListening ? 'Arrêter la dictée' : 'Dictée vocale'}
                     >
@@ -121,24 +121,24 @@ const SectionSummary: React.FC<{
     const hasMore = filledFields.length > 4;
     
     return (
-        <div className={`border rounded-2xl transition-all ${isFilled ? 'border-stone-100 bg-white' : 'border-amber-200 bg-amber-50/30'}`}>
+        <div className={`border rounded-2xl transition-all ${isFilled ? 'border-[var(--border-color)] bg-[var(--card-bg)]' : 'border-amber-200 dark:border-amber-800/20 bg-amber-50/30 dark:bg-amber-950/20'}`}>
             <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-                    <div className={`p-2 rounded-xl ${isFilled ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                    <div className={`p-2 rounded-xl ${isFilled ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'}`}>
                         <FileText size={16} />
                     </div>
                     <div className="flex-1">
-                        <h4 className="font-bold text-sm text-[#3D405B]">{title}</h4>
+                        <h4 className="font-bold text-sm text-[var(--text-heading)]">{title}</h4>
                         <span className={`text-[10px] font-bold uppercase tracking-wider ${isFilled ? 'text-emerald-500' : 'text-amber-500'}`}>
                             {isFilled ? `✓ ${filledFields.length} champ${filledFields.length > 1 ? 's' : ''} renseigné${filledFields.length > 1 ? 's' : ''}` : '⚠ À compléter'}
                             {emptyFields.length > 0 && isFilled && <span className="text-stone-300 ml-2">· {emptyFields.length} vide{emptyFields.length > 1 ? 's' : ''}</span>}
                         </span>
                     </div>
-                    <div className="p-1 text-stone-300">
+                    <div className="p-1 text-[var(--text-disabled)]">
                         {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </div>
                 </div>
-                <button onClick={onEditSection} className="p-2 hover:bg-stone-100 rounded-xl transition-colors text-stone-400 hover:text-[#E07A5F] ml-2" title="Modifier cette section">
+                <button onClick={onEditSection} className="p-2 hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-[var(--text-secondary)] hover:text-[#E07A5F] ml-2" title="Modifier cette section">
                     <Edit3 size={16} />
                 </button>
             </div>
@@ -147,9 +147,9 @@ const SectionSummary: React.FC<{
             {!expanded && filledFields.length > 0 && (
                 <div className="px-4 pb-3 flex flex-wrap gap-x-4 gap-y-1">
                     {preview.map((f, i) => (
-                        <span key={i} className="text-xs text-stone-500">
-                            <span className="text-stone-400">{f.label}:</span>{' '}
-                            <span className="font-medium text-stone-600">{(f.value?.length || 0) > 50 ? f.value?.slice(0, 50) + '…' : f.value}</span>
+                        <span key={i} className="text-xs text-[var(--text-secondary)]">
+                            <span className="text-[var(--text-secondary)]">{f.label}:</span>{' '}
+                            <span className="font-medium text-[var(--text-main)]">{(f.value?.length || 0) > 50 ? f.value?.slice(0, 50) + '\u2026' : f.value}</span>
                         </span>
                     ))}
                     {hasMore && <span className="text-xs text-stone-300 italic">+{filledFields.length - 4}</span>}
@@ -158,12 +158,12 @@ const SectionSummary: React.FC<{
 
             {/* Expanded — all fields displayed */}
             {expanded && (
-                <div className="px-4 pb-4 pt-1 border-t border-stone-50 space-y-2 animate-in slide-in-from-top-2">
+                <div className="px-4 pb-4 pt-1 border-t border-[var(--border-color)] space-y-2 animate-in slide-in-from-top-2">
                     {fields.map((f, i) => (
                         <div key={i} className="flex gap-2 text-xs">
-                            <span className="text-stone-400 min-w-[90px] shrink-0 text-right">{f.label}</span>
+                            <span className="text-[var(--text-secondary)] min-w-[90px] shrink-0 text-right">{f.label}</span>
                             {f.value?.trim() ? (
-                                <span className="font-medium text-stone-700 whitespace-pre-wrap">{f.value}</span>
+                                <span className="font-medium text-[var(--text-main)] whitespace-pre-wrap">{f.value}</span>
                             ) : (
                                 <span className="italic text-stone-300">—</span>
                             )}
@@ -332,10 +332,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
   return (
     <div className="max-w-4xl mx-auto pb-20 animate-in fade-in duration-500">
       
-      <div className="mb-8 border-b border-stone-200 pb-6 flex justify-between items-end relative z-10">
+      <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex justify-between items-end relative z-10">
         <div>
-            <h2 className="text-3xl font-serif font-bold text-stone-900">Dossier Patient</h2>
-            <p className="text-stone-500 font-medium mt-2">
+            <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Dossier Patient</h2>
+            <p className="text-[var(--text-secondary)] font-medium mt-2">
                 {hasParentData ? 'Revue des données transmises par la famille.' : 'Saisie des informations patient.'}
             </p>
         </div>
@@ -357,12 +357,12 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
 
       {/* PROGRESS INDICATOR */}
       {hasParentData && viewMode === 'review' && (
-          <div className="mb-6 bg-white rounded-2xl border border-stone-100 p-4 shadow-sm">
+          <div className="mb-6 bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">Complétion du dossier</span>
-                  <span className="text-sm font-bold text-[#3D405B]">{filledSections}/{totalSections} sections</span>
+                  <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">Complétion du dossier</span>
+                  <span className="text-sm font-bold text-[var(--text-heading)]">{filledSections}/{totalSections} sections</span>
               </div>
-              <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-[var(--progress-bg)] rounded-full overflow-hidden">
                   <div 
                       className="h-full rounded-full transition-all duration-700 ease-out"
                       style={{ 
@@ -375,9 +375,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       )}
 
       {/* CLINICAL NOTES — Always visible, prominently placed, fed to AI */}
-      <div className="bg-gradient-to-br from-[#fffdf5] to-[#fff8ec] border border-[#F2CC8F]/40 rounded-[24px] p-6 mb-8 shadow-sm">
+      <div className="bg-gradient-to-br from-[#fffdf5] to-[#fff8ec] dark:from-amber-950/30 dark:to-amber-950/30 border border-[#F2CC8F]/40 dark:border-amber-800/30 rounded-[24px] p-6 mb-8 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-[#d97706]">
+              <div className="flex items-center gap-2 text-[#d97706] dark:text-amber-400">
                   <FileText size={18} />
                   <h3 className="font-bold text-sm uppercase tracking-wider">Notes Cliniques d'Entretien</h3>
               </div>
@@ -392,7 +392,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
               rows={5}
               className="border-[#F2CC8F]/30 focus:ring-[#F2CC8F]"
           />
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-stone-400">
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-[var(--text-secondary)]">
               <span className="flex items-center gap-1"><AlertTriangle size={10} /> Notes chiffrées, invisibles dans l'espace famille.</span>
               <span className="flex items-center gap-1"><Mic size={10} /> Utilisez le micro pour dicter.</span>
           </div>
@@ -428,7 +428,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
                   <div className="mb-4 flex justify-end">
                       <button 
                           onClick={() => setViewMode('review')}
-                          className="text-xs font-bold text-stone-400 hover:text-[#3D405B] flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-stone-50 transition-colors"
+                      className="text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-[var(--hover-bg)] transition-colors"
                       >
                           <Check size={12} /> Retour à la vue résumée
                       </button>

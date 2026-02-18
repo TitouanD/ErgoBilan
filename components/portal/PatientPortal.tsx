@@ -186,17 +186,17 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   // --- ÉCRAN LOGIN MANUEL ---
   if (loadingStep === 'idle' || (loadingStep === 'error' && !initialUrl)) {
       return (
-          <div className="min-h-screen bg-[#fffbfb] flex flex-col items-center justify-center p-6 text-center relative">
-              <button onClick={onBack} className="absolute top-6 left-6 text-stone-400 hover:text-[#3D405B] flex items-center gap-2 font-bold text-sm uppercase tracking-widest transition-colors z-50">
+          <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 text-center relative">
+              <button onClick={onBack} className="absolute top-6 left-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-2 font-bold text-sm uppercase tracking-widest transition-colors z-50">
                   <ArrowLeft size={16} /> Retour
               </button>
 
-              <div className="w-full max-w-md bg-white p-10 rounded-[32px] shadow-xl border border-stone-100">
+              <div className="w-full max-w-md bg-[var(--card-bg)] p-10 rounded-[32px] shadow-xl border border-[var(--border-color)]">
                   <div className="w-16 h-16 bg-[#3D405B] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#3D405B]/20">
                       <Key size={32} />
                   </div>
-                  <h1 className="font-serif text-2xl font-bold text-[#3D405B] mb-2">Accès Sécurisé</h1>
-                  <p className="text-stone-500 text-sm mb-8 leading-relaxed">
+                  <h1 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">Accès Sécurisé</h1>
+                  <p className="text-[var(--text-secondary)] text-sm mb-8 leading-relaxed">
                       Collez le lien reçu par email pour déverrouiller votre dossier.
                   </p>
 
@@ -207,7 +207,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                               value={pastedLink}
                               onChange={(e) => { setPastedLink(e.target.value); setErrorMessage(''); }}
                               placeholder="https://app.com/?q_id=..."
-                              className="w-full p-4 bg-stone-50 rounded-xl border border-stone-200 outline-none focus:border-[#E07A5F] focus:bg-white transition-all text-sm font-medium text-[#3D405B]"
+                              className="w-full p-4 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] outline-none focus:border-[#E07A5F] focus:bg-[var(--card-bg)] transition-all text-sm font-medium text-[var(--text-main)]"
                           />
                       </div>
                       
@@ -229,13 +229,13 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   // --- ÉCRAN CHARGEMENT ---
   if (loadingStep === 'validating' || loadingStep === 'loading') {
       return (
-          <div className="min-h-screen bg-[#fffbfb] flex flex-col items-center justify-center relative">
+          <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center relative">
               {/* Bouton Annuler/Retour de secours si le chargement bloque */}
-              <button onClick={onBack} className="absolute top-6 left-6 text-stone-400 hover:text-[#3D405B] flex items-center gap-2 font-bold text-sm uppercase tracking-widest transition-colors z-50">
+              <button onClick={onBack} className="absolute top-6 left-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-2 font-bold text-sm uppercase tracking-widest transition-colors z-50">
                   <ArrowLeft size={16} /> Annuler
               </button>
               <Loader2 size={48} className="text-[#E07A5F] animate-spin mb-4" />
-              <p className="text-stone-500 font-medium animate-pulse">Déchiffrement sécurisé...</p>
+              <p className="text-[var(--text-secondary)] font-medium animate-pulse">Déchiffrement sécurisé...</p>
           </div>
       );
   }
@@ -243,21 +243,21 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   // --- ÉCRAN SUCCÈS ---
   if (isCompleted) {
       return (
-        <div className="min-h-screen bg-[#fffbfb] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-700">
+          <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-700">
             <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-xl shadow-emerald-100">
                 <CheckCircle2 size={40} />
             </div>
-            <h1 className="font-serif text-3xl font-bold text-[#3D405B] mb-4">Dossier Transmis !</h1>
-            <p className="text-stone-500 max-w-md leading-relaxed mb-8">
+            <h1 className="font-serif text-3xl font-bold text-[var(--text-heading)] mb-4">Dossier Transmis !</h1>
+            <p className="text-[var(--text-secondary)] max-w-md leading-relaxed mb-8">
                 Les informations ont été chiffrées et envoyées à votre ergothérapeute. <br/>
                 Vous pouvez fermer cette page en toute sécurité.
             </p>
             
             <div className="space-y-4">
-                <button onClick={onBack} className="bg-white border border-stone-200 text-stone-500 hover:text-[#3D405B] hover:border-[#3D405B] px-6 py-3 rounded-xl text-sm font-bold transition-all">
+                <button onClick={onBack} className="bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:border-[var(--text-heading)] px-6 py-3 rounded-xl text-sm font-bold transition-all">
                     Retour à l'accueil
                 </button>
-                <div className="bg-stone-50 p-4 rounded-xl border border-stone-100 flex items-center gap-2 text-xs text-stone-400 mx-auto w-fit">
+                <div className="bg-[var(--hover-bg)] p-4 rounded-xl border border-[var(--border-color)] flex items-center gap-2 text-xs text-[var(--text-secondary)] mx-auto w-fit">
                     <Lock size={12} /> Données chiffrées de bout en bout (Zero-Knowledge).
                 </div>
             </div>
@@ -274,15 +274,15 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
             <ShieldCheck size={14} className="text-[#81B29A]" /> Connexion Sécurisée Chiffrée
         </div>
 
-        <header className="bg-white/80 backdrop-blur-md border-b border-stone-100 sticky top-0 z-40">
+        <header className="bg-[var(--card-bg)]/80 backdrop-blur-md border-b border-[var(--border-color)] sticky top-0 z-40">
             <div className="max-w-4xl mx-auto px-6 h-20 flex justify-between items-center">
-                <div className="flex items-center gap-3 font-serif text-lg text-[#3D405B] font-bold">
+                <div className="flex items-center gap-3 font-serif text-lg text-[var(--text-heading)] font-bold">
                     <div className="w-8 h-8 bg-[#E07A5F] text-white rounded-lg flex items-center justify-center">
                         <Sparkles size={16} />
                     </div>
                     Espace Famille
                 </div>
-                <button onClick={() => { setEncryptionKey(null); setLoadingStep('idle'); }} className="text-xs font-bold text-stone-400 hover:text-[#3D405B] uppercase tracking-wider">
+                <button onClick={() => { setEncryptionKey(null); setLoadingStep('idle'); }} className="text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)] uppercase tracking-wider">
                     Déconnexion
                 </button>
             </div>
@@ -291,9 +291,9 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
         <main className="max-w-4xl mx-auto px-4 py-8">
             
             <div className="animate-in slide-in-from-bottom-4 fade-in duration-500">
-                <div className="bg-white p-8 rounded-[32px] mb-8 shadow-xl shadow-stone-200/50 border border-stone-100">
-                    <h2 className="font-serif text-2xl font-bold text-[#3D405B] mb-2">Préparation du Bilan</h2>
-                    <p className="text-stone-500 text-sm leading-relaxed">
+                <div className="bg-[var(--card-bg)] p-8 rounded-[32px] mb-8 shadow-xl shadow-black/20 border border-[var(--border-color)]">
+                    <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">Préparation du Bilan</h2>
+                    <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                         Merci de compléter ce questionnaire pour préparer la consultation. Vos réponses sont chiffrées avant envoi.
                     </p>
                 </div>
@@ -305,13 +305,13 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                 />
 
                 {/* NOTE: RAPPEL DOCUMENTS */}
-                <div className="mt-8 mb-6 p-5 bg-stone-50 border border-stone-200 rounded-2xl flex gap-4 items-start shadow-sm">
-                    <div className="p-2 bg-white rounded-lg text-[#3D405B] shadow-sm">
+                <div className="mt-8 mb-6 p-5 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-2xl flex gap-4 items-start shadow-sm">
+                    <div className="p-2 bg-[var(--card-bg)] rounded-lg text-[var(--text-heading)] shadow-sm">
                         <FileText size={20} />
                     </div>
                     <div>
-                        <h4 className="font-bold text-[#3D405B] text-sm mb-1">Documents à apporter</h4>
-                        <p className="text-stone-600 text-xs leading-relaxed">
+                        <h4 className="font-bold text-[var(--text-heading)] text-sm mb-1">Documents à apporter</h4>
+                        <p className="text-[var(--text-main)] text-xs leading-relaxed">
                             Veuillez penser à apporter <strong>l'ordonnance médicale</strong>, les <strong>bilans précédents</strong> et les <strong>cahiers scolaires</strong> lors du premier rendez-vous.
                         </p>
                     </div>

@@ -150,41 +150,41 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
       <div className="bg-[var(--app-bg)] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
-        <div className="p-8 border-b border-stone-200 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
+        <div className="p-8 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--card-bg)] sticky top-0 z-10 shadow-sm">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-[#E07A5F]/10 rounded-2xl text-[#E07A5F]">
               <Zap size={28} fill="currentColor" />
             </div>
             <div>
-              <h2 className="font-serif text-3xl font-bold text-[#3D405B]">Mini-réévaluation</h2>
-              <p className="text-sm text-stone-500 font-medium mt-1">Capture rapide de scores intermédiaires, sans document final.</p>
+              <h2 className="font-serif text-3xl font-bold text-[var(--text-heading)]">Mini-réévaluation</h2>
+              <p className="text-sm text-[var(--text-secondary)] font-medium mt-1">Capture rapide de scores intermédiaires, sans document final.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-3 bg-stone-50 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition-all">
+          <button onClick={onClose} className="p-3 bg-[var(--hover-bg)] rounded-full text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--border-color)] transition-all">
             <X size={24} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-[var(--app-bg)] p-8 custom-scrollbar">
           <div className="max-w-4xl mx-auto space-y-8">
-            <div className="bg-white p-5 rounded-2xl border border-stone-100 flex gap-4 items-start shadow-sm">
+            <div className="bg-[var(--card-bg)] p-5 rounded-2xl border border-[var(--border-color)] flex gap-4 items-start shadow-sm">
               <div className="p-3 bg-blue-50 rounded-full text-blue-600">
                 <Info size={20} />
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-[#3D405B]">Règle clinique</h4>
-                <p className="text-xs text-stone-600">
+                <h4 className="font-bold text-[var(--text-heading)]">Règle clinique</h4>
+                <p className="text-xs text-[var(--text-main)]">
                   La mini-réévaluation enregistre des mesures intermédiaires et n’impacte pas automatiquement le rappel de réévaluation.
                 </p>
               </div>
             </div>
 
-            <div className="bg-white rounded-[28px] p-6 border border-stone-100 shadow-sm">
+            <div className="bg-[var(--card-bg)] rounded-[28px] p-6 border border-[var(--border-color)] shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="font-serif font-bold text-2xl text-[#3D405B]">1. Tests suivis</h3>
+                <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)]">1. Tests suivis</h3>
                 <button
                   onClick={() => setShowCatalog(true)}
-                  className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-stone-500 hover:border-[#E07A5F] hover:text-[#E07A5F]"
+                  className="flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[#E07A5F] hover:text-[#E07A5F]"
                 >
                   <Plus size={14} />
                   Ajouter un test
@@ -192,13 +192,13 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
               </div>
 
               {selectedTests.length === 0 ? (
-                <p className="text-sm text-stone-500">Aucun test sélectionné. Ajoutez au moins un test pour commencer.</p>
+                <p className="text-sm text-[var(--text-secondary)]">Aucun test sélectionné. Ajoutez au moins un test pour commencer.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {selectedTests.map((test) => (
-                    <div key={test.id} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-[#3D405B]">
+                    <div key={test.id} className="inline-flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--text-heading)]">
                       {test.name}
-                      <button onClick={() => handleRemoveTest(test.id)} className="text-stone-400 hover:text-rose-500" aria-label={`Retirer ${test.name}`}>
+                      <button onClick={() => handleRemoveTest(test.id)} className="text-[var(--text-secondary)] hover:text-rose-500" aria-label={`Retirer ${test.name}`}>
                         <Trash2 size={12} />
                       </button>
                     </div>
@@ -208,20 +208,20 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-serif font-bold text-2xl text-[#3D405B]">2. Saisir les scores</h3>
+              <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)]">2. Saisir les scores</h3>
               {selectedTests.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500">
+                <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--hover-bg)] p-8 text-center text-sm text-[var(--text-secondary)]">
                   Selectionnez des tests pour afficher la grille de saisie.
                 </div>
               ) : (
                 selectedTests.map((test) => (
-                  <div key={test.id} className="bg-white rounded-[28px] p-6 border border-stone-100 shadow-sm animate-in slide-in-from-bottom-4">
-                    <div className="flex justify-between items-center mb-5 pb-4 border-b border-stone-50">
-                      <h4 className="font-serif font-bold text-xl text-[#3D405B] flex items-center gap-3">
+                  <div key={test.id} className="bg-[var(--card-bg)] rounded-[28px] p-6 border border-[var(--border-color)] shadow-sm animate-in slide-in-from-bottom-4">
+                    <div className="flex justify-between items-center mb-5 pb-4 border-b border-[var(--border-color)]">
+                      <h4 className="font-serif font-bold text-xl text-[var(--text-heading)] flex items-center gap-3">
                         <span className="w-2 h-7 bg-[#F2CC8F] rounded-full"></span>
                         {test.name}
                       </h4>
-                      <span className="rounded-full bg-stone-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                      <span className="rounded-full bg-[var(--progress-bg)] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                         {test.subtests.length} sous-tests
                       </span>
                     </div>
@@ -252,19 +252,19 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
           </div>
         </div>
 
-        <div className="p-6 bg-white border-t border-stone-200 flex items-center justify-between gap-4 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-          <div className="flex items-center gap-3 text-sm text-stone-500">
-            <CheckCircle2 size={16} className={canSave ? 'text-emerald-600' : 'text-stone-300'} />
+        <div className="p-6 bg-[var(--card-bg)] border-t border-[var(--border-color)] flex items-center justify-between gap-4 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+            <CheckCircle2 size={16} className={canSave ? 'text-emerald-600' : 'text-[var(--text-disabled)]'} />
             <span>{filledScoresCount} score{filledScoresCount > 1 ? 's' : ''} saisi{filledScoresCount > 1 ? 's' : ''}</span>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={onClose} className="px-8 py-4 font-bold text-stone-400 hover:text-stone-600 transition-all uppercase text-xs tracking-widest">
+            <button onClick={onClose} className="px-8 py-4 font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-all uppercase text-xs tracking-widest">
               Annuler
             </button>
             <button
               onClick={handleSave}
               disabled={!canSave}
-              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
+              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-[var(--card-bg-raised)] text-[var(--text-disabled)] cursor-not-allowed'}`}
             >
               <Save size={20} /> Enregistrer la mini-réévaluation
             </button>

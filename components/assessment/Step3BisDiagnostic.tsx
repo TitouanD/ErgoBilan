@@ -47,7 +47,7 @@ const VoiceArea: React.FC<{
                     onClick={toggleListening}
                     className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${isListening
                         ? 'bg-red-100 text-red-500 animate-pulse shadow-sm'
-                        : 'text-stone-300 hover:text-[#E07A5F] hover:bg-stone-100'
+                        : 'text-[var(--text-disabled)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]'
                         }`}
                     title="Dictée vocale"
                 >
@@ -92,7 +92,7 @@ const TestSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
     if (testScores.length === 0) return null;
 
     return (
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-6 shadow-sm">
+        <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-5 mb-6 shadow-sm">
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Activity size={14} /> Résumé par test
             </h4>
@@ -109,7 +109,7 @@ const TestSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
                                 <span className="text-stone-500 font-medium truncate max-w-[130px]">{name}</span>
                                 <span className="font-bold" style={{ color }}>{avg > 0 ? '+' : ''}{avg.toFixed(1)} ET</span>
                             </div>
-                            <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-[var(--progress-bg)] rounded-full overflow-hidden">
                                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barWidth}%`, backgroundColor: color }} />
                             </div>
                         </div>
@@ -162,8 +162,8 @@ const ToggleChips: React.FC<{
     };
 
     const colors = colorScheme === 'indigo'
-        ? { active: 'bg-indigo-100 text-indigo-700 border-indigo-200', hover: 'hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100' }
-        : { active: 'bg-emerald-100 text-emerald-700 border-emerald-200', hover: 'hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-100' };
+        ? { active: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700/40', hover: 'hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-100 dark:hover:border-indigo-700/20' }
+        : { active: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40', hover: 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-100 dark:hover:border-emerald-700/20' };
 
     // Group by category
     const categories = [...new Set(suggestions.map(s => s.category))];
@@ -180,7 +180,7 @@ const ToggleChips: React.FC<{
                                 onClick={() => handleToggle(label)}
                                 className={`px-3 py-1.5 border rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${isActive
                                     ? `${colors.active} shadow-sm`
-                                    : `bg-stone-50 border-stone-100 text-stone-500 ${colors.hover}`
+                                    : `bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)] ${colors.hover}`
                                     }`}
                             >
                                 {isActive && <Check size={10} strokeWidth={3} />}
@@ -222,13 +222,13 @@ const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }
     if (observations.length === 0 && !interviewNotes) return null;
 
     return (
-        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm">
+        <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-5 shadow-sm">
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <MessageSquare size={14} /> Observations cliniques
             </h4>
 
             {interviewNotes && (
-                <div className="bg-stone-50 p-3 rounded-xl mb-3">
+                <div className="bg-[var(--hover-bg)] p-3 rounded-xl mb-3">
                     <span className="text-[9px] font-bold text-stone-400 uppercase">Entretien</span>
                     <p className="text-xs text-stone-600 italic leading-relaxed mt-1">
                         {interviewNotes.length > 150 ? interviewNotes.substring(0, 150) + '…' : interviewNotes}
@@ -242,7 +242,7 @@ const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }
                         <div key={i} className="flex gap-2 text-xs">
                             <span className="text-stone-400 font-bold shrink-0">{obs.name}:</span>
                             {obs.name === obs.subId && (
-                                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded self-center">
+                                <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded self-center">
                                     id
                                 </span>
                             )}
@@ -293,11 +293,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
 
             <div className="flex justify-between items-end mb-8">
                 <div>
-                    <h2 className="text-3xl font-serif font-bold text-[#3D405B]">Synthèse & Projet</h2>
+                    <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Synthèse & Projet</h2>
                     <p className="text-stone-500 font-medium mt-2">Posez votre diagnostic. L'IA se chargera de l'argumenter.</p>
                 </div>
                 {reviewStats.total > 0 && (
-                    <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${reviewStats.allReviewed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+                    <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${reviewStats.allReviewed ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700/40' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/40'
                         }`}>
                         {reviewStats.allReviewed
                             ? <><ShieldCheck size={14} /> {reviewStats.reviewed}/{reviewStats.total} scores revus</>
@@ -313,9 +313,9 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                 <div className="lg:col-span-2 space-y-8">
 
                     {/* DIAGNOSTIC BLOCK */}
-                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-indigo-200/50 transition-all">
-                        <div className="flex items-center gap-3 mb-4 text-[#3D405B]">
-                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Brain size={24} /></div>
+                    <div className="bg-[var(--card-bg)] p-8 rounded-[32px] border border-[var(--border-color)] shadow-sm relative group hover:border-indigo-200/50 transition-all">
+                        <div className="flex items-center gap-3 mb-4 text-[var(--text-heading)]">
+                            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl"><Brain size={24} /></div>
                             <div>
                                 <h3 className="font-bold text-xl">Conclusion Diagnostique</h3>
                                 <p className="text-xs text-stone-400 mt-0.5">Cliquez pour ajouter/retirer · Dictée vocale · Texte libre</p>
@@ -326,7 +326,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             value={synthesis.diagnosticInput}
                             onChange={handleDiagChange}
                             placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-indigo-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all leading-relaxed mb-4"
                             rows={4}
                         />
 
@@ -339,9 +339,9 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     </div>
 
                     {/* PROJECT/RECOMMENDATIONS BLOCK */}
-                    <div className="bg-white p-8 rounded-[32px] border border-stone-100 shadow-sm relative group hover:border-emerald-200/50 transition-all">
-                        <div className="flex items-center gap-3 mb-4 text-[#3D405B]">
-                            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl"><Target size={24} /></div>
+                    <div className="bg-[var(--card-bg)] p-8 rounded-[32px] border border-[var(--border-color)] shadow-sm relative group hover:border-emerald-200/50 transition-all">
+                        <div className="flex items-center gap-3 mb-4 text-[var(--text-heading)]">
+                            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl"><Target size={24} /></div>
                             <div>
                                 <h3 className="font-bold text-xl">Projet & Préconisations</h3>
                                 <p className="text-xs text-stone-400 mt-0.5">Sélectionnez puis personnalisez librement</p>
@@ -352,7 +352,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             value={synthesis.recommendationsInput}
                             onChange={handleRecoChange}
                             placeholder="Ex: Suivi hebdo. Apprentissage du clavier caché. Mise en place tiers-temps."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[#3D405B] placeholder:text-stone-300 focus:bg-white focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all leading-relaxed mb-4"
                             rows={4}
                         />
 
@@ -371,14 +371,14 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     <TestSummaryPanel tests={tests} />
                     <ObservationsSummary tests={tests} interviewNotes={patient?.interviewNotes} />
 
-                    <div className="bg-[#fffdf5] border border-[#F2CC8F]/50 p-6 rounded-2xl">
-                        <h4 className="font-bold text-[#d97706] mb-3 flex items-center gap-2 text-sm">
+                    <div className="bg-[#fffdf5] dark:bg-amber-950/30 border border-[#F2CC8F]/50 dark:border-amber-800/30 p-6 rounded-2xl">
+                        <h4 className="font-bold text-[#d97706] dark:text-amber-400 mb-3 flex items-center gap-2 text-sm">
                             <Lightbulb size={16} /> Pourquoi cette étape ?
                         </h4>
-                        <p className="text-xs text-[#92400e] leading-relaxed mb-2">
+                        <p className="text-xs text-[#92400e] dark:text-amber-200/80 leading-relaxed mb-2">
                             L'IA ne pose pas de diagnostic, <strong>c'est votre rôle légal</strong>.
                         </p>
-                        <p className="text-xs text-[#92400e] leading-relaxed">
+                        <p className="text-xs text-[#92400e] dark:text-amber-200/80 leading-relaxed">
                             En remplissant ces champs, vous orientez la rédaction. L'IA utilisera vos conclusions pour structurer l'argumentaire et lier les preuves (scores) à votre diagnostic.
                         </p>
                     </div>
@@ -387,7 +387,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
             </div>
 
             {/* NAVIGATION FOOTER */}
-            <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 backdrop-blur-md border-t border-stone-100 flex justify-center z-50">
+            <div className="fixed bottom-0 left-0 right-0 p-6 bg-[var(--card-bg)] backdrop-blur-md border-t border-[var(--border-color)] flex justify-center z-50">
                 <div className="max-w-4xl w-full flex justify-between items-center">
                     <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">
                         Retour

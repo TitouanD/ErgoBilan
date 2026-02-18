@@ -142,13 +142,13 @@ const ScoreSelector: React.FC<{
             <select
                 value={selected}
                 onChange={(e) => onChange(e.target.value as 'Brut' | 'NS' | 'ET' | '%')}
-                className="block w-full pl-3 pr-8 py-1 text-xs font-bold text-stone-600 bg-white border border-stone-200 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-[#E07A5F] focus:border-[#E07A5F] sm:text-sm cursor-pointer"
+                className="block w-full pl-3 pr-8 py-1 text-xs font-bold text-[var(--text-main)] bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-[#E07A5F] focus:border-[#E07A5F] sm:text-sm cursor-pointer"
             >
                 {modes.map(mode => (
                     <option key={mode} value={mode}>{mode}</option>
                 ))}
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-stone-700">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-[var(--text-main)]">
                 <ArrowDown size={12} />
             </div>
         </div>
@@ -327,9 +327,9 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             <div key={idx} className="relative group/block">
                                 {isEditing ? (
                                     <div className="relative mb-4 print:hidden">
-                                        <textarea value={tempText} onChange={(e) => setTempText(e.target.value)} className={`w-full p-4 border-2 border-[#E07A5F] ${roundedClass} shadow-lg outline-none text-sm min-h-[150px] bg-white text-stone-900 font-medium leading-relaxed resize-y`} autoFocus />
+                                        <textarea value={tempText} onChange={(e) => setTempText(e.target.value)} className={`w-full p-4 border-2 border-[#E07A5F] ${roundedClass} shadow-lg outline-none text-sm min-h-[150px] bg-[var(--input-bg)] text-[var(--text-heading)] font-medium leading-relaxed resize-y`} autoFocus />
                                         <div className="flex justify-end gap-2 mt-2 absolute bottom-3 right-3">
-                                            <button onClick={() => setEditingIndex(null)} className="p-1.5 bg-stone-100 rounded-md shadow text-stone-500"><X size={14} /></button>
+                                            <button onClick={() => setEditingIndex(null)} className="p-1.5 bg-[var(--hover-bg)] rounded-md shadow text-[var(--text-secondary)]"><X size={14} /></button>
                                             <button onClick={() => saveText(idx)} className="p-1.5 bg-[#E07A5F] rounded-md shadow text-white"><Check size={14} /></button>
                                         </div>
                                     </div>
@@ -356,11 +356,11 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                     <div className="h-4 -my-2 relative z-10 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center group/insert no-print print:hidden">
                                         <div className="w-full h-px bg-[#E07A5F]/20 group-hover/insert:bg-[#E07A5F]/50 transition-colors"></div>
                                         {insertIndex === idx ? (
-                                            <div className="absolute bg-white shadow-xl border border-stone-100 rounded-xl p-2 flex gap-2 animate-in zoom-in-95 duration-200 z-50">
-                                                <button onClick={() => triggerFileSelect('image-full')} className="flex flex-col items-center gap-1 p-2 hover:bg-stone-50 rounded-lg text-xs font-bold text-stone-500 hover:text-[#E07A5F]"><div className="p-2 bg-stone-100 rounded-lg text-stone-400 group-hover:text-[#E07A5F]"><ImageIcon size={18} /></div>Img</button>
-                                                <div className="w-px bg-stone-100"></div>
-                                                <button onClick={() => triggerFileSelect('image-text')} className="flex flex-col items-center gap-1 p-2 hover:bg-stone-50 rounded-lg text-xs font-bold text-stone-500 hover:text-[#E07A5F]"><div className="p-2 bg-stone-100 rounded-lg text-stone-400 group-hover:text-[#E07A5F]"><LayoutTemplate size={18} /></div>Img+Txt</button>
-                                                <button onClick={() => setInsertIndex(null)} className="absolute -top-2 -right-2 bg-white rounded-full p-1 border border-stone-100 shadow-sm text-stone-400"><X size={12} /></button>
+                                            <div className="absolute bg-[var(--card-bg)] shadow-xl border border-[var(--border-color)] rounded-xl p-2 flex gap-2 animate-in zoom-in-95 duration-200 z-50">
+                                                <button onClick={() => triggerFileSelect('image-full')} className="flex flex-col items-center gap-1 p-2 hover:bg-[var(--hover-bg)] rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:text-[#E07A5F]"><div className="p-2 bg-[var(--card-bg-raised)] rounded-lg text-[var(--text-disabled)] group-hover:text-[#E07A5F]"><ImageIcon size={18} /></div>Img</button>
+                                                <div className="w-px bg-[var(--border-color)]"></div>
+                                                <button onClick={() => triggerFileSelect('image-text')} className="flex flex-col items-center gap-1 p-2 hover:bg-[var(--hover-bg)] rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:text-[#E07A5F]"><div className="p-2 bg-[var(--card-bg-raised)] rounded-lg text-[var(--text-disabled)] group-hover:text-[#E07A5F]"><LayoutTemplate size={18} /></div>Img+Txt</button>
+                                                <button onClick={() => setInsertIndex(null)} className="absolute -top-2 -right-2 bg-[var(--card-bg)] rounded-full p-1 border border-[var(--border-color)] shadow-sm text-[var(--text-secondary)]"><X size={12} /></button>
                                             </div>
                                         ) : (
                                             <button onClick={() => setInsertIndex(idx)} className="absolute bg-white border border-[#E07A5F] text-[#E07A5F] rounded-full p-1 shadow-sm hover:scale-110 transition-transform"><Plus size={14} strokeWidth={3} /></button>

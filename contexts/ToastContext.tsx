@@ -52,7 +52,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {toasts.map(t => (
           <div 
             key={t.id} 
-            className="pointer-events-auto animate-in slide-in-from-right-full fade-in duration-300 min-w-[300px] max-w-md bg-white rounded-2xl shadow-xl shadow-stone-200/50 border border-stone-100 p-4 flex items-start gap-3"
+            className="pointer-events-auto animate-in slide-in-from-right-full fade-in duration-300 min-w-[300px] max-w-md bg-[var(--card-bg)] rounded-2xl shadow-xl border border-[var(--border-color)] p-4 flex items-start gap-3"
           >
             <div className={`mt-0.5 p-1 rounded-full shrink-0 ${
                 t.type === 'success' ? 'text-emerald-500 bg-emerald-50' :
@@ -66,13 +66,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 {t.type === 'info' && <Info size={18} strokeWidth={3} />}
             </div>
             
-            <p className="text-sm font-bold text-[#3D405B] flex-1 leading-relaxed pt-0.5">
+            <p className="text-sm font-bold text-[var(--text-main)] flex-1 leading-relaxed pt-0.5">
                 {t.message}
             </p>
 
             <button 
                 onClick={() => removeToast(t.id)}
-                className="text-stone-300 hover:text-stone-500 transition-colors p-1"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors p-1"
             >
                 <X size={14} />
             </button>

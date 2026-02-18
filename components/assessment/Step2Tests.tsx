@@ -144,16 +144,16 @@ const VoiceObservation: React.FC<{
         onChange={(e) => !readOnly && onChange(e.target.value)}
         onFocus={onFocus}
         placeholder="Observation clinique rapide..."
-        className="w-full p-3 pl-9 pr-10 bg-stone-50 border border-stone-100 rounded-xl text-xs text-[#3D405B] focus:border-[#E07A5F] focus:bg-white outline-none resize-none transition-all placeholder:text-stone-300"
+        className="w-full p-3 pl-9 pr-10 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:border-[#E07A5F] focus:bg-[var(--card-bg)] outline-none resize-none transition-all placeholder:text-[var(--text-disabled)]"
         rows={2}
       />
-      <MessageSquare size={14} className="absolute top-3 left-3 text-stone-300" />
+      <MessageSquare size={14} className="absolute top-3 left-3 text-[var(--text-disabled)]" />
       {isSupported && !readOnly && (
         <button
           type="button"
           onClick={toggleListening}
           className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${
-            isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-stone-300 hover:text-[#E07A5F] hover:bg-stone-100'
+            isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-[var(--text-disabled)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]'
           }`}
         >
           {isListening ? <MicOff size={12} /> : <Mic size={12} />}
@@ -185,7 +185,7 @@ const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<Sc
       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${
         isReviewed
           ? 'bg-emerald-50 text-emerald-600'
-          : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
+          : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--hover-bg)]'
       } ${!canReview ? 'cursor-not-allowed opacity-40' : ''}`}
     >
       {isReviewed ? <CircleCheck size={12} /> : <Circle size={12} />}
@@ -198,7 +198,7 @@ const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
   if (z === null || !Number.isFinite(z)) {
     return (
       <div className="flex items-center gap-3 py-1">
-        <div className="flex-1 h-1.5 rounded-full bg-stone-100" />
+        <div className="flex-1 h-1.5 rounded-full bg-[var(--progress-bg)]" />
       </div>
     );
   }
@@ -220,7 +220,7 @@ const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
           style={{ left: `${left}%` }}
         />
       </div>
-      <span className="text-[11px] font-bold text-stone-500 tabular-nums shrink-0">
+      <span className="text-[11px] font-bold text-[var(--text-secondary)] tabular-nums shrink-0">
         ET {z > 0 ? '+' : ''}{z.toFixed(2)}
       </span>
     </div>
@@ -352,14 +352,14 @@ const NumericRow: React.FC<{
   }
 
   return (
-    <div className="bg-white/60">
+    <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         {/* Header: name + meta badges */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
-            <h4 className="font-semibold text-[#3D405B] text-sm md:text-base">{subtest.name}</h4>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{subtest.name}</h4>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{subtest.unit}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
               {getScaleLabel(subtest.scoreType) && (
                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">
                   {getScaleLabel(subtest.scoreType)}
@@ -385,7 +385,7 @@ const NumericRow: React.FC<{
               className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
                 active === m.key
                   ? 'bg-[#3D405B] text-white shadow-sm'
-                  : 'text-stone-400 hover:bg-stone-100 hover:text-stone-600'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-heading)]'
               }`}
             >
               {m.label}
@@ -410,7 +410,7 @@ const NumericRow: React.FC<{
               setLocalText(null);
             }
           }}
-          className={`w-full text-center text-4xl font-bold text-[#3D405B] bg-transparent outline-none py-2 border-b-2 border-stone-100 focus:border-[#E07A5F] transition-colors placeholder:text-stone-200 ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
+          className={`w-full text-center text-4xl font-bold text-[var(--text-heading)] bg-transparent outline-none py-2 border-b-2 border-[var(--border-color)] focus:border-[#E07A5F] transition-colors placeholder:text-[var(--text-disabled)] ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
           placeholder="–"
         />
 
@@ -423,10 +423,10 @@ const NumericRow: React.FC<{
                 key={m.key}
                 type="button"
                 onClick={() => { setPatch({ entryMetric: m.key }); onFocus?.(); }}
-                className="text-xs text-stone-400 hover:text-[#3D405B] transition-colors tabular-nums"
+                className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors tabular-nums"
               >
                 <span className="font-bold uppercase text-[10px]">{m.label}</span>{' '}
-                <span className="font-semibold text-stone-600">{val || '–'}</span>
+                <span className="font-semibold text-[var(--text-main)]">{val || '–'}</span>
               </button>
             );
           })}
@@ -460,11 +460,11 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
 
   return (
-    <div className="bg-white/60">
+    <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[#3D405B] text-sm md:text-base leading-tight">{subtest.name}</h4>
-          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mt-1">Catégorie normative</p>
+          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Catégorie normative</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
@@ -490,11 +490,11 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
                 className={`text-left rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
                   active
                     ? 'border-[#3D405B] bg-[#3D405B] text-white shadow-sm'
-                    : 'border-stone-200 bg-white text-stone-600 hover:border-[#E07A5F]'
+                    : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-main)] hover:border-[#E07A5F]'
                 } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 <div className="flex items-start gap-2">
-                  <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-500'}`}>
+                  <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-[var(--progress-bg)] text-[var(--text-secondary)]'}`}>
                     {index + 1}
                   </span>
                   <span>{o.label}</span>
@@ -517,11 +517,11 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
 const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void }> = ({ subtest, result, onChange, readOnly, onFocus }) => {
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
   return (
-    <div className="bg-white/60">
+    <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[#3D405B] text-sm md:text-base leading-tight">{subtest.name}</h4>
-          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mt-1">Saisie brute manuelle</p>
+          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Saisie brute manuelle</p>
         </div>
 
         <input
@@ -530,7 +530,7 @@ const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange:
           onFocus={onFocus}
           disabled={readOnly}
           placeholder="Entrer la valeur brute"
-          className="w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-center text-3xl font-bold text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
+          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-3 text-center text-3xl font-bold text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
         />
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
 
@@ -570,19 +570,19 @@ const CompactSubtestRow: React.FC<{
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/80 transition-colors group"
+      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors group"
     >
-      <ChevronRight size={14} className="text-stone-300 group-hover:text-[#E07A5F] transition-colors shrink-0" />
-      <span className="font-medium text-sm text-[#3D405B] truncate min-w-0 flex-1">{subtest.name}</span>
+      <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] transition-colors shrink-0" />
+      <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">{subtest.name}</span>
       {hasData && parts.length > 0 && (
         <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${
-          tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-stone-500'
+          tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-[var(--text-secondary)]'
         }`}>
           {parts.join(' \u00b7 ')}
         </span>
       )}
       <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${
-        isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-stone-200'
+        isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
       }`} />
     </button>
   );
@@ -619,14 +619,14 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
   }, [tests, catalog]);
 
   return (
-    <div className="sticky top-24 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
-      <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2">
+    <div className="sticky top-24 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 shadow-sm space-y-3">
+      <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2">
         <Activity size={14} />
         Résumé par test
       </h4>
 
       {testRows.length === 0 ? (
-        <div className="h-2 rounded-full bg-stone-200" />
+        <div className="h-2 rounded-full bg-[var(--progress-bg)]" />
       ) : (
         <div className="space-y-2">
           {testRows.map(({ testId, name, avg, subtestCount }) => {
@@ -636,14 +636,14 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
             return (
               <div key={testId}>
                 <div className="mb-1 flex items-center justify-between text-[10px]">
-                  <span className="truncate font-medium text-stone-500 max-w-[160px]">{name}</span>
+                  <span className="truncate font-medium text-[var(--text-secondary)] max-w-[160px]">{name}</span>
                   {hasAvg ? (
                     <span className={`font-bold ${tone === 'bad' ? 'text-rose-600' : tone === 'warn' ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {avg! > 0 ? '+' : ''}
                       {avg!.toFixed(2)} ET
                     </span>
                   ) : (
-                    <span className="font-bold text-stone-300">--</span>
+                    <span className="font-bold text-[var(--text-disabled)]">--</span>
                   )}
                 </div>
                 {hasAvg ? (
@@ -660,9 +660,9 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
                     />
                   </div>
                 ) : (
-                  <div className="h-2 rounded-full bg-stone-200" />
+                  <div className="h-2 rounded-full bg-[var(--progress-bg)]" />
                 )}
-                <div className="mt-1 flex items-center justify-between text-[10px] text-stone-400">
+                <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
                   <span>{subtestCount} épreuve(s)</span>
                 </div>
               </div>
@@ -717,27 +717,27 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="w-full max-w-6xl h-[88vh] rounded-[34px] overflow-hidden bg-white shadow-[0_35px_80px_rgba(0,0,0,0.28)] border border-white/70 flex flex-col">
-        <div className="px-6 py-5 border-b border-stone-100 bg-white">
+      <div className="w-full max-w-6xl h-[88vh] rounded-[34px] overflow-hidden bg-[var(--card-bg)] shadow-[0_35px_80px_rgba(0,0,0,0.28)] border border-[var(--border-color)] flex flex-col">
+        <div className="px-6 py-5 border-b border-[var(--border-color)] bg-[var(--card-bg)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-serif font-bold text-2xl flex items-center gap-3">
                 <Layers size={24} className="text-[#E07A5F]" />
                 Catalogue tests
               </h2>
-              <p className="text-sm text-stone-500 mt-1">Sélection rapide des tests et sous-tests.</p>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">Sélection rapide des tests et sous-tests.</p>
             </div>
-            <button onClick={onClose} className="p-2 rounded-full bg-stone-100 hover:bg-stone-200 transition-colors text-stone-500">
+            <button onClick={onClose} className="p-2 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--border-color)] transition-colors text-[var(--text-secondary)]">
               <X size={20} />
             </button>
           </div>
           <div className="mt-4 relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Rechercher un test..."
-              className="w-full pl-12 pr-4 py-3 bg-white border border-stone-200 rounded-xl outline-none text-[#3D405B] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
+              className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
               autoFocus
             />
           </div>
@@ -751,7 +751,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all ${
                     activeCategoryId === tab.id
                       ? 'bg-[#3D405B] text-white shadow-sm'
-                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                      : 'bg-[var(--progress-bg)] text-[var(--text-main)] hover:bg-[var(--border-color)]'
                   }`}
                 >
                   {tab.label}
@@ -762,8 +762,8 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 bg-[var(--app-bg)] custom-scrollbar">
-          {loading && testsToRender.length === 0 && <p className="text-sm text-stone-400">Chargement...</p>}
-          {testsToRender.length === 0 && !loading && <p className="text-sm text-stone-500">Aucun test trouvé pour ce filtre.</p>}
+          {loading && testsToRender.length === 0 && <p className="text-sm text-[var(--text-secondary)]">Chargement...</p>}
+          {testsToRender.length === 0 && !loading && <p className="text-sm text-[var(--text-secondary)]">Aucun test trouvé pour ce filtre.</p>}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
             {testsToRender.map((test) => {
@@ -780,7 +780,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   className={`rounded-2xl border overflow-hidden transition-all ${
                     selectedCount > 0
                       ? 'border-[#E07A5F]/40 bg-[#E07A5F]/5 shadow-sm'
-                      : 'border-stone-200 bg-white hover:border-stone-300'
+                      : 'border-[var(--border-color)] bg-[var(--card-bg)] hover:border-[var(--text-secondary)]'
                   } ${isExpanded ? 'xl:col-span-2' : ''}`}
                 >
                   <button
@@ -789,24 +789,24 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                     className="w-full px-4 py-3 text-left flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <p className="font-bold text-[#3D405B] truncate">{test.name}</p>
-                      <p className="text-[11px] text-stone-500">{test.subtests.length} sous-tests</p>
+                      <p className="font-bold text-[var(--text-heading)] truncate">{test.name}</p>
+                      <p className="text-[11px] text-[var(--text-secondary)]">{test.subtests.length} sous-tests</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {alreadyCount > 0 && <span className="rounded-full bg-stone-100 text-stone-500 px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
+                      {alreadyCount > 0 && <span className="rounded-full bg-[var(--progress-bg)] text-[var(--text-secondary)] px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
                       {selectedCount > 0 && <span className="rounded-full bg-[#E07A5F] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
-                      {isExpanded ? <ChevronUp size={16} className="text-stone-400" /> : <ChevronDown size={16} className="text-stone-400" />}
+                      {isExpanded ? <ChevronUp size={16} className="text-[var(--text-secondary)]" /> : <ChevronDown size={16} className="text-[var(--text-secondary)]" />}
                     </div>
                   </button>
                   {isExpanded && (
-                    <div className="border-t border-stone-100 px-3 pb-3 pt-2 grid grid-cols-1 gap-2">
+                    <div className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 grid grid-cols-1 gap-2">
                       {test.subtests.length > 8 && (
                         <div className="pb-1">
                           <input
                             value={subtestSearchByTest[test.id] || ''}
                             onChange={(e) => setSubtestSearchByTest((prev) => ({ ...prev, [test.id]: e.target.value }))}
                             placeholder="Rechercher un sous-test..."
-                            className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none"
+                            className="w-full rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none bg-[var(--input-bg)]"
                           />
                         </div>
                       )}
@@ -819,8 +819,8 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                             key={st.id}
                             className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
                               already
-                                ? 'bg-stone-50 border-stone-100 text-stone-400'
-                                : 'bg-white border-stone-200 text-stone-600 hover:border-[#E07A5F]'
+                                ? 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[#E07A5F]'
                             }`}
                           >
                             <input
@@ -837,7 +837,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                         })}
                       </div>
                       {filteredSubtests.length === 0 && (
-                        <p className="text-xs text-stone-400 px-1 py-2">Aucun sous-test ne correspond à la recherche.</p>
+                        <p className="text-xs text-[var(--text-secondary)] px-1 py-2">Aucun sous-test ne correspond à la recherche.</p>
                       )}
                     </div>
                   )}
@@ -846,19 +846,19 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
             })}
           </div>
 
-          <div className="mt-4 bg-white border border-stone-200 p-4 rounded-2xl flex items-center justify-between gap-3">
+          <div className="mt-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-[#3D405B] flex items-center gap-2"><FilePlus size={16} /> Test manquant ?</h3>
-              <p className="text-xs text-stone-500">Ajoutez-le via le studio contribution.</p>
+              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><FilePlus size={16} /> Test manquant ?</h3>
+              <p className="text-xs text-[var(--text-secondary)]">Ajoutez-le via le studio contribution.</p>
             </div>
-            {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-[#3D405B] hover:border-[#3D405B]">Contribuer</button>}
+            {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-heading)] hover:border-[#3D405B]">Contribuer</button>}
           </div>
         </div>
 
-        <div className="p-4 border-t border-stone-100 bg-white flex flex-wrap justify-between items-center gap-3">
-          <span className="text-xs text-stone-500 font-semibold">{totalSelected} épreuve(s) sélectionnée(s)</span>
+        <div className="p-4 border-t border-[var(--border-color)] bg-[var(--card-bg)] flex flex-wrap justify-between items-center gap-3">
+          <span className="text-xs text-[var(--text-secondary)] font-semibold">{totalSelected} épreuve(s) sélectionnée(s)</span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 font-bold text-stone-400">Annuler</button>
+            <button onClick={onClose} className="px-4 py-2 font-bold text-[var(--text-secondary)]">Annuler</button>
             <button
               onClick={() => {
                 onAddTests(selected);
@@ -988,15 +988,15 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-32">
-      <div className="mb-8 bg-white p-6 rounded-[32px] shadow-sm border border-stone-100">
+      <div className="mb-8 bg-[var(--card-bg)] p-6 rounded-[32px] shadow-sm border border-[var(--border-color)]">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h2 className="text-2xl font-serif font-bold text-[#3D405B] flex items-center gap-3">
+            <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
               <Activity size={24} className="text-[#E07A5F]" />
               Tests & mesures
             </h2>
-            <p className="text-stone-500 text-sm font-medium mt-1">
-              Saisie fluide : automatique si normes disponibles, assistée sinon.
+            <p className="text-[var(--text-secondary)] text-sm font-medium mt-1">
+              Saisie fluide : automatique si normes disponibles, assistée sinon.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1032,7 +1032,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
             </button>
           </div>
         </div>
-        <div className="mt-4 h-2 rounded-full bg-stone-100 overflow-hidden">
+        <div className="mt-4 h-2 rounded-full bg-[var(--progress-bg)] overflow-hidden">
           <div className="h-full bg-[#81B29A]" style={{ width: `${completion}%` }} />
         </div>
       </div>
@@ -1040,12 +1040,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       <div className="flex gap-8">
         <div className="flex-1 min-w-0 space-y-10">
           {Object.keys(tests).length === 0 && (
-            <div className="rounded-[30px] border-2 border-dashed border-stone-300 bg-white p-16 text-center shadow-sm">
+            <div className="rounded-[30px] border-2 border-dashed border-[var(--border-color)] bg-[var(--card-bg)] p-16 text-center shadow-sm">
               <div className="mx-auto mb-4 h-14 w-14 rounded-2xl bg-[#E07A5F]/10 text-[#E07A5F] flex items-center justify-center">
                 <Layers size={24} />
               </div>
-              <p className="text-[#3D405B] font-bold text-lg">Aucun test sélectionné</p>
-              <p className="mt-1 text-sm text-stone-500">Ajoutez des tests depuis le catalogue pour démarrer la saisie guidée.</p>
+              <p className="text-[var(--text-heading)] font-bold text-lg">Aucun test sélectionné</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">Ajoutez des tests depuis le catalogue pour démarrer la saisie guidée.</p>
               <button
                 type="button"
                 onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
@@ -1062,9 +1062,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
             const CatIcon = ICON_MAP[cat?.iconKey || 'Box'];
             return (
               <section key={catId}>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 shadow-sm">
-                  <CatIcon size={16} className="text-[#3D405B]" />
-                  <h3 className="font-bold text-stone-600 uppercase text-xs tracking-[0.14em]">{cat?.name || 'Autres'}</h3>
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2 shadow-sm">
+                  <CatIcon size={16} className="text-[var(--text-heading)]" />
+                  <h3 className="font-bold text-[var(--text-main)] uppercase text-xs tracking-[0.14em]">{cat?.name || 'Autres'}</h3>
                 </div>
                 {defs.map((test) => {
                   const collapsed = collapsedTests[test.id];
@@ -1078,23 +1078,23 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                   const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
                   const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
                   return (
-                    <div key={test.id} className="mb-6 overflow-hidden rounded-[28px] border border-stone-100 bg-gradient-to-b from-white to-stone-50/60 shadow-[0_8px_30px_rgba(61,64,91,0.05)]">
-                      <div className="px-5 py-4 border-b border-stone-100/80 bg-gradient-to-r from-stone-50/80 to-transparent">
+                    <div key={test.id} className="mb-6 overflow-hidden rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+                      <div className="px-5 py-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)]">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0 flex items-center gap-3">
-                            <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-stone-400 rounded-xl p-1.5 hover:bg-white hover:shadow-sm transition-all">
+                            <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-[var(--text-secondary)] rounded-xl p-1.5 hover:bg-[var(--card-bg)] hover:shadow-sm transition-all">
                               {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
                             </button>
                             <div className="min-w-0">
-                              <h4 className="font-bold text-[#3D405B] truncate">{test.name}</h4>
-                              <p className="text-[11px] text-stone-400">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s) · {testReviewedCount} revue(s)</p>
+                              <h4 className="font-bold text-[var(--text-heading)] truncate">{test.name}</h4>
+                              <p className="text-[11px] text-[var(--text-secondary)]">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s) · {testReviewedCount} revue(s)</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[#E07A5F] text-white border-[#E07A5F]' : 'text-stone-400 border-stone-200 hover:text-[#E07A5F] hover:border-[#E07A5F]/40'}`}>
+                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[#E07A5F] text-white border-[#E07A5F]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[#E07A5F] hover:border-[#E07A5F]/40'}`}>
                               <PenTool size={14} />
                             </button>
-                            <button onClick={() => removeTest(test.id)} className="p-2 rounded-lg border border-stone-200 text-stone-400 hover:text-rose-500 hover:border-rose-200">
+                            <button onClick={() => removeTest(test.id)} className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200">
                               <Trash2 size={14} />
                             </button>
                           </div>
@@ -1108,12 +1108,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                 value={subtestFilters[test.id] || ''}
                                 onChange={(e) => setSubtestFilters((prev) => ({ ...prev, [test.id]: e.target.value }))}
                                 placeholder="Filtrer les sous-tests..."
-                                className="w-full rounded-xl border border-stone-100 bg-white/80 px-3 py-2 text-xs text-[#3D405B] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
+                                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-xs text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
                               />
                             </div>
                           )}
-                          {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-stone-400">Aucune épreuve sélectionnée.</div>}
-                          {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-stone-400">Aucun sous-test ne correspond au filtre.</div>}
+                          {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>}
+                          {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
                           {filteredSubtests.map((st) => {
                             const res = tests[test.id]?.[st.id] || emptyScore();
                             const dbSubId = st.id.includes('_') ? st.id : `${test.id}_${st.id}`;
@@ -1130,7 +1130,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                     : hasData
                                       ? 'border-l-amber-300'
                                       : 'border-l-transparent'
-                                } ${isSubExpanded ? 'bg-stone-50/40' : ''}`}
+                                } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
                               >
                                 {isSubExpanded ? (
                                   <FlexibleSubtestRow testId={test.id} patient={patient} subtest={st} result={res} onChange={(patch) => updateSubtest(test.id, st.id, patch)} hasNorms={normsMap[dbSubId] === true} onFocus={() => setExpandedSubKey(subKey)} />
@@ -1154,9 +1154,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-md border-t border-stone-100 flex justify-center z-50">
+      <div className="fixed bottom-0 left-0 right-0 p-5 bg-[var(--card-bg)]/90 backdrop-blur-md border-t border-[var(--border-color)] flex justify-center z-50">
         <div className="max-w-4xl w-full flex justify-between items-center">
-          <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
+          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : onNext())}
             className="flex items-center gap-3 px-7 py-3 bg-gradient-to-r from-[#E07A5F] to-[#d0694e] text-white rounded-2xl font-bold shadow-xl shadow-orange-200 hover:brightness-105 transition-all"
@@ -1171,10 +1171,10 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
       {showWarning && (
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[#3D405B]/75 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-stone-100">
-            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[#3D405B]">Éléments non revus</h4></div>
-            <p className="text-sm text-stone-600">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-stone-200 text-stone-500 font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
+          <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-[var(--border-color)]">
+            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Eléments non revus</h4></div>
+            <p className="text-sm text-[var(--text-main)]">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
+            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
           </div>
         </div>
       )}
