@@ -5,6 +5,7 @@ import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 interface Props {
     patient: Patient;
@@ -398,51 +399,104 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
     const [isValidating, setIsValidating] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [scoreDisplayModes, setScoreDisplayModes] = useState<Record<string, 'Brut' | 'NS' | 'ET' | '%'>>({});
-    const toast = useToast();
+    const { toast } = useToast();
+    const { catalog } = useCatalog();
 
-    const handlePrint = () => {
-        window.print();
+    const handlePrint = async () => {
+        setIsExporting(true);
+        try {
+            const { pdf } = await import('@react-pdf/renderer');
+            const { PdfDocument } = await import('./PdfDocument');
+            const attachmentUrls = await convertBlobAttachments();
+            const blob = await pdf(
+                <PdfDocument
+                    patient={patient}
+                    sections={sections}
+                    tests={tests}
+                    branding={branding}
+                    catalog={catalog}
+                    scoreDisplayModes={scoreDisplayModes}
+                    attachmentUrls={attachmentUrls}
+                />
+            ).toBlob();
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        } catch (err) {
+            console.error('Print PDF error:', err);
+            // Fallback to browser print
+            window.print();
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    /** Convert blob: URLs to base64 data URLs for @react-pdf compatibility */
+    const convertBlobAttachments = async (): Promise<Record<string, string>> => {
+        const map: Record<string, string> = {};
+        for (const section of sections) {
+            for (const att of section.attachments || []) {
+                if (att.url.startsWith('blob:')) {
+                    try {
+                        const resp = await fetch(att.url);
+                        const blob = await resp.blob();
+                        const base64 = await new Promise<string>((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result as string);
+                            reader.readAsDataURL(blob);
+                        });
+                        map[att.id] = base64;
+                    } catch {
+                        // skip failed conversions
+                    }
+                }
+            }
+        }
+        return map;
     };
 
     const handleExportPDF = async () => {
         setIsExporting(true);
-        document.body.classList.add('pdf-mode');
         try {
-            // Dynamic import for client-side only
-            const html2pdf = (await import('html2pdf.js')).default;
-            const element = document.getElementById('printable-report');
-            if (!element) {
-                toast.show('Erreur: rapport introuvable', 'error');
-                return;
-            }
+            // Dynamic imports for @react-pdf/renderer (tree-shaking friendly)
+            const { pdf } = await import('@react-pdf/renderer');
+            const { PdfDocument } = await import('./PdfDocument');
+
+            // Pre-convert blob attachments to base64
+            const attachmentUrls = await convertBlobAttachments();
 
             const fileName = `Bilan_${patient.lastName}_${patient.firstName}_${new Date().toISOString().split('T')[0]}.pdf`;
 
-            await html2pdf().set({
-                margin: [10, 0, 10, 0], // top, right, bottom, left in mm
-                filename: fileName,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    letterRendering: true,
-                    windowWidth: 794,
-                    scrollY: 0,
-                    logging: false,
-                },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.page-break-before', after: '.page-break-after', avoid: '.break-inside-avoid' }
-            } as any).from(element).save();
+            // Generate PDF blob
+            const blob = await pdf(
+                <PdfDocument
+                    patient={patient}
+                    sections={sections}
+                    tests={tests}
+                    branding={branding}
+                    catalog={catalog}
+                    scoreDisplayModes={scoreDisplayModes}
+                    attachmentUrls={attachmentUrls}
+                />
+            ).toBlob();
 
-            toast.show('PDF exporté avec succès ✓', 'success');
+            // Trigger download
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast?.success?.('PDF exporté avec succès ✓');
             if (isDemoMode) {
                 onDemoConvert('Exporter le PDF');
             }
         } catch (err) {
             console.error('PDF export error:', err);
-            toast.show('Erreur lors de l\'export PDF', 'error');
+            toast?.error?.('Erreur lors de l\'export PDF');
         } finally {
-            document.body.classList.remove('pdf-mode');
             setIsExporting(false);
         }
     };

@@ -400,7 +400,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
 
                             <div className="flex justify-between items-center pt-4">
                                 <button type="button" onClick={() => setStep(isProfileCompletion ? 1 : 2)} className="text-[var(--text-secondary)] font-bold hover:text-[var(--text-main)] text-sm px-4">Retour</button>
-                                <button type="submit" disabled={isSubmitting} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50">
+                                <button type="submit" disabled={isSubmitting} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50">
                                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} strokeWidth={3}/>}
                                     {isSubmitting ? statusMessage : "Terminer et Accéder"}
                                 </button>

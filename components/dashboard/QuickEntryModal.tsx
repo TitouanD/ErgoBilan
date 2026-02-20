@@ -264,7 +264,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
             <button
               onClick={handleSave}
               disabled={!canSave}
-              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-[var(--card-bg-raised)] text-[var(--text-disabled)] cursor-not-allowed'}`}
+              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-[var(--card-bg-raised)] text-[var(--text-disabled)] cursor-not-allowed'}`}
             >
               <Save size={20} /> Enregistrer la mini-réévaluation
             </button>

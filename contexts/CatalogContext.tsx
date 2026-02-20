@@ -63,7 +63,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const { data: subtestsData, error: subError } = await supabase
           .from('view_unified_subtests')
-          .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config');
+          .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config');
 
         if (subError) {
           Logger.warn('DB', 'Subtests view unavailable, continuing without subtests.', subError);
@@ -154,6 +154,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const sub: SubtestDef = {
             id: s.id,
             name: s.name,
+            abbreviation: s.abbreviation || null,
             unit: s.unit || 'pts',
             scoreType: normalizeScoreType(s.score_type),
             lowerIsBetter: false,

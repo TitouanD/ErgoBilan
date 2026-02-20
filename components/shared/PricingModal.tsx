@@ -179,7 +179,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                             Le Choix Malin
                         </div>
                         
-                        <div className="mb-3 p-4 bg-[#E07A5F] text-white rounded-3xl shadow-lg shadow-orange-200 mt-2">
+                        <div className="mb-3 p-4 bg-[#E07A5F] text-white rounded-3xl shadow-lg shadow-orange-200 dark:shadow-black/30 mt-2">
                             <Rocket size={32} />
                         </div>
                         
@@ -231,7 +231,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                                 <span className="text-base"><strong>Finie la corvée des normes</strong></span>
                             </FeatureWithTooltip>
                         </ul>
-                        <button onClick={() => onSelectPlan('performance')} className="mt-auto w-full py-5 bg-[#E07A5F] text-white font-bold text-lg rounded-xl shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:shadow-orange-300 transition-all hover:scale-[1.02]">
+                        <button onClick={() => onSelectPlan('performance')} className="mt-auto w-full py-5 bg-[#E07A5F] text-white font-bold text-lg rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02]">
                             Activer Performance
                         </button>
                     </div>

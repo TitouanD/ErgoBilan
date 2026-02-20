@@ -301,7 +301,7 @@ export interface PendingQuestionnaire {
 export interface ExtractedRow {
     id: string;
     subtest: string;
-    label: string;
+    label?: string;
     raw: string;
     standard: string;
     zScore: string;
@@ -313,6 +313,8 @@ export interface ExtractedRow {
     hidden_age_max?: number;
     hidden_raw_min?: number;
     hidden_raw_max?: number;
+    /** Original column abbreviation from the source image (e.g. 'MF', 'MFDC') */
+    source_abbreviation?: string;
 }
 
 export interface Contribution {
@@ -385,6 +387,7 @@ export interface AdminSubtestRecord {
     id: string;
     test_id: string;
     name: string;
+    abbreviation?: string | null;
     unit?: string;
     score_type?: string;
     computation_mode?: string;
@@ -450,7 +453,6 @@ export interface GeneratedReportSection {
 
 /** AI extraction response from ContributionStudio image processing */
 export interface AIExtractedNormRow {
-    label?: string;
     raw_range?: string;
     standard?: string;
     mean?: string;
@@ -465,6 +467,8 @@ export interface AIExtractedNormRow {
 
 export interface AIExtractedTable {
     subtest_id?: string;
+    /** Original column abbreviation as printed in the image (e.g. 'MF', 'MFDC') */
+    source_abbreviation?: string;
     rows: AIExtractedNormRow[];
 }
 

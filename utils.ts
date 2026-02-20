@@ -51,9 +51,13 @@ const SUBTEST_TOKEN_MAP: Record<string, string> = {
   prefere: 'prefere'
 };
 
-export const normalizeSubtestName = (name: string): string => {
+/**
+ * Internal tokenizer shared by normalizeSubtestName and findBestCanonicalMatch.
+ * Returns the cleaned token array before joining.
+ */
+export const normalizeSubtestTokens = (name: string): string[] => {
   const trimmed = name.trim();
-  if (!trimmed) return '';
+  if (!trimmed) return [];
 
   const base = trimmed
     .toLowerCase()
@@ -65,7 +69,7 @@ export const normalizeSubtestName = (name: string): string => {
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  if (!base) return '';
+  if (!base) return [];
 
   const tokens = base
     .replace(/[^a-z0-9]+/g, ' ')
@@ -82,7 +86,74 @@ export const normalizeSubtestName = (name: string): string => {
     tokens.push('1');
   }
 
-  return tokens.join('');
+  return tokens;
+};
+
+export const normalizeSubtestName = (name: string): string => {
+  return normalizeSubtestTokens(name).join('');
+};
+
+/**
+ * Strict canonical matcher: given a raw AI-generated subtest name, find the
+ * best matching canonical DB subtest.  Returns the canonical name or null.
+ *
+ * Strategy (short-circuit on first hit):
+ *  1.  Exact match on normalised joined form.
+ *  2.  Containment: one joined form is a substring of the other
+ *      (only accepted if the shorter form covers ≥ 60 % of the longer).
+ *  3.  Token-set Jaccard similarity ≥ threshold (default 0.5).
+ */
+export const findBestCanonicalMatch = (
+  rawName: string,
+  canonicalNames: string[],
+  threshold = 0.5,
+): string | null => {
+  if (!rawName.trim() || canonicalNames.length === 0) return null;
+
+  const rawNorm = normalizeSubtestName(rawName);
+  if (!rawNorm) return null;
+
+  // Pre-compute canonical normalised forms
+  const canonicals = canonicalNames.map(c => ({
+    original: c,
+    norm: normalizeSubtestName(c),
+    tokens: new Set(normalizeSubtestTokens(c)),
+  }));
+
+  // 1. Exact normalised match
+  for (const c of canonicals) {
+    if (c.norm === rawNorm) return c.original;
+  }
+
+  // 2. Containment (one normalised string inside the other)
+  for (const c of canonicals) {
+    if (!c.norm) continue;
+    const shorter = rawNorm.length <= c.norm.length ? rawNorm : c.norm;
+    const longer  = rawNorm.length <= c.norm.length ? c.norm  : rawNorm;
+    if (longer.includes(shorter) && shorter.length / longer.length >= 0.6) {
+      return c.original;
+    }
+  }
+
+  // 3. Token Jaccard overlap
+  const rawTokens = new Set(normalizeSubtestTokens(rawName));
+  if (rawTokens.size === 0) return null;
+
+  let bestMatch: string | null = null;
+  let bestScore = 0;
+
+  for (const c of canonicals) {
+    if (c.tokens.size === 0) continue;
+    const intersection = [...rawTokens].filter(t => c.tokens.has(t)).length;
+    const union = new Set([...rawTokens, ...c.tokens]).size;
+    const jaccard = intersection / union;
+    if (jaccard > bestScore) {
+      bestScore = jaccard;
+      bestMatch = c.original;
+    }
+  }
+
+  return bestScore >= threshold ? bestMatch : null;
 };
 
 // Génération des données pour la courbe de Gauss (Recharts)

@@ -1,8 +1,6 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig } from '../../types';
-// GaussianChart removed — using horizontal bar profile only
-// import { SCALES } from '../../utils/scoring';
-import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Edit2, Check, Upload, MapPin, Mail, Phone, ArrowDown, ArrowUp, ArrowRight, ArrowLeft, Move, Home, Star, Sparkles, PieChart } from 'lucide-react';
+import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Check, Mail, Phone, ArrowDown, ArrowUp, Home, Star, Sparkles, PieChart, Bold, Italic, List, Heading2, Heading3, Type, Pencil } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -49,6 +47,286 @@ const CaptionEditor: React.FC<{
     );
 };
 
+// --- FLOATING FORMATTING TOOLBAR ---
+const FloatingToolbar: React.FC<{
+    position: { top: number; left: number } | null;
+    onFormat: (action: 'bold' | 'italic' | 'h2' | 'h3' | 'bullet' | 'paragraph') => void;
+    activeFormats: { bold?: boolean; italic?: boolean };
+}> = ({ position, onFormat: onFmt, activeFormats }) => {
+    if (!position) return null;
+    const btnClass = (active?: boolean) =>
+        `p-1.5 rounded-md transition-all ${active ? 'bg-[#E07A5F] text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700'}`;
+    return (
+        <div
+            className="fixed z-[200] bg-white border border-stone-200 rounded-xl shadow-2xl px-1.5 py-1 flex items-center gap-0.5 animate-in zoom-in-95 fade-in duration-150 no-print"
+            style={{ top: position.top - 48, left: position.left, transform: 'translateX(-50%)' }}
+        >
+            <button onClick={() => onFmt('bold')} className={btnClass(activeFormats.bold)} title="Gras (**texte**)"><Bold size={14} /></button>
+            <button onClick={() => onFmt('italic')} className={btnClass(activeFormats.italic)} title="Italique"><Italic size={14} /></button>
+            <div className="w-px h-5 bg-stone-200 mx-0.5"></div>
+            <button onClick={() => onFmt('h2')} className={btnClass()} title="Titre de section"><Heading2 size={14} /></button>
+            <button onClick={() => onFmt('h3')} className={btnClass()} title="Sous-titre"><Heading3 size={14} /></button>
+            <button onClick={() => onFmt('bullet')} className={btnClass()} title="Liste à puces"><List size={14} /></button>
+            <button onClick={() => onFmt('paragraph')} className={btnClass()} title="Paragraphe"><Type size={14} /></button>
+        </div>
+    );
+};
+
+// --- INLINE PARAGRAPH EDITOR ---
+const InlineParagraphEditor: React.FC<{
+    text: string;
+    onSave: (newText: string) => void;
+    onCancel: () => void;
+    style?: React.CSSProperties;
+    className?: string;
+    roundedClass?: string;
+}> = ({ text, onSave, onCancel, style, className, roundedClass = 'rounded-xl' }) => {
+    const editorRef = useRef<HTMLDivElement>(null);
+    const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null);
+    const [activeFormats, setActiveFormats] = useState<{ bold?: boolean; italic?: boolean }>({});
+    const savedRef = useRef(false);
+
+    // Convert markdown → HTML for contentEditable initialization
+    const markdownToHtml = (md: string): string => {
+        // Strip line prefixes for display (they're structural, not content)
+        let cleaned = md.replace(/^(#{2,3}\s|[-*]\s)/, '');
+        // Convert **bold** → <b>bold</b>
+        cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        return cleaned;
+    };
+
+    // Initialize content with HTML
+    useEffect(() => {
+        if (editorRef.current) {
+            editorRef.current.innerHTML = markdownToHtml(text);
+            // Place cursor at end
+            const range = document.createRange();
+            const sel = window.getSelection();
+            range.selectNodeContents(editorRef.current);
+            range.collapse(false);
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+            editorRef.current.focus();
+        }
+    }, []);
+
+    const checkSelection = useCallback(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !editorRef.current?.contains(sel.anchorNode)) {
+            setToolbarPos(null);
+            return;
+        }
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setToolbarPos({ top: rect.top + window.scrollY, left: rect.left + rect.width / 2 + window.scrollX });
+        // Check active formats
+        setActiveFormats({
+            bold: document.queryCommandState('bold'),
+            italic: document.queryCommandState('italic'),
+        });
+    }, []);
+
+    useEffect(() => {
+        document.addEventListener('selectionchange', checkSelection);
+        return () => document.removeEventListener('selectionchange', checkSelection);
+    }, [checkSelection]);
+
+    const handleFormat = (action: 'bold' | 'italic' | 'h2' | 'h3' | 'bullet' | 'paragraph') => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        if (action === 'bold') document.execCommand('bold');
+        else if (action === 'italic') document.execCommand('italic');
+        else if (action === 'h2' || action === 'h3' || action === 'bullet' || action === 'paragraph') {
+            // These change the line prefix in markdown — we'll handle on save
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed) return;
+            const selectedText = sel.toString();
+            const prefix = action === 'h2' ? '## ' : action === 'h3' ? '### ' : action === 'bullet' ? '- ' : '';
+            document.execCommand('insertText', false, prefix + selectedText.replace(/^(#{2,3}\s|[-*]\s)/, ''));
+        }
+        checkSelection();
+    };
+
+    const getMarkdown = (): string => {
+        if (!editorRef.current) return text;
+        // Convert DOM back to markdown-flavored plain text
+        let result = '';
+        const walk = (node: Node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                result += node.textContent || '';
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node as HTMLElement;
+                const tag = el.tagName.toLowerCase();
+                if (tag === 'b' || tag === 'strong') {
+                    result += '**';
+                    el.childNodes.forEach(walk);
+                    result += '**';
+                } else if (tag === 'i' || tag === 'em') {
+                    result += '*';
+                    el.childNodes.forEach(walk);
+                    result += '*';
+                } else if (tag === 'br') {
+                    result += '\n';
+                } else {
+                    el.childNodes.forEach(walk);
+                }
+            }
+        };
+        editorRef.current.childNodes.forEach(walk);
+        // Re-add the structural line prefix that was stripped during initialization
+        const prefix = text.match(/^(#{2,3}\s|[-*]\s)/)?.[0] || '';
+        return prefix + result;
+    };
+
+    const save = () => {
+        if (savedRef.current) return;
+        savedRef.current = true;
+        onSave(getMarkdown());
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            save();
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+        }
+        // Ctrl+B / Ctrl+I
+        if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+            e.preventDefault();
+            handleFormat('bold');
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+            e.preventDefault();
+            handleFormat('italic');
+        }
+    };
+
+    return (
+        <>
+            <FloatingToolbar position={toolbarPos} onFormat={handleFormat} activeFormats={activeFormats} />
+            <div className="relative group/editor">
+                <div
+                    ref={editorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onKeyDown={handleKeyDown}
+                    onBlur={save}
+                    className={`outline-none min-h-[1.5em] px-3 py-2 -mx-3 -my-2 border-2 border-[#E07A5F]/40 ${roundedClass} bg-[#fff8f6] shadow-inner ring-2 ring-[#E07A5F]/10 transition-all ${className || ''}`}
+                    style={{ ...style, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                />
+                <div className="absolute -top-8 right-0 flex items-center gap-1 no-print opacity-80">
+                    <span className="text-[10px] text-stone-400 bg-white/80 px-2 py-0.5 rounded-full border border-stone-100">Entrée pour sauver · Échap pour annuler</span>
+                </div>
+            </div>
+        </>
+    );
+};
+
+// --- EDITABLE SECTION TITLE ---
+const EditableSectionTitle: React.FC<{
+    title: string;
+    onSave: (newTitle: string) => void;
+    titleStyleCss: React.CSSProperties;
+    primaryColor: string;
+    secondaryColor: string;
+    isCustom: boolean;
+    roundedClass: string;
+    titleStyle: string;
+    fontFamily: string;
+    editable: boolean;
+}> = ({ title, onSave, titleStyleCss, primaryColor, secondaryColor, isCustom, roundedClass, titleStyle, fontFamily, editable }) => {
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(title);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { setValue(title); }, [title]);
+    useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+
+    const save = () => {
+        if (value.trim() && value !== title) onSave(value.trim());
+        setEditing(false);
+    };
+
+    const IconComponent: any = titleStyle === 'icon-house' ? Home : titleStyle === 'icon-star' ? Star : titleStyle === 'icon-sparkle' ? Sparkles : FileText;
+
+    if (editing) {
+        return (
+            <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
+                <input
+                    ref={inputRef}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onBlur={save}
+                    onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+                    className="text-xl font-bold uppercase tracking-wide bg-transparent outline-none border-b-2 border-[#E07A5F] flex-1"
+                    style={{ fontFamily, color: primaryColor }}
+                />
+                <button onClick={save} className="p-1 bg-[#E07A5F] rounded-md text-white no-print"><Check size={14} /></button>
+            </div>
+        );
+    }
+
+    const baseTitle = (
+        <h2
+            className={`text-xl font-bold uppercase tracking-wide ${editable ? 'cursor-pointer group/title' : ''}`}
+            style={titleStyleCss}
+            onClick={editable ? () => setEditing(true) : undefined}
+        >
+            {title}
+            {editable && <Pencil size={12} className="inline-block ml-2 opacity-0 group-hover/title:opacity-50 transition-opacity no-print" />}
+        </h2>
+    );
+
+    if (titleStyle === 'simple') {
+        return (
+            <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
+                <div className={`p-1.5 ${roundedClass} ${isCustom ? '' : 'bg-stone-100 text-stone-500'}`} style={isCustom ? { backgroundColor: primaryColor + '15', color: primaryColor } : {}}>
+                    <FileText size={20} />
+                </div>
+                {baseTitle}
+            </div>
+        );
+    }
+
+    if (titleStyle === 'underline') {
+        return (
+            <div className="mb-6" onClick={editable ? () => setEditing(true) : undefined}>
+                <h2 className={`text-xl font-bold uppercase tracking-wide pb-2 border-b-4 inline-block ${editable ? 'cursor-pointer' : ''}`} style={{ ...titleStyleCss, borderColor: secondaryColor }}>
+                    {title}
+                    {editable && <Pencil size={12} className="inline-block ml-2 opacity-0 hover:opacity-50 transition-opacity no-print" />}
+                </h2>
+            </div>
+        );
+    }
+
+    if (titleStyle === 'filled-shape') {
+        return (
+            <div className="flex items-center gap-3 mb-6">
+                <div className="relative flex items-center justify-center w-10 h-10">
+                    <svg viewBox="0 0 100 100" className="absolute w-full h-full" style={{ fill: primaryColor }}>
+                        <path d="M50 0 L100 40 V100 H0 V40 Z" />
+                    </svg>
+                    <div className="relative z-10 w-2 h-2 bg-white rounded-full"></div>
+                </div>
+                {baseTitle}
+            </div>
+        );
+    }
+
+    // Icon styles
+    return (
+        <div className="flex items-center gap-3 mb-6">
+            <div style={{ color: secondaryColor }}>
+                <IconComponent size={24} fill="currentColor" className="opacity-80" />
+            </div>
+            {baseTitle}
+        </div>
+    );
+};
+
 // --- COMPOSANT GRAPHIQUE RADAR ---
 const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }> = ({ tests, branding }) => {
     const { catalog } = useCatalog();
@@ -65,17 +343,21 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
         Object.entries(tests).forEach(([testId, subtests]) => {
             // Trouver la catégorie du test
             const catDef = catalog.find(c => c.tests.some(t => t.id === testId));
-            if (!catDef) return;
+            // For tests not in catalog, group under "Autres" pseudo-category
+            const categoryId = catDef?.id || '__uncategorized__';
+            if (!stats[categoryId]) {
+                stats[categoryId] = { sum: 0, count: 0, name: catDef?.name || 'Autres' };
+            }
 
             Object.values(subtests).forEach(res => {
-                if (!isReviewedScore(res) || !hasValidZ(res)) return;
+                if (!hasValidZ(res)) return;
                 // On clamp les valeurs extremes pour le graphique (-3 a +2)
                 let z = res.zScore as number;
                 if (z < -3) z = -3;
                 if (z > 2) z = 2;
 
-                stats[catDef.id].sum += z;
-                stats[catDef.id].count += 1;
+                stats[categoryId].sum += z;
+                stats[categoryId].count += 1;
             });
         });
 
@@ -234,75 +516,23 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         );
     };
 
-    const SectionTitle = ({ title }: { title: string }) => {
-        // Style Icones (Personnalisation avancée)
-        let IconComponent: any = FileText;
-        const isFilledShape = titleStyle === 'filled-shape';
-
-        if (titleStyle === 'icon-house') IconComponent = Home;
-        else if (titleStyle === 'icon-star') IconComponent = Star;
-        else if (titleStyle === 'icon-sparkle') IconComponent = Sparkles;
-        else if (titleStyle === 'filled-shape') IconComponent = Home; // Default shape icon
-
-        if (titleStyle === 'simple') {
-            return (
-                <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: isCustom ? primaryColor + '20' : '#E5E7EB' }}>
-                    <div className={`p-1.5 ${roundedClass} ${isCustom ? '' : 'bg-stone-100 text-stone-500'}`} style={isCustom ? { backgroundColor: primaryColor + '15', color: primaryColor } : {}}>
-                        <FileText size={20} />
-                    </div>
-                    <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>{title}</h2>
-                </div>
-            );
-        }
-
-        if (titleStyle === 'underline') {
-            return (
-                <h2 className="text-xl font-bold uppercase tracking-wide mb-6 pb-2 border-b-4 inline-block" style={{ ...titleStyleCss, borderColor: secondaryColor }}>{title}</h2>
-            );
-        }
-
-        if (isFilledShape) {
-            return (
-                <div className="flex items-center gap-3 mb-6">
-                    {/* Forme pleine type "Maison" ou "Rond" avec icône blanche */}
-                    <div className="relative flex items-center justify-center w-10 h-10">
-                        {/* Forme de fond SVG simple */}
-                        <svg viewBox="0 0 100 100" className="absolute w-full h-full" style={{ fill: primaryColor }}>
-                            <path d="M50 0 L100 40 V100 H0 V40 Z" /> {/* Forme Maison */}
-                        </svg>
-                        <div className="relative z-10 text-white">
-                            {/* On peut varier l'icône selon le titre si on veut être intelligent, pour l'instant icône générique */}
-                            <div className="w-2 h-2 bg-white rounded-full"></div>
-                        </div>
-                    </div>
-                    <h2 className="text-xl font-bold uppercase tracking-wide" style={{ color: secondaryColor, fontFamily }}>{title}</h2>
-                </div>
-            );
-        }
-
-        // Icon Styles (Outline)
-        return (
-            <div className="flex items-center gap-3 mb-6">
-                <div style={{ color: secondaryColor }}>
-                    <IconComponent size={24} fill="currentColor" className="opacity-80" />
-                </div>
-                <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>{title}</h2>
-            </div>
-        );
-    };
-
     const InteractiveSection = ({ sectionId, pageIdx, indexInPage, totalInPage }: { sectionId: string, pageIdx: number, indexInPage: number, totalInPage: number }) => {
         const section = getSection(sectionId);
         const [editingIndex, setEditingIndex] = useState<number | null>(null);
-        const [tempText, setTempText] = useState('');
         const fileInputRef = useRef<HTMLInputElement>(null);
         const [insertIndex, setInsertIndex] = useState<number | null>(null);
         const [insertType, setInsertType] = useState<'image-full' | 'image-text'>('image-full');
         if (!section) return null;
         const paragraphs = (section.content || '').split('\n').filter(line => line.trim().length > 0);
 
-        const handleTextClick = (index: number, text: string) => { if (!onUpdateSection) return; setEditingIndex(index); setTempText(text); };
-        const saveText = (index: number) => { if (!onUpdateSection) return; const newParagraphs = [...paragraphs]; newParagraphs[index] = tempText; onUpdateSection(section.id, { content: newParagraphs.join('\n\n') }); setEditingIndex(null); };
+        const saveParagraph = (index: number, newText: string) => {
+            if (!onUpdateSection) return;
+            const newParagraphs = [...paragraphs];
+            newParagraphs[index] = newText;
+            onUpdateSection(section.id, { content: newParagraphs.join('\n\n') });
+            setEditingIndex(null);
+        };
+
         const triggerFileSelect = (type: 'image-full' | 'image-text') => { setInsertType(type); fileInputRef.current?.click(); };
         const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0] && insertIndex !== null && onUpdateSection) { const file = e.target.files[0]; const url = URL.createObjectURL(file); const newAttachment: ReportAttachment = { id: crypto.randomUUID(), type: insertType, url: url, caption: insertType === 'image-text' ? "Notez ici vos observations..." : undefined, positionIndex: insertIndex }; const currentAttachments = section.attachments || []; onUpdateSection(section.id, { attachments: [...currentAttachments, newAttachment] }); setInsertIndex(null); if (fileInputRef.current) fileInputRef.current.value = ''; } };
         const updateCaption = (aid: string, val: string) => { if (!onUpdateSection) return; onUpdateSection(section.id, { attachments: (section.attachments || []).map(a => a.id === aid ? { ...a, caption: val } : a) }); };
@@ -311,32 +541,62 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         return (
             <div className="mb-8 relative group">
                 <ControlBar sectionId={sectionId} pageIdx={pageIdx} isFirst={indexInPage === 0} isLast={indexInPage === totalInPage - 1} />
-                <SectionTitle title={section.title} />
+                <EditableSectionTitle
+                    title={section.title}
+                    onSave={(newTitle) => onUpdateSection?.(section.id, { title: newTitle })}
+                    titleStyleCss={titleStyleCss}
+                    primaryColor={primaryColor}
+                    secondaryColor={secondaryColor}
+                    isCustom={!!isCustom}
+                    roundedClass={roundedClass}
+                    titleStyle={titleStyle}
+                    fontFamily={fontFamily}
+                    editable={!!onUpdateSection}
+                />
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                <div className="space-y-2">
+                <div className="space-y-1">
                     {paragraphs.map((para, idx) => {
                         const attachmentsHere = section.attachments?.filter(a => a.positionIndex === idx) || [];
                         const isEditing = editingIndex === idx;
-                        let textStyle = "text-stone-700 leading-relaxed text-sm text-justify mb-2";
+
+                        // PDF-matching typography classes
+                        let textStyle = "text-[10pt] leading-[1.6] text-stone-700 text-justify mb-1";
                         let content = para;
-                        if (para.startsWith('## ')) { textStyle = "text-lg font-bold mt-6 mb-2 uppercase border-b pb-1 border-stone-100"; }
-                        else if (para.startsWith('### ')) { textStyle = "text-md font-bold text-stone-800 mt-4 mb-1"; content = para.replace('### ', ''); }
-                        else if (para.startsWith('- ') || para.startsWith('* ')) { textStyle = "text-stone-700 leading-relaxed text-sm text-justify ml-4 list-item list-disc marker:text-stone-800"; content = para.replace(/^[*-]\s+/, ''); }
+
+                        if (para.startsWith('## ')) {
+                            textStyle = "text-[13pt] font-bold mt-3 mb-1.5 uppercase tracking-wide border-b pb-1 border-stone-100";
+                            content = para.slice(3);
+                        } else if (para.startsWith('### ')) {
+                            textStyle = "text-[11pt] font-bold text-stone-800 mt-2 mb-1";
+                            content = para.slice(4);
+                        } else if (para.startsWith('- ') || para.startsWith('* ')) {
+                            textStyle = "text-[10pt] leading-[1.6] text-stone-700 text-justify ml-4 flex items-start gap-1.5 mb-0.5";
+                            content = para.replace(/^[*-]\s+/, '');
+                        }
+
+                        const isBullet = para.startsWith('- ') || para.startsWith('* ');
+                        const isHeading = para.startsWith('## ') || para.startsWith('### ');
 
                         return (
                             <div key={idx} className="relative group/block">
                                 {isEditing ? (
-                                    <div className="relative mb-4 print:hidden">
-                                        <textarea value={tempText} onChange={(e) => setTempText(e.target.value)} className={`w-full p-4 border-2 border-[#E07A5F] ${roundedClass} shadow-lg outline-none text-sm min-h-[150px] bg-[var(--input-bg)] text-[var(--text-heading)] font-medium leading-relaxed resize-y`} autoFocus />
-                                        <div className="flex justify-end gap-2 mt-2 absolute bottom-3 right-3">
-                                            <button onClick={() => setEditingIndex(null)} className="p-1.5 bg-[var(--hover-bg)] rounded-md shadow text-[var(--text-secondary)]"><X size={14} /></button>
-                                            <button onClick={() => saveText(idx)} className="p-1.5 bg-[#E07A5F] rounded-md shadow text-white"><Check size={14} /></button>
-                                        </div>
-                                    </div>
+                                    <InlineParagraphEditor
+                                        text={para}
+                                        onSave={(newText) => saveParagraph(idx, newText)}
+                                        onCancel={() => setEditingIndex(null)}
+                                        className={textStyle}
+                                        style={isHeading ? { color: primaryColor, fontFamily } : { fontFamily }}
+                                        roundedClass={roundedClass}
+                                    />
                                 ) : (
-                                    <div onClick={() => handleTextClick(idx, para)} className={`${textStyle} ${onUpdateSection ? 'cursor-text hover:bg-[#fff5f2] rounded px-2 -mx-2 py-1 -my-1 transition-colors relative border border-transparent hover:border-[#E07A5F]/20 print:border-none' : ''}`} style={para.startsWith('## ') ? { color: primaryColor, fontFamily } : {}}>
-                                        {parseBold(content.replace('## ', ''))}
-                                        {onUpdateSection && <Edit2 size={12} className="absolute top-1 right-1 text-[#E07A5F] opacity-0 group-hover/block:opacity-100 print:hidden" />}
+                                    <div
+                                        onClick={() => onUpdateSection && setEditingIndex(idx)}
+                                        className={`${textStyle} ${onUpdateSection ? 'cursor-text hover:bg-[#fff5f2] rounded px-2 -mx-2 py-0.5 -my-0.5 transition-colors relative border border-transparent hover:border-[#E07A5F]/20 print:border-none print:px-0 print:mx-0 print:py-0 print:my-0' : ''}`}
+                                        style={isHeading ? { color: primaryColor, fontFamily } : { fontFamily }}
+                                    >
+                                        {isBullet && <span className="text-stone-400 select-none shrink-0">•</span>}
+                                        <span className="flex-1">{parseBold(content)}</span>
+                                        {onUpdateSection && <Pencil size={11} className="absolute top-0.5 right-0.5 text-[#E07A5F]/40 opacity-0 group-hover/block:opacity-100 print:hidden transition-opacity" />}
                                     </div>
                                 )}
                                 {attachmentsHere.map(att => (
@@ -384,10 +644,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats</h2>
                 </div>
 
-                {/* GRAPHIQUE GLOBAL (Radar) */}
-                {Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
-                    <ProfileRadarChart tests={tests} branding={branding} />
-                )}
+                {/* GRAPHIQUE GLOBAL (Radar) — self-filters if <3 categories */}
+                <ProfileRadarChart tests={tests} branding={branding} />
 
                 {Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
                 <>
@@ -446,9 +704,15 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 )}
                 <div className="space-y-12">
                     {Object.entries(tests).map(([testId, subtests]) => {
-                        const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
-                        if (!def) return null;
-                        const validSubtests = Object.entries(subtests).filter(([, val]) => hasAnyScoreValue(val));
+                        const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+                        // Fallback for private/custom tests absent from catalog — still display their data
+                        const def = catalogDef || {
+                            id: testId,
+                            name: testId.startsWith('priv_') ? `Test personnalisé` : testId,
+                            subtests: Object.keys(subtests).map(subId => ({ id: subId, name: subId, unit: 'pts', scoreType: 'standard' as const, lowerIsBetter: false, computationMode: 'LOOKUP' as const, inputModel: 'numeric_4mode' as const })),
+                        };
+                        // At Step 5, all tests have already been validated — show them unconditionally
+                        const validSubtests = Object.entries(subtests);
                         if (validSubtests.length === 0) return null;
 
                         const enrichedSubtests = validSubtests.map(([subId, result]) => {

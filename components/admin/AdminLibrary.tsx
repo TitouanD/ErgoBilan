@@ -23,6 +23,22 @@ const createSubtestId = (testId: string, name: string) => {
   return `${testId}_${slug}_${suffix}`;
 };
 
+const normalizeAbbreviation = (value?: string | null): string => (
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+);
+
+const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
+  `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
+);
+
+const formatSubtestDisplayName = (subtest: Pick<AdminSubtestRecord, 'name' | 'abbreviation'>): string => {
+  const abbr = normalizeAbbreviation(subtest.abbreviation);
+  return abbr ? `${subtest.name} (${abbr})` : subtest.name;
+};
+
 const toNumber = (val: string | number | null | undefined): number | null => {
   if (val === null || val === undefined) return null;
   if (typeof val === 'number') return Number.isNaN(val) ? null : val;
@@ -226,17 +242,33 @@ export const AdminLibrary: React.FC = () => {
   const updateSubtestField = (subtestId: string, field: keyof AdminSubtestRecord, value: any) => {
     setBundle(prev => {
       if (!prev) return prev;
-      if (field === 'name') {
-        const normalized = normalizeSubtestName(String(value || ''));
-        if (normalized && prev.subtests.some(s => s.id !== subtestId && normalizeSubtestName(s.name) === normalized)) {
-          toast.error('Ce nom de sous-test existe déjà pour ce test.');
+      const current = prev.subtests.find(s => s.id === subtestId);
+      if (!current) return prev;
+
+      const nextName = field === 'name' ? String(value || '') : current.name;
+      const nextAbbreviationRaw = field === 'abbreviation'
+        ? String(value || '')
+        : (current.abbreviation || '');
+      const nextAbbreviation = normalizeAbbreviation(nextAbbreviationRaw);
+      const nextKey = buildSubtestIdentityKey(nextName, nextAbbreviation);
+
+      if (normalizeSubtestName(nextName)) {
+        const hasDuplicate = prev.subtests.some((s) => (
+          s.id !== subtestId && buildSubtestIdentityKey(s.name, s.abbreviation) === nextKey
+        ));
+        if (hasDuplicate) {
+          toast.error('Ce couple nom + abréviation existe déjà pour ce test.');
           return prev;
         }
       }
+
+      const normalizedValue = field === 'abbreviation'
+        ? (nextAbbreviation || null)
+        : value;
       setIsDirty(true);
       return {
         ...prev,
-        subtests: prev.subtests.map(s => (s.id === subtestId ? { ...s, [field]: value } : s))
+        subtests: prev.subtests.map(s => (s.id === subtestId ? { ...s, [field]: normalizedValue } : s))
       };
     });
   };
@@ -248,6 +280,7 @@ export const AdminLibrary: React.FC = () => {
       id: createSubtestId(bundle.test.id, newName),
       test_id: bundle.test.id,
       name: newName,
+      abbreviation: null,
       unit: 'pts',
       score_type: 'scaled',
       computation_mode: 'LOOKUP',
@@ -344,6 +377,7 @@ export const AdminLibrary: React.FC = () => {
       id: s.id,
       test_id: test.id,
       name: s.name,
+      abbreviation: normalizeAbbreviation(s.abbreviation) || null,
       unit: s.unit || 'pts',
       score_type: s.score_type || 'scaled',
       computation_mode: s.computation_mode || 'LOOKUP',
@@ -473,7 +507,7 @@ export const AdminLibrary: React.FC = () => {
     setSubtestDupPairs([]);
     setSubtestDupTarget(null);
     try {
-      const pairs = await AdminService.findDuplicateSubtests(bundle.test.id, 0.4);
+      const pairs = await AdminService.findDuplicateSubtests(bundle.test.id, 0.7);
       setSubtestDupPairs(pairs);
       if (pairs.length === 0) toast.success('Aucun doublon de sous-test détecté.');
     } catch (e) {
@@ -817,7 +851,7 @@ export const AdminLibrary: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 min-w-0">
                             {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
-                            <span className="text-xs font-bold text-white truncate">{s.name}</span>
+                            <span className="text-xs font-bold text-white truncate">{formatSubtestDisplayName(s)}</span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
@@ -830,7 +864,8 @@ export const AdminLibrary: React.FC = () => {
                           </div>
                         </div>
                         <div className="text-[10px] text-stone-500 flex items-center gap-1">
-                          {s.score_type} · {s.computation_mode} · {s.input_model || 'numeric_4mode'} {s.organization_id ? '· Privé' : ''}
+                          {(() => { const cnt = bundle.norms.filter(n => n.subtest_id === s.id).length; return cnt === 0 ? <span className="text-rose-400 font-bold">0 normes</span> : <span>{cnt}n</span>; })()}
+                          {' · '}{s.score_type} · {s.computation_mode} · {s.input_model || 'numeric_4mode'} {s.organization_id ? '· Privé' : ''}
                         </div>
                       </div>
                     ))}
@@ -851,6 +886,15 @@ export const AdminLibrary: React.FC = () => {
                             value={activeSubtest.name}
                             onChange={(e) => updateSubtestField(activeSubtest.id, 'name', e.target.value)}
                             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Abréviation</label>
+                          <input
+                            value={activeSubtest.abbreviation || ''}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'abbreviation', e.target.value)}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white uppercase"
+                            placeholder="ex: AAO"
                           />
                         </div>
                         <div className="col-span-3">
@@ -1112,16 +1156,16 @@ export const AdminLibrary: React.FC = () => {
                         <div className="space-y-1">
                           {bundle.subtests.filter(s => (pendingNormCounts[s.id] || 0) > 0).map(s => (
                             <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
-                              <span className="text-white font-bold">{s.name} <span className="text-amber-400 font-normal">({pendingNormCounts[s.id]} normes)</span></span>
+                              <span className="text-white font-bold">{formatSubtestDisplayName(s)} <span className="text-amber-400 font-normal">({pendingNormCounts[s.id]} normes)</span></span>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => handlePromoteNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${s.name}`)}
+                                  onClick={() => handlePromoteNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${formatSubtestDisplayName(s)}`)}
                                   className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
                                 >
                                   <Check size={10} /> Approuver
                                 </button>
                                 <button
-                                  onClick={() => handleRejectNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${s.name}`)}
+                                  onClick={() => handleRejectNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${formatSubtestDisplayName(s)}`)}
                                   className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1"
                                 >
                                   <Trash2 size={10} /> Rejeter
@@ -1152,7 +1196,7 @@ export const AdminLibrary: React.FC = () => {
                         <div className="space-y-1">
                           {privateSubtests.map(s => (
                             <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
-                              <span className="text-white font-bold">{s.name}</span>
+                              <span className="text-white font-bold">{formatSubtestDisplayName(s)}</span>
                               <button
                                 onClick={() => handlePromoteSubtests([s.id])}
                                 disabled={isPromoting}

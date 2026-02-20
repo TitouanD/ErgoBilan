@@ -108,7 +108,7 @@ const AppRouter = () => {
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'authenticated') {
-            setMode(prev => (prev === 'assessment' || prev === 'portal') ? prev : 'dashboard');
+            setMode(prev => (prev === 'assessment' || prev === 'portal' || prev === 'contribution' || prev === 'admin') ? prev : 'dashboard');
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
@@ -132,7 +132,7 @@ const AppRouter = () => {
         } else if (authState === 'network_error') {
             setIsLoggingIn(false);
         }
-    }, [authState, toast]);
+    }, [authState]); // eslint-disable-line react-hooks/exhaustive-deps -- toast is stable via useMemo in ToastContext
 
     // Bridge generation error → paywall
     useEffect(() => { if (generationError === 'CREDIT_INSUFFICIENT') { setPricingModalMode('paywall'); setGenerationError(null); } }, [generationError, setGenerationError]);

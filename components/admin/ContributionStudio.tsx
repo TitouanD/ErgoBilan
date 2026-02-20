@@ -1,6 +1,6 @@
 ﻿
-import React, { useState, useMemo, useEffect } from 'react';
-import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock, AlertTriangle } from 'lucide-react';
 import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
 import { callExtractionTask } from '../../services/extractionProxy';
 import { fileToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
@@ -8,10 +8,12 @@ import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreT
 import { supabase } from '../../services/db';
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
 import { resolveSubtestAlias } from '../../data/subtestAliases';
-import { normalizeSubtestName, normalizeTestName } from '../../utils';
+import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
+import { DisambiguationModal } from './DisambiguationModal';
 
 interface Props {
     onClose: () => void;
@@ -25,6 +27,66 @@ const GRADE_TO_AGE: Record<string, string> = {
     'CM1': '9 ans', 'CM2': '10 ans',
     '6EME': '11 ans', '5EME': '12 ans', '4EME': '13 ans', '3EME': '14 ans',
     '6ÈME': '11 ans', '5ÈME': '12 ans', '4ÈME': '13 ans', '3ÈME': '14 ans'
+};
+
+// Grade → age in months for filename age parsing
+const GRADE_TO_MONTHS: Record<string, number> = {
+    'PS': 36, 'MS': 48, 'GS': 60,
+    'CP': 72, 'CE1': 84, 'CE2': 96,
+    'CM1': 108, 'CM2': 120,
+    '6EME': 132, '5EME': 144, '4EME': 156, '3EME': 168,
+    '6E': 132, '5E': 144, '4E': 156, '3E': 168,
+};
+
+/**
+ * Parse an age range from a filename.
+ * Handles patterns like:
+ *   "10;6-10;11.jpg"   → { min: 126, max: 131 }
+ *   "13ans.jpg"        → { min: 156, max: 167 }
+ *   "5ans6mois.png"    → { min: 66, max: 66 }
+ *   "CE1.png"          → { min: 84, max: 95 }
+ *   "4;0-4;5.jpg"      → { min: 48, max: 53 }
+ */
+const parseAgeFromFilename = (filename: string): { min: number; max: number } | null => {
+    const base = filename.replace(/\.[^.]+$/, '').toUpperCase();
+
+    // Pattern: "10;6-10;11" or "4;0 - 4;5"  (years;months range)
+    const rangeMatch = base.match(/(\d{1,2})\s*[;:.]\s*(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*[;:.]\s*(\d{1,2})/);
+    if (rangeMatch) {
+        const min = parseInt(rangeMatch[1]) * 12 + parseInt(rangeMatch[2]);
+        const max = parseInt(rangeMatch[3]) * 12 + parseInt(rangeMatch[4]);
+        return { min, max };
+    }
+
+    // Pattern: "5ANS6MOIS" or "5 ANS 6 MOIS"
+    const yrmMatch = base.match(/(\d{1,2})\s*ANS?\s*(\d{1,2})\s*MOIS/);
+    if (yrmMatch) {
+        const months = parseInt(yrmMatch[1]) * 12 + parseInt(yrmMatch[2]);
+        return { min: months, max: months };
+    }
+
+    // Pattern: "13ANS" or "13 ANS"
+    const yrMatch = base.match(/(\d{1,2})\s*ANS?/);
+    if (yrMatch) {
+        const years = parseInt(yrMatch[1]);
+        return { min: years * 12, max: years * 12 + 11 };
+    }
+
+    // Pattern: single age "10;6" (years;months, no range)
+    const singleMatch = base.match(/(\d{1,2})\s*[;:.]\s*(\d{1,2})/);
+    if (singleMatch) {
+        const months = parseInt(singleMatch[1]) * 12 + parseInt(singleMatch[2]);
+        return { min: months, max: months };
+    }
+
+    // Pattern: grade level "CE1", "CM2", "6EME"
+    for (const [grade, months] of Object.entries(GRADE_TO_MONTHS)) {
+        if (base.includes(grade)) {
+            return { min: months, max: months + 11 };
+        }
+    }
+
+    return null;
 };
 
 type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
@@ -42,10 +104,122 @@ type CategoryOption = {
     sortOrder?: number | null;
 };
 
+type CanonicalSubtestEntry = {
+    id: string;
+    name: string;
+    abbreviation?: string | null;
+};
+
+type CanonicalGroupedEntry = {
+    name: string;
+    abbreviation?: string | null;
+    displayName: string;
+    rows: ExtractedRow[];
+};
+
+const normalizeAbbreviation = (value?: string | null): string => (
+    (value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+);
+
+const splitSubtestDisplayName = (name: string): { baseName: string; abbreviation?: string } => {
+    const trimmed = name.trim();
+    if (!trimmed) return { baseName: '' };
+    const match = trimmed.match(/^(.*)\(([A-Z0-9][A-Z0-9&/\- ]{0,19})\)\s*$/);
+    if (!match) return { baseName: trimmed };
+    return {
+        baseName: match[1].trim(),
+        abbreviation: normalizeAbbreviation(match[2]) || undefined,
+    };
+};
+
+const formatSubtestDisplayName = (name: string, abbreviation?: string | null): string => {
+    const trimmedName = name.trim();
+    const normalizedAbbr = normalizeAbbreviation(abbreviation);
+    if (!trimmedName) return '';
+    return normalizedAbbr ? `${trimmedName} (${normalizedAbbr})` : trimmedName;
+};
+
+const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
+    `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
+);
+
+// --- DRAFT PERSISTENCE (survives PIN lock, crash, tab close) ---
+const DRAFT_KEY = 'contrib_studio_draft';
+
+interface ContribDraft {
+    testName: string;
+    selectedCategory: string;
+    tableStructure: TableStructure;
+    pages: ExtractionPage[];
+    savedAt: string;
+}
+
+const saveDraft = (d: ContribDraft) => {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* quota */ }
+};
+const loadDraft = (): ContribDraft | null => {
+    try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return null;
+        const d = JSON.parse(raw) as ContribDraft;
+        // Discard drafts older than 24 h
+        if (Date.now() - new Date(d.savedAt).getTime() > 24 * 60 * 60 * 1000) {
+            localStorage.removeItem(DRAFT_KEY);
+            return null;
+        }
+        return d;
+    } catch { return null; }
+};
+const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+
+/**
+ * Re-disambiguate pages in-place when multiple rows share the same subtest name
+ * but carry different source_abbreviation values (e.g. AAO/AAC/AAI for NEPSY-2
+ * "Attention Auditive", or MFC/MFS/MFT for "Mémoire de figures").
+ * Always appends the abbreviation when there are ≥2 distinct abbreviations for
+ * the same subtest — these are genuinely different score columns that must be
+ * stored separately. Non-canonical names will prompt a confirmation modal.
+ *
+ */
+const reDisambiguateByAbbreviation = (pages: ExtractionPage[]): void => {
+    const subtestAbbrMap = new Map<string, Set<string>>();
+    pages.forEach(page => {
+        page.rows.forEach(row => {
+            const normalizedAbbr = normalizeAbbreviation(row.source_abbreviation);
+            if (!normalizedAbbr) return;
+            row.source_abbreviation = normalizedAbbr;
+            if (!subtestAbbrMap.has(row.subtest)) subtestAbbrMap.set(row.subtest, new Set());
+            subtestAbbrMap.get(row.subtest)!.add(normalizedAbbr);
+        });
+    });
+    subtestAbbrMap.forEach((abbrs, subtest) => {
+        if (abbrs.size > 1) {
+            const trailMatch = subtest.match(/^(.*)\(([A-Z0-9][A-Z0-9&/\- ]{0,19})\)\s*$/);
+            const trailingAbbr = trailMatch ? normalizeAbbreviation(trailMatch[2]) : '';
+            const baseName = trailMatch && abbrs.has(trailingAbbr)
+                ? trailMatch[1].trim()
+                : subtest;
+            pages.forEach(page => {
+                page.rows.forEach(row => {
+                    if (row.subtest === subtest && row.source_abbreviation) {
+                        row.subtest = `${baseName} (${normalizeAbbreviation(row.source_abbreviation)})`;
+                    }
+                });
+            });
+        }
+    });
+};
+
 export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [step, setStep] = useState<'intro' | 'upload' | 'processing' | 'editor' | 'success'>('intro');
     const [files, setFiles] = useState<File[]>([]);
     const [currentFileIndex, setCurrentFileIndex] = useState(0);
+    const { suppressIdleLock, resumeIdleLock } = useAuth();
+    const [hasPendingDraft, setHasPendingDraft] = useState(false);
+    const draftRef = useRef<ContribDraft | null>(null);
 
     const [testName, setTestName] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -72,15 +246,100 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [showFuzzyModal, setShowFuzzyModal] = useState(false);
     const [fuzzyMatches, setFuzzyMatches] = useState<SimilarTestMatch[]>([]);
     const [canonicalTest, setCanonicalTest] = useState<{ id: string; name: string } | null>(null);
-    const [canonicalSubtests, setCanonicalSubtests] = useState<Array<{ id: string; name: string }>>([]);
+    const [canonicalSubtests, setCanonicalSubtests] = useState<CanonicalSubtestEntry[]>([]);
     const [isCanonicalLoading, setIsCanonicalLoading] = useState(false);
     const [showUnmappedModal, setShowUnmappedModal] = useState(false);
+    // Track subtest names that had duplicate sids from extraction (user must rename)
+    const [duplicatedSids, setDuplicatedSids] = useState<string[]>([]);
+    const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
 
     const toast = useToast();
+
+    // --- DRAFT: check on mount ---
+    useEffect(() => {
+        const d = loadDraft();
+        if (d && d.pages.length > 0) {
+            draftRef.current = d;
+            setHasPendingDraft(true);
+        }
+    }, []);
+
+    // --- DRAFT: auto-save when editor state changes ---
+    const persistDraft = useCallback(() => {
+        if (pages.length === 0) return;
+        saveDraft({
+            testName,
+            selectedCategory,
+            tableStructure,
+            pages,
+            savedAt: new Date().toISOString(),
+        });
+    }, [testName, selectedCategory, tableStructure, pages]);
+
+    useEffect(() => { persistDraft(); }, [persistDraft]);
+
+    const restoreDraft = () => {
+        const d = draftRef.current;
+        if (!d) return;
+        // Re-disambiguate variant subtests that may have been collapsed before the fix
+        reDisambiguateByAbbreviation(d.pages);
+        setTestName(d.testName);
+        setSelectedCategory(d.selectedCategory);
+        setTableStructure(d.tableStructure);
+        setPages(d.pages);
+        setCurrentFileIndex(0);
+        setStep('editor');
+        setHasPendingDraft(false);
+        draftRef.current = null;
+        toast.success(`Brouillon restauré (${d.pages.length} page${d.pages.length > 1 ? 's' : ''})`);
+    };
+
+    const discardDraft = () => {
+        clearDraft();
+        setHasPendingDraft(false);
+        draftRef.current = null;
+    };
 
     const currentPage = pages[currentFileIndex] || null;
     const currentRows = currentPage?.rows || [];
     const allRows = useMemo(() => pages.flatMap(page => page.rows), [pages]);
+    const canonicalSubtestsNormalized = useMemo<CanonicalSubtestEntry[]>(() => (
+        canonicalSubtests.map((sub) => {
+            const parsed = splitSubtestDisplayName(sub.name);
+            const normalizedAbbr = normalizeAbbreviation(sub.abbreviation || parsed.abbreviation);
+            return {
+                id: sub.id,
+                name: parsed.baseName || sub.name.trim(),
+                abbreviation: normalizedAbbr || null,
+            };
+        })
+    ), [canonicalSubtests]);
+    const canonicalNameInventory = useMemo(
+        () => Array.from(new Set(canonicalSubtestsNormalized.map((sub) => sub.name).filter(Boolean))),
+        [canonicalSubtestsNormalized]
+    );
+    const canonicalSubtestsByAbbreviation = useMemo(() => {
+        const map = new Map<string, CanonicalSubtestEntry[]>();
+        canonicalSubtestsNormalized.forEach((sub) => {
+            const abbr = normalizeAbbreviation(sub.abbreviation);
+            if (!abbr) return;
+            const existing = map.get(abbr) || [];
+            existing.push(sub);
+            map.set(abbr, existing);
+        });
+        return map;
+    }, [canonicalSubtestsNormalized]);
+    const canonicalSubtestsByName = useMemo(() => {
+        const map = new Map<string, CanonicalSubtestEntry[]>();
+        canonicalSubtestsNormalized.forEach((sub) => {
+            const normalized = normalizeSubtestName(sub.name);
+            if (!normalized) return;
+            const existing = map.get(normalized) || [];
+            existing.push(sub);
+            map.set(normalized, existing);
+        });
+        return map;
+    }, [canonicalSubtestsNormalized]);
 
     // Stable object URL for current file preview — revoke on change to prevent memory leaks
     const currentFileUrl = useMemo(() => {
@@ -124,14 +383,20 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                 const { data: subs, error: subsError } = await supabase
                     .from('view_unified_subtests')
-                    .select('id, name')
+                    .select('id, name, abbreviation')
                     .eq('test_id', matchedTest.id);
 
                 if (subsError) throw subsError;
 
                 if (!canceled) {
                     setCanonicalTest({ id: matchedTest.id, name: matchedTest.label });
-                    setCanonicalSubtests(subs || []);
+                    setCanonicalSubtests(
+                        (subs || []).map((sub: { id: string; name: string; abbreviation?: string | null }) => ({
+                            id: sub.id,
+                            name: sub.name,
+                            abbreviation: sub.abbreviation ?? null,
+                        }))
+                    );
                 }
             } catch (error) {
                 Logger.error('DB', 'Canonical subtests load failed', error);
@@ -212,12 +477,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         return rawLabel;
     };
 
+    /** Build a human-readable label from age-in-months values (e.g. 60,65 → "5;0 – 5;5") */
+    const formatAgeLabel = (ageMin?: number, ageMax?: number): string => {
+        if (ageMin === undefined || ageMax === undefined) return "";
+        const fmtAge = (m: number) => `${Math.floor(m / 12)};${m % 12}`;
+        if (ageMin === ageMax) return fmtAge(ageMin);
+        return `${fmtAge(ageMin)} – ${fmtAge(ageMax)}`;
+    };
+
     const sanitizeAndCalculate = (row: ExtractedRow, currentStructure: TableStructure, triggerField?: keyof ExtractedRow): ExtractedRow => {
         const newRow = { ...row };
-
-        if (!triggerField) {
-            newRow.label = formatLabel(row.label);
-        }
 
         // Nettoyage des valeurs numériques
         newRow.standard = cleanNumberStr(newRow.standard || '');
@@ -275,7 +544,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             filename,
             imagePart,
             knownSubtestNames: knownSubtestNames || [],
-            canonicalSubtestNames: canonicalSubtests.map(s => s.name),
+            canonicalSubtestNames: canonicalNameInventory,
         });
 
         const expandedData = expandCompactKeys(cleanAndParseJson(response.text));
@@ -283,14 +552,59 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const flatRows: ExtractedRow[] = [];
         const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
 
+        // Page-level age fallback: if Gemini set pa0/pa1, propagate to rows with null a0/a1
+        const pageAgeMin = (extractedData as Record<string, unknown>)?.page_age_min as number | null | undefined;
+        const pageAgeMax = (extractedData as Record<string, unknown>)?.page_age_max as number | null | undefined;
+
+        // Ultimate fallback: parse age from filename if Gemini missed it entirely
+        const filenameAge = parseAgeFromFilename(filename);
+        const fallbackAgeMin = pageAgeMin ?? filenameAge?.min ?? undefined;
+        const fallbackAgeMax = pageAgeMax ?? filenameAge?.max ?? undefined;
+
+        const duplicatedBaseNames: string[] = [];
         if (extractedData && Array.isArray(extractedData.tables)) {
+            // --- DETECT DUPLICATE subtest_ids across tables ---
+            const sidCounts = new Map<string, number>();
             extractedData.tables.forEach((table: AIExtractedTable) => {
+                const sid = table.subtest_id || extractedData?.test_context || "Global";
+                sidCounts.set(sid, (sidCounts.get(sid) || 0) + 1);
+            });
+
+            // Pre-collect abbreviations per sid: if every duplicate table for a given
+            // sid carries a unique source_abbreviation, use it instead of "(variante N)".
+            const sidAbbrSets = new Map<string, Set<string>>();
+            extractedData.tables.forEach((table: AIExtractedTable) => {
+                const sid = table.subtest_id || extractedData?.test_context || "Global";
+                if (table.source_abbreviation) {
+                    if (!sidAbbrSets.has(sid)) sidAbbrSets.set(sid, new Set());
+                    sidAbbrSets.get(sid)!.add(table.source_abbreviation);
+                }
+            });
+            const canUseAbbrNaming = (sid: string): boolean => {
+                const abbrs = sidAbbrSets.get(sid);
+                return !!abbrs && abbrs.size === (sidCounts.get(sid) || 0);
+            };
+
+            const sidCounters = new Map<string, number>();
+
+            extractedData.tables.forEach((table: AIExtractedTable) => {
+                const originalSid = table.subtest_id || extractedData?.test_context || "Global";
+                let effectiveSid = originalSid;
+                if ((sidCounts.get(originalSid) || 0) > 1) {
+                    const counter = (sidCounters.get(originalSid) || 0) + 1;
+                    sidCounters.set(originalSid, counter);
+                    if (canUseAbbrNaming(originalSid) && table.source_abbreviation) {
+                        effectiveSid = `${originalSid} (${table.source_abbreviation})`;
+                    } else {
+                        effectiveSid = `${originalSid} (variante ${counter})`;
+                    }
+                    if (!duplicatedBaseNames.includes(originalSid)) duplicatedBaseNames.push(originalSid);
+                }
                 if (Array.isArray(table.rows)) {
                     table.rows.forEach((r: AIExtractedNormRow) => {
                         const rawRow: ExtractedRow = {
                             id: crypto.randomUUID(),
-                            subtest: table.subtest_id || extractedData?.test_context || "Global",
-                            label: r.label || '',
+                            subtest: effectiveSid,
                             raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
                             standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
                             mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
@@ -298,12 +612,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             zScore: r.z_score ? String(r.z_score) : '',
                             percentile: r.percentile ? String(r.percentile) : '',
 
-                            // CAPTURE DES CHAMPS CACHÉS
-                            hidden_age_min: r.age_min_months,
-                            hidden_age_max: r.age_max_months,
+                            // CAPTURE DES CHAMPS CACHÉS — fallback to page-level age, then filename age
+                            hidden_age_min: r.age_min_months ?? fallbackAgeMin,
+                            hidden_age_max: r.age_max_months ?? fallbackAgeMax,
                             hidden_raw_min: r.raw_min,
-                            hidden_raw_max: r.raw_max
+                            hidden_raw_max: r.raw_max,
+
+                            // Preserve original column abbreviation for disambiguation UI
+                            source_abbreviation: table.source_abbreviation || undefined,
                         };
+                        // Auto-compute label from age fields (AI no longer outputs label)
+                        rawRow.label = formatAgeLabel(rawRow.hidden_age_min, rawRow.hidden_age_max);
                         flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
                     });
                 }
@@ -311,17 +630,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }
 
         if (flatRows.length === 0) {
-            flatRows.push({ id: crypto.randomUUID(), subtest: 'Nouveau Sous-test', label: 'Exemple', raw: '', standard: '', zScore: '', percentile: '' });
+            flatRows.push({ id: crypto.randomUUID(), subtest: 'Nouveau Sous-test', label: '', raw: '', standard: '', zScore: '', percentile: '' });
         }
 
         return {
             rows: flatRows,
             detectedStructure,
-            testContext: extractedData?.test_context || ''
+            testContext: extractedData?.test_context || '',
+            duplicatedSids: duplicatedBaseNames
         };
     };
 
     const processFilesSequentially = async (inputFiles: File[]) => {
+        suppressIdleLock();
         try {
             const nextPages: ExtractionPage[] = [];
             let resolvedStructure: TableStructure = tableStructure;
@@ -351,7 +672,21 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             
             const results = await Promise.all(extractionPromises);
             
-            // Process results in order
+            // Collect all duplicated sids from across pages
+            const allDuplicatedSids = new Set<string>();
+            results.forEach(({ result }) => {
+                if (result?.duplicatedSids) {
+                    result.duplicatedSids.forEach(sid => allDuplicatedSids.add(sid));
+                }
+            });
+            if (allDuplicatedSids.size > 0) {
+                setDuplicatedSids(Array.from(allDuplicatedSids));
+                setShowDisambiguationModal(true);
+            } else {
+                setDuplicatedSids([]);
+            }
+
+            // Process results in order — save draft progressively so no data is lost
             for (let i = 0; i < results.length; i += 1) {
                 const { result, success, error } = results[i];
                 
@@ -378,32 +713,108 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     validated: false,
                     detectedStructure: result.detectedStructure
                 });
+
+                // Progressive draft save — each successful page is persisted immediately
+                saveDraft({
+                    testName: resolvedTestName || testName,
+                    selectedCategory,
+                    tableStructure: resolvedStructure,
+                    pages: nextPages,
+                    savedAt: new Date().toISOString(),
+                });
             }
 
-            // --- Post-extraction dedup pass: unify subtest names across all pages ---
-            const nameMapping = new Map<string, string>(); // normalized → first seen canonical name
-            nextPages.forEach(page => {
-                page.rows.forEach(row => {
-                    const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
-                    const norm = normalizeSubtestName(alias);
-                    if (!norm) return;
-                    if (!nameMapping.has(norm)) {
-                        nameMapping.set(norm, alias);
-                    }
+            // --- Post-extraction: strict canonical matching or legacy dedup ---
+            const canonicalNames = canonicalNameInventory;
+
+            if (canonicalSubtestsNormalized.length > 0) {
+                // DB-backed test → strict filter: only keep rows matching a canonical subtest
+                let droppedCount = 0;
+                nextPages.forEach(page => {
+                    const kept: ExtractedRow[] = [];
+                    page.rows.forEach(row => {
+                        const parsed = splitSubtestDisplayName(row.subtest);
+                        const rowAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+                        const aliased = resolveSubtestAlias(resolvedTestName, parsed.baseName || row.subtest);
+
+                        let matchedCanonical: CanonicalSubtestEntry | null = null;
+
+                        // 1) Abbreviation-first match when available (most reliable for variants)
+                        if (rowAbbr) {
+                            const abbrCandidates = canonicalSubtestsByAbbreviation.get(rowAbbr) || [];
+                            if (abbrCandidates.length === 1) {
+                                matchedCanonical = abbrCandidates[0];
+                            } else if (abbrCandidates.length > 1) {
+                                const narrowed = findBestCanonicalMatch(aliased, abbrCandidates.map(c => c.name));
+                                if (narrowed) {
+                                    matchedCanonical = abbrCandidates.find(c => c.name === narrowed) || null;
+                                }
+                            }
+                        }
+
+                        // 2) Fallback to name-based canonical match
+                        if (!matchedCanonical) {
+                            const matchName = findBestCanonicalMatch(aliased, canonicalNames);
+                            if (matchName) {
+                                const candidates = canonicalSubtestsByName.get(normalizeSubtestName(matchName)) || [];
+                                if (candidates.length === 1) {
+                                    matchedCanonical = candidates[0];
+                                } else if (candidates.length > 1) {
+                                    if (rowAbbr) {
+                                        matchedCanonical = candidates.find(c => normalizeAbbreviation(c.abbreviation) === rowAbbr) || candidates[0];
+                                    } else {
+                                        matchedCanonical = candidates[0];
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!matchedCanonical) {
+                            droppedCount++;
+                            return;
+                        }
+
+                        const canonicalAbbr = normalizeAbbreviation(matchedCanonical.abbreviation);
+                        const displayAbbr = canonicalAbbr || rowAbbr || null;
+                        kept.push({
+                            ...row,
+                            subtest: formatSubtestDisplayName(matchedCanonical.name, displayAbbr),
+                            source_abbreviation: rowAbbr || canonicalAbbr || undefined,
+                        });
+                    });
+                    page.rows = kept;
                 });
-            });
-            // Rename rows to the first-seen canonical form
-            nextPages.forEach(page => {
-                page.rows = page.rows.map(row => {
-                    const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
-                    const norm = normalizeSubtestName(alias);
-                    const canonical = norm ? nameMapping.get(norm) : null;
-                    if (canonical && canonical !== row.subtest) {
-                        return { ...row, subtest: canonical };
-                    }
-                    return row;
+                if (droppedCount > 0) {
+                    Logger.info('AI', `Strict filter: ${droppedCount} row(s) dropped (no canonical match)`);
+                }
+            } else {
+                // Unknown test → legacy dedup: unify subtest names across pages
+                const nameMapping = new Map<string, string>();
+                nextPages.forEach(page => {
+                    page.rows.forEach(row => {
+                        const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                        const norm = normalizeSubtestName(alias);
+                        if (!norm) return;
+                        if (!nameMapping.has(norm)) {
+                            nameMapping.set(norm, alias);
+                        }
+                    });
                 });
-            });
+                nextPages.forEach(page => {
+                    page.rows = page.rows.map(row => {
+                        const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                        const norm = normalizeSubtestName(alias);
+                        const canonical = norm ? nameMapping.get(norm) : null;
+                        if (canonical && canonical !== row.subtest) {
+                            return { ...row, subtest: canonical };
+                        }
+                        return row;
+                    });
+                });
+            }
+
+            // Re-disambiguate variant subtests collapsed by canonical matching
+            reDisambiguateByAbbreviation(nextPages);
 
             setTableStructure(resolvedStructure);
             setPages(nextPages);
@@ -413,6 +824,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             Logger.error('AI', "Gemini Extraction Error", error);
             toast.error("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
             setStep('upload');
+        } finally {
+            resumeIdleLock();
         }
     };
 
@@ -431,24 +844,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     };
 
     const currentGroupedRows = useMemo(() => groupRowsBySubtest(currentRows), [currentRows]);
-    const allGroupedRows = useMemo(() => groupRowsBySubtest(allRows), [allRows]);
     const currentGroupedEntries = useMemo(
         () => Object.entries(currentGroupedRows) as Array<[string, ExtractedRow[]]>,
         [currentGroupedRows]
     );
-    const allGroupedEntries = useMemo(
-        () => Object.entries(allGroupedRows) as Array<[string, ExtractedRow[]]>,
-        [allGroupedRows]
-    );
-    const canonicalSubtestNameMap = useMemo(() => {
-        const map = new Map<string, string>();
-        canonicalSubtests.forEach(sub => {
-            map.set(normalizeSubtestName(sub.name), sub.name);
-        });
-        return map;
-    }, [canonicalSubtests]);
 
-    const stripAgeQualifier = (name: string): string => {
+    const stripAgeQualifier = useCallback((name: string): string => {
         const trimmed = name.trim();
         if (!trimmed) return trimmed;
 
@@ -462,40 +863,114 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             .replace(/\s*(?:[-–—:]\s*)?age\s*\d.*$/i, '')
             .replace(/\s{2,}/g, ' ')
             .trim();
-    };
+    }, []);
 
-    const canonicalizeSubtestName = (subtestName: string): string => {
-        const trimmed = subtestName.trim();
-        if (!trimmed) return trimmed;
-        const baseName = canonicalSubtests.length > 0 ? stripAgeQualifier(trimmed) : trimmed;
-        const alias = resolveSubtestAlias(testName, baseName);
+    const resolveCanonicalSubtest = useCallback((row: ExtractedRow) => {
+        const parsed = splitSubtestDisplayName(row.subtest);
+        const sourceAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+        const baseName = canonicalSubtestsNormalized.length > 0
+            ? stripAgeQualifier(parsed.baseName)
+            : parsed.baseName;
+        const alias = resolveSubtestAlias(testName, baseName).trim();
+        const fallbackName = alias || parsed.baseName || row.subtest;
         const normalized = normalizeSubtestName(alias);
-        return canonicalSubtestNameMap.get(normalized) || alias;
-    };
 
-    const canonicalGroupedEntries = useMemo(() => {
-        const grouped = new Map<string, ExtractedRow[]>();
-        allGroupedEntries.forEach(([subtestName, rows]) => {
-            const canonicalName = canonicalizeSubtestName(subtestName);
-            const existing = grouped.get(canonicalName) || [];
-            grouped.set(canonicalName, existing.concat(rows));
+        if (canonicalSubtestsNormalized.length === 0 || !normalized) {
+            return {
+                name: fallbackName,
+                abbreviation: sourceAbbr || null,
+                displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null),
+                isMapped: true,
+            };
+        }
+
+        const candidates = canonicalSubtestsByName.get(normalized) || [];
+        if (candidates.length === 1) {
+            const candidate = candidates[0];
+            const candidateAbbr = normalizeAbbreviation(candidate.abbreviation);
+            const displayAbbr = candidateAbbr || sourceAbbr || null;
+            return {
+                name: candidate.name,
+                abbreviation: candidateAbbr || sourceAbbr || null,
+                displayName: formatSubtestDisplayName(candidate.name, displayAbbr),
+                isMapped: true,
+            };
+        }
+
+        if (candidates.length > 1) {
+            if (sourceAbbr) {
+                const exact = candidates.find(c => normalizeAbbreviation(c.abbreviation) === sourceAbbr);
+                if (exact) {
+                    const exactAbbr = normalizeAbbreviation(exact.abbreviation) || sourceAbbr;
+                    return {
+                        name: exact.name,
+                        abbreviation: exactAbbr || null,
+                        displayName: formatSubtestDisplayName(exact.name, exactAbbr || null),
+                        isMapped: true,
+                    };
+                }
+            }
+
+            const narrowedName = findBestCanonicalMatch(alias, candidates.map(c => c.name));
+            if (narrowedName) {
+                const narrowed = candidates.find(c => c.name === narrowedName) || candidates[0];
+                const narrowedAbbr = normalizeAbbreviation(narrowed.abbreviation) || sourceAbbr;
+                return {
+                    name: narrowed.name,
+                    abbreviation: narrowedAbbr || null,
+                    displayName: formatSubtestDisplayName(narrowed.name, narrowedAbbr || null),
+                    isMapped: true,
+                };
+            }
+        }
+
+        return {
+            name: fallbackName,
+            abbreviation: sourceAbbr || null,
+            displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null),
+            isMapped: false,
+        };
+    }, [canonicalSubtestsNormalized.length, canonicalSubtestsByName, stripAgeQualifier, testName]);
+
+    const VARIANT_PATTERN = /\(variante \d+\)$/;
+    const unrenamedVariants = useMemo(() => {
+        return currentGroupedEntries
+            .map(([name]) => name)
+            .filter(name => VARIANT_PATTERN.test(name));
+    }, [currentGroupedEntries]);
+    const hasUnrenamedVariants = unrenamedVariants.length > 0;
+
+    const canonicalGroupedEntries = useMemo<CanonicalGroupedEntry[]>(() => {
+        const grouped = new Map<string, CanonicalGroupedEntry>();
+        allRows.forEach((row) => {
+            const resolved = resolveCanonicalSubtest(row);
+            const key = buildSubtestIdentityKey(resolved.name, resolved.abbreviation);
+            const existing = grouped.get(key);
+            if (existing) {
+                existing.rows.push(row);
+            } else {
+                grouped.set(key, {
+                    name: resolved.name,
+                    abbreviation: resolved.abbreviation || null,
+                    displayName: resolved.displayName,
+                    rows: [row],
+                });
+            }
         });
-        return Array.from(grouped.entries()) as Array<[string, ExtractedRow[]]>;
-    }, [allGroupedEntries, testName, canonicalSubtestNameMap]);
+        return Array.from(grouped.values());
+    }, [allRows, resolveCanonicalSubtest]);
 
     const unmappedSubtests = useMemo(() => {
-        if (!canonicalTest || canonicalSubtests.length === 0) return [];
+        if (!canonicalTest || canonicalSubtestsNormalized.length === 0) return [];
         const missing = new Set<string>();
-        allGroupedEntries.forEach(([subtestName]) => {
-            const alias = resolveSubtestAlias(testName, stripAgeQualifier(subtestName)).trim();
-            if (!alias) return;
-            const normalized = normalizeSubtestName(alias);
-            if (!canonicalSubtestNameMap.has(normalized)) {
-                missing.add(alias);
+        allRows.forEach((row) => {
+            const resolved = resolveCanonicalSubtest(row);
+            if (!resolved.isMapped) {
+                missing.add(resolved.displayName);
             }
         });
         return Array.from(missing.values());
-    }, [allGroupedEntries, canonicalSubtests, canonicalSubtestNameMap, canonicalTest, testName]);
+    }, [allRows, canonicalSubtestsNormalized.length, canonicalTest, resolveCanonicalSubtest]);
 
     const updateCurrentPageRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
         setPages(prev => prev.map((page, index) => {
@@ -507,6 +982,20 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const updateAllPagesRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
         setPages(prev => prev.map(page => ({ ...page, rows: updater(page.rows) })));
     };
+
+    /** Apply user-supplied renames from DisambiguationModal to all rows across all pages. */
+    const handleDisambiguationConfirm = useCallback((renames: Record<string, string>) => {
+        setPages(prev => prev.map(page => ({
+            ...page,
+            rows: page.rows.map(row => {
+                const newName = renames[row.subtest];
+                return newName ? { ...row, subtest: newName } : row;
+            }),
+        })));
+        setDuplicatedSids([]);
+        setShowDisambiguationModal(false);
+        toast.success('Sous-tests renommés avec succès.');
+    }, [toast]);
 
     const handleValidateCurrentPage = () => {
         setPages(prev => prev.map((page, index) => (
@@ -577,6 +1066,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error("Validez chaque page avant d'enregistrer le test.");
             return;
         }
+        if (hasUnrenamedVariants) {
+            toast.error(`${unrenamedVariants.length} sous-test(s) portent encore un suffixe "(variante N)". Renommez-les avant d'enregistrer.`);
+            return;
+        }
         if (canonicalTest && unmappedSubtests.length > 0) {
             setShowUnmappedModal(true);
             return;
@@ -591,10 +1084,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         let ageMin = row.hidden_age_min;
         let ageMax = row.hidden_age_max;
         if (ageMin === undefined || ageMax === undefined) {
-            const ageMatch = row.label.match(/(\d+)/);
-            const ageYear = ageMatch ? parseInt(ageMatch[1]) : 0;
-            ageMin = ageYear * 12;
-            ageMax = (ageYear * 12) + 11;
+            // Fallback: try to parse age from label string (e.g. "5;0 – 5;5")
+            const ageMatch = (row.label || '').match(/(\d+)[;:.](\d+)/);
+            if (ageMatch) {
+                const months = parseInt(ageMatch[1]) * 12 + parseInt(ageMatch[2]);
+                ageMin = ageMin ?? months;
+                ageMax = ageMax ?? months;
+            } else {
+                ageMin = ageMin ?? 0;
+                ageMax = ageMax ?? 0;
+            }
         }
 
         // RAW SCORES / STATS
@@ -641,6 +1140,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         };
     };
 
+    const makeComparableSubtestKey = useCallback((name: string, abbreviation?: string | null): string => {
+        const parsed = splitSubtestDisplayName(name);
+        const resolvedName = resolveSubtestAlias(testName, stripAgeQualifier(parsed.baseName)).trim() || parsed.baseName || name;
+        const resolvedAbbr = normalizeAbbreviation(abbreviation || parsed.abbreviation);
+        return buildSubtestIdentityKey(resolvedName, resolvedAbbr || null);
+    }, [stripAgeQualifier, testName]);
+
     const buildTestPayload = () => ({
         test: {
             name: testName.trim(),
@@ -648,14 +1154,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             version: '1.0',
             structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
         },
-        subtests: canonicalGroupedEntries.map(([subtestName, subRows]) => ({
-            name: subtestName,
+        subtests: canonicalGroupedEntries.map((entry) => ({
+            name: entry.name,
+            abbreviation: normalizeAbbreviation(entry.abbreviation) || null,
             unit: 'pts',
             score_type: 'scaled',
             computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
             input_model: 'numeric_4mode',
             input_config: {},
-            norms: subRows.map(row => buildNormPayload(row))
+            norms: entry.rows.map(row => buildNormPayload(row))
         }))
     });
 
@@ -684,14 +1191,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     // Strong match → show merge/attach modal directly
                     const { data: existingSubs } = await supabase
                         .from('view_unified_subtests')
-                        .select('id, name')
+                        .select('id, name, abbreviation')
                         .eq('test_id', bestMatch.id);
-                    const existingSubNames = new Set(
-                        (existingSubs || []).map(s => normalizeSubtestName(resolveSubtestAlias(testName, s.name)))
+                    const existingSubKeys = new Set(
+                        (existingSubs || []).map(s => makeComparableSubtestKey(s.name, s.abbreviation))
                     );
                     const newSubs = canonicalGroupedEntries
-                        .map(([name]) => name)
-                        .filter(name => !existingSubNames.has(normalizeSubtestName(name)));
+                        .filter(entry => !existingSubKeys.has(makeComparableSubtestKey(entry.name, entry.abbreviation)));
 
                     const isPublic = bestMatch.organization_id === null;
                     setMergeTarget({ id: bestMatch.id, name: bestMatch.name, subtestCount: existingSubs?.length || 0, isPublic });
@@ -727,14 +1233,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         try {
             const { data: existingSubs } = await supabase
                 .from('view_unified_subtests')
-                .select('id, name')
+                .select('id, name, abbreviation')
                 .eq('test_id', match.id);
-            const existingSubNames = new Set(
-                (existingSubs || []).map(s => normalizeSubtestName(resolveSubtestAlias(testName, s.name)))
+            const existingSubKeys = new Set(
+                (existingSubs || []).map(s => makeComparableSubtestKey(s.name, s.abbreviation))
             );
             const newSubs = canonicalGroupedEntries
-                .map(([name]) => name)
-                .filter(name => !existingSubNames.has(normalizeSubtestName(name)));
+                .filter(entry => !existingSubKeys.has(makeComparableSubtestKey(entry.name, entry.abbreviation)));
 
             const isPublic = match.organization_id === null;
             setMergeTarget({ id: match.id, name: match.name, subtestCount: existingSubs?.length || 0, isPublic });
@@ -837,6 +1342,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         };
         setShowSaveModal(false);
         onSubmit(contributionData);
+        clearDraft();
         setStep('success');
     };
 
@@ -857,7 +1363,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         </div>
                     </div>
                     <div className="w-full md:w-3/5 p-10 md:p-12">
-                        <h3 className="text-2xl font-bold text-[var(--text-heading)] mb-8">Comment ça marche ?</h3>
+                        <h3 className="text-2xl font-bold text-[var(--text-heading)] mb-8">Comment ça marche ?</h3>
                         <div className="space-y-8">
                             <div className="flex gap-4">
                                 <div className="w-10 h-10 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-[var(--text-heading)] font-bold text-lg shrink-0">1</div>
@@ -881,10 +1387,25 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             </div>
                         </div>
-                        <div className="mt-10 pt-6 border-t border-[var(--border-color)] flex justify-end">
-                            <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
-                                Numériser un test <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                            </button>
+                        <div className="mt-10 pt-6 border-t border-[var(--border-color)] space-y-4">
+                            {hasPendingDraft && draftRef.current && (
+                                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 flex items-start gap-3">
+                                    <Database size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-amber-800 dark:text-amber-200">Brouillon non sauvegardé</p>
+                                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                                            {draftRef.current.testName || 'Test sans nom'} — {draftRef.current.pages.length} page{draftRef.current.pages.length > 1 ? 's' : ''} extraite{draftRef.current.pages.length > 1 ? 's' : ''}
+                                        </p>
+                                    </div>
+                                    <button onClick={restoreDraft} className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors shrink-0">Reprendre</button>
+                                    <button onClick={discardDraft} className="text-amber-500 hover:text-amber-700 p-1 rounded-lg hover:bg-amber-100 transition-colors shrink-0" title="Supprimer le brouillon"><Trash2 size={16} /></button>
+                                </div>
+                            )}
+                            <div className="flex justify-end">
+                                <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
+                                    Numériser un test <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -900,7 +1421,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <ArrowLeft size={16} /> Annuler
                     </button>
                     <div className="mb-8 flex justify-center">
-                        <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-3xl flex items-center justify-center transform -rotate-3 shadow-lg shadow-orange-200">
+                        <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-3xl flex items-center justify-center transform -rotate-3 shadow-lg shadow-orange-200 dark:shadow-black/30">
                             <Camera size={40} />
                         </div>
                     </div>
@@ -1110,15 +1631,33 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             )}
 
-                            {currentGroupedEntries.map(([subtest, subRows]) => (
-                                <div key={subtest} className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden animate-in slide-in-from-bottom-2">
+                            {hasUnrenamedVariants && duplicatedSids.length > 0 && (
+                                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-sm text-amber-900 flex items-start gap-3">
+                                    <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+                                    <div>
+                                        <div className="font-bold mb-1">Sous-tests dupliqués détectés</div>
+                                        <p className="mb-2">L'extraction a produit plusieurs groupes portant le même nom. Ils ont été suffixés automatiquement avec "(variante N)". <strong>Renommez-les</strong> avec un intitulé explicite avant d'enregistrer.</p>
+                                        <div className="flex flex-wrap gap-1">
+                                            {duplicatedSids.map(sid => (
+                                                <span key={sid} className="bg-amber-200 text-amber-900 text-xs font-semibold px-2 py-0.5 rounded-full">{sid}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {currentGroupedEntries.map(([subtest, subRows]) => {
+                                const isVariant = VARIANT_PATTERN.test(subtest);
+                                return (
+                                <div key={subtest} className={`bg-[var(--card-bg)] rounded-2xl border shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 ${isVariant ? 'border-amber-400 ring-2 ring-amber-200' : 'border-[var(--border-color)]'}`}>
                                     <div className="bg-[var(--hover-bg)] px-4 py-3 border-b border-[var(--border-color)] flex justify-between items-center">
                                         <div className="flex items-center gap-2 flex-1">
-                                            <Layers size={14} className="text-[var(--text-secondary)]" />
+                                            {isVariant ? <AlertTriangle size={14} className="text-amber-500" /> : <Layers size={14} className="text-[var(--text-secondary)]" />}
                                             <input
                                                 value={subtest}
                                                 onChange={(e) => handleSubtestNameChange(subtest, e.target.value)}
-                                                className="bg-transparent font-bold text-[var(--text-heading)] text-sm w-full outline-none focus:bg-[var(--input-bg)] rounded px-1 transition-all"
+                                                className={`bg-transparent font-bold text-sm w-full outline-none focus:bg-[var(--input-bg)] rounded px-1 transition-all ${isVariant ? 'text-amber-700' : 'text-[var(--text-heading)]'}`}
+                                                placeholder={isVariant ? 'Renommez ce sous-test...' : undefined}
                                             />
                                         </div>
                                         <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{subRows.length} entrées</span>
@@ -1140,7 +1679,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             <div className="space-y-4">
                                                 {Array.from(
                                                     subRows.reduce((entryMap, e) => {
-                                                        const l = e.label || "N/A";
+                                                        // Group by age: use label (auto-computed from age) or age fields directly
+                                                        const l = e.label || formatAgeLabel(e.hidden_age_min, e.hidden_age_max) || "N/A";
                                                         if (!entryMap.has(l)) entryMap.set(l, []);
                                                         entryMap.get(l)!.push(e);
                                                         return entryMap;
@@ -1210,7 +1750,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 {subRows.map((row) => (
                                                     <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1 hover:bg-[var(--hover-bg)] p-1 rounded-lg transition-colors">
                                                         <div className="col-span-3">
-                                                            <input value={row.label} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
+                                                            <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
                                                         </div>
                                                         <div className="col-span-4">
                                                             <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
@@ -1231,7 +1771,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                         )}
                                     </div>
                                 </div>
-                            ))}
+                            );
+                            })}
 
                             <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-secondary)] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
                                 <Plus size={18} /> Créer un nouveau bloc (Sous-test)
@@ -1294,7 +1835,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <BookOpen size={32} className="text-amber-600" />
                             </div>
                             <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">Sous-tests non reconnus</h3>
-                            <p className="text-center text-sm text-[var(--text-secondary)] mb-4">Ces sous-tests ne correspondent pas à la liste canonique du test. Voulez-vous les créer quand même ?</p>
+                            <p className="text-center text-sm text-[var(--text-secondary)] mb-4">Ces sous-tests ne correspondent pas à la liste canonique du test. Voulez-vous les créer quand même ?</p>
 
                             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 text-xs text-amber-800">
                                 {unmappedSubtests.join(', ')}
@@ -1438,6 +1979,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         </div>
                     </div>
                 </div>
+            )}
+            {/* --- MODAL DISAMBIGUATION (variante N -> proper clinical name) --- */}
+            {showDisambiguationModal && (
+                <DisambiguationModal
+                    pages={pages}
+                    onConfirm={handleDisambiguationConfirm}
+                    onClose={() => setShowDisambiguationModal(false)}
+                />
             )}
         </div>
     );

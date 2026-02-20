@@ -38,12 +38,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const toast = {
+  const toast = React.useMemo(() => ({
     success: (msg: string) => addToast(msg, 'success'),
     error: (msg: string) => addToast(msg, 'error'),
     info: (msg: string) => addToast(msg, 'info'),
     warning: (msg: string) => addToast(msg, 'warning'),
-  };
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={{ toast }}>

@@ -5,7 +5,6 @@
 // This map restores them to the full names expected by the client.
 
 const COMPACT_ROW_KEYS: Record<string, string> = {
-  l: 'label',
   m: 'mean',
   s: 'sd',
   r: 'raw_range',
@@ -22,6 +21,9 @@ const COMPACT_TOP_KEYS: Record<string, string> = {
   tc: 'test_context',
   st: 'structure_type',
   sid: 'subtest_id',
+  ab: 'source_abbreviation',
+  pa0: 'page_age_min',
+  pa1: 'page_age_max',
 };
 
 /**

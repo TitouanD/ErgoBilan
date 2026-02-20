@@ -64,7 +64,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 {/* Carte Avant (Rédigée) qui arrive */}
                                 <div className="absolute inset-0 bg-[var(--card-bg)] border border-[var(--border-color)] shadow-2xl rounded-2xl p-6 transform rotate-3 flex flex-col z-10">
                                     <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2 bg-[#E07A5F] text-white rounded-lg shadow-md shadow-orange-200">
+                                        <div className="p-2 bg-[#E07A5F] text-white rounded-lg shadow-md shadow-orange-200 dark:shadow-black/30">
                                             <Sparkles size={20} />
                                         </div>
                                         <div className="text-xs font-bold text-[var(--text-main)]">Rédaction IA</div>
@@ -136,11 +136,11 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
                             <div className="text-center mt-4">
                                 {isDemoMode ? (
-                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200">
+                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
                                         Données vérifiées
                                     </div>
                                 ) : (
-                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200">
+                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
                                         +1 Crédit / Contribution
                                     </div>
                                 )}
@@ -156,7 +156,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 <div className="absolute inset-0 bg-[#E07A5F]/20 blur-2xl rounded-full"></div>
                                 {/* Carte Cadeau */}
                                 <div className="bg-[var(--card-bg)] rounded-[32px] p-8 shadow-2xl border border-[var(--border-color)] relative z-10 w-80 text-center">
-                                    <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 transform -rotate-6">
+                                    <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 dark:shadow-black/30 transform -rotate-6">
                                         <Gift size={40} />
                                     </div>
                                     <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Offre de Bienvenue</h3>

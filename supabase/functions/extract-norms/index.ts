@@ -35,6 +35,7 @@ interface GeminiResponse {
 // Internal types use the compact form since they process Gemini output directly.
 interface ExtractedTable {
   sid: string;           // subtest_id
+  ab?: string;           // source_abbreviation (original column header from image)
   rows: Record<string, unknown>[];
 }
 
@@ -161,10 +162,22 @@ const buildCanonicalNamesBlock = (canonicalSubtestNames: string[]): string => {
 --- EXPECTED SUBTESTS (CANONICAL NAMES) ---
 The user has identified this image as belonging to a known test. The canonical subtest names for this test are:
 ${JSON.stringify(canonicalSubtestNames)}
-YOU MUST match the column headers or abbreviations visible on the image to one of these canonical names.
-Use your clinical knowledge to resolve abbreviations (e.g. "AA" → "Attention Auditive", "FD" → "Fluidité de dessin").
+Use your clinical knowledge to resolve abbreviations to the full French clinical name.
 If a column clearly matches one of the canonical names above, use that EXACT canonical name as the "sid" value.
-Only invent a new name if the column genuinely does not match ANY canonical name.
+
+CRITICAL — UNIQUE NAMING PROCEDURE (follow for EVERY column):
+Step 1: Read EVERY column header abbreviation on the page.
+Step 2: Group abbreviations by their shared BASE prefix (the common root letters). Example: if you see XY, XYC, XYS, XYT → the base is XY and there are 4 variants.
+Step 3: For each group:
+  - If only ONE column exists for that base → resolve to the canonical name directly.
+  - If MULTIPLE columns share the same base → each MUST get a UNIQUE sid by appending " - Qualifier" derived from the suffix letter(s).
+Step 4: How to decode suffix letters into qualifiers:
+  - Common French psychometric suffixes: T=Total, D=Différé, C=Contenu, S=Spatial or Sémantique, E=Erreurs, I=Inhibition, R=Rappel.
+  - Multi-letter suffixes: PM=Programme moteur, PG=Processus global, PL=Processus local, PT=Processus total.
+  - Use the domain headers and table context to choose the right French word for the suffix.
+  - If you cannot decode the suffix, append the raw suffix in parentheses: "Base Name (XX)".
+Step 5: FINAL VALIDATION — Count your output groups. It MUST equal the number of data columns. If ANY two groups share the same sid string, you MUST FIX by appending the column abbreviation in parentheses.
+ABSOLUTE RULE: ZERO duplicate sid values allowed. Each data column = one unique sid string.
 `;
 };
 
@@ -195,13 +208,34 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - Do NOT add age, grade, or side qualifiers in the subtest name.
    - If a known subtest name from previous pages matches what you see, use it EXACTLY.
    - When you genuinely cannot determine the full name, use the abbreviation followed by the domain in parentheses (e.g. "DR (Langage)") as a last resort.
+   - DISAMBIGUATION (CRITICAL — NEVER VIOLATE):
+     ABSOLUTE RULE: Each data column on the page = 1 unique sid. Different column abbreviation = different sid. ALWAYS.
+     PRE-WRITING COLUMN COUNT (MANDATORY): Before you write a single character of JSON, count the EXACT number of data columns on this page. Your "tables" array MUST contain exactly that many entries — no more, no fewer. If you count 5 columns, output 5 table entries. NEVER merge two columns into one entry.
+     PROCEDURE:
+       a) List ALL column header abbreviations you see on the page (e.g. MF, MFS, MFT, MFDC, MFDT).
+       b) Store the ORIGINAL ABBREVIATION in the "ab" field of each table entry — this is mandatory.
+       c) Group abbreviations by shared BASE prefix (the common root letters before the varying suffix).
+       d) For columns that share a base prefix, the SUFFIX tells you the variant:
+          Common suffixes in French psychometric tables: T=Total, D=Différé, C=Contenu, S=Spatial/Sémantique, E=Erreurs, I=Inhibition, R=Rappel.
+          Multi-letter: PM=Programme moteur, PG=Processus global, PL=Processus local, PT=Processus total.
+       e) Build the sid as: "Full Base Name - Qualifier" (e.g. base "Mémoire de X" + suffix D → "Mémoire de X - Différé").
+       f) ABBREVIATION-FIRST FALLBACK: If expanding an abbreviation would produce the same "sid" string as another column already in your output, do NOT expand — use the raw abbreviation as "sid" instead (e.g. "MFDC"). Uniqueness ALWAYS beats translation.
+       g) NEVER assign the bare base name to multiple columns — if 3 columns share a base, ALL 3 must have a qualifier or use their raw abbreviation as fallback.
+       h) When in doubt whether two columns are the same subtest, treat them as DIFFERENT subtests.
+     VALIDATION: Count your output "tables" entries. It MUST equal the number of data columns you counted in the PRE-WRITING step. ZERO duplicate sid values allowed.
+6. GROUPING:
+   - For LOOKUP: Each "sid" entry groups all rows for ONE subtest. If the page covers a single age group (visible in the header), ALL rows under that subtest share the same a0/a1.
+   - For PARAMETRIC: Each "sid" entry groups all age/grade rows for ONE subtest.
 
 --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
 You must calculate specific numeric values for the database:
-1. AGE NORMALIZATION (a0, a1):
+1. AGE NORMALIZATION (a0, a1) — MANDATORY for LOOKUP tables:
    - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
    - Convert range "4;0 - 4;5" -> a0: 48, a1: 53.
    - If only grade is available (e.g. "CP"), estimate typical age (CP = 6 years = 72 months).
+   - PAGE-LEVEL AGE: When the page title, header, column heading, OR FILENAME shows an age group (e.g. "Ages 10;6-10;11", or filename "10;6-10;11.jpg", "13ans.jpg", "CE1.png"), that SINGLE age group applies to EVERY row on the entire page. You MUST propagate it to a0/a1 of ALL rows AND to pa0/pa1 at the top level. Example: "Ages 10;6-10;11" -> a0: 126, a1: 131 for every row.
+   - FILENAME AGE: If the filename contains an age hint (e.g. "5ans6mois" = 66 months, "13ans" = 156 months, "CE1" = ~84 months, "10;6-10;11" = 126-131 months), use it for pa0/pa1 and a0/a1 when no age is visible in the table headers.
+   - For LOOKUP tables, a0 and a1 must NEVER be null. The age is ALWAYS visible somewhere on the page (title, header, sub-header) or in the filename. Search for it and apply it.
 2. RAW SCORE NORMALIZATION (r0, r1):
    - "15-16" -> r0: 15, r1: 16
    - "7" -> r0: 7, r1: 7
@@ -214,12 +248,14 @@ const JSON_SCHEMA = `
 {
   "tc": "string (Detected name of the test)",
   "st": "PARAMETRIC" | "LOOKUP",
+  "pa0": number | null (page-level age_min in months — from the page header/title age group),
+  "pa1": number | null (page-level age_max in months — from the page header/title age group),
   "tables": [
     {
-      "sid": "string (Subtest name — FULL French clinical name)",
+      "sid": "string (Subtest name — FULL French clinical name, or raw abbreviation if expansion would duplicate)",
+      "ab": "string (Original column abbreviation exactly as printed in the image, e.g. 'MF', 'MFDC')",
       "rows": [
         {
-          "l": "string (Display Label, e.g. '4;0 - 4;5' for age group)",
           "m": "string (Only if PARAMETRIC: Mean)",
           "s": "string (Only if PARAMETRIC: SD)",
           "r": "string (Only if LOOKUP: Raw Score as displayed)",
@@ -236,7 +272,8 @@ const JSON_SCHEMA = `
   ]
 }
 
-KEY LEGEND: tc=test_context, st=structure_type, sid=subtest_id, l=label, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
+KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
+CRITICAL: If the page shows a single age group in its header/title (e.g. "Ages 10;6-10;11"), you MUST set pa0 and pa1 at the top level AND copy them into every row's a0/a1.
 
 OUTPUT RULES:
 - Output valid JSON only.
@@ -255,7 +292,7 @@ const buildFullExtractionTask = (payload: Record<string, unknown>) => {
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "l" (label) if it's not explicitly in the table headers.
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
 ${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
 TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE ALL data from ALL tables on this page.
 
@@ -326,7 +363,7 @@ const buildFocusedExtractionTask = (
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png" or "13ans.jpg"). Use this information to infer the row "l" (label) if it's not explicitly in the table headers.
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
 ${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
 FOCUS CONSTRAINT: Extract data ONLY for these specific subtest columns: ${JSON.stringify(focusSubtests)}
 These belong to the domain section: "${domainHint}".
@@ -360,11 +397,21 @@ const mergeExtractionResults = (results: ExtractionResult[]): ExtractionResult =
     if (Array.isArray(result.tables)) {
       for (const table of result.tables) {
         if (!table.sid) continue;
-        // Deduplicate: keep the version with more rows
+        // Deduplicate: if the same sid appears in multiple chunks, append a chunk suffix
+        // to preserve ALL data rather than silently dropping shorter results.
         if (seenSubtests.has(table.sid)) {
           const existing = merged.tables!.find((t) => t.sid === table.sid);
           if (existing && table.rows.length > existing.rows.length) {
+            // The new chunk has more rows — replace the existing entry's rows
             existing.rows = table.rows;
+            if (table.ab && !existing.ab) existing.ab = table.ab;
+          } else {
+            // Same length or existing is longer — add as a distinct chunk entry
+            let suffix = 2;
+            while (seenSubtests.has(`${table.sid} (chunk ${suffix})`)) suffix++;
+            const chunkSid = `${table.sid} (chunk ${suffix})`;
+            seenSubtests.add(chunkSid);
+            merged.tables!.push({ ...table, sid: chunkSid });
           }
         } else {
           seenSubtests.add(table.sid);

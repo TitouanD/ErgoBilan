@@ -320,7 +320,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                 <div className="flex justify-end">
                     <button 
                         onClick={handleSaveData} 
-                        className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg"
+                        className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg"
                     >
                         <Send size={20} /> 
                         Chiffrer et Envoyer

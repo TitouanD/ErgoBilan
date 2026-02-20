@@ -1,5 +1,7 @@
 ﻿# ErgoBilan AI coding instructions
 
+YOU LIKELY HAVE ACCESS TO SUPABASE MCP, PLEASE USE IT TO REVIEW THE DATABASE SCHEMA, RLS POLICIES, AND FUNCTIONS AS NEEDED.
+
 ## Project context (why itâ€™s built this way)
 - ErgoBilan is a clinical SPA for occupational therapists with **privacy-by-design**: Supabase stores relational data while all PII content is encrypted client-side (see [devlog.md](devlog.md)).
 - â€œBlind backendâ€ model: server handles auth/RLS and storage only; client owns cryptography and can decrypt data locally (see [utils/crypto.ts](utils/crypto.ts)).

@@ -23,7 +23,7 @@ export const DemoConversionModal: React.FC<Props> = ({ action, onClose, onConver
       <div className="space-y-3">
         <button
           onClick={onConvert}
-          className="w-full py-4 bg-[#E07A5F] text-white rounded-xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2"
+          className="w-full py-4 bg-[#E07A5F] text-white rounded-xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2"
         >
           Créer mon compte gratuit <ArrowRight size={18} />
         </button>

@@ -15,5 +15,15 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '.'),
     }
-  }
+  },
+  // @react-pdf/renderer compatibility: resolve pako and other Node-style imports
+  optimizeDeps: {
+    include: ['@react-pdf/renderer'],
+  },
+  build: {
+    commonjsOptions: {
+      // Allow CJS modules used by @react-pdf/pdfkit
+      transformMixedEsModules: true,
+    },
+  },
 });

@@ -36,6 +36,7 @@ export interface SubtestInputConfig {
 export interface SubtestDef {
   id: string;
   name: string;
+  abbreviation?: string | null;
   unit: string; 
   lowerIsBetter?: boolean;
   scoreType: ScoreType;

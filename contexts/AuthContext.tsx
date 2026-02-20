@@ -33,6 +33,8 @@ interface AuthContextType {
   startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
   verifyAdminAccess: () => Promise<boolean>; // NOUVEAU : Vérification serveur
   setWizardActive: (active: boolean) => void; // Lock pour empêcher loadUser pendant le wizard
+  suppressIdleLock: () => void;  // Prevent idle-lock during long operations (e.g. OCR)
+  resumeIdleLock: () => void;    // Re-enable idle-lock after long operation completes
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -254,10 +256,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return () => clearInterval(heartbeat);
   }, [authState, isDemoMode]);
 
-  // Auto-Lock (Sécurité Inactivité)
+  // Auto-Lock (Sécurité Inactivité) — suppressible during long operations like OCR
+  const idleSuppressedRef = useRef(false);
+  const suppressIdleLock = () => { idleSuppressedRef.current = true; Logger.info('AUTH', 'Idle lock suppressed (long operation)'); };
+  const resumeIdleLock = () => { idleSuppressedRef.current = false; Logger.info('AUTH', 'Idle lock resumed'); };
+
   useEffect(() => {
       let idleTimer: ReturnType<typeof setTimeout>;
       const performLock = () => { 
+          if (idleSuppressedRef.current) {
+              Logger.debug('AUTH', 'Idle timeout skipped — suppressed by active operation');
+              return;
+          }
           if (authState === 'authenticated' && !isDemoMode) { 
               Logger.warn('AUTH', 'Idle timeout reached. Locking session.');
               lockSession(); 
@@ -706,7 +716,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{ 
         userProfile, practitioner, sessionKey, orgKey, orgId, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive
+        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive, suppressIdleLock, resumeIdleLock
     }}>
       {children}
     </AuthContext.Provider>
