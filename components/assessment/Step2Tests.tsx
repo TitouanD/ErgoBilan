@@ -72,6 +72,10 @@ const getPreferredMetric = (subtest: SubtestDef): 'standard' | 'z' => {
   return 'z';
 };
 
+const getSubtestDisplayName = (subtest: Pick<SubtestDef, 'name' | 'displayName'>): string => (
+  subtest.displayName || subtest.name
+);
+
 const METRIC_LABEL: Record<string, string> = { raw: 'BRUT', standard: 'NS', z: 'ET', percentile: '%' };
 
 const scoreToneFromZ = (z: number | null): 'good' | 'warn' | 'bad' | 'neutral' => {
@@ -369,7 +373,7 @@ const NumericRow: React.FC<{
         {/* Header: name + meta badges */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{subtest.name}</h4>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
               {getScaleLabel(subtest.scoreType) && (
@@ -406,7 +410,7 @@ const NumericRow: React.FC<{
                   onChange={(e) => void onMetricInput('raw', e.target.value)}
                   className={inputStyles('raw', true)}
                   placeholder="–"
-                  aria-label={`Score brut pour ${subtest.name}`}
+                  aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
               {/* NS — editable */}
@@ -423,7 +427,7 @@ const NumericRow: React.FC<{
                   onChange={(e) => void onMetricInput('standard', e.target.value)}
                   className={inputStyles('standard')}
                   placeholder="–"
-                  aria-label={`Note standard pour ${subtest.name}`}
+                  aria-label={`Note standard pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
               {/* ET — editable */}
@@ -447,7 +451,7 @@ const NumericRow: React.FC<{
                   }}
                   className={inputStyles('z')}
                   placeholder="–"
-                  aria-label={`Écart-type pour ${subtest.name}`}
+                  aria-label={`Écart-type pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
               {/* Percentile — display only */}
@@ -477,7 +481,7 @@ const NumericRow: React.FC<{
                   onChange={(e) => void onMetricInput('standard', e.target.value)}
                   className={inputStyles('standard', preferred === 'standard' || entryMetric === 'standard')}
                   placeholder="–"
-                  aria-label={`Note standard pour ${subtest.name}`}
+                  aria-label={`Note standard pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
               {/* ET — editable */}
@@ -501,7 +505,7 @@ const NumericRow: React.FC<{
                   }}
                   className={inputStyles('z', preferred === 'z' || entryMetric === 'z')}
                   placeholder="–"
-                  aria-label={`Écart-type pour ${subtest.name}`}
+                  aria-label={`Écart-type pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
               {/* Percentile — display only */}
@@ -524,7 +528,7 @@ const NumericRow: React.FC<{
                   onFocus={() => onFocus?.()}
                   className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
                   placeholder="(optionnel)"
-                  aria-label={`Score brut pour ${subtest.name}`}
+                  aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
                 />
               </div>
             )}
@@ -564,7 +568,7 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{getSubtestDisplayName(subtest)}</h4>
           <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Catégorie normative</p>
         </div>
 
@@ -621,7 +625,7 @@ const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange:
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{subtest.name}</h4>
+          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{getSubtestDisplayName(subtest)}</h4>
           <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Saisie brute manuelle</p>
         </div>
 
@@ -674,7 +678,7 @@ const CompactSubtestRow: React.FC<{
       className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors group"
     >
       <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] transition-colors shrink-0" />
-      <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">{subtest.name}</span>
+      <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">{getSubtestDisplayName(subtest)}</span>
       {hasData && parts.length > 0 && (
         <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${
           tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-[var(--text-secondary)]'
@@ -780,7 +784,7 @@ const TableView: React.FC<{
               const options = [...(st.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
               return (
                 <tr key={st.id} className="border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors">
-                  <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{st.name}</td>
+                  <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{getSubtestDisplayName(st)}</td>
                   <td colSpan={4} className="py-2 px-1">
                     <select
                       value={res.qualitativeCode || res.raw || ''}
@@ -816,7 +820,7 @@ const TableView: React.FC<{
             return (
               <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''}`}>
                 <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
-                  <span className="truncate block max-w-[180px]">{st.name}</span>
+                  <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
                 </td>
                 {/* Brut — disabled/greyed when no norms */}
                 <td className="py-1 px-1">
@@ -1079,7 +1083,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               const alreadyCount = Object.keys(existingTests[test.id] || {}).length;
               const subtestSearch = (subtestSearchByTest[test.id] || '').trim().toLowerCase();
               const filteredSubtests = subtestSearch
-                ? test.subtests.filter((st) => st.name.toLowerCase().includes(subtestSearch))
+                ? test.subtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestSearch))
                 : test.subtests;
               return (
                 <div
@@ -1137,7 +1141,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                               onChange={() => toggleSubtest(test.id, st.id)}
                               className="accent-[#E07A5F]"
                             />
-                            <span className="truncate">{st.name}</span>
+                            <span className="truncate">{getSubtestDisplayName(st)}</span>
                             {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
                           </label>
                         );
@@ -1201,7 +1205,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     ensureCatalogLoaded();
   }, [ensureCatalogLoaded]);
 
-  // Load norms availability for all current subtests (black-box: returns only booleans)
+  // Load norms applicability for all current subtests (age/gender aware)
   useEffect(() => {
     const allSubtestIds: string[] = [];
     Object.entries(tests).forEach(([testId, subtests]) => {
@@ -1210,20 +1214,60 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         allSubtestIds.push(dbId);
       });
     });
-    const key = allSubtestIds.sort().join(',');
+    const age = ageMonths(patient.dob);
+    const gender = patient.gender === 'F' ? 'F' : 'M';
+    const key = `${age}|${gender}|${allSubtestIds.sort().join(',')}`;
     if (!key || key === normsLoadedRef.current) return;
     normsLoadedRef.current = key;
 
-    supabase.rpc('check_norms_availability', { p_subtest_ids: allSubtestIds })
-      .then(({ data }) => {
-        if (!data) return;
+    let cancelled = false;
+    const applyMap = (map: Record<string, boolean>) => {
+      if (!cancelled) setNormsMap(map);
+    };
+
+    const loadLegacyAvailability = async () => {
+      try {
+        const { data: fallbackData } = await supabase.rpc('check_norms_availability', { p_subtest_ids: allSubtestIds });
+        if (!fallbackData) return;
         const map: Record<string, boolean> = {};
-        (data as Array<{ subtest_id: string; has_norms: boolean }>).forEach((r) => {
+        (fallbackData as Array<{ subtest_id: string; has_norms: boolean }>).forEach((r) => {
           map[r.subtest_id] = r.has_norms;
         });
-        setNormsMap(map);
-      }, () => { /* silent */ });
-  }, [tests]);
+        applyMap(map);
+      } catch {
+        // silent fallback failure
+      }
+    };
+
+    const loadApplicability = async () => {
+      try {
+        const { data, error } = await supabase.rpc('check_norms_applicability', {
+          p_subtest_ids: allSubtestIds,
+          p_age_months: age,
+          p_gender: gender,
+        });
+
+        if (error || !data) {
+          await loadLegacyAvailability();
+          return;
+        }
+
+        const map: Record<string, boolean> = {};
+        (data as Array<{ subtest_id: string; has_applicable_norms: boolean }>).forEach((r) => {
+          map[r.subtest_id] = r.has_applicable_norms === true;
+        });
+        applyMap(map);
+      } catch {
+        await loadLegacyAvailability();
+      }
+    };
+
+    void loadApplicability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tests, patient.dob, patient.gender]);
 
   const addTests = useCallback((selection: Record<string, string[]>) => {
     const next = { ...tests };
@@ -1304,7 +1348,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               Tests & mesures
             </h2>
             <p className="text-[var(--text-secondary)] text-sm font-medium mt-1">
-              Saisie fluide : automatique si normes disponibles, assistée sinon.
+              Saisie fluide : automatique si normes disponibles, assistée sinon.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1381,7 +1425,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                   const visibleSubtests = test.subtests.filter((st) => selectedIds.includes(st.id));
                   const subtestQuery = (subtestFilters[test.id] || '').trim().toLowerCase();
                   const filteredSubtests = subtestQuery
-                    ? visibleSubtests.filter((st) => st.name.toLowerCase().includes(subtestQuery))
+                    ? visibleSubtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestQuery))
                     : visibleSubtests;
                   const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
                   const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
@@ -1516,3 +1560,4 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 };
 
 export const SubtestRowCheck = FlexibleSubtestRow;
+

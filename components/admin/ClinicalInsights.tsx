@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AreaChart, Area, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, AlertTriangle, Search, TrendingUp, BarChart2, MousePointer2 } from 'lucide-react';
+import { Activity, AlertTriangle, Search, TrendingUp, BarChart2 } from 'lucide-react';
 import { AdminService } from '../../services/admin';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { Logger } from '../../utils/logger';
+import type { InsightQualityAlert } from '../../types';
 
 // Génère une courbe de Gauss théorique (M=100, SD=15)
 const generateGaussianPoints = (mean = 100, sd = 15) => {
@@ -21,7 +22,7 @@ export const ClinicalInsights: React.FC = () => {
     const [selectedSubtestId, setSelectedSubtestId] = useState<string>('');
     
     const [realData, setRealData] = useState<number[]>([]);
-    const [anomalies, setAnomalies] = useState<any[]>([]);
+    const [anomalies, setAnomalies] = useState<InsightQualityAlert[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
 
     // Initialisation par défaut
@@ -62,7 +63,7 @@ export const ClinicalInsights: React.FC = () => {
             const alerts = await AdminService.getQualityAlerts();
             setAnomalies(alerts);
         } catch (e) {
-            console.error(e);
+            Logger.error('SYSTEM', 'Error fetching quality alerts', e);
         }
     };
 
@@ -139,7 +140,7 @@ export const ClinicalInsights: React.FC = () => {
                                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[#E07A5F]"
                                 >
                                     {activeTest.subtests.map(s => (
-                                        <option key={s.id} value={s.id} className="bg-[#23252F] text-stone-200">{s.name}</option>
+                                        <option key={s.id} value={s.id} className="bg-[#23252F] text-stone-200">{s.displayName || s.name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -163,10 +164,10 @@ export const ClinicalInsights: React.FC = () => {
                             {anomalies.map((a, idx) => (
                                 <div key={idx} className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl">
                                     <div className="flex justify-between items-start mb-1">
-                                        <span className="text-rose-300 font-bold text-xs truncate w-2/3">{a.testId}</span>
+                                        <span className="text-rose-300 font-bold text-xs truncate w-2/3">{a.testName || a.testId}</span>
                                         <span className="text-[10px] bg-rose-500 text-white px-2 rounded-full font-bold">{a.extremeRate.toFixed(1)}% Extrêmes</span>
                                     </div>
-                                    <p className="text-[10px] text-stone-400">Sur {a.total} passations.</p>
+                                    <p className="text-[10px] text-stone-400">{a.extreme} extremes sur {a.total} passations.</p>
                                 </div>
                             ))}
                         </div>

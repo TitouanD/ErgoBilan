@@ -132,7 +132,7 @@ const AppRouter = () => {
         } else if (authState === 'network_error') {
             setIsLoggingIn(false);
         }
-    }, [authState]); // eslint-disable-line react-hooks/exhaustive-deps -- toast is stable via useMemo in ToastContext
+    }, [authState]);
 
     // Bridge generation error → paywall
     useEffect(() => { if (generationError === 'CREDIT_INSUFFICIENT') { setPricingModalMode('paywall'); setGenerationError(null); } }, [generationError, setGenerationError]);

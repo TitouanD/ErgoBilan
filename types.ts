@@ -550,3 +550,57 @@ export interface NormQualityFlag {
     flag_label: string;
     details: string;
 }
+
+/** Aggregated cross-test issue backlog row */
+export interface AdminIssueBacklogItem {
+    test_id: string;
+    test_name: string;
+    organization_id: string | null;
+    subtest_count: number;
+    missing_ambiguous_tags: number;
+    duplicate_subtest_excess: number;
+    duplicate_norm_groups: number;
+    duplicate_norm_excess: number;
+    quality_flag_count: number;
+    total_issues: number;
+}
+
+/** Insight anomaly alert based on score-type-aware thresholds */
+export interface InsightQualityAlert {
+    testId: string;
+    testName: string;
+    total: number;
+    extreme: number;
+    extremeRate: number;
+}
+
+/** Admin user row enriched with org + subscription state */
+export interface AdminUserRow {
+    user_id: string;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    is_admin: boolean;
+    credits: number;
+    organization_id: string | null;
+    organization_name: string | null;
+    organization_role: string | null;
+    subscription_plan: 'free' | 'essential' | 'performance' | 'expert' | string;
+    subscription_status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive' | string;
+    trial_ends_at: string | null;
+    current_period_end: string | null;
+    monthly_extraction_quota: number;
+    created_at: string;
+}
+
+/** Payload accepted by admin user update RPC */
+export interface AdminUserUpdatePayload {
+    userId: string;
+    isAdmin?: boolean;
+    credits?: number;
+    planId?: 'free' | 'essential' | 'performance' | 'expert';
+    status?: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
+    trialEndsAt?: string | null;
+    currentPeriodEnd?: string | null;
+    monthlyExtractionQuota?: number;
+}

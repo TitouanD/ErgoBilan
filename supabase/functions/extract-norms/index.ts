@@ -232,7 +232,10 @@ You must calculate specific numeric values for the database:
 1. AGE NORMALIZATION (a0, a1) — MANDATORY for LOOKUP tables:
    - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
    - Convert range "4;0 - 4;5" -> a0: 48, a1: 53.
-   - If only grade is available (e.g. "CP"), estimate typical age (CP = 6 years = 72 months).
+   - If only grade is available, convert grade to age range in months using school mapping.
+   - Primary grades: CP=72-83, CE1=84-95, CE2=96-107, CM1=108-119, CM2=120-131.
+   - Secondary grades: 6e=132-143, 5e=144-155, 4e=156-167, 3e=168-179, 2nde=180-191, 1ere=192-203, Terminale=204-215.
+   - CRITICAL: labels like "6e", "4e", "2nde" are grade levels, NOT ages 6/4/2 years. Never map them to 72/48/24 months.
    - PAGE-LEVEL AGE: When the page title, header, column heading, OR FILENAME shows an age group (e.g. "Ages 10;6-10;11", or filename "10;6-10;11.jpg", "13ans.jpg", "CE1.png"), that SINGLE age group applies to EVERY row on the entire page. You MUST propagate it to a0/a1 of ALL rows AND to pa0/pa1 at the top level. Example: "Ages 10;6-10;11" -> a0: 126, a1: 131 for every row.
    - FILENAME AGE: If the filename contains an age hint (e.g. "5ans6mois" = 66 months, "13ans" = 156 months, "CE1" = ~84 months, "10;6-10;11" = 126-131 months), use it for pa0/pa1 and a0/a1 when no age is visible in the table headers.
    - For LOOKUP tables, a0 and a1 must NEVER be null. The age is ALWAYS visible somewhere on the page (title, header, sub-header) or in the filename. Search for it and apply it.

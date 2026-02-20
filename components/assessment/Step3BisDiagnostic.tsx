@@ -203,7 +203,7 @@ const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }
         catalog.forEach(cat => {
             cat.tests.forEach(t => {
                 t.subtests.forEach(st => {
-                    subtestNameMap[st.id] = st.name;
+                    subtestNameMap[st.id] = st.displayName || st.name;
                 });
             });
         });

@@ -14,6 +14,12 @@ import { TEST_CATALOG } from '../../data/testCatalog';
 import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
 import { DisambiguationModal } from './DisambiguationModal';
+import {
+    buildConditionalSubtestDisplayName,
+    buildSubtestDisplayMetaMap,
+    normalizeSubtestAbbreviationTag,
+    splitTrailingTag,
+} from '../../utils/subtestDisplay';
 
 interface Props {
     onClose: () => void;
@@ -26,7 +32,10 @@ const GRADE_TO_AGE: Record<string, string> = {
     'CP': '6 ans', 'CE1': '7 ans', 'CE2': '8 ans',
     'CM1': '9 ans', 'CM2': '10 ans',
     '6EME': '11 ans', '5EME': '12 ans', '4EME': '13 ans', '3EME': '14 ans',
-    '6ÈME': '11 ans', '5ÈME': '12 ans', '4ÈME': '13 ans', '3ÈME': '14 ans'
+    '6ÈME': '11 ans', '5ÈME': '12 ans', '4ÈME': '13 ans', '3ÈME': '14 ans',
+    '2NDE': '15 ans', '2DE': '15 ans',
+    '1ERE': '16 ans', '1RE': '16 ans',
+    'TERMINALE': '17 ans', 'TLE': '17 ans'
 };
 
 // Grade → age in months for filename age parsing
@@ -36,6 +45,9 @@ const GRADE_TO_MONTHS: Record<string, number> = {
     'CM1': 108, 'CM2': 120,
     '6EME': 132, '5EME': 144, '4EME': 156, '3EME': 168,
     '6E': 132, '5E': 144, '4E': 156, '3E': 168,
+    '2NDE': 180, '2DE': 180,
+    '1ERE': 192, '1RE': 192,
+    'TERMINALE': 204, 'TLE': 204,
 };
 
 /**
@@ -117,30 +129,20 @@ type CanonicalGroupedEntry = {
     rows: ExtractedRow[];
 };
 
-const normalizeAbbreviation = (value?: string | null): string => (
-    (value || '')
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, ' ')
-);
+const normalizeAbbreviation = (value?: string | null): string => normalizeSubtestAbbreviationTag(value);
 
 const splitSubtestDisplayName = (name: string): { baseName: string; abbreviation?: string } => {
-    const trimmed = name.trim();
-    if (!trimmed) return { baseName: '' };
-    const match = trimmed.match(/^(.*)\(([A-Z0-9][A-Z0-9&/\- ]{0,19})\)\s*$/);
-    if (!match) return { baseName: trimmed };
+    const parsed = splitTrailingTag(name);
+    if (!parsed.trailingTag) return { baseName: parsed.baseName };
     return {
-        baseName: match[1].trim(),
-        abbreviation: normalizeAbbreviation(match[2]) || undefined,
+        baseName: parsed.baseName,
+        abbreviation: normalizeAbbreviation(parsed.trailingTag) || undefined,
     };
 };
 
-const formatSubtestDisplayName = (name: string, abbreviation?: string | null): string => {
-    const trimmedName = name.trim();
-    const normalizedAbbr = normalizeAbbreviation(abbreviation);
-    if (!trimmedName) return '';
-    return normalizedAbbr ? `${trimmedName} (${normalizedAbbr})` : trimmedName;
-};
+const formatSubtestDisplayName = (name: string, abbreviation?: string | null, isAmbiguous = false): string => (
+    buildConditionalSubtestDisplayName(name, normalizeAbbreviation(abbreviation), isAmbiguous)
+);
 
 const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
     `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
@@ -197,15 +199,15 @@ const reDisambiguateByAbbreviation = (pages: ExtractionPage[]): void => {
     });
     subtestAbbrMap.forEach((abbrs, subtest) => {
         if (abbrs.size > 1) {
-            const trailMatch = subtest.match(/^(.*)\(([A-Z0-9][A-Z0-9&/\- ]{0,19})\)\s*$/);
-            const trailingAbbr = trailMatch ? normalizeAbbreviation(trailMatch[2]) : '';
-            const baseName = trailMatch && abbrs.has(trailingAbbr)
-                ? trailMatch[1].trim()
+            const parsed = splitSubtestDisplayName(subtest);
+            const trailingAbbr = normalizeAbbreviation(parsed.abbreviation);
+            const baseName = trailingAbbr && abbrs.has(trailingAbbr)
+                ? parsed.baseName
                 : subtest;
             pages.forEach(page => {
                 page.rows.forEach(row => {
                     if (row.subtest === subtest && row.source_abbreviation) {
-                        row.subtest = `${baseName} (${normalizeAbbreviation(row.source_abbreviation)})`;
+                        row.subtest = formatSubtestDisplayName(baseName, row.source_abbreviation, true);
                     }
                 });
             });
@@ -314,6 +316,31 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             };
         })
     ), [canonicalSubtests]);
+    const canonicalDisplayMetaMap = useMemo(
+        () => buildSubtestDisplayMetaMap(canonicalSubtestsNormalized.map((sub) => ({
+            id: sub.id,
+            name: sub.name,
+            abbreviation: sub.abbreviation || null,
+        }))),
+        [canonicalSubtestsNormalized],
+    );
+    const canonicalAmbiguousNameKeys = useMemo(() => {
+        const keys = new Set<string>();
+        canonicalDisplayMetaMap.forEach((meta) => {
+            if (meta.isAmbiguous && meta.normalizedNameKey) {
+                keys.add(meta.normalizedNameKey);
+            }
+        });
+        return keys;
+    }, [canonicalDisplayMetaMap]);
+    const canonicalInvalidAmbiguous = useMemo(
+        () => canonicalSubtestsNormalized.filter((sub) => canonicalDisplayMetaMap.get(sub.id)?.isHiddenInvalidAmbiguous),
+        [canonicalSubtestsNormalized, canonicalDisplayMetaMap],
+    );
+    const canonicalInvalidAmbiguousNames = useMemo(
+        () => Array.from(new Set(canonicalInvalidAmbiguous.map((sub) => sub.name).filter(Boolean))),
+        [canonicalInvalidAmbiguous],
+    );
     const canonicalNameInventory = useMemo(
         () => Array.from(new Set(canonicalSubtestsNormalized.map((sub) => sub.name).filter(Boolean))),
         [canonicalSubtestsNormalized]
@@ -534,6 +561,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }, {} as Record<string, ExtractedRow[]>)
     );
 
+    const suspiciousSecondaryAgeSubtests = useMemo(() => {
+        if (tableStructure !== 'PARAMETRIC') return [] as string[];
+
+        const rowsBySubtest = groupRowsBySubtest(allRows);
+        return Object.entries(rowsBySubtest)
+            .filter(([, rows]) => {
+                const ageStarts = rows
+                    .map((r) => r.hidden_age_min)
+                    .filter((v): v is number => typeof v === 'number')
+                    .sort((a, b) => a - b);
+
+                if (ageStarts.length < 3) return false;
+
+                const hasPrimarySchoolBand = ageStarts.some((m) => m >= 84 && m <= 131);
+                const hasSecondaryParsedAsYears = ageStarts.some((m) => m === 24 || m === 48 || m === 72);
+                const hasTeenBand = ageStarts.some((m) => m >= 132);
+
+                return hasPrimarySchoolBand && hasSecondaryParsedAsYears && !hasTeenBand;
+            })
+            .map(([subtestName]) => subtestName);
+    }, [allRows, tableStructure]);
+
     // --- PROCESSING FUNCTION (now uses dedicated extract-norms edge function with restored prompts) ---
 
     const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
@@ -730,6 +779,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             if (canonicalSubtestsNormalized.length > 0) {
                 // DB-backed test → strict filter: only keep rows matching a canonical subtest
                 let droppedCount = 0;
+                let droppedAmbiguousWithoutAbbr = 0;
                 nextPages.forEach(page => {
                     const kept: ExtractedRow[] = [];
                     page.rows.forEach(row => {
@@ -775,17 +825,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         }
 
                         const canonicalAbbr = normalizeAbbreviation(matchedCanonical.abbreviation);
-                        const displayAbbr = canonicalAbbr || rowAbbr || null;
+                        const resolvedAbbr = canonicalAbbr || rowAbbr || null;
+                        const canonicalNameKey = normalizeSubtestName(matchedCanonical.name);
+                        const isAmbiguousCanonical = !!canonicalNameKey && canonicalAmbiguousNameKeys.has(canonicalNameKey);
+                        if (isAmbiguousCanonical && !resolvedAbbr) {
+                            droppedCount++;
+                            droppedAmbiguousWithoutAbbr++;
+                            return;
+                        }
                         kept.push({
                             ...row,
-                            subtest: formatSubtestDisplayName(matchedCanonical.name, displayAbbr),
+                            subtest: formatSubtestDisplayName(matchedCanonical.name, resolvedAbbr, isAmbiguousCanonical),
                             source_abbreviation: rowAbbr || canonicalAbbr || undefined,
                         });
                     });
                     page.rows = kept;
                 });
                 if (droppedCount > 0) {
-                    Logger.info('AI', `Strict filter: ${droppedCount} row(s) dropped (no canonical match)`);
+                    Logger.info('AI', `Strict filter: ${droppedCount} row(s) dropped (canonical mismatch or ambiguous missing abbreviation)`);
+                }
+                if (droppedAmbiguousWithoutAbbr > 0) {
+                    toast.error(`${droppedAmbiguousWithoutAbbr} ligne(s) ignorée(s) : variante ambiguë sans abréviation canonique.`);
                 }
             } else {
                 // Unknown test → legacy dedup: unify subtest names across pages
@@ -879,7 +939,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return {
                 name: fallbackName,
                 abbreviation: sourceAbbr || null,
-                displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null),
+                displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null, false),
+                isAmbiguous: false,
+                isHiddenInvalidAmbiguous: false,
                 isMapped: true,
             };
         }
@@ -889,11 +951,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const candidate = candidates[0];
             const candidateAbbr = normalizeAbbreviation(candidate.abbreviation);
             const displayAbbr = candidateAbbr || sourceAbbr || null;
+            const normalizedCandidateName = normalizeSubtestName(candidate.name);
+            const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
+            const isHiddenInvalidAmbiguous = isAmbiguous && !displayAbbr;
             return {
                 name: candidate.name,
-                abbreviation: candidateAbbr || sourceAbbr || null,
-                displayName: formatSubtestDisplayName(candidate.name, displayAbbr),
-                isMapped: true,
+                abbreviation: displayAbbr,
+                displayName: formatSubtestDisplayName(candidate.name, displayAbbr, isAmbiguous),
+                isAmbiguous,
+                isHiddenInvalidAmbiguous,
+                isMapped: !isHiddenInvalidAmbiguous,
             };
         }
 
@@ -902,11 +969,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 const exact = candidates.find(c => normalizeAbbreviation(c.abbreviation) === sourceAbbr);
                 if (exact) {
                     const exactAbbr = normalizeAbbreviation(exact.abbreviation) || sourceAbbr;
+                    const normalizedCandidateName = normalizeSubtestName(exact.name);
+                    const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
+                    const isHiddenInvalidAmbiguous = isAmbiguous && !exactAbbr;
                     return {
                         name: exact.name,
                         abbreviation: exactAbbr || null,
-                        displayName: formatSubtestDisplayName(exact.name, exactAbbr || null),
-                        isMapped: true,
+                        displayName: formatSubtestDisplayName(exact.name, exactAbbr || null, isAmbiguous),
+                        isAmbiguous,
+                        isHiddenInvalidAmbiguous,
+                        isMapped: !isHiddenInvalidAmbiguous,
                     };
                 }
             }
@@ -915,11 +987,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             if (narrowedName) {
                 const narrowed = candidates.find(c => c.name === narrowedName) || candidates[0];
                 const narrowedAbbr = normalizeAbbreviation(narrowed.abbreviation) || sourceAbbr;
+                const normalizedCandidateName = normalizeSubtestName(narrowed.name);
+                const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
+                const isHiddenInvalidAmbiguous = isAmbiguous && !narrowedAbbr;
                 return {
                     name: narrowed.name,
                     abbreviation: narrowedAbbr || null,
-                    displayName: formatSubtestDisplayName(narrowed.name, narrowedAbbr || null),
-                    isMapped: true,
+                    displayName: formatSubtestDisplayName(narrowed.name, narrowedAbbr || null, isAmbiguous),
+                    isAmbiguous,
+                    isHiddenInvalidAmbiguous,
+                    isMapped: !isHiddenInvalidAmbiguous,
                 };
             }
         }
@@ -927,10 +1004,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         return {
             name: fallbackName,
             abbreviation: sourceAbbr || null,
-            displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null),
+            displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null, false),
+            isAmbiguous: false,
+            isHiddenInvalidAmbiguous: false,
             isMapped: false,
         };
-    }, [canonicalSubtestsNormalized.length, canonicalSubtestsByName, stripAgeQualifier, testName]);
+    }, [canonicalSubtestsNormalized.length, canonicalSubtestsByName, stripAgeQualifier, testName, canonicalAmbiguousNameKeys]);
 
     const VARIANT_PATTERN = /\(variante \d+\)$/;
     const unrenamedVariants = useMemo(() => {
@@ -944,6 +1023,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const grouped = new Map<string, CanonicalGroupedEntry>();
         allRows.forEach((row) => {
             const resolved = resolveCanonicalSubtest(row);
+            if (resolved.isHiddenInvalidAmbiguous) return;
             const key = buildSubtestIdentityKey(resolved.name, resolved.abbreviation);
             const existing = grouped.get(key);
             if (existing) {
@@ -966,7 +1046,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         allRows.forEach((row) => {
             const resolved = resolveCanonicalSubtest(row);
             if (!resolved.isMapped) {
-                missing.add(resolved.displayName);
+                if (resolved.isHiddenInvalidAmbiguous) {
+                    missing.add(`${resolved.name} (masqué: ambigu sans abréviation)`);
+                } else {
+                    missing.add(resolved.displayName);
+                }
             }
         });
         return Array.from(missing.values());
@@ -1056,7 +1140,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(currentGroupedRows).length + 1));
 
     // --- PRE-SAVE CHECK ---
-    const handlePreSave = () => {
+    const handlePreSave = useCallback(() => {
         if (!testName.trim()) {
             setTestNameError(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1070,12 +1154,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error(`${unrenamedVariants.length} sous-test(s) portent encore un suffixe "(variante N)". Renommez-les avant d'enregistrer.`);
             return;
         }
+        if (canonicalTest && canonicalInvalidAmbiguous.length > 0) {
+            toast.error('La liste canonique contient des variantes ambiguës sans abréviation. Corrigez-les dans le catalogue admin.');
+            return;
+        }
         if (canonicalTest && unmappedSubtests.length > 0) {
             setShowUnmappedModal(true);
             return;
         }
+        if (suspiciousSecondaryAgeSubtests.length > 0) {
+            toast.error(
+                `Âges suspects détectés (${suspiciousSecondaryAgeSubtests.join(', ')}): 6e/4e/2nde semblent converties en 6/4/2 ans. Corrigez avant sauvegarde.`
+            );
+            return;
+        }
         setShowSaveModal(true);
-    };
+    }, [
+        canonicalInvalidAmbiguous.length,
+        canonicalTest,
+        hasUnrenamedVariants,
+        pages,
+        testName,
+        toast,
+        suspiciousSecondaryAgeSubtests,
+        unrenamedVariants.length,
+        unmappedSubtests.length,
+    ]);
 
     // --- HELPER: Build norm payload from an ExtractedRow ---
     const buildNormPayload = (row: ExtractedRow) => {
@@ -1501,7 +1605,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={handlePreSave} className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm"><Save size={16} /> Enregistrer le test</button>
+                    <button
+                        onClick={handlePreSave}
+                        disabled={canonicalInvalidAmbiguous.length > 0}
+                        className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                        title={canonicalInvalidAmbiguous.length > 0 ? 'Corrigez les variantes ambiguës sans abréviation dans le catalogue canonique.' : undefined}
+                    >
+                        <Save size={16} /> Enregistrer le test
+                    </button>
                 </div>
             </div>
 
@@ -1619,6 +1730,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     ) : canonicalTest ? (
                                         <div className="space-y-2">
                                             <div className="font-semibold">Liste canonique detectee : {canonicalTest.name} ({canonicalSubtests.length} sous-tests)</div>
+                                            {canonicalInvalidAmbiguousNames.length > 0 && (
+                                                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                                                    {canonicalInvalidAmbiguousNames.length} variante{canonicalInvalidAmbiguousNames.length > 1 ? 's' : ''} ambiguë{canonicalInvalidAmbiguousNames.length > 1 ? 's' : ''} sans abréviation dans le catalogue canonique : {canonicalInvalidAmbiguousNames.join(', ')}. Sauvegarde bloquée tant que non corrigé.
+                                                </div>
+                                            )}
                                             {unmappedSubtests.length > 0 && (
                                                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
                                                     {unmappedSubtests.length} sous-test{unmappedSubtests.length > 1 ? 's' : ''} non reconnus : {unmappedSubtests.join(', ')}

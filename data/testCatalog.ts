@@ -36,7 +36,10 @@ export interface SubtestInputConfig {
 export interface SubtestDef {
   id: string;
   name: string;
+  displayName?: string;
   abbreviation?: string | null;
+  isAmbiguous?: boolean;
+  isHiddenInvalidAmbiguous?: boolean;
   unit: string; 
   lowerIsBetter?: boolean;
   scoreType: ScoreType;

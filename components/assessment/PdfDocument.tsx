@@ -427,7 +427,7 @@ const PdfRadarChart: React.FC<{
     const data = Object.values(stats)
         .filter(s => s.count > 0)
         .map(s => ({
-            label: s.name,
+            label: s.displayName || s.name,
             value: parseFloat((s.sum / s.count).toFixed(2)),
         }));
 
@@ -564,7 +564,7 @@ const PdfBarChart: React.FC<{
                 let color = COLORS.green;
                 if (z <= -2) color = COLORS.red;
                 else if (z <= -1) color = COLORS.orange;
-                items.push({ label: subDef?.name || subId, z, color });
+                items.push({ label: subDef?.displayName || subDef?.name || subId, z, color });
             });
     });
 
@@ -752,7 +752,7 @@ const PdfScoreTable: React.FC<{
                         {/* Rows */}
                         {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => (
                             <View key={subId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4, alignItems: 'flex-start' }}>
-                                <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {subDef?.name}</Text>
+                                <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {subDef?.displayName || subDef?.name}</Text>
                                 <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: getScoreColor(result, isScoreable) }}>
                                     {getDisplayScore(result, isScoreable)}
                                 </Text>
@@ -790,7 +790,7 @@ const PdfScoreTable: React.FC<{
 
                             return (
                                 <View key={subId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4, alignItems: 'flex-start' }}>
-                                    <Text style={{ width: '30%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 4 }}>• {subDef?.name}</Text>
+                                    <Text style={{ width: '30%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 4 }}>• {subDef?.displayName || subDef?.name}</Text>
                                     <Text style={{ width: '20%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: DEFAULT_PRIMARY }}>{displayCategory}</Text>
                                     <Text style={{ width: '25%', fontSize: 8, color: COLORS.stone600, paddingLeft: 6 }}>{displayInterpretation}</Text>
                                     <Text style={{ width: '25%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 6 }}>{result.observation || '-'}</Text>

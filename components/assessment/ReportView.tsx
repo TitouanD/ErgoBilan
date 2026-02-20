@@ -669,7 +669,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                     else if (z <= -1) color = '#F2CC8F';
                                     return (
                                         <div key={`${testId}_${subId}`} className="flex items-center gap-3 text-xs">
-                                            <span className="w-32 text-right text-stone-600 font-medium truncate shrink-0" title={subDef?.name}>{subDef?.name || subId}</span>
+                                            <span className="w-32 text-right text-stone-600 font-medium truncate shrink-0" title={subDef?.displayName || subDef?.name}>{subDef?.displayName || subDef?.name || subId}</span>
                                             <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
                                                 <div className="absolute inset-y-0 left-0 w-[21.4%] bg-rose-100"></div>
                                                 <div className="absolute inset-y-0 left-[21.4%] w-[14.3%] bg-amber-100"></div>
@@ -773,7 +773,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.displayName || subDef?.name}</td>
                                                                 <td className={`py-3 text-center ${isScoreable && (currentMode === 'ET' || currentMode === 'NS') ? colorClass : 'text-stone-500'}`}>{displayScore}</td>
                                                                 <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "-"}</td>
                                                             </tr>
@@ -809,7 +809,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">� {subDef?.displayName || subDef?.name}</td>
                                                                 <td className="py-3 text-center font-semibold text-[#3D405B]">{displayCategory}</td>
                                                                 <td className="py-3 pl-3 text-xs text-stone-600">{displayInterpretation}</td>
                                                                 <td className="py-3 pl-3 italic text-xs text-stone-500">{result.observation || "-"}</td>

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
@@ -6,6 +6,7 @@ import type { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRe
 import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle, Settings, Wrench, Database, ArrowRight } from 'lucide-react';
 import { normalizeSubtestName } from '../../utils';
 import { supabase } from '../../services/db';
+import { buildConditionalSubtestDisplayName, buildSubtestDisplayMetaMap, normalizeSubtestAbbreviationTag, stripDuplicateTrailingTag } from '../../utils/subtestDisplay';
 
 interface SubtestDraft extends AdminSubtestRecord {
   isNew?: boolean;
@@ -13,6 +14,11 @@ interface SubtestDraft extends AdminSubtestRecord {
 
 interface NormDraft extends AdminNormRecord {
   temp_id?: string;
+}
+
+interface Props {
+  focusTestId?: string | null;
+  focusNonce?: number;
 }
 
 const slugify = (input: string) => input.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -23,21 +29,16 @@ const createSubtestId = (testId: string, name: string) => {
   return `${testId}_${slug}_${suffix}`;
 };
 
-const normalizeAbbreviation = (value?: string | null): string => (
-  String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, ' ')
-);
+const normalizeAbbreviation = (value?: string | null): string => normalizeSubtestAbbreviationTag(value);
 
 const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
   `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
 );
 
-const formatSubtestDisplayName = (subtest: Pick<AdminSubtestRecord, 'name' | 'abbreviation'>): string => {
-  const abbr = normalizeAbbreviation(subtest.abbreviation);
-  return abbr ? `${subtest.name} (${abbr})` : subtest.name;
-};
+const formatSubtestDisplayName = (
+  subtest: Pick<AdminSubtestRecord, 'name' | 'abbreviation'>,
+  isAmbiguous = false,
+): string => buildConditionalSubtestDisplayName(subtest.name, normalizeAbbreviation(subtest.abbreviation), isAmbiguous);
 
 const toNumber = (val: string | number | null | undefined): number | null => {
   if (val === null || val === undefined) return null;
@@ -59,7 +60,7 @@ const QUALITATIVE_5_BUCKETS_PRESET = {
   defaultMetric: 'raw',
 } as const;
 
-export const AdminLibrary: React.FC = () => {
+export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce = 0 }) => {
   const toast = useToast();
   const [scope, setScope] = useState<'public' | 'private' | 'all'>('public');
   const [search, setSearch] = useState('');
@@ -73,7 +74,7 @@ export const AdminLibrary: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
   const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([]);
-  const [subTab, setSubTab] = useState<'normes' | 'meta' | 'validation' | 'outils'>('normes');
+  const [subTab, setSubTab] = useState<'normes' | 'meta' | 'validation' | 'issues' | 'outils'>('normes');
   const [inputConfigDraft, setInputConfigDraft] = useState('{}');
 
   // Dedup state
@@ -87,6 +88,9 @@ export const AdminLibrary: React.FC = () => {
   // Quality check state
   const [qualityFlags, setQualityFlags] = useState<NormQualityFlag[]>([]);
   const [isCheckingQuality, setIsCheckingQuality] = useState(false);
+  const [dismissingQualityKey, setDismissingQualityKey] = useState<string | null>(null);
+  const [isAnalyzingIssues, setIsAnalyzingIssues] = useState(false);
+  const [issuesAnalyzedTestId, setIssuesAnalyzedTestId] = useState<string | null>(null);
 
   // Test-level dedup state
   interface DedupCluster {
@@ -193,6 +197,7 @@ export const AdminLibrary: React.FC = () => {
     setBundle(null);
     setSelectedSubtestId(null);
     setIsDirty(false);
+    setIssuesAnalyzedTestId(null);
     // Reset dedup & quality state
     setSubtestDupPairs([]);
     setNormDupSummary([]);
@@ -225,11 +230,40 @@ export const AdminLibrary: React.FC = () => {
     loadTests();
   }, [scope]);
 
+  useEffect(() => {
+    if (!focusTestId || focusNonce === 0) return;
+    setSelectedTestId(focusTestId);
+    void loadBundle(focusTestId);
+  }, [focusTestId, focusNonce]);
+
   const filteredTests = useMemo(() => {
     if (!search.trim()) return tests;
     const q = search.toLowerCase();
     return tests.filter(t => t.name.toLowerCase().includes(q) || t.id.toLowerCase().includes(q));
   }, [tests, search]);
+
+  const subtestDisplayMetaMap = useMemo(
+    () => buildSubtestDisplayMetaMap((bundle?.subtests || []).map((s) => ({ id: s.id, name: s.name, abbreviation: s.abbreviation }))),
+    [bundle?.subtests],
+  );
+  const invalidAmbiguousSubtests = useMemo(
+    () => (bundle?.subtests || []).filter((s) => subtestDisplayMetaMap.get(s.id)?.isHiddenInvalidAmbiguous),
+    [bundle?.subtests, subtestDisplayMetaMap],
+  );
+  const hasInvalidAmbiguousSubtests = invalidAmbiguousSubtests.length > 0;
+  const totalDuplicateNormExcess = useMemo(
+    () => normDupSummary.reduce((acc, row) => acc + (row.total_excess_rows || 0), 0),
+    [normDupSummary],
+  );
+  const issueTodoCount = useMemo(
+    () => invalidAmbiguousSubtests.length + subtestDupPairs.length + totalDuplicateNormExcess + qualityFlags.length,
+    [invalidAmbiguousSubtests.length, subtestDupPairs.length, totalDuplicateNormExcess, qualityFlags.length],
+  );
+  const getSubtestDisplayName = (subtest: Pick<AdminSubtestRecord, 'id' | 'name' | 'abbreviation'>): string => {
+    const meta = subtestDisplayMetaMap.get(subtest.id);
+    if (meta) return meta.displayName;
+    return formatSubtestDisplayName(subtest, false);
+  };
 
   const updateTestField = (field: keyof AdminTestBundle['test'], value: any) => {
     setBundle(prev => {
@@ -373,18 +407,21 @@ export const AdminLibrary: React.FC = () => {
       organization_id: raw.test.organization_id || null
     };
 
-    const subtests = raw.subtests.map(s => ({
-      id: s.id,
-      test_id: test.id,
-      name: s.name,
-      abbreviation: normalizeAbbreviation(s.abbreviation) || null,
-      unit: s.unit || 'pts',
-      score_type: s.score_type || 'scaled',
-      computation_mode: s.computation_mode || 'LOOKUP',
-      input_model: s.input_model || 'numeric_4mode',
-      input_config: s.input_config || {},
-      organization_id: s.organization_id || test.organization_id || null
-    }));
+    const subtests = raw.subtests.map(s => {
+      const normalizedAbbreviation = normalizeAbbreviation(s.abbreviation);
+      return {
+        id: s.id,
+        test_id: test.id,
+        name: stripDuplicateTrailingTag(s.name, normalizedAbbreviation),
+        abbreviation: normalizedAbbreviation || null,
+        unit: s.unit || 'pts',
+        score_type: s.score_type || 'scaled',
+        computation_mode: s.computation_mode || 'LOOKUP',
+        input_model: s.input_model || 'numeric_4mode',
+        input_config: s.input_config || {},
+        organization_id: s.organization_id || test.organization_id || null,
+      };
+    });
 
     const norms = raw.norms.map(n => ({
       subtest_id: n.subtest_id,
@@ -405,6 +442,10 @@ export const AdminLibrary: React.FC = () => {
 
   const handleSave = async () => {
     if (!bundle) return;
+    if (hasInvalidAmbiguousSubtests) {
+      toast.error('Corrigez les sous-tests ambigus sans abréviation avant sauvegarde.');
+      return;
+    }
     setIsSaving(true);
     try {
       const payload = sanitizeBundle(bundle);
@@ -438,6 +479,10 @@ export const AdminLibrary: React.FC = () => {
 
   const handlePromoteSubtests = async (subtestIds: string[]) => {
     if (!bundle) return;
+    if (invalidAmbiguousSubtests.length > 0) {
+      toast.error('Corrigez les sous-tests ambigus sans abréviation avant promotion.');
+      return;
+    }
     if (!confirm(`Promouvoir ${subtestIds.length} sous-test(s) en public ? Cette action est irréversible.`)) return;
     setIsPromoting(true);
     try {
@@ -476,6 +521,10 @@ export const AdminLibrary: React.FC = () => {
 
   const handlePromoteNorms = async (params: { subtestId?: string; testId?: string; organizationId?: string }, label: string) => {
     if (!bundle) return;
+    if (hasInvalidAmbiguousSubtests) {
+      toast.error('Corrigez les sous-tests ambigus sans abréviation avant promotion.');
+      return;
+    }
     if (!confirm(`Promouvoir ${label} en public ? Cette action est irréversible.`)) return;
     try {
       const result = await AdminService.promoteNorms(params);
@@ -489,6 +538,10 @@ export const AdminLibrary: React.FC = () => {
 
   const handleRejectNorms = async (params: { subtestId?: string; testId?: string; organizationId?: string }, label: string) => {
     if (!bundle) return;
+    if (hasInvalidAmbiguousSubtests) {
+      toast.error('Corrigez les sous-tests ambigus sans abréviation avant validation.');
+      return;
+    }
     if (!confirm(`Rejeter et supprimer ${label} ? Cette action est irréversible.`)) return;
     try {
       const result = await AdminService.rejectNorms(params);
@@ -499,6 +552,44 @@ export const AdminLibrary: React.FC = () => {
       toast.error('Échec du rejet des normes.');
     }
   };
+
+  const analyzeIssuesForCurrentTest = useCallback(async (silent = false) => {
+    if (!bundle) return;
+    setIsAnalyzingIssues(true);
+    try {
+      const [subPairs, normSummary, flags] = await Promise.all([
+        AdminService.findDuplicateSubtests(bundle.test.id, 0.7),
+        AdminService.findDuplicateNorms({ testId: bundle.test.id }),
+        AdminService.normQualityCheck({ testId: bundle.test.id }),
+      ]);
+      setSubtestDupPairs(subPairs);
+      setNormDupSummary(normSummary);
+      setQualityFlags(flags);
+      setIssuesAnalyzedTestId(bundle.test.id);
+      if (!silent) {
+        const normExcess = normSummary.reduce((acc, row) => acc + (row.total_excess_rows || 0), 0);
+        const totalIssues = invalidAmbiguousSubtests.length + subPairs.length + normExcess + flags.length;
+        if (totalIssues === 0) {
+          toast.success('Aucune issue détectée pour ce test.');
+        } else {
+          toast.success(`Analyse terminée: ${totalIssues} issue(s) détectée(s).`);
+        }
+      }
+    } catch (e) {
+      Logger.error('DB', 'Issue analysis failed', e);
+      if (!silent) toast.error('Erreur lors de l’analyse des issues.');
+    } finally {
+      setIsAnalyzingIssues(false);
+    }
+  }, [bundle, invalidAmbiguousSubtests.length, toast]);
+
+  useEffect(() => {
+    if (!bundle || subTab !== 'issues') return;
+    if (issuesAnalyzedTestId === bundle.test.id) return;
+    if (isAnalyzingIssues) return;
+    void analyzeIssuesForCurrentTest(true);
+  }, [analyzeIssuesForCurrentTest, bundle, issuesAnalyzedTestId, isAnalyzingIssues, subTab]);
+
   // --- DEDUP HANDLERS ---
 
   const handleScanSubtestDups = async () => {
@@ -572,7 +663,7 @@ export const AdminLibrary: React.FC = () => {
     try {
       const flags = await AdminService.normQualityCheck({ testId: bundle.test.id });
       setQualityFlags(flags);
-      if (flags.length === 0) toast.success('Aucun problème de qualité détecté 🎉');
+      if (flags.length === 0) toast.success('Aucun problème de qualité détecté ??');
     } catch (e) {
       Logger.error('DB', 'Quality check failed', e);
       toast.error('Erreur lors du contrôle qualité.');
@@ -580,6 +671,28 @@ export const AdminLibrary: React.FC = () => {
       setIsCheckingQuality(false);
     }
   };
+
+  const getQualityFlagKey = (flag: Pick<NormQualityFlag, 'norm_id' | 'flag_code'>) => `${flag.norm_id}::${flag.flag_code}`;
+
+  const handleDismissQualityFlag = async (flag: NormQualityFlag) => {
+    const key = getQualityFlagKey(flag);
+    setDismissingQualityKey(key);
+    try {
+      await AdminService.setNormIssueDismissed({
+        normId: flag.norm_id,
+        flagCode: flag.flag_code,
+        dismissed: true,
+      });
+      setQualityFlags((prev) => prev.filter((f) => !(f.norm_id === flag.norm_id && f.flag_code === flag.flag_code)));
+      toast.success('Issue ignorée.');
+    } catch (e) {
+      Logger.error('DB', 'Dismiss norm quality issue failed', e);
+      toast.error("Impossible d'ignorer cette issue.");
+    } finally {
+      setDismissingQualityKey(null);
+    }
+  };
+
   return (
     <div className="grid grid-cols-12 gap-8 h-full p-8">
       {/* LISTE TESTS */}
@@ -708,7 +821,7 @@ export const AdminLibrary: React.FC = () => {
                         <div className="flex items-center gap-2 flex-wrap">
                           {cluster.tests.map((t, i) => (
                             <React.Fragment key={t.id}>
-                              {i > 0 && <span className="text-stone-600">≈</span>}
+                              {i > 0 && <span className="text-stone-600">˜</span>}
                               <span className="font-bold text-white text-xs flex items-center gap-1">
                                 {t.org_id === null ? <Globe size={10} className="text-blue-400" /> : <Lock size={10} className="text-amber-400" />}
                                 {t.name}
@@ -746,7 +859,7 @@ export const AdminLibrary: React.FC = () => {
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex-1 bg-white/5 rounded-lg p-2 text-[10px] text-stone-400">
                               <ArrowRight size={10} className="inline mr-1 text-violet-400" />
-                              {cluster.tests.filter(t => t.id !== mergeTargetId).map(t => t.name).join(', ')} → <strong className="text-white">{cluster.tests.find(t => t.id === mergeTargetId)?.name}</strong>
+                              {cluster.tests.filter(t => t.id !== mergeTargetId).map(t => t.name).join(', ')} ? <strong className="text-white">{cluster.tests.find(t => t.id === mergeTargetId)?.name}</strong>
                             </div>
                             <button
                               onClick={() => handleMergeTests(cluster, mergeTargetId)}
@@ -782,8 +895,8 @@ export const AdminLibrary: React.FC = () => {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={isSaving}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-[#E07A5F] text-white hover:bg-[#d0694e] flex items-center gap-2 disabled:opacity-60"
+                  disabled={isSaving || hasInvalidAmbiguousSubtests}
+                  className="px-4 py-2 text-xs font-bold rounded-lg bg-[#E07A5F] text-white hover:bg-[#d0694e] flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   Sauvegarder
@@ -803,12 +916,29 @@ export const AdminLibrary: React.FC = () => {
               </div>
             )}
 
+            {hasInvalidAmbiguousSubtests && (
+              <div className="mb-3 text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2 space-y-1">
+                <div className="font-bold text-rose-300">Variantes ambiguës sans abréviation détectées</div>
+                <div className="text-rose-200/90">
+                  Corrigez ces sous-tests avant sauvegarde/promotion. Les variantes ambiguës sans tag sont invalides.
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {invalidAmbiguousSubtests.map((subtest) => (
+                    <span key={subtest.id} className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200 text-[10px] font-semibold">
+                      {subtest.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* SUB-TABS */}
             <div className="flex items-center gap-1 mb-4 border-b border-white/5 pb-2">
               {([
                 { key: 'normes' as const, label: 'Normes & Sous-tests', icon: <Database size={13} /> },
                 { key: 'meta' as const, label: 'Métadonnées', icon: <Settings size={13} /> },
                 { key: 'validation' as const, label: 'Validation', icon: <ArrowUpRight size={13} />, badge: totalPendingNorms },
+                { key: 'issues' as const, label: 'Issues', icon: <AlertTriangle size={13} />, badge: issueTodoCount },
                 { key: 'outils' as const, label: 'Outils', icon: <Wrench size={13} /> },
               ]).map(tab => (
                 <button
@@ -828,7 +958,7 @@ export const AdminLibrary: React.FC = () => {
               ))}
             </div>
 
-            {/* ═══ SUB-TAB: NORMES & SOUS-TESTS ═══ */}
+            {/* --- SUB-TAB: NORMES & SOUS-TESTS --- */}
             {subTab === 'normes' && (
               <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
                 <div className="col-span-4 flex flex-col">
@@ -851,7 +981,7 @@ export const AdminLibrary: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 min-w-0">
                             {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
-                            <span className="text-xs font-bold text-white truncate">{formatSubtestDisplayName(s)}</span>
+                            <span className="text-xs font-bold text-white truncate">{getSubtestDisplayName(s)}</span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
@@ -1058,7 +1188,7 @@ export const AdminLibrary: React.FC = () => {
               </div>
             )}
 
-            {/* ═══ SUB-TAB: MÉTADONNÉES ═══ */}
+            {/* --- SUB-TAB: MÉTADONNÉES --- */}
             {subTab === 'meta' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-12 gap-4">
@@ -1120,7 +1250,7 @@ export const AdminLibrary: React.FC = () => {
               </div>
             )}
 
-            {/* ═══ SUB-TAB: VALIDATION ═══ */}
+            {/* --- SUB-TAB: VALIDATION --- */}
             {subTab === 'validation' && (
               <div className="space-y-4">
                 {totalPendingNorms === 0 && privateSubtests.length === 0 ? (
@@ -1140,13 +1270,15 @@ export const AdminLibrary: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handlePromoteNorms({ testId: bundle.test.id }, `${totalPendingNorms} norme(s) du test`)}
-                              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 rounded-lg"
+                              disabled={hasInvalidAmbiguousSubtests}
+                              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Check size={12} /> Approuver toutes
                             </button>
                             <button
                               onClick={() => handleRejectNorms({ testId: bundle.test.id }, `${totalPendingNorms} norme(s) du test`)}
-                              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 px-3 py-1.5 bg-rose-500/10 rounded-lg"
+                              disabled={hasInvalidAmbiguousSubtests}
+                              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 px-3 py-1.5 bg-rose-500/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Trash2 size={12} /> Rejeter toutes
                             </button>
@@ -1156,17 +1288,19 @@ export const AdminLibrary: React.FC = () => {
                         <div className="space-y-1">
                           {bundle.subtests.filter(s => (pendingNormCounts[s.id] || 0) > 0).map(s => (
                             <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
-                              <span className="text-white font-bold">{formatSubtestDisplayName(s)} <span className="text-amber-400 font-normal">({pendingNormCounts[s.id]} normes)</span></span>
+                              <span className="text-white font-bold">{getSubtestDisplayName(s)} <span className="text-amber-400 font-normal">({pendingNormCounts[s.id]} normes)</span></span>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => handlePromoteNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${formatSubtestDisplayName(s)}`)}
-                                  className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                                  onClick={() => handlePromoteNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${getSubtestDisplayName(s)}`)}
+                                  disabled={hasInvalidAmbiguousSubtests}
+                                  className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Check size={10} /> Approuver
                                 </button>
                                 <button
-                                  onClick={() => handleRejectNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${formatSubtestDisplayName(s)}`)}
-                                  className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                                  onClick={() => handleRejectNorms({ subtestId: s.id }, `${pendingNormCounts[s.id]} norme(s) de ${getSubtestDisplayName(s)}`)}
+                                  disabled={hasInvalidAmbiguousSubtests}
+                                  className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Trash2 size={10} /> Rejeter
                                 </button>
@@ -1186,8 +1320,8 @@ export const AdminLibrary: React.FC = () => {
                           </h4>
                           <button
                             onClick={() => handlePromoteSubtests(privateSubtests.map(s => s.id))}
-                            disabled={isPromoting}
-                            className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 px-3 py-1.5 bg-violet-500/10 rounded-lg disabled:opacity-50"
+                            disabled={isPromoting || hasInvalidAmbiguousSubtests}
+                            className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 px-3 py-1.5 bg-violet-500/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {isPromoting ? <Loader2 size={12} className="animate-spin" /> : <ArrowUpRight size={12} />}
                             Tout promouvoir en public
@@ -1196,11 +1330,11 @@ export const AdminLibrary: React.FC = () => {
                         <div className="space-y-1">
                           {privateSubtests.map(s => (
                             <div key={s.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
-                              <span className="text-white font-bold">{formatSubtestDisplayName(s)}</span>
+                              <span className="text-white font-bold">{getSubtestDisplayName(s)}</span>
                               <button
                                 onClick={() => handlePromoteSubtests([s.id])}
-                                disabled={isPromoting}
-                                className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50"
+                                disabled={isPromoting || hasInvalidAmbiguousSubtests}
+                                className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <ArrowUpRight size={10} /> Promouvoir
                               </button>
@@ -1214,7 +1348,174 @@ export const AdminLibrary: React.FC = () => {
               </div>
             )}
 
-            {/* ═══ SUB-TAB: OUTILS ═══ */}
+            {/* --- SUB-TAB: ISSUES --- */}
+            {subTab === 'issues' && (
+              <div className="space-y-4">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <AlertTriangle size={14} className="text-amber-400" /> TODO urgent du test
+                      </h4>
+                      <p className="text-[10px] text-stone-500 mt-1">
+                        Regroupe en une vue les anomalies de tags, doublons et qualité.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void analyzeIssuesForCurrentTest(false)}
+                      disabled={isAnalyzingIssues}
+                      className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 rounded-lg disabled:opacity-50"
+                    >
+                      {isAnalyzingIssues ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Analyser
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-rose-300">Tags manquants</div>
+                    <div className="text-xl font-bold text-white mt-1">{invalidAmbiguousSubtests.length}</div>
+                  </div>
+                  <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-violet-300">Doublons sous-tests</div>
+                    <div className="text-xl font-bold text-white mt-1">{subtestDupPairs.length}</div>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-emerald-300">Normes excédentaires</div>
+                    <div className="text-xl font-bold text-white mt-1">{totalDuplicateNormExcess}</div>
+                  </div>
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-amber-300">Flags qualité</div>
+                    <div className="text-xl font-bold text-white mt-1">{qualityFlags.length}</div>
+                  </div>
+                </div>
+
+                {invalidAmbiguousSubtests.length > 0 && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 space-y-2">
+                    <h5 className="text-sm font-bold text-rose-300">Variantes ambiguës sans abréviation</h5>
+                    <div className="space-y-1">
+                      {invalidAmbiguousSubtests.map((sub) => (
+                        <div key={sub.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
+                          <span className="text-white font-bold">{sub.name}</span>
+                          <button
+                            onClick={() => { setSubTab('normes'); setSelectedSubtestId(sub.id); }}
+                            className="text-rose-300 hover:text-rose-200"
+                          >
+                            Corriger
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {subtestDupPairs.length > 0 && (
+                  <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4 space-y-2">
+                    <h5 className="text-sm font-bold text-violet-300">Doublons de sous-tests</h5>
+                    <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar">
+                      {subtestDupPairs.map((p, idx) => (
+                        <div key={idx} className="text-[11px] bg-white/5 rounded p-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-white font-bold">{p.subtest_name_a}</span>
+                            <span className="text-stone-500"> ({p.norms_count_a}n)</span>
+                            <span className="text-violet-400 mx-1">≈</span>
+                            <span className="text-white font-bold">{p.subtest_name_b}</span>
+                            <span className="text-stone-500"> ({p.norms_count_b}n)</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleMergeSubtests([p.subtest_id_b], p.subtest_id_a)}
+                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                            >
+                              Garder A
+                            </button>
+                            <button
+                              onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
+                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                            >
+                              Garder B
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normDupSummary.length > 0 && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-sm font-bold text-emerald-300">Normes en double</h5>
+                      <button
+                        onClick={() => handleDeduplicateNorms({ testId: bundle.test.id })}
+                        disabled={isDedupingNorms}
+                        className="text-xs text-emerald-300 hover:text-emerald-200 disabled:opacity-50"
+                      >
+                        {isDedupingNorms ? 'Déduplication...' : 'Tout dédupliquer'}
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {normDupSummary.map((d, idx) => (
+                        <div key={idx} className="text-[11px] flex items-center justify-between bg-white/5 rounded p-2">
+                          <span className="text-white">
+                            {d.subtest_name}: <span className="text-emerald-300">{d.total_excess_rows} excédentaire(s)</span>
+                          </span>
+                          <button
+                            onClick={() => handleDeduplicateNorms({ subtestId: d.subtest_id })}
+                            disabled={isDedupingNorms}
+                            className="text-[10px] text-emerald-300 hover:text-emerald-200 px-1.5 py-0.5 bg-emerald-500/10 rounded disabled:opacity-50"
+                          >
+                            Dédupliquer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {qualityFlags.length > 0 && (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-2">
+                    <h5 className="text-sm font-bold text-amber-300">Flags qualité</h5>
+                    <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar">
+                      {qualityFlags.map((f, idx) => (
+                        <div key={idx} className="text-[11px] flex items-center justify-between bg-white/5 rounded p-2 gap-2">
+                          <div className="min-w-0">
+                            <span className="text-amber-300 font-bold">{f.flag_code}</span>
+                            <span className="text-stone-300 ml-2">{f.subtest_name}</span>
+                            <span className="text-stone-500 ml-2">{f.flag_label}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => void handleDismissQualityFlag(f)}
+                              disabled={dismissingQualityKey === getQualityFlagKey(f)}
+                              className="text-[10px] text-stone-300 hover:text-white disabled:opacity-50"
+                            >
+                              {dismissingQualityKey === getQualityFlagKey(f) ? '...' : 'Ignorer'}
+                            </button>
+                            <button
+                              onClick={() => { setSubTab('normes'); setSelectedSubtestId(f.subtest_id); }}
+                              className="text-[10px] text-amber-300 hover:text-amber-200"
+                            >
+                              Voir
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {issueTodoCount === 0 && !isAnalyzingIssues && (
+                  <div className="text-center py-16 text-stone-500 bg-white/5 rounded-xl border border-dashed border-white/10">
+                    <Check size={24} className="mx-auto mb-2 opacity-50 text-emerald-400" />
+                    Aucune issue détectée pour ce test.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* --- SUB-TAB: OUTILS --- */}
             {subTab === 'outils' && (
               <div className="space-y-6">
                 {/* Quality check */}
@@ -1250,7 +1551,14 @@ export const AdminLibrary: React.FC = () => {
                               }`}>{f.flag_code}</span>
                             <span className="text-stone-400">{f.subtest_name}:</span>
                             <span className="text-white">{f.flag_label}</span>
-                            <span className="text-stone-600 ml-auto">{f.details}</span>
+                            <span className="text-stone-600 ml-auto mr-2">{f.details}</span>
+                            <button
+                              onClick={() => void handleDismissQualityFlag(f)}
+                              disabled={dismissingQualityKey === getQualityFlagKey(f)}
+                              className="text-[9px] text-stone-300 hover:text-white disabled:opacity-50"
+                            >
+                              {dismissingQualityKey === getQualityFlagKey(f) ? '...' : 'Ignorer'}
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1273,7 +1581,7 @@ export const AdminLibrary: React.FC = () => {
                       Scanner
                     </button>
                   </div>
-                  <p className="text-[10px] text-stone-500">Détecte les sous-tests en doublon par similarité de nom et propose la fusion.</p>
+                  <p className="text-[10px] text-stone-500">Détecte les sous-tests en doublon sur base nom + abréviation (si présente), puis propose la fusion.</p>
                   {subtestDupPairs.length > 0 && (
                     <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3 space-y-1.5">
                       <span className="text-[10px] font-bold text-violet-400 uppercase">{subtestDupPairs.length} doublon(s) détecté(s)</span>
@@ -1282,7 +1590,7 @@ export const AdminLibrary: React.FC = () => {
                           <div className="flex items-center gap-1">
                             <span className="text-white font-bold">{p.subtest_name_a}</span>
                             <span className="text-stone-500">({p.norms_count_a}n)</span>
-                            <span className="text-violet-400 mx-1">{"≈"}</span>
+                            <span className="text-violet-400 mx-1">{"˜"}</span>
                             <span className="text-white font-bold">{p.subtest_name_b}</span>
                             <span className="text-stone-500">({p.norms_count_b}n)</span>
                             <span className="text-stone-600 ml-1">{Math.round(p.similarity_score * 100)}%</span>
@@ -1293,14 +1601,14 @@ export const AdminLibrary: React.FC = () => {
                               className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
                               title={`Garder « ${p.subtest_name_a} »`}
                             >
-                              ← Garder A
+                              ? Garder A
                             </button>
                             <button
                               onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
                               className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
                               title={`Garder « ${p.subtest_name_b} »`}
                             >
-                              Garder B →
+                              Garder B ?
                             </button>
                           </div>
                         </div>
@@ -1362,4 +1670,5 @@ export const AdminLibrary: React.FC = () => {
     </div>
   );
 };
+
 

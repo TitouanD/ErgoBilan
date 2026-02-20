@@ -4,7 +4,9 @@ import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights';
 import { OpsMonitoring } from './OpsMonitoring';
 import { AdminLibrary } from './AdminLibrary';
-import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu } from 'lucide-react';
+import { AdminIssuesBoard } from './AdminIssuesBoard';
+import { AdminUsers } from './AdminUsers';
+import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, ClipboardList, Users2 } from 'lucide-react';
 import { Logger } from '../../utils/logger';
 
 interface Props {
@@ -13,7 +15,8 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'catalogue' | 'insights' | 'ops'>('catalogue');
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'issues' | 'users' | 'insights' | 'ops'>('catalogue');
+  const [catalogFocus, setCatalogFocus] = useState<{ testId: string; nonce: number } | null>(null);
   const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
 
@@ -73,6 +76,18 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
           >
             <Layers size={18} /> Catalogue Officiel
           </button>
+          <button
+            onClick={() => setActiveTab('issues')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'issues' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'}`}
+          >
+            <ClipboardList size={18} /> Issues Globales
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'}`}
+          >
+            <Users2 size={18} /> Utilisateurs
+          </button>
 
           <div className="my-4 h-px bg-white/5"></div>
 
@@ -102,6 +117,8 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#1A1C23]">
           <h2 className="font-bold text-white text-lg">
             {activeTab === 'catalogue' && "Catalogue Officiel"}
+            {activeTab === 'issues' && "Backlog Global des Issues"}
+            {activeTab === 'users' && "Gestion Utilisateurs & Abonnements"}
             {activeTab === 'insights' && "Analyse Statistique & Normative"}
             {activeTab === 'ops' && "Supervision Technique & IA"}
           </h2>
@@ -114,7 +131,16 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-0 bg-[#1A1C23]">
-          {activeTab === 'catalogue' && <AdminLibrary />}
+          {activeTab === 'catalogue' && <AdminLibrary focusTestId={catalogFocus?.testId || null} focusNonce={catalogFocus?.nonce || 0} />}
+          {activeTab === 'issues' && (
+            <AdminIssuesBoard
+              onOpenTest={(testId) => {
+                setCatalogFocus({ testId, nonce: Date.now() });
+                setActiveTab('catalogue');
+              }}
+            />
+          )}
+          {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'insights' && <ClinicalInsights />}
           {activeTab === 'ops' && <OpsMonitoring />}
         </main>

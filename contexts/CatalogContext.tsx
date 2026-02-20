@@ -10,6 +10,7 @@ import type {
   SubtestInputModel,
 } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
+import { buildSubtestDisplayMetaMap } from '../utils/subtestDisplay';
 
 interface CatalogContextType {
   catalog: CategoryDef[];
@@ -169,6 +170,40 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           subtestsByTestId[s.test_id].push(sub);
         });
 
+        const hiddenInvalidAmbiguous: Array<{ testId: string; subtestId: string; name: string; abbreviation: string | null }> = [];
+        Object.entries(subtestsByTestId).forEach(([testId, subtests]) => {
+          const metaMap = buildSubtestDisplayMetaMap(subtests);
+          subtestsByTestId[testId] = subtests
+            .map((subtest) => {
+              const meta = metaMap.get(subtest.id);
+              if (!meta) return subtest;
+              return {
+                ...subtest,
+                abbreviation: meta.normalizedAbbreviation || null,
+                displayName: meta.displayName,
+                isAmbiguous: meta.isAmbiguous,
+                isHiddenInvalidAmbiguous: meta.isHiddenInvalidAmbiguous,
+              };
+            })
+            .filter((subtest) => {
+              if (!subtest.isHiddenInvalidAmbiguous) return true;
+              hiddenInvalidAmbiguous.push({
+                testId,
+                subtestId: subtest.id,
+                name: subtest.name,
+                abbreviation: subtest.abbreviation || null,
+              });
+              return false;
+            });
+        });
+
+        if (hiddenInvalidAmbiguous.length > 0) {
+          Logger.warn('DB', 'Hidden ambiguous subtests without abbreviation from catalog', {
+            count: hiddenInvalidAmbiguous.length,
+            samples: hiddenInvalidAmbiguous.slice(0, 10),
+          });
+        }
+
         viewRows?.forEach((row: any) => {
           if (!categoryMap[row.category_id]) {
             categoryMap[row.category_id] = {
@@ -216,7 +251,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!hasLoaded) return [];
     const lowerQ = query.toLowerCase();
     return flatTests.filter(
-      (t) => t.name.toLowerCase().includes(lowerQ) || t.subtests.some((s) => s.name.toLowerCase().includes(lowerQ)),
+      (t) =>
+        t.name.toLowerCase().includes(lowerQ)
+        || t.subtests.some((s) => (s.displayName || s.name).toLowerCase().includes(lowerQ)),
     );
   };
 

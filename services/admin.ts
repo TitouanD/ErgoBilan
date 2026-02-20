@@ -13,7 +13,11 @@ import type {
     AttachResult,
     SubtestDuplicatePair,
     NormDuplicateSummary,
-    NormQualityFlag
+    NormQualityFlag,
+    AdminIssueBacklogItem,
+    AdminUserRow,
+    AdminUserUpdatePayload,
+    InsightQualityAlert
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -141,6 +145,42 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('admin_list_tests', { p_scope: scope });
         if (error) throw error;
         return data || [];
+    },
+
+    /**
+     * Global cross-test issue backlog (missing tags, dedup, quality)
+     */
+    listIssueBacklog: async (): Promise<AdminIssueBacklogItem[]> => {
+        const { data, error } = await supabase.rpc('admin_list_issue_backlog');
+        if (error) throw error;
+        return (data || []) as AdminIssueBacklogItem[];
+    },
+
+    /**
+     * Admin users + subscriptions overview
+     */
+    listUsers: async (): Promise<AdminUserRow[]> => {
+        const { data, error } = await supabase.rpc('admin_list_users');
+        if (error) throw error;
+        return (data || []) as AdminUserRow[];
+    },
+
+    /**
+     * Update a user's admin/subscription state
+     */
+    updateUser: async (payload: AdminUserUpdatePayload): Promise<{ ok: boolean; user_id: string }> => {
+        const { data, error } = await supabase.rpc('admin_update_user', {
+            p_user_id: payload.userId,
+            p_is_admin: payload.isAdmin ?? null,
+            p_credits: payload.credits ?? null,
+            p_plan_id: payload.planId ?? null,
+            p_status: payload.status ?? null,
+            p_trial_ends_at: payload.trialEndsAt ?? null,
+            p_current_period_end: payload.currentPeriodEnd ?? null,
+            p_monthly_extraction_quota: payload.monthlyExtractionQuota ?? null,
+        });
+        if (error) throw error;
+        return data as { ok: boolean; user_id: string };
     },
 
     /**
@@ -317,6 +357,20 @@ export const AdminService = {
         return (data || []) as NormQualityFlag[];
     },
 
+    /**
+     * Dismiss or restore a specific norm quality issue
+     */
+    setNormIssueDismissed: async (params: { normId: string; flagCode: string; dismissed: boolean; reason?: string | null }) => {
+        const { data, error } = await supabase.rpc('admin_set_norm_issue_dismissed', {
+            p_norm_id: params.normId,
+            p_flag_code: params.flagCode,
+            p_dismissed: params.dismissed,
+            p_reason: params.reason ?? null,
+        });
+        if (error) throw error;
+        return data as { ok: boolean; norm_id: string; flag_code: string; dismissed: boolean };
+    },
+
     // --- MODULE C : Télémétrie Passive & Anonyme ---
 
     logAnonymousStats: async (tests: TestData, patient: Patient) => {
@@ -376,32 +430,26 @@ export const AdminService = {
         return data.map((d: any) => parseFloat(d.computed_standard));
     },
 
-    getQualityAlerts: async () => {
-        const { data, error } = await supabase
-            .from('contribution_insights')
-            .select('test_id, computed_standard')
-            .not('computed_standard', 'is', null);
-
+    getQualityAlerts: async (): Promise<InsightQualityAlert[]> => {
+        const { data, error } = await supabase.rpc('admin_insight_extreme_alerts', {
+            p_min_samples: 10,
+            p_min_extreme_rate: 5,
+        });
         if (error) throw error;
 
-        const stats: Record<string, { total: number, extreme: number }> = {};
-
-        data.forEach((row: any) => {
-            if (!stats[row.test_id]) stats[row.test_id] = { total: 0, extreme: 0 };
-            const score = parseFloat(row.computed_standard);
-            if (score > 145 || score < 55) {
-                stats[row.test_id].extreme++;
-            }
-            stats[row.test_id].total++;
-        });
-
-        return Object.entries(stats)
-            .map(([testId, s]) => ({
-                testId,
-                total: s.total,
-                extremeRate: (s.extreme / s.total) * 100
-            }))
-            .filter(s => s.total > 10 && s.extremeRate > 5);
+        return ((data || []) as Array<{
+            test_id: string;
+            test_name: string;
+            total_samples: number;
+            extreme_samples: number;
+            extreme_rate: number;
+        }>).map((row) => ({
+            testId: row.test_id,
+            testName: row.test_name,
+            total: row.total_samples,
+            extreme: row.extreme_samples,
+            extremeRate: row.extreme_rate,
+        }));
     },
 
     // --- PHASE 4 : OPS & MONITORING (IA) ---
