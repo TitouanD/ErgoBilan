@@ -1,7 +1,7 @@
 ﻿
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock, AlertTriangle } from 'lucide-react';
-import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch } from '../../types';
+import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock, AlertTriangle, CircleOff, RotateCcw, ListChecks } from 'lucide-react';
+import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch, ReviewFlag, ReviewFlagCounts } from '../../types';
 import { callExtractionTask } from '../../services/extractionProxy';
 import { fileToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
@@ -14,6 +14,7 @@ import { TEST_CATALOG } from '../../data/testCatalog';
 import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
 import { DisambiguationModal } from './DisambiguationModal';
+import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
 import {
     buildConditionalSubtestDisplayName,
     buildSubtestDisplayMetaMap,
@@ -50,6 +51,103 @@ const GRADE_TO_MONTHS: Record<string, number> = {
     'TERMINALE': 204, 'TLE': 204,
 };
 
+type ParsedGroupAge = {
+    min: number;
+    max: number;
+    classLabel?: string;
+};
+
+type StrictGradeRule = {
+    label: string;
+    minMonths: number;
+    pattern: RegExp;
+};
+
+const STRICT_GRADE_RULES: StrictGradeRule[] = [
+    { label: 'CP', minMonths: 72, pattern: /\bCP\b/ },
+    { label: 'CE1', minMonths: 84, pattern: /\bCE1\b/ },
+    { label: 'CE2', minMonths: 96, pattern: /\bCE2\b/ },
+    { label: 'CM1', minMonths: 108, pattern: /\bCM1\b/ },
+    { label: 'CM2', minMonths: 120, pattern: /\bCM2\b/ },
+    { label: '6e', minMonths: 132, pattern: /\b6(?:E|EME)\b|\b6E\b/ },
+    { label: '5e', minMonths: 144, pattern: /\b5(?:E|EME)\b|\b5E\b/ },
+    { label: '4e', minMonths: 156, pattern: /\b4(?:E|EME)\b|\b4E\b/ },
+    { label: '3e', minMonths: 168, pattern: /\b3(?:E|EME)\b|\b3E\b/ },
+    { label: '2nde', minMonths: 180, pattern: /\b2(?:NDE|DE)\b/ },
+    { label: '1re', minMonths: 192, pattern: /\b1(?:ERE|RE)\b/ },
+    { label: 'Terminale', minMonths: 204, pattern: /\bTERMINALE\b|\bTLE\b/ },
+];
+
+const normalizeClassText = (value: string): string => (
+    value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+);
+
+const parseAgeRangeFromText = (value: string): { min: number; max: number } | null => {
+    const text = normalizeClassText(value);
+
+    const rangeMatch = text.match(/(\d{1,2})\s*[;:.]\s*(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*[;:.]\s*(\d{1,2})/);
+    if (rangeMatch) {
+        return {
+            min: parseInt(rangeMatch[1], 10) * 12 + parseInt(rangeMatch[2], 10),
+            max: parseInt(rangeMatch[3], 10) * 12 + parseInt(rangeMatch[4], 10),
+        };
+    }
+
+    const yearMonthMatch = text.match(/(\d{1,2})\s*ANS?\s*(\d{1,2})\s*MOIS/);
+    if (yearMonthMatch) {
+        const months = parseInt(yearMonthMatch[1], 10) * 12 + parseInt(yearMonthMatch[2], 10);
+        return { min: months, max: months };
+    }
+
+    const yearsOnlyMatch = text.match(/(\d{1,2})\s*ANS?/);
+    if (yearsOnlyMatch) {
+        const years = parseInt(yearsOnlyMatch[1], 10);
+        return { min: years * 12, max: years * 12 + 11 };
+    }
+
+    const singleAgeMatch = text.match(/(\d{1,2})\s*[;:.]\s*(\d{1,2})/);
+    if (singleAgeMatch) {
+        const months = parseInt(singleAgeMatch[1], 10) * 12 + parseInt(singleAgeMatch[2], 10);
+        return { min: months, max: months };
+    }
+
+    return null;
+};
+
+const parseStrictGradeLabel = (value: string): ParsedGroupAge | null => {
+    const normalized = normalizeClassText(value).replace(/[^A-Z0-9]+/g, ' ');
+    const tokenized = ` ${normalized} `;
+
+    for (const rule of STRICT_GRADE_RULES) {
+        if (rule.pattern.test(tokenized)) {
+            return {
+                min: rule.minMonths,
+                max: rule.minMonths + 11,
+                classLabel: rule.label,
+            };
+        }
+    }
+
+    return null;
+};
+
+const parseGroupLabelToAge = (value?: string | null): ParsedGroupAge | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const strictGrade = parseStrictGradeLabel(trimmed);
+    if (strictGrade) return strictGrade;
+
+    const ageRange = parseAgeRangeFromText(trimmed);
+    if (ageRange) return ageRange;
+
+    return null;
+};
+
 /**
  * Parse an age range from a filename.
  * Handles patterns like:
@@ -61,6 +159,11 @@ const GRADE_TO_MONTHS: Record<string, number> = {
  */
 const parseAgeFromFilename = (filename: string): { min: number; max: number } | null => {
     const base = filename.replace(/\.[^.]+$/, '').toUpperCase();
+
+    const fromLabel = parseGroupLabelToAge(base);
+    if (fromLabel) {
+        return { min: fromLabel.min, max: fromLabel.max };
+    }
 
     // Pattern: "10;6-10;11" or "4;0 - 4;5"  (years;months range)
     const rangeMatch = base.match(/(\d{1,2})\s*[;:.]\s*(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*[;:.]\s*(\d{1,2})/);
@@ -102,12 +205,17 @@ const parseAgeFromFilename = (filename: string): { min: number; max: number } | 
 };
 
 type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
+type PageStatus = 'pending' | 'validated' | 'rejected';
 type ExtractionPage = {
     id: string;
     fileIndex: number;
     rows: ExtractedRow[];
-    validated: boolean;
+    status: PageStatus;
     detectedStructure: TableStructure;
+    rejectionReason?: string;
+    flags: ReviewFlag[];
+    flagCounts: ReviewFlagCounts;
+    previewDataUrl?: string;
 };
 
 type CategoryOption = {
@@ -144,38 +252,237 @@ const formatSubtestDisplayName = (name: string, abbreviation?: string | null, is
     buildConditionalSubtestDisplayName(name, normalizeAbbreviation(abbreviation), isAmbiguous)
 );
 
+const SOURCE_COLUMN_SUFFIX_REGEX = /\s*-\s*COLONNE\s*(\d+)\s*$/i;
+
+const stripSourceColumnSuffix = (name: string): string => (
+    name.replace(SOURCE_COLUMN_SUFFIX_REGEX, '').trim()
+);
+
+const getSourceColumnIndexFromName = (name: string): number | null => {
+    const match = name.match(SOURCE_COLUMN_SUFFIX_REGEX);
+    if (!match) return null;
+    const parsed = parseInt(match[1], 10);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const withSourceColumnSuffix = (name: string, columnIndex: number | null): string => {
+    if (!columnIndex || !Number.isFinite(columnIndex)) return name;
+    return `${name} - Colonne ${columnIndex}`;
+};
+
 const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
     `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
 );
 
 // --- DRAFT PERSISTENCE (survives PIN lock, crash, tab close) ---
 const DRAFT_KEY = 'contrib_studio_draft';
+const DRAFT_IMAGES_KEY = 'contrib_studio_draft_images_v1';
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_DRAFT_IMAGE_BYTES = 1 * 1024 * 1024;
+const MAX_DRAFT_IMAGES_TOTAL_BYTES = 6 * 1024 * 1024;
 
-interface ContribDraft {
+interface ContribDraftV2 {
+    version: 2;
     testName: string;
     selectedCategory: string;
     tableStructure: TableStructure;
     pages: ExtractionPage[];
+    imagesByPage: Record<string, true>;
     savedAt: string;
 }
 
-const saveDraft = (d: ContribDraft) => {
+type LegacyExtractionPage = Omit<ExtractionPage, 'status' | 'flags' | 'flagCounts'> & { validated?: boolean };
+type LegacyContribDraft = Omit<ContribDraftV2, 'version' | 'pages' | 'imagesByPage'> & {
+    pages: LegacyExtractionPage[];
+};
+
+type DraftImageStore = {
+    savedAt: string;
+    imagesByPage: Record<string, string>;
+};
+
+const EMPTY_FLAG_COUNTS: ReviewFlagCounts = { blocking: 0, warning: 0, info: 0, total: 0, withFix: 0 };
+
+const saveDraft = (d: ContribDraftV2) => {
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* quota */ }
 };
-const loadDraft = (): ContribDraft | null => {
+
+const saveDraftImages = (payload: DraftImageStore) => {
+    try { localStorage.setItem(DRAFT_IMAGES_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+};
+
+const loadDraftImages = (): DraftImageStore | null => {
+    try {
+        const raw = localStorage.getItem(DRAFT_IMAGES_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as DraftImageStore;
+        if (!parsed || typeof parsed !== 'object' || !parsed.savedAt || !parsed.imagesByPage) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+const migrateLegacyPage = (page: LegacyExtractionPage): ExtractionPage => {
+    const status: PageStatus = page.validated ? 'validated' : 'pending';
+    return {
+        ...page,
+        status,
+        flags: [],
+        flagCounts: EMPTY_FLAG_COUNTS,
+        rejectionReason: undefined,
+    };
+};
+
+const loadDraft = (): ContribDraftV2 | null => {
     try {
         const raw = localStorage.getItem(DRAFT_KEY);
         if (!raw) return null;
-        const d = JSON.parse(raw) as ContribDraft;
-        // Discard drafts older than 24 h
-        if (Date.now() - new Date(d.savedAt).getTime() > 24 * 60 * 60 * 1000) {
+        const parsed = JSON.parse(raw) as ContribDraftV2 | LegacyContribDraft;
+        if (!parsed || typeof parsed !== 'object' || !parsed.savedAt) return null;
+
+        if (Date.now() - new Date(parsed.savedAt).getTime() > DRAFT_MAX_AGE_MS) {
             localStorage.removeItem(DRAFT_KEY);
+            localStorage.removeItem(DRAFT_IMAGES_KEY);
             return null;
         }
-        return d;
-    } catch { return null; }
+
+        const maybeV2 = parsed as Partial<ContribDraftV2>;
+        if (maybeV2.version === 2 && Array.isArray(maybeV2.pages)) {
+            return {
+                version: 2,
+                testName: maybeV2.testName || '',
+                selectedCategory: maybeV2.selectedCategory || '',
+                tableStructure: maybeV2.tableStructure || 'UNKNOWN',
+                pages: maybeV2.pages.map((page) => ({
+                    ...page,
+                    status: page.status || 'pending',
+                    flags: Array.isArray(page.flags) ? page.flags : [],
+                    flagCounts: page.flagCounts || EMPTY_FLAG_COUNTS,
+                })),
+                imagesByPage: maybeV2.imagesByPage || {},
+                savedAt: maybeV2.savedAt,
+            };
+        }
+
+        const legacy = parsed as LegacyContribDraft;
+        if (!Array.isArray(legacy.pages)) return null;
+        return {
+            version: 2,
+            testName: legacy.testName || '',
+            selectedCategory: legacy.selectedCategory || '',
+            tableStructure: legacy.tableStructure || 'UNKNOWN',
+            pages: legacy.pages.map(migrateLegacyPage),
+            imagesByPage: {},
+            savedAt: legacy.savedAt,
+        };
+    } catch {
+        return null;
+    }
 };
-const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+
+const clearDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(DRAFT_IMAGES_KEY);
+};
+
+const dataUrlSizeBytes = (dataUrl: string): number => {
+    const base64 = dataUrl.split(',')[1] || '';
+    return Math.ceil((base64.length * 3) / 4);
+};
+
+const totalImageBytes = (imagesByPage: Record<string, string>): number => {
+    return Object.values(imagesByPage).reduce((sum, dataUrl) => sum + dataUrlSizeBytes(dataUrl), 0);
+};
+
+const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+};
+
+const loadImageElement = (dataUrl: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('image_load_failed'));
+        img.src = dataUrl;
+    });
+};
+
+const compressImageForDraft = async (file: File): Promise<string | null> => {
+    try {
+        const sourceDataUrl = await readFileAsDataUrl(file);
+        const image = await loadImageElement(sourceDataUrl);
+
+        const maxDims = [2200, 1800, 1600, 1400, 1200, 1000];
+        const qualities = [0.84, 0.76, 0.68, 0.6, 0.52, 0.44];
+        let bestCandidate: string | null = null;
+
+        for (const maxDim of maxDims) {
+            const ratio = Math.min(1, maxDim / Math.max(image.width, image.height));
+            const width = Math.max(1, Math.round(image.width * ratio));
+            const height = Math.max(1, Math.round(image.height * ratio));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+            ctx.drawImage(image, 0, 0, width, height);
+
+            for (const quality of qualities) {
+                const candidate = canvas.toDataURL('image/jpeg', quality);
+                if (!bestCandidate || dataUrlSizeBytes(candidate) < dataUrlSizeBytes(bestCandidate)) {
+                    bestCandidate = candidate;
+                }
+                if (dataUrlSizeBytes(candidate) <= MAX_DRAFT_IMAGE_BYTES) {
+                    return candidate;
+                }
+            }
+        }
+
+        if (bestCandidate && dataUrlSizeBytes(bestCandidate) <= MAX_DRAFT_IMAGE_BYTES) {
+            return bestCandidate;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
+
+const prepareDraftImagesForFiles = async (files: File[]) => {
+    const byIndex: Record<number, string> = {};
+    const droppedPerPage: number[] = [];
+    let totalBytes = 0;
+
+    for (let i = 0; i < files.length; i += 1) {
+        const compressed = await compressImageForDraft(files[i]);
+        if (!compressed) {
+            droppedPerPage.push(i);
+            continue;
+        }
+        const imageBytes = dataUrlSizeBytes(compressed);
+        if (imageBytes > MAX_DRAFT_IMAGE_BYTES || totalBytes + imageBytes > MAX_DRAFT_IMAGES_TOTAL_BYTES) {
+            droppedPerPage.push(i);
+            continue;
+        }
+        byIndex[i] = compressed;
+        totalBytes += imageBytes;
+    }
+
+    return { byIndex, droppedPerPage, totalBytes };
+};
+
+const stripPreviewFromPages = (pages: ExtractionPage[]): ExtractionPage[] => (
+    pages.map((page) => ({
+        ...page,
+        previewDataUrl: undefined,
+    }))
+);
 
 /**
  * Re-disambiguate pages in-place when multiple rows share the same subtest name
@@ -215,13 +522,59 @@ const reDisambiguateByAbbreviation = (pages: ExtractionPage[]): void => {
     });
 };
 
+/**
+ * If extraction produced multiple distinct source columns for the same subtest
+ * (same name and same abbreviation), keep them separate by appending a stable
+ * column suffix. This prevents downstream regrouping/fusion.
+ */
+const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
+    const subtestSourceKeys = new Map<string, Set<string>>();
+    pages.forEach((page) => {
+        page.rows.forEach((row) => {
+            const sourceKey = (row.source_column_key || '').trim();
+            if (!sourceKey) return;
+            const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
+            if (!baseSubtest) return;
+            if (!subtestSourceKeys.has(baseSubtest)) subtestSourceKeys.set(baseSubtest, new Set());
+            subtestSourceKeys.get(baseSubtest)!.add(sourceKey);
+        });
+    });
+
+    const sourceIndexBySubtest = new Map<string, Map<string, number>>();
+    subtestSourceKeys.forEach((sourceKeys, subtestName) => {
+        if (sourceKeys.size <= 1) return;
+        const sorted = Array.from(sourceKeys).sort((a, b) => a.localeCompare(b));
+        const indexMap = new Map<string, number>();
+        sorted.forEach((sourceKey, index) => {
+            indexMap.set(sourceKey, index + 1);
+        });
+        sourceIndexBySubtest.set(subtestName, indexMap);
+    });
+
+    if (sourceIndexBySubtest.size === 0) return;
+
+    pages.forEach((page) => {
+        page.rows.forEach((row) => {
+            const sourceKey = (row.source_column_key || '').trim();
+            if (!sourceKey) return;
+            const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
+            const perSourceIndex = sourceIndexBySubtest.get(baseSubtest);
+            if (!perSourceIndex) return;
+            const columnIndex = perSourceIndex.get(sourceKey);
+            if (!columnIndex) return;
+            row.subtest = withSourceColumnSuffix(baseSubtest, columnIndex);
+        });
+    });
+};
+
 export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [step, setStep] = useState<'intro' | 'upload' | 'processing' | 'editor' | 'success'>('intro');
     const [files, setFiles] = useState<File[]>([]);
     const [currentFileIndex, setCurrentFileIndex] = useState(0);
     const { suppressIdleLock, resumeIdleLock } = useAuth();
     const [hasPendingDraft, setHasPendingDraft] = useState(false);
-    const draftRef = useRef<ContribDraft | null>(null);
+    const draftRef = useRef<ContribDraftV2 | null>(null);
+    const draftImagesRef = useRef<Record<string, string>>({});
 
     const [testName, setTestName] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -254,41 +607,110 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     // Track subtest names that had duplicate sids from extraction (user must rename)
     const [duplicatedSids, setDuplicatedSids] = useState<string[]>([]);
     const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
+    const [showFlaggedOnly, setShowFlaggedOnly] = useState(true);
+    const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
 
     const toast = useToast();
+
+    const withPageReview = useCallback((page: ExtractionPage): ExtractionPage => {
+        const flags = analyzePageRows({
+            pageId: page.id,
+            rows: page.rows,
+            structure: page.detectedStructure,
+        });
+        const flagCounts = computeFlagCounts(flags);
+        const nextStatus: PageStatus =
+            page.status === 'validated' && flagCounts.blocking > 0
+                ? 'pending'
+                : page.status;
+
+        return {
+            ...page,
+            status: nextStatus,
+            flags,
+            flagCounts,
+        };
+    }, []);
 
     // --- DRAFT: check on mount ---
     useEffect(() => {
         const d = loadDraft();
+        const imageStore = loadDraftImages();
+        draftImagesRef.current = imageStore?.imagesByPage || {};
         if (d && d.pages.length > 0) {
-            draftRef.current = d;
+            const hydratedPages = d.pages.map((page) => ({
+                ...page,
+                previewDataUrl: draftImagesRef.current[page.id] || page.previewDataUrl,
+            }));
+            draftRef.current = {
+                ...d,
+                pages: hydratedPages.map(withPageReview),
+            };
             setHasPendingDraft(true);
+            return;
         }
-    }, []);
+        localStorage.removeItem(DRAFT_IMAGES_KEY);
+        draftImagesRef.current = {};
+    }, [withPageReview]);
 
     // --- DRAFT: auto-save when editor state changes ---
     const persistDraft = useCallback(() => {
         if (pages.length === 0) return;
+        const savedAt = new Date().toISOString();
+        const imagePresence: Record<string, true> = {};
+        pages.forEach((page) => {
+            if (draftImagesRef.current[page.id]) imagePresence[page.id] = true;
+        });
         saveDraft({
+            version: 2,
             testName,
             selectedCategory,
             tableStructure,
-            pages,
-            savedAt: new Date().toISOString(),
+            pages: stripPreviewFromPages(pages),
+            imagesByPage: imagePresence,
+            savedAt,
         });
     }, [testName, selectedCategory, tableStructure, pages]);
 
     useEffect(() => { persistDraft(); }, [persistDraft]);
 
+    useEffect(() => {
+        if (pages.length === 0) return;
+        const validPageIds = new Set(pages.map((page) => page.id));
+        let changed = false;
+        Object.keys(draftImagesRef.current).forEach((pageId) => {
+            if (!validPageIds.has(pageId)) {
+                delete draftImagesRef.current[pageId];
+                changed = true;
+            }
+        });
+        if (!changed) return;
+        if (Object.keys(draftImagesRef.current).length === 0) {
+            localStorage.removeItem(DRAFT_IMAGES_KEY);
+            return;
+        }
+        saveDraftImages({
+            savedAt: new Date().toISOString(),
+            imagesByPage: draftImagesRef.current,
+        });
+    }, [pages]);
+
     const restoreDraft = () => {
         const d = draftRef.current;
         if (!d) return;
         // Re-disambiguate variant subtests that may have been collapsed before the fix
-        reDisambiguateByAbbreviation(d.pages);
+        const restoredPages = d.pages.map((page) => ({
+            ...page,
+            rows: page.rows.map((row) => ({ ...row })),
+            previewDataUrl: draftImagesRef.current[page.id] || page.previewDataUrl,
+        }));
+        reDisambiguateByAbbreviation(restoredPages);
+        preserveDistinctSourceColumns(restoredPages);
         setTestName(d.testName);
         setSelectedCategory(d.selectedCategory);
         setTableStructure(d.tableStructure);
-        setPages(d.pages);
+        setPages(restoredPages.map(withPageReview));
+        setFiles([]);
         setCurrentFileIndex(0);
         setStep('editor');
         setHasPendingDraft(false);
@@ -298,13 +720,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const discardDraft = () => {
         clearDraft();
+        draftImagesRef.current = {};
         setHasPendingDraft(false);
         draftRef.current = null;
     };
 
     const currentPage = pages[currentFileIndex] || null;
     const currentRows = currentPage?.rows || [];
-    const allRows = useMemo(() => pages.flatMap(page => page.rows), [pages]);
+    const includedPages = useMemo(() => pages.filter((page) => page.status !== 'rejected'), [pages]);
+    const includedRows = useMemo(() => includedPages.flatMap((page) => page.rows), [includedPages]);
     const canonicalSubtestsNormalized = useMemo<CanonicalSubtestEntry[]>(() => (
         canonicalSubtests.map((sub) => {
             const parsed = splitSubtestDisplayName(sub.name);
@@ -377,6 +801,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     useEffect(() => {
         return () => { if (currentFileUrl) URL.revokeObjectURL(currentFileUrl); };
     }, [currentFileUrl]);
+
+    const currentPreviewUrl = currentFileUrl || currentPage?.previewDataUrl || null;
+
+    useEffect(() => {
+        setFocusedRowId(null);
+    }, [currentFileIndex]);
 
     useEffect(() => {
         const trimmed = testName.trim();
@@ -512,6 +942,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         return `${fmtAge(ageMin)} – ${fmtAge(ageMax)}`;
     };
 
+    const formatAgeClassLabel = (ageMin?: number, ageMax?: number, classLabel?: string): string => {
+        const ageLabel = formatAgeLabel(ageMin, ageMax);
+        if (classLabel && ageLabel) return `${classLabel} (${ageLabel})`;
+        if (classLabel) return classLabel;
+        return ageLabel;
+    };
+
     const sanitizeAndCalculate = (row: ExtractedRow, currentStructure: TableStructure, triggerField?: keyof ExtractedRow): ExtractedRow => {
         const newRow = { ...row };
 
@@ -564,7 +1001,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const suspiciousSecondaryAgeSubtests = useMemo(() => {
         if (tableStructure !== 'PARAMETRIC') return [] as string[];
 
-        const rowsBySubtest = groupRowsBySubtest(allRows);
+        const rowsBySubtest = groupRowsBySubtest(includedRows);
         return Object.entries(rowsBySubtest)
             .filter(([, rows]) => {
                 const ageStarts = rows
@@ -581,7 +1018,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 return hasPrimarySchoolBand && hasSecondaryParsedAsYears && !hasTeenBand;
             })
             .map(([subtestName]) => subtestName);
-    }, [allRows, tableStructure]);
+    }, [includedRows, tableStructure]);
 
     // --- PROCESSING FUNCTION (now uses dedicated extract-norms edge function with restored prompts) ---
 
@@ -635,9 +1072,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             };
 
             const sidCounters = new Map<string, number>();
+            const sourceColumnOrdinals = new Map<string, number>();
 
             extractedData.tables.forEach((table: AIExtractedTable) => {
                 const originalSid = table.subtest_id || extractedData?.test_context || "Global";
+                const sourceAbbr = normalizeAbbreviation(table.source_abbreviation) || 'NOABBR';
+                const sourceOrdinal = (sourceColumnOrdinals.get(originalSid) || 0) + 1;
+                sourceColumnOrdinals.set(originalSid, sourceOrdinal);
+                const sourceColumnKey = `${originalSid}::${sourceAbbr}::${sourceOrdinal}`;
                 let effectiveSid = originalSid;
                 if ((sidCounts.get(originalSid) || 0) > 1) {
                     const counter = (sidCounters.get(originalSid) || 0) + 1;
@@ -651,6 +1093,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 }
                 if (Array.isArray(table.rows)) {
                     table.rows.forEach((r: AIExtractedNormRow) => {
+                        const groupLabelRaw = (r.group_label || '').toString().trim();
+                        const parsedGroupAge = parseGroupLabelToAge(groupLabelRaw);
+                        const resolvedAgeMin = parsedGroupAge?.min ?? r.age_min_months ?? fallbackAgeMin;
+                        const resolvedAgeMax = parsedGroupAge?.max ?? r.age_max_months ?? fallbackAgeMax;
                         const rawRow: ExtractedRow = {
                             id: crypto.randomUUID(),
                             subtest: effectiveSid,
@@ -662,16 +1108,23 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             percentile: r.percentile ? String(r.percentile) : '',
 
                             // CAPTURE DES CHAMPS CACHÉS — fallback to page-level age, then filename age
-                            hidden_age_min: r.age_min_months ?? fallbackAgeMin,
-                            hidden_age_max: r.age_max_months ?? fallbackAgeMax,
+                            hidden_age_min: resolvedAgeMin,
+                            hidden_age_max: resolvedAgeMax,
                             hidden_raw_min: r.raw_min,
                             hidden_raw_max: r.raw_max,
+                            hidden_group_label: parsedGroupAge?.classLabel || undefined,
 
                             // Preserve original column abbreviation for disambiguation UI
                             source_abbreviation: table.source_abbreviation || undefined,
+                            // Stable source column id to prevent accidental frontend fusion
+                            source_column_key: sourceColumnKey,
                         };
-                        // Auto-compute label from age fields (AI no longer outputs label)
-                        rawRow.label = formatAgeLabel(rawRow.hidden_age_min, rawRow.hidden_age_max);
+                        // Auto-compute label from age fields; keep class and age when class is available.
+                        rawRow.label = formatAgeClassLabel(
+                            rawRow.hidden_age_min,
+                            rawRow.hidden_age_max,
+                            rawRow.hidden_group_label,
+                        );
                         flatRows.push(sanitizeAndCalculate(rawRow, detectedStructure));
                     });
                 }
@@ -697,6 +1150,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             let resolvedStructure: TableStructure = tableStructure;
             let resolvedTestName = testName;
             const knownSubtestNames: string[] = [];
+            draftImagesRef.current = {};
+
+            const draftImagePrep = await prepareDraftImagesForFiles(inputFiles);
+            if (draftImagePrep.droppedPerPage.length > 0) {
+                toast.error(
+                    `${draftImagePrep.droppedPerPage.length} image(s) non conservée(s) dans le brouillon (limites locales ${MAX_DRAFT_IMAGE_BYTES / (1024 * 1024)}MB/page, ${MAX_DRAFT_IMAGES_TOTAL_BYTES / (1024 * 1024)}MB total).`,
+                );
+            }
 
             // PARALLEL PROCESSING: Extract all files at once for much faster processing
             Logger.info('ADMIN', `Starting parallel extraction of ${inputFiles.length} file(s)`);
@@ -755,21 +1216,41 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     setTestName(result.testContext);
                 }
 
-                nextPages.push({
-                    id: crypto.randomUUID(),
+                const pageId = crypto.randomUUID();
+                const previewDataUrl = draftImagePrep.byIndex[i];
+                const page = withPageReview({
+                    id: pageId,
                     fileIndex: i,
                     rows: result.rows,
-                    validated: false,
-                    detectedStructure: result.detectedStructure
+                    status: 'pending',
+                    detectedStructure: result.detectedStructure,
+                    flags: [],
+                    flagCounts: EMPTY_FLAG_COUNTS,
+                    previewDataUrl,
                 });
+                nextPages.push(page);
+
+                if (previewDataUrl) {
+                    draftImagesRef.current[pageId] = previewDataUrl;
+                }
 
                 // Progressive draft save — each successful page is persisted immediately
+                const savedAt = new Date().toISOString();
+                saveDraftImages({
+                    savedAt,
+                    imagesByPage: draftImagesRef.current,
+                });
                 saveDraft({
+                    version: 2,
                     testName: resolvedTestName || testName,
                     selectedCategory,
                     tableStructure: resolvedStructure,
-                    pages: nextPages,
-                    savedAt: new Date().toISOString(),
+                    pages: stripPreviewFromPages(nextPages),
+                    imagesByPage: Object.keys(draftImagesRef.current).reduce((acc, key) => {
+                        acc[key] = true;
+                        return acc;
+                    }, {} as Record<string, true>),
+                    savedAt,
                 });
             }
 
@@ -785,7 +1266,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     page.rows.forEach(row => {
                         const parsed = splitSubtestDisplayName(row.subtest);
                         const rowAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
-                        const aliased = resolveSubtestAlias(resolvedTestName, parsed.baseName || row.subtest);
+                        const aliased = resolveSubtestAlias(
+                            resolvedTestName,
+                            stripSourceColumnSuffix(parsed.baseName || row.subtest),
+                        );
 
                         let matchedCanonical: CanonicalSubtestEntry | null = null;
 
@@ -852,7 +1336,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 const nameMapping = new Map<string, string>();
                 nextPages.forEach(page => {
                     page.rows.forEach(row => {
-                        const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                        const alias = resolveSubtestAlias(resolvedTestName, stripSourceColumnSuffix(row.subtest));
                         const norm = normalizeSubtestName(alias);
                         if (!norm) return;
                         if (!nameMapping.has(norm)) {
@@ -862,7 +1346,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 });
                 nextPages.forEach(page => {
                     page.rows = page.rows.map(row => {
-                        const alias = resolveSubtestAlias(resolvedTestName, row.subtest);
+                        const alias = resolveSubtestAlias(resolvedTestName, stripSourceColumnSuffix(row.subtest));
                         const norm = normalizeSubtestName(alias);
                         const canonical = norm ? nameMapping.get(norm) : null;
                         if (canonical && canonical !== row.subtest) {
@@ -875,9 +1359,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             // Re-disambiguate variant subtests collapsed by canonical matching
             reDisambiguateByAbbreviation(nextPages);
+            preserveDistinctSourceColumns(nextPages);
+
+            const finalPages = nextPages.map(withPageReview);
 
             setTableStructure(resolvedStructure);
-            setPages(nextPages);
+            setPages(finalPages);
             setCurrentFileIndex(0);
             setStep('editor');
         } catch (error) {
@@ -894,6 +1381,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const newFiles = Array.from(e.target.files) as File[];
+            draftImagesRef.current = {};
+            localStorage.removeItem(DRAFT_IMAGES_KEY);
             setFiles(newFiles);
             setCurrentFileIndex(0);
             setTableStructure('UNKNOWN');
@@ -903,11 +1392,64 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }
     };
 
-    const currentGroupedRows = useMemo(() => groupRowsBySubtest(currentRows), [currentRows]);
+    const currentPageFlags = currentPage?.flags || [];
+    const flaggedSubtests = useMemo(() => {
+        return new Set(
+            currentPageFlags
+                .map((flag) => flag.subtest)
+                .filter((subtest) => !!subtest),
+        );
+    }, [currentPageFlags]);
+    const rowFlagsMap = useMemo(() => {
+        const map = new Map<string, ReviewFlag[]>();
+        currentPageFlags.forEach((flag) => {
+            if (!flag.rowId) return;
+            const current = map.get(flag.rowId) || [];
+            current.push(flag);
+            map.set(flag.rowId, current);
+        });
+        return map;
+    }, [currentPageFlags]);
+    const displayedRows = useMemo(() => {
+        if (!showFlaggedOnly || currentPageFlags.length === 0) return currentRows;
+        return currentRows.filter((row) => {
+            if (rowFlagsMap.has(row.id)) return true;
+            return flaggedSubtests.has(row.subtest);
+        });
+    }, [currentRows, currentPageFlags.length, flaggedSubtests, rowFlagsMap, showFlaggedOnly]);
+    const currentGroupedRows = useMemo(() => groupRowsBySubtest(displayedRows), [displayedRows]);
     const currentGroupedEntries = useMemo(
         () => Object.entries(currentGroupedRows) as Array<[string, ExtractedRow[]]>,
         [currentGroupedRows]
     );
+    const currentPageFixableFlags = useMemo(
+        () => suggestFixes(currentPageFlags, currentRows),
+        [currentPageFlags, currentRows],
+    );
+
+    const focusRow = (rowId?: string) => {
+        if (!rowId) return;
+        setFocusedRowId(rowId);
+        const target = document.querySelector(`[data-row-id="${rowId}"]`) as HTMLElement | null;
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    };
+
+    const handleApplyFlagFix = (flag: ReviewFlag) => {
+        if (!flag.suggestedFix) return;
+        updateCurrentPageRows((prev) => applySuggestedFix(flag, prev));
+        toast.success('Correction appliquée.');
+    };
+
+    const handleApplyAllPageFixes = () => {
+        if (!currentPage || currentPageFixableFlags.length === 0) {
+            toast.info('Aucune correction automatique disponible sur cette page.');
+            return;
+        }
+        updateCurrentPageRows((prev) => applyAllSuggestedFixes(currentPage.flags, prev));
+        toast.success(`${currentPageFixableFlags.length} correction(s) appliquée(s).`);
+    };
 
     const stripAgeQualifier = useCallback((name: string): string => {
         const trimmed = name.trim();
@@ -927,12 +1469,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const resolveCanonicalSubtest = useCallback((row: ExtractedRow) => {
         const parsed = splitSubtestDisplayName(row.subtest);
+        const sourceColumnIndex = getSourceColumnIndexFromName(parsed.baseName || row.subtest);
+        const baseWithoutColumnSuffix = stripSourceColumnSuffix(parsed.baseName || row.subtest);
         const sourceAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
         const baseName = canonicalSubtestsNormalized.length > 0
-            ? stripAgeQualifier(parsed.baseName)
-            : parsed.baseName;
+            ? stripAgeQualifier(baseWithoutColumnSuffix)
+            : baseWithoutColumnSuffix;
         const alias = resolveSubtestAlias(testName, baseName).trim();
-        const fallbackName = alias || parsed.baseName || row.subtest;
+        const fallbackBaseName = alias || baseWithoutColumnSuffix || row.subtest;
+        const fallbackName = withSourceColumnSuffix(fallbackBaseName, sourceColumnIndex);
         const normalized = normalizeSubtestName(alias);
 
         if (canonicalSubtestsNormalized.length === 0 || !normalized) {
@@ -949,15 +1494,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const candidates = canonicalSubtestsByName.get(normalized) || [];
         if (candidates.length === 1) {
             const candidate = candidates[0];
+            const candidateName = withSourceColumnSuffix(candidate.name, sourceColumnIndex);
             const candidateAbbr = normalizeAbbreviation(candidate.abbreviation);
             const displayAbbr = candidateAbbr || sourceAbbr || null;
             const normalizedCandidateName = normalizeSubtestName(candidate.name);
             const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
             const isHiddenInvalidAmbiguous = isAmbiguous && !displayAbbr;
             return {
-                name: candidate.name,
+                name: candidateName,
                 abbreviation: displayAbbr,
-                displayName: formatSubtestDisplayName(candidate.name, displayAbbr, isAmbiguous),
+                displayName: formatSubtestDisplayName(candidateName, displayAbbr, isAmbiguous),
                 isAmbiguous,
                 isHiddenInvalidAmbiguous,
                 isMapped: !isHiddenInvalidAmbiguous,
@@ -968,14 +1514,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             if (sourceAbbr) {
                 const exact = candidates.find(c => normalizeAbbreviation(c.abbreviation) === sourceAbbr);
                 if (exact) {
+                    const exactName = withSourceColumnSuffix(exact.name, sourceColumnIndex);
                     const exactAbbr = normalizeAbbreviation(exact.abbreviation) || sourceAbbr;
                     const normalizedCandidateName = normalizeSubtestName(exact.name);
                     const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
                     const isHiddenInvalidAmbiguous = isAmbiguous && !exactAbbr;
                     return {
-                        name: exact.name,
+                        name: exactName,
                         abbreviation: exactAbbr || null,
-                        displayName: formatSubtestDisplayName(exact.name, exactAbbr || null, isAmbiguous),
+                        displayName: formatSubtestDisplayName(exactName, exactAbbr || null, isAmbiguous),
                         isAmbiguous,
                         isHiddenInvalidAmbiguous,
                         isMapped: !isHiddenInvalidAmbiguous,
@@ -986,14 +1533,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const narrowedName = findBestCanonicalMatch(alias, candidates.map(c => c.name));
             if (narrowedName) {
                 const narrowed = candidates.find(c => c.name === narrowedName) || candidates[0];
+                const narrowedDisplayName = withSourceColumnSuffix(narrowed.name, sourceColumnIndex);
                 const narrowedAbbr = normalizeAbbreviation(narrowed.abbreviation) || sourceAbbr;
                 const normalizedCandidateName = normalizeSubtestName(narrowed.name);
                 const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
                 const isHiddenInvalidAmbiguous = isAmbiguous && !narrowedAbbr;
                 return {
-                    name: narrowed.name,
+                    name: narrowedDisplayName,
                     abbreviation: narrowedAbbr || null,
-                    displayName: formatSubtestDisplayName(narrowed.name, narrowedAbbr || null, isAmbiguous),
+                    displayName: formatSubtestDisplayName(narrowedDisplayName, narrowedAbbr || null, isAmbiguous),
                     isAmbiguous,
                     isHiddenInvalidAmbiguous,
                     isMapped: !isHiddenInvalidAmbiguous,
@@ -1013,18 +1561,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const VARIANT_PATTERN = /\(variante \d+\)$/;
     const unrenamedVariants = useMemo(() => {
-        return currentGroupedEntries
-            .map(([name]) => name)
+        return Array.from(new Set(currentRows.map((row) => row.subtest)))
             .filter(name => VARIANT_PATTERN.test(name));
-    }, [currentGroupedEntries]);
+    }, [currentRows]);
     const hasUnrenamedVariants = unrenamedVariants.length > 0;
 
     const canonicalGroupedEntries = useMemo<CanonicalGroupedEntry[]>(() => {
         const grouped = new Map<string, CanonicalGroupedEntry>();
-        allRows.forEach((row) => {
+        includedRows.forEach((row) => {
             const resolved = resolveCanonicalSubtest(row);
             if (resolved.isHiddenInvalidAmbiguous) return;
-            const key = buildSubtestIdentityKey(resolved.name, resolved.abbreviation);
+            const key = `${buildSubtestIdentityKey(resolved.name, resolved.abbreviation)}::${row.source_column_key || 'nosource'}`;
             const existing = grouped.get(key);
             if (existing) {
                 existing.rows.push(row);
@@ -1038,12 +1585,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
         });
         return Array.from(grouped.values());
-    }, [allRows, resolveCanonicalSubtest]);
+    }, [includedRows, resolveCanonicalSubtest]);
 
     const unmappedSubtests = useMemo(() => {
         if (!canonicalTest || canonicalSubtestsNormalized.length === 0) return [];
         const missing = new Set<string>();
-        allRows.forEach((row) => {
+        includedRows.forEach((row) => {
             const resolved = resolveCanonicalSubtest(row);
             if (!resolved.isMapped) {
                 if (resolved.isHiddenInvalidAmbiguous) {
@@ -1054,37 +1601,76 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
         });
         return Array.from(missing.values());
-    }, [allRows, canonicalSubtestsNormalized.length, canonicalTest, resolveCanonicalSubtest]);
+    }, [includedRows, canonicalSubtestsNormalized.length, canonicalTest, resolveCanonicalSubtest]);
 
     const updateCurrentPageRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
         setPages(prev => prev.map((page, index) => {
             if (index !== currentFileIndex) return page;
-            return { ...page, rows: updater(page.rows) };
+            return withPageReview({ ...page, rows: updater(page.rows) });
         }));
     };
 
     const updateAllPagesRows = (updater: (rows: ExtractedRow[]) => ExtractedRow[]) => {
-        setPages(prev => prev.map(page => ({ ...page, rows: updater(page.rows) })));
+        setPages(prev => prev.map(page => withPageReview({ ...page, rows: updater(page.rows) })));
     };
 
     /** Apply user-supplied renames from DisambiguationModal to all rows across all pages. */
     const handleDisambiguationConfirm = useCallback((renames: Record<string, string>) => {
         setPages(prev => prev.map(page => ({
-            ...page,
-            rows: page.rows.map(row => {
+            ...withPageReview({
+                ...page,
+                rows: page.rows.map(row => {
                 const newName = renames[row.subtest];
                 return newName ? { ...row, subtest: newName } : row;
+                }),
             }),
         })));
         setDuplicatedSids([]);
         setShowDisambiguationModal(false);
         toast.success('Sous-tests renommés avec succès.');
-    }, [toast]);
+    }, [toast, withPageReview]);
 
     const handleValidateCurrentPage = () => {
-        setPages(prev => prev.map((page, index) => (
-            index === currentFileIndex ? { ...page, validated: true } : page
-        )));
+        const page = pages[currentFileIndex];
+        if (!page) return;
+        if (page.flagCounts.blocking > 0) {
+            toast.error(`Impossible de valider: ${page.flagCounts.blocking} issue(s) bloquante(s) restantes.`);
+            return;
+        }
+        setPages(prev => prev.map((candidate, index) => {
+            if (index !== currentFileIndex) return candidate;
+            return withPageReview({
+                ...candidate,
+                status: 'validated',
+                rejectionReason: undefined,
+            });
+        }));
+    };
+
+    const handleRejectCurrentPage = () => {
+        const page = pages[currentFileIndex];
+        if (!page) return;
+        const reason = window.prompt('Motif de refus de cette page (optionnel)', page.rejectionReason || '');
+        if (reason === null) return;
+        setPages(prev => prev.map((candidate, index) => {
+            if (index !== currentFileIndex) return candidate;
+            return {
+                ...candidate,
+                status: 'rejected',
+                rejectionReason: reason.trim() || undefined,
+            };
+        }));
+    };
+
+    const handleReopenCurrentPage = () => {
+        setPages(prev => prev.map((candidate, index) => {
+            if (index !== currentFileIndex) return candidate;
+            return withPageReview({
+                ...candidate,
+                status: 'pending',
+                rejectionReason: undefined,
+            });
+        }));
     };
 
     const handleRowChange = (id: string, field: keyof ExtractedRow, value: string) => {
@@ -1137,21 +1723,74 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     };
 
     const handleDeleteRow = (id: string) => updateCurrentPageRows(prev => prev.filter(r => r.id !== id));
-    const handleAddSubtest = () => handleAddRowToSubtest("Nouveau Sous-test " + (Object.keys(currentGroupedRows).length + 1));
+    const handleAddSubtest = () => {
+        const currentCount = Object.keys(groupRowsBySubtest(currentRows)).length;
+        handleAddRowToSubtest(`Nouveau Sous-test ${currentCount + 1}`);
+    };
+
+    const isCompleteParametricRow = (row: ExtractedRow): boolean => {
+        const meanVal = cleanNumberStr(row.mean || '');
+        const sdVal = cleanNumberStr(row.sd || '');
+        if (!meanVal || !sdVal) return false;
+        return !isNaN(parseFloat(meanVal)) && !isNaN(parseFloat(sdVal));
+    };
 
     // --- PRE-SAVE CHECK ---
     const handlePreSave = useCallback(() => {
+        let workingPages = pages;
+        if (tableStructure === 'PARAMETRIC') {
+            let removedCount = 0;
+            const cleanedPages = pages.map((page) => {
+                if (page.status === 'rejected') return page;
+                const filteredRows = page.rows.filter((row) => {
+                    const keep = isCompleteParametricRow(row);
+                    if (!keep) removedCount += 1;
+                    return keep;
+                });
+                return filteredRows.length === page.rows.length
+                    ? page
+                    : withPageReview({ ...page, rows: filteredRows });
+            });
+            if (removedCount > 0) {
+                setPages(cleanedPages);
+                workingPages = cleanedPages;
+                toast.error(`${removedCount} ligne(s) paramétrique(s) incomplète(s) supprimée(s) avant sauvegarde.`);
+            }
+        }
+
         if (!testName.trim()) {
             setTestNameError(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
         }
-        if (pages.length > 0 && pages.some(page => !page.validated)) {
-            toast.error("Validez chaque page avant d'enregistrer le test.");
+
+        const pendingPages = workingPages.filter((page) => page.status === 'pending');
+        if (pendingPages.length > 0) {
+            toast.error("Chaque page doit être soit validée, soit refusée avant la sauvegarde.");
             return;
         }
-        if (hasUnrenamedVariants) {
-            toast.error(`${unrenamedVariants.length} sous-test(s) portent encore un suffixe "(variante N)". Renommez-les avant d'enregistrer.`);
+
+        const validatedPages = workingPages.filter((page) => page.status === 'validated');
+        if (validatedPages.length === 0) {
+            toast.error("Au moins une page validée est requise pour enregistrer le test.");
+            return;
+        }
+
+        const blockingCount = validatedPages.reduce((sum, page) => sum + page.flagCounts.blocking, 0);
+        if (blockingCount > 0) {
+            toast.error(`${blockingCount} issue(s) bloquante(s) restante(s) sur des pages validées.`);
+            return;
+        }
+
+        const unrenamedAcrossValidated = Array.from(
+            new Set(
+                validatedPages
+                    .flatMap((page) => page.rows.map((row) => row.subtest))
+                    .filter((name) => VARIANT_PATTERN.test(name)),
+            ),
+        );
+        if (unrenamedAcrossValidated.length > 0) {
+            toast.error(`${unrenamedAcrossValidated.length} sous-test(s) portent encore un suffixe "(variante N)" sur des pages validées.`);
             return;
         }
         if (canonicalTest && canonicalInvalidAmbiguous.length > 0) {
@@ -1172,13 +1811,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     }, [
         canonicalInvalidAmbiguous.length,
         canonicalTest,
-        hasUnrenamedVariants,
+        isCompleteParametricRow,
+        tableStructure,
         pages,
         testName,
         toast,
         suspiciousSecondaryAgeSubtests,
-        unrenamedVariants.length,
         unmappedSubtests.length,
+        withPageReview,
     ]);
 
     // --- HELPER: Build norm payload from an ExtractedRow ---
@@ -1188,12 +1828,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         let ageMin = row.hidden_age_min;
         let ageMax = row.hidden_age_max;
         if (ageMin === undefined || ageMax === undefined) {
-            // Fallback: try to parse age from label string (e.g. "5;0 – 5;5")
-            const ageMatch = (row.label || '').match(/(\d+)[;:.](\d+)/);
-            if (ageMatch) {
-                const months = parseInt(ageMatch[1]) * 12 + parseInt(ageMatch[2]);
-                ageMin = ageMin ?? months;
-                ageMax = ageMax ?? months;
+            // Fallback: parse age from visible label/class.
+            const parsedLabelAge = parseGroupLabelToAge(row.label || row.hidden_group_label || '');
+            if (parsedLabelAge) {
+                ageMin = ageMin ?? parsedLabelAge.min;
+                ageMax = ageMax ?? parsedLabelAge.max;
             } else {
                 ageMin = ageMin ?? 0;
                 ageMax = ageMax ?? 0;
@@ -1207,8 +1846,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         let rawMax: number | null = null;
 
         if (mode === 'PARAMETRIC') {
-            mean = parseFloat(row.mean || row.raw) || 0;
-            sd = parseFloat(row.sd || row.zScore) || 0;
+            const parsedMean = parseFloat(cleanNumberStr(row.mean || ''));
+            const parsedSd = parseFloat(cleanNumberStr(row.sd || ''));
+            mean = !isNaN(parsedMean) ? parsedMean : null;
+            sd = !isNaN(parsedSd) ? parsedSd : null;
             rawMin = null;
             rawMax = null;
         } else {
@@ -1306,7 +1947,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     const isPublic = bestMatch.organization_id === null;
                     setMergeTarget({ id: bestMatch.id, name: bestMatch.name, subtestCount: existingSubs?.length || 0, isPublic });
                     setMergeNewSubtests(newSubs.length);
-                    setMergeNewAgeRanges(allRows.length);
+                    setMergeNewAgeRanges(includedRows.length);
                     setShowSaveModal(false);
                     setShowMergeModal(true);
                     return;
@@ -1348,7 +1989,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const isPublic = match.organization_id === null;
             setMergeTarget({ id: match.id, name: match.name, subtestCount: existingSubs?.length || 0, isPublic });
             setMergeNewSubtests(newSubs.length);
-            setMergeNewAgeRanges(allRows.length);
+            setMergeNewAgeRanges(includedRows.length);
             setShowMergeModal(true);
         } catch (e) {
             Logger.error('DB', 'Error loading match details:', e);
@@ -1442,7 +2083,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             vigilanceScore: 'pass',
             submittedAt: new Date().toISOString(),
             structureType: tableStructure,
-            rows: allRows
+            rows: includedRows
         };
         setShowSaveModal(false);
         onSubmit(contributionData);
@@ -1646,7 +2287,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     </div>
                     <div className="flex-1 overflow-auto flex items-center justify-center p-10 cursor-grab active:cursor-grabbing">
                         <div className="bg-white shadow-2xl transition-transform duration-200 ease-out origin-center relative" style={{ width: 'auto', height: 'auto', transform: `scale(${zoom})` }}>
-                            {currentFileUrl ? <img src={currentFileUrl} alt="Source" className="max-w-full max-h-[80vh] object-contain" /> : null}
+                            {currentPreviewUrl ? <img src={currentPreviewUrl} alt="Source" className="max-w-full max-h-[80vh] object-contain" /> : null}
                         </div>
                     </div>
                 </div>
@@ -1696,14 +2337,42 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                             {pages.length > 0 && (
                                 <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 flex flex-col gap-3">
-                                    <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center justify-between gap-3 flex-wrap">
                                         <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Pages</span>
-                                        <button
-                                            onClick={handleValidateCurrentPage}
-                                            className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${currentPage?.validated ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[#E07A5F] hover:text-[#E07A5F]'}`}
-                                        >
-                                            {currentPage?.validated ? 'Page validée' : 'Valider cette page'}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold">
+                                                {currentPage?.flagCounts.blocking || 0} bloquantes
+                                            </span>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">
+                                                {currentPage?.flagCounts.warning || 0} warnings
+                                            </span>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-bold">
+                                                {currentPage?.flagCounts.info || 0} info
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleValidateCurrentPage}
+                                                disabled={!currentPage || currentPage.status === 'validated' || (currentPage.flagCounts.blocking || 0) > 0}
+                                                className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-emerald-100 text-emerald-700 border-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Valider
+                                            </button>
+                                            <button
+                                                onClick={handleRejectCurrentPage}
+                                                disabled={!currentPage || currentPage.status === 'rejected'}
+                                                className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-rose-100 text-rose-700 border-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Refuser
+                                            </button>
+                                            <button
+                                                onClick={handleReopenCurrentPage}
+                                                disabled={!currentPage || currentPage.status === 'pending'}
+                                                className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-stone-100 text-stone-700 border-stone-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Réouvrir
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {pages.map((page, index) => (
@@ -1713,10 +2382,21 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'}`}
                                             >
                                                 {`Page ${index + 1}`}
-                                                {page.validated && <Check size={12} className="text-emerald-200" />}
+                                                {page.status === 'validated' && <Check size={12} className="text-emerald-200" />}
+                                                {page.status === 'rejected' && <CircleOff size={12} className="text-rose-300" />}
+                                                {page.flagCounts.blocking > 0 && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-bold">
+                                                        {page.flagCounts.blocking}
+                                                    </span>
+                                                )}
                                             </button>
                                         ))}
                                     </div>
+                                    {currentPage?.status === 'rejected' && (
+                                        <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                                            Page refusée{currentPage.rejectionReason ? `: ${currentPage.rejectionReason}` : '.'}
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
@@ -1759,6 +2439,86 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             ))}
                                         </div>
                                     </div>
+                                </div>
+                            )}
+
+                            {currentPage && (
+                                <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-heading)]">
+                                            <ListChecks size={16} className="text-[#E07A5F]" />
+                                            Issues de la page
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={showFlaggedOnly}
+                                                    onChange={(e) => setShowFlaggedOnly(e.target.checked)}
+                                                />
+                                                Afficher uniquement les blocs flaggés
+                                            </label>
+                                            <button
+                                                onClick={handleApplyAllPageFixes}
+                                                disabled={currentPageFixableFlags.length === 0}
+                                                className="text-xs px-3 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Appliquer corrections suggérées (page)
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {currentPage.flags.length === 0 ? (
+                                        <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                                            Aucune issue détectée sur cette page.
+                                        </div>
+                                    ) : (
+                                        <div className="max-h-60 overflow-auto space-y-2 pr-1">
+                                            {currentPage.flags.map((flag) => (
+                                                <div
+                                                    key={flag.id}
+                                                    className={`rounded-lg border px-3 py-2 text-xs ${
+                                                        flag.severity === 'blocking'
+                                                            ? 'bg-rose-50 border-rose-200 text-rose-800'
+                                                            : flag.severity === 'warning'
+                                                                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                                : 'bg-sky-50 border-sky-200 text-sky-800'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="font-bold">{flag.code}</span>
+                                                        <span className="text-[10px] uppercase">{flag.severity}</span>
+                                                    </div>
+                                                    <p className="mt-1">{flag.message}</p>
+                                                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                                        {flag.rowId && (
+                                                            <button
+                                                                onClick={() => focusRow(flag.rowId)}
+                                                                className="px-2 py-1 rounded border border-current/30 text-[10px] font-bold"
+                                                            >
+                                                                Aller à la ligne
+                                                            </button>
+                                                        )}
+                                                        {flag.suggestedFix && (
+                                                            <button
+                                                                onClick={() => handleApplyFlagFix(flag)}
+                                                                className="px-2 py-1 rounded border border-current/30 text-[10px] font-bold"
+                                                            >
+                                                                Appliquer la correction
+                                                            </button>
+                                                        )}
+                                                        <span className="text-[10px] opacity-70">Confiance: {(flag.confidence * 100).toFixed(0)}%</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {currentGroupedEntries.length === 0 && (
+                                <div className="text-xs text-[var(--text-secondary)] bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4">
+                                    Aucun bloc affiché avec le filtre actuel.
                                 </div>
                             )}
 
@@ -1832,8 +2592,20 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                                                             {batchRows.map((row) => {
                                                                 const isConsistent = checkConsistency(row);
+                                                                const hasFlag = rowFlagsMap.has(row.id);
+                                                                const isFocused = focusedRowId === row.id;
                                                                 return (
-                                                                    <div key={row.id} className="grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row hover:bg-[var(--hover-bg)] rounded-lg p-1 transition-colors">
+                                                                    <div
+                                                                        key={row.id}
+                                                                        data-row-id={row.id}
+                                                                        className={`grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row rounded-lg p-1 transition-colors ${
+                                                                            isFocused
+                                                                                ? 'ring-2 ring-[#E07A5F] bg-orange-50'
+                                                                                : hasFlag
+                                                                                    ? 'bg-rose-50/40 hover:bg-rose-50'
+                                                                                    : 'hover:bg-[var(--hover-bg)]'
+                                                                        }`}
+                                                                    >
                                                                         <div className="col-span-2">
                                                                             <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
                                                                         </div>
@@ -1864,7 +2636,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             // MODE 2 : PARAMETRIC (LISTE PLATE CLASSIQUE)
                                             <>
                                                 {subRows.map((row) => (
-                                                    <div key={row.id} className="grid grid-cols-12 gap-2 items-center group mb-1 hover:bg-[var(--hover-bg)] p-1 rounded-lg transition-colors">
+                                                    <div
+                                                        key={row.id}
+                                                        data-row-id={row.id}
+                                                        className={`grid grid-cols-12 gap-2 items-center group mb-1 p-1 rounded-lg transition-colors ${
+                                                            focusedRowId === row.id
+                                                                ? 'ring-2 ring-[#E07A5F] bg-orange-50'
+                                                                : rowFlagsMap.has(row.id)
+                                                                    ? 'bg-rose-50/40 hover:bg-rose-50'
+                                                                    : 'hover:bg-[var(--hover-bg)]'
+                                                        }`}
+                                                    >
                                                         <div className="col-span-3">
                                                             <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
                                                         </div>
@@ -2001,7 +2783,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <div className="flex items-center gap-2 text-sm">
                                     <Layers size={14} className={`shrink-0 ${mergeTarget.isPublic ? 'text-blue-600' : 'text-amber-600'}`} />
                                     <span className="text-[var(--text-main)]">
-                                        <strong className="text-[var(--text-heading)]">{allRows.length}</strong> entrée{allRows.length > 1 ? 's' : ''} à {mergeTarget.isPublic ? 'rattacher' : 'fusionner'}
+                                        <strong className="text-[var(--text-heading)]">{includedRows.length}</strong> entrée{includedRows.length > 1 ? 's' : ''} à {mergeTarget.isPublic ? 'rattacher' : 'fusionner'}
                                         {mergeNewSubtests > 0 && <> dont <strong className="text-[var(--text-heading)]">{mergeNewSubtests}</strong> nouveau{mergeNewSubtests > 1 ? 'x' : ''} sous-test{mergeNewSubtests > 1 ? 's' : ''}</>}
                                     </span>
                                 </div>

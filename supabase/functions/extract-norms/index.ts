@@ -165,19 +165,15 @@ ${JSON.stringify(canonicalSubtestNames)}
 Use your clinical knowledge to resolve abbreviations to the full French clinical name.
 If a column clearly matches one of the canonical names above, use that EXACT canonical name as the "sid" value.
 
-CRITICAL — UNIQUE NAMING PROCEDURE (follow for EVERY column):
-Step 1: Read EVERY column header abbreviation on the page.
-Step 2: Group abbreviations by their shared BASE prefix (the common root letters). Example: if you see XY, XYC, XYS, XYT → the base is XY and there are 4 variants.
-Step 3: For each group:
-  - If only ONE column exists for that base → resolve to the canonical name directly.
-  - If MULTIPLE columns share the same base → each MUST get a UNIQUE sid by appending " - Qualifier" derived from the suffix letter(s).
-Step 4: How to decode suffix letters into qualifiers:
-  - Common French psychometric suffixes: T=Total, D=Différé, C=Contenu, S=Spatial or Sémantique, E=Erreurs, I=Inhibition, R=Rappel.
-  - Multi-letter suffixes: PM=Programme moteur, PG=Processus global, PL=Processus local, PT=Processus total.
-  - Use the domain headers and table context to choose the right French word for the suffix.
-  - If you cannot decode the suffix, append the raw suffix in parentheses: "Base Name (XX)".
-Step 5: FINAL VALIDATION — Count your output groups. It MUST equal the number of data columns. If ANY two groups share the same sid string, you MUST FIX by appending the column abbreviation in parentheses.
-ABSOLUTE RULE: ZERO duplicate sid values allowed. Each data column = one unique sid string.
+CRITICAL - UNIQUE NAMING PROCEDURE BY STRUCTURE:
+For PARAMETRIC tables:
+- Do NOT create one sid per statistical column.
+- "Moyenne"/"ET"/"SD" are value columns, not subtests.
+- Keep one sid per clinical subtest only.
+For LOOKUP tables:
+- Read every data column header abbreviation.
+- Keep one unique sid per lookup column variant and store the source abbreviation in "ab".
+- If two columns would collide to the same sid, add a qualifier or fallback to abbreviation.
 `;
 };
 
@@ -185,6 +181,8 @@ const EXTRACTION_RULES = `
 --- STEP 1: CLASSIFICATION (st) ---
 A) "PARAMETRIC": Contains statistical constants per group (Mean/Moyenne/M AND SD/Ecart-Type/Sigma).
    The table does NOT map raw scores to percentiles directly. It gives the formula constants.
+   PARAMETRIC HARD RULE: "Moyenne"/"M"/"ET"/"SD"/"Sigma" are statistical columns, never subtests.
+   PARAMETRIC HARD RULE: one valid row must contain both "m" and "s"; if one is missing, skip the row.
 B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, Scaled) or Percentiles.
 
 --- STEP 2: EXTRACTION RULES ---
@@ -193,6 +191,7 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    In that case, the cell value is the raw score. You MUST still output one object per age group (column) with "r" = cell value, "n" = row header.
 3. VALUES:
    - If Parametric: Extract "m" and "s".
+   - If Parametric and a row/column has a class label (e.g. CE1, 6e, 2nde), also output "gl" with that original label.
    - If Lookup: Extract "r", "n", "p".
 4. ACCURACY:
    - Clean units (sec, pts).
@@ -208,33 +207,29 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - Do NOT add age, grade, or side qualifiers in the subtest name.
    - If a known subtest name from previous pages matches what you see, use it EXACTLY.
    - When you genuinely cannot determine the full name, use the abbreviation followed by the domain in parentheses (e.g. "DR (Langage)") as a last resort.
-   - DISAMBIGUATION (CRITICAL — NEVER VIOLATE):
-     ABSOLUTE RULE: Each data column on the page = 1 unique sid. Different column abbreviation = different sid. ALWAYS.
-     PRE-WRITING COLUMN COUNT (MANDATORY): Before you write a single character of JSON, count the EXACT number of data columns on this page. Your "tables" array MUST contain exactly that many entries — no more, no fewer. If you count 5 columns, output 5 table entries. NEVER merge two columns into one entry.
-     PROCEDURE:
-       a) List ALL column header abbreviations you see on the page (e.g. MF, MFS, MFT, MFDC, MFDT).
-       b) Store the ORIGINAL ABBREVIATION in the "ab" field of each table entry — this is mandatory.
-       c) Group abbreviations by shared BASE prefix (the common root letters before the varying suffix).
-       d) For columns that share a base prefix, the SUFFIX tells you the variant:
-          Common suffixes in French psychometric tables: T=Total, D=Différé, C=Contenu, S=Spatial/Sémantique, E=Erreurs, I=Inhibition, R=Rappel.
-          Multi-letter: PM=Programme moteur, PG=Processus global, PL=Processus local, PT=Processus total.
-       e) Build the sid as: "Full Base Name - Qualifier" (e.g. base "Mémoire de X" + suffix D → "Mémoire de X - Différé").
-       f) ABBREVIATION-FIRST FALLBACK: If expanding an abbreviation would produce the same "sid" string as another column already in your output, do NOT expand — use the raw abbreviation as "sid" instead (e.g. "MFDC"). Uniqueness ALWAYS beats translation.
-       g) NEVER assign the bare base name to multiple columns — if 3 columns share a base, ALL 3 must have a qualifier or use their raw abbreviation as fallback.
-       h) When in doubt whether two columns are the same subtest, treat them as DIFFERENT subtests.
-     VALIDATION: Count your output "tables" entries. It MUST equal the number of data columns you counted in the PRE-WRITING step. ZERO duplicate sid values allowed.
+   - DISAMBIGUATION POLICY BY STRUCTURE:
+     PARAMETRIC:
+       - Statistical headers ("Moyenne", "M", "ET", "SD", "Sigma") MUST stay inside row values, never in sid.
+       - Do not output separate sid entries such as "Copie (ET)" or "Copie (MOYENNE)".
+       - Each sid must represent the clinical subtest only (e.g. "Copie", "Dictée", "Répétition").
+     LOOKUP:
+       - ABSOLUTE RULE: each data column on the page = 1 unique sid.
+       - PRE-WRITING COLUMN COUNT (MANDATORY): count the exact number of data columns before output. "tables" must match that count exactly.
+       - Store the ORIGINAL abbreviation in "ab" for each table entry.
+       - If two columns would collide to the same sid name, keep unique names using qualifier or abbreviation fallback.
 6. GROUPING:
    - For LOOKUP: Each "sid" entry groups all rows for ONE subtest. If the page covers a single age group (visible in the header), ALL rows under that subtest share the same a0/a1.
    - For PARAMETRIC: Each "sid" entry groups all age/grade rows for ONE subtest.
 
 --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
 You must calculate specific numeric values for the database:
-1. AGE NORMALIZATION (a0, a1) — MANDATORY for LOOKUP tables:
+1. AGE NORMALIZATION (a0, a1):
    - Convert label "4;6" or "4 ans 6 mois" -> 54 months.
    - Convert range "4;0 - 4;5" -> a0: 48, a1: 53.
    - If only grade is available, convert grade to age range in months using school mapping.
    - Primary grades: CP=72-83, CE1=84-95, CE2=96-107, CM1=108-119, CM2=120-131.
    - Secondary grades: 6e=132-143, 5e=144-155, 4e=156-167, 3e=168-179, 2nde=180-191, 1ere=192-203, Terminale=204-215.
+   - STRICT RULE: never interpolate missing school levels; if a class is absent in the source, keep it absent.
    - CRITICAL: labels like "6e", "4e", "2nde" are grade levels, NOT ages 6/4/2 years. Never map them to 72/48/24 months.
    - PAGE-LEVEL AGE: When the page title, header, column heading, OR FILENAME shows an age group (e.g. "Ages 10;6-10;11", or filename "10;6-10;11.jpg", "13ans.jpg", "CE1.png"), that SINGLE age group applies to EVERY row on the entire page. You MUST propagate it to a0/a1 of ALL rows AND to pa0/pa1 at the top level. Example: "Ages 10;6-10;11" -> a0: 126, a1: 131 for every row.
    - FILENAME AGE: If the filename contains an age hint (e.g. "5ans6mois" = 66 months, "13ans" = 156 months, "CE1" = ~84 months, "10;6-10;11" = 126-131 months), use it for pa0/pa1 and a0/a1 when no age is visible in the table headers.
@@ -265,6 +260,7 @@ const JSON_SCHEMA = `
           "n": "string (Only if LOOKUP: Standard Score / Note Étalonnée)",
           "p": "string (Percentile if explicit)",
           "z": "string (Z-Score if explicit)",
+          "gl": "string (Optional source class/grade label such as CE1, 6e, 2nde)",
           "a0": number | null (age_min in months),
           "a1": number | null (age_max in months),
           "r0": number | null (raw_min),
@@ -275,7 +271,7 @@ const JSON_SCHEMA = `
   ]
 }
 
-KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
+KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, gl=group_label, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
 CRITICAL: If the page shows a single age group in its header/title (e.g. "Ages 10;6-10;11"), you MUST set pa0 and pa1 at the top level AND copy them into every row's a0/a1.
 
 OUTPUT RULES:
@@ -447,6 +443,207 @@ const safeJsonParse = (text: string | null): ExtractionResult | null => {
     }
     return null;
   }
+};
+
+type StatRole = 'mean' | 'sd' | 'none';
+
+type MergedParametricRow = {
+  a0?: number;
+  a1?: number;
+  gl?: string;
+  m?: string;
+  s?: string;
+};
+
+type ParametricAccumulator = {
+  sid: string;
+  ab?: string;
+  rows: Map<string, MergedParametricRow>;
+};
+
+const normalizeToken = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '');
+
+const STAT_MEAN_TOKENS = new Set(['M', 'MOY', 'MOYENNE', 'MEAN', 'AVG']);
+const STAT_SD_TOKENS = new Set(['ET', 'SD', 'SIGMA', 'ECARTTYPE', 'ECARTTYPESTD', 'STDDEV']);
+
+const detectStatRoleFromValue = (value: unknown): StatRole => {
+  if (typeof value !== 'string' || !value.trim()) return 'none';
+  const token = normalizeToken(value);
+  if (!token) return 'none';
+  if (STAT_MEAN_TOKENS.has(token)) return 'mean';
+  if (STAT_SD_TOKENS.has(token)) return 'sd';
+  return 'none';
+};
+
+const splitStatSuffix = (sid: string): { baseSid: string; suffixToken?: string } => {
+  const trimmed = sid.trim();
+  if (!trimmed) return { baseSid: '' };
+
+  const parenthetical = trimmed.match(/\(([^)]+)\)\s*$/);
+  if (parenthetical && typeof parenthetical.index === 'number') {
+    return {
+      baseSid: trimmed.slice(0, parenthetical.index).trim(),
+      suffixToken: parenthetical[1].trim(),
+    };
+  }
+
+  const dashed = trimmed.match(/(?:[-–—:])\s*([A-Za-zÀ-ÿ.\s]+)\s*$/);
+  if (dashed && typeof dashed.index === 'number') {
+    return {
+      baseSid: trimmed.slice(0, dashed.index).trim(),
+      suffixToken: dashed[1].trim(),
+    };
+  }
+
+  return { baseSid: trimmed };
+};
+
+const pickNumericString = (value: unknown): string | undefined => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+
+  const raw = value.trim();
+  if (!raw) return undefined;
+  const cleaned = raw.replace(',', '.').replace(/[^0-9.+-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '+' || cleaned === '.' || cleaned === '+.' || cleaned === '-.') {
+    return undefined;
+  }
+
+  const asNumber = Number(cleaned);
+  if (!Number.isFinite(asNumber)) return undefined;
+  return cleaned;
+};
+
+const pickOptionalNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.trunc(value) : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
+};
+
+const sanitizeGroupLabel = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+const buildParametricRowKey = (row: MergedParametricRow): string => {
+  const agePart = `${row.a0 ?? 'na'}|${row.a1 ?? 'na'}`;
+  const groupPart = row.gl ? normalizeToken(row.gl) : '';
+  return `${agePart}|${groupPart || 'nogroup'}`;
+};
+
+const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResult => {
+  if (String(result.st || '').toUpperCase() !== 'PARAMETRIC' || !Array.isArray(result.tables)) {
+    return result;
+  }
+
+  const tableMap = new Map<string, ParametricAccumulator>();
+
+  for (const table of result.tables) {
+    const sid = String(table?.sid || '').trim();
+    if (!sid || !Array.isArray(table?.rows)) continue;
+
+    const { baseSid, suffixToken } = splitStatSuffix(sid);
+    const roleFromSuffix = detectStatRoleFromValue(suffixToken);
+    const roleFromAb = detectStatRoleFromValue(table.ab);
+    const role: StatRole = roleFromAb !== 'none' ? roleFromAb : roleFromSuffix;
+
+    const outputSid = role !== 'none' && baseSid ? baseSid : sid;
+    if (!outputSid) continue;
+
+    const abRaw = typeof table.ab === 'string' ? table.ab.trim() : '';
+    const isNonStatAb = !!abRaw && detectStatRoleFromValue(abRaw) === 'none';
+    const tableKey = role === 'none' && isNonStatAb
+      ? `${outputSid}::ab:${normalizeToken(abRaw)}`
+      : outputSid;
+
+    if (!tableMap.has(tableKey)) {
+      tableMap.set(tableKey, {
+        sid: outputSid,
+        ab: role === 'none' && isNonStatAb ? abRaw : undefined,
+        rows: new Map<string, MergedParametricRow>(),
+      });
+    }
+
+    const accumulator = tableMap.get(tableKey)!;
+
+    for (const rawRow of table.rows) {
+      if (!rawRow || typeof rawRow !== 'object') continue;
+      const row = rawRow as Record<string, unknown>;
+
+      let meanVal = pickNumericString(row.m);
+      let sdVal = pickNumericString(row.s);
+      if (role === 'mean' && !meanVal) meanVal = pickNumericString(row.s);
+      if (role === 'sd' && !sdVal) sdVal = pickNumericString(row.m);
+
+      const mergedCandidate: MergedParametricRow = {
+        a0: pickOptionalNumber(row.a0),
+        a1: pickOptionalNumber(row.a1),
+        gl: sanitizeGroupLabel(row.gl),
+      };
+
+      const rowKey = buildParametricRowKey(mergedCandidate);
+      if (!accumulator.rows.has(rowKey)) {
+        accumulator.rows.set(rowKey, { ...mergedCandidate });
+      }
+
+      const mergedRow = accumulator.rows.get(rowKey)!;
+      if (mergedRow.a0 === undefined && mergedCandidate.a0 !== undefined) mergedRow.a0 = mergedCandidate.a0;
+      if (mergedRow.a1 === undefined && mergedCandidate.a1 !== undefined) mergedRow.a1 = mergedCandidate.a1;
+      if (!mergedRow.gl && mergedCandidate.gl) mergedRow.gl = mergedCandidate.gl;
+      if (meanVal && !mergedRow.m) mergedRow.m = meanVal;
+      if (sdVal && !mergedRow.s) mergedRow.s = sdVal;
+    }
+  }
+
+  const sanitizedTables: ExtractedTable[] = [];
+  for (const accumulator of tableMap.values()) {
+    const rows = Array.from(accumulator.rows.values())
+      .filter((row) => !!row.m && !!row.s)
+      .sort((a, b) => {
+        const a0 = a.a0 ?? Number.MAX_SAFE_INTEGER;
+        const b0 = b.a0 ?? Number.MAX_SAFE_INTEGER;
+        if (a0 !== b0) return a0 - b0;
+        const a1 = a.a1 ?? Number.MAX_SAFE_INTEGER;
+        const b1 = b.a1 ?? Number.MAX_SAFE_INTEGER;
+        return a1 - b1;
+      })
+      .map((row) => {
+        const cleanRow: Record<string, unknown> = {
+          m: row.m,
+          s: row.s,
+        };
+        if (typeof row.gl === 'string' && row.gl) cleanRow.gl = row.gl;
+        if (typeof row.a0 === 'number') cleanRow.a0 = row.a0;
+        if (typeof row.a1 === 'number') cleanRow.a1 = row.a1;
+        return cleanRow;
+      });
+
+    if (rows.length === 0) continue;
+    const nextTable: ExtractedTable = { sid: accumulator.sid, rows };
+    if (accumulator.ab) nextTable.ab = accumulator.ab;
+    sanitizedTables.push(nextTable);
+  }
+
+  return {
+    ...result,
+    tables: sanitizedTables,
+  };
+};
+
+const sanitizeExtractionResult = (result: ExtractionResult): ExtractionResult => {
+  if (String(result.st || '').toUpperCase() !== 'PARAMETRIC') return result;
+  return sanitizeParametricExtraction(result);
 };
 
 // ── ORCHESTRATOR: Try single call, fallback to chunked ─────────────────────
@@ -650,6 +847,11 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
+    }
+
+    const parsedResult = safeJsonParse(result.text);
+    if (parsedResult) {
+      result.text = JSON.stringify(sanitizeExtractionResult(parsedResult));
     }
 
     // ── LOG EXTRACTION (with strategy tracking) ──

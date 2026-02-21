@@ -11,6 +11,7 @@ const COMPACT_ROW_KEYS: Record<string, string> = {
   n: 'standard',
   p: 'percentile',
   z: 'z_score',
+  gl: 'group_label',
   a0: 'age_min_months',
   a1: 'age_max_months',
   r0: 'raw_min',

@@ -313,8 +313,58 @@ export interface ExtractedRow {
     hidden_age_max?: number;
     hidden_raw_min?: number;
     hidden_raw_max?: number;
+    hidden_group_label?: string;
     /** Original column abbreviation from the source image (e.g. 'MF', 'MFDC') */
     source_abbreviation?: string;
+    /**
+     * Stable source column identifier produced at extraction time.
+     * Used to prevent accidental fusion of distinct columns that share
+     * the same subtest name and abbreviation.
+     */
+    source_column_key?: string;
+}
+
+export type ReviewSeverity = 'blocking' | 'warning' | 'info';
+
+export type ReviewFlagCode =
+    | 'LOOKUP_PERCENTILE_OUT_OF_BOUNDS'
+    | 'LOOKUP_COLLAPSED_INTERVAL'
+    | 'LOOKUP_REQUIRED_FIELD_MISSING'
+    | 'LOOKUP_Z_PERCENTILE_INCONSISTENT'
+    | 'GROUP_ROW_COUNT_MISMATCH'
+    | 'PARAMETRIC_REQUIRED_FIELD_MISSING'
+    | 'AGE_RANGE_MISSING_OR_INVALID'
+    | 'LOOKUP_ZERO_Z_PLATEAU';
+
+export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
+
+export interface ReviewSuggestedFix {
+    rowId: string;
+    field: ReviewFixField;
+    value: string;
+    reason?: string;
+}
+
+export interface ReviewFlag {
+    id: string;
+    code: ReviewFlagCode;
+    severity: ReviewSeverity;
+    message: string;
+    pageId: string;
+    subtest: string;
+    groupLabel: string;
+    rowId?: string;
+    suggestedFix?: ReviewSuggestedFix;
+    confidence: number;
+    blocking: boolean;
+}
+
+export interface ReviewFlagCounts {
+    blocking: number;
+    warning: number;
+    info: number;
+    total: number;
+    withFix: number;
 }
 
 export interface Contribution {
@@ -459,6 +509,7 @@ export interface AIExtractedNormRow {
     sd?: string;
     z_score?: string;
     percentile?: string;
+    group_label?: string;
     age_min_months?: number | null;
     age_max_months?: number | null;
     raw_min?: number | null;
