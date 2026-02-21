@@ -81,6 +81,9 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
   const [subtestDupPairs, setSubtestDupPairs] = useState<SubtestDuplicatePair[]>([]);
   const [subtestDupTarget, setSubtestDupTarget] = useState<string | null>(null);
   const [isScanningSubs, setIsScanningSubs] = useState(false);
+  const [isMergingSubtests, setIsMergingSubtests] = useState(false);
+  const [manualMergeTargetId, setManualMergeTargetId] = useState<string | null>(null);
+  const [manualMergeSourceIds, setManualMergeSourceIds] = useState<string[]>([]);
   const [normDupSummary, setNormDupSummary] = useState<NormDuplicateSummary[]>([]);
   const [isScanningNorms, setIsScanningNorms] = useState(false);
   const [isDedupingNorms, setIsDedupingNorms] = useState(false);
@@ -89,8 +92,12 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
   const [qualityFlags, setQualityFlags] = useState<NormQualityFlag[]>([]);
   const [isCheckingQuality, setIsCheckingQuality] = useState(false);
   const [dismissingQualityKey, setDismissingQualityKey] = useState<string | null>(null);
+  const [isDismissingAllQuality, setIsDismissingAllQuality] = useState(false);
+  const [showDismissByTypeModal, setShowDismissByTypeModal] = useState(false);
+  const [dismissByTypeCode, setDismissByTypeCode] = useState('');
   const [isAnalyzingIssues, setIsAnalyzingIssues] = useState(false);
   const [issuesAnalyzedTestId, setIssuesAnalyzedTestId] = useState<string | null>(null);
+  const [isDeletingAmbiguousWithoutNorms, setIsDeletingAmbiguousWithoutNorms] = useState(false);
 
   // Test-level dedup state
   interface DedupCluster {
@@ -236,6 +243,25 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
     void loadBundle(focusTestId);
   }, [focusTestId, focusNonce]);
 
+  useEffect(() => {
+    if (!bundle) {
+      setManualMergeTargetId(null);
+      setManualMergeSourceIds([]);
+      return;
+    }
+    const availableIds = new Set(bundle.subtests.map((s) => s.id));
+    setManualMergeTargetId((prev) => {
+      if (prev && availableIds.has(prev)) return prev;
+      return bundle.subtests[0]?.id || null;
+    });
+    setManualMergeSourceIds((prev) => prev.filter((id) => availableIds.has(id)));
+  }, [bundle]);
+
+  useEffect(() => {
+    if (!manualMergeTargetId) return;
+    setManualMergeSourceIds((prev) => prev.filter((id) => id !== manualMergeTargetId));
+  }, [manualMergeTargetId]);
+
   const filteredTests = useMemo(() => {
     if (!search.trim()) return tests;
     const q = search.toLowerCase();
@@ -246,10 +272,22 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
     () => buildSubtestDisplayMetaMap((bundle?.subtests || []).map((s) => ({ id: s.id, name: s.name, abbreviation: s.abbreviation }))),
     [bundle?.subtests],
   );
+  const normCountBySubtestId = useMemo(() => {
+    const counts = new Map<string, number>();
+    (bundle?.norms || []).forEach((norm) => {
+      counts.set(norm.subtest_id, (counts.get(norm.subtest_id) || 0) + 1);
+    });
+    return counts;
+  }, [bundle?.norms]);
   const invalidAmbiguousSubtests = useMemo(
     () => (bundle?.subtests || []).filter((s) => subtestDisplayMetaMap.get(s.id)?.isHiddenInvalidAmbiguous),
     [bundle?.subtests, subtestDisplayMetaMap],
   );
+  const ambiguousWithoutNorms = useMemo(
+    () => invalidAmbiguousSubtests.filter((s) => (normCountBySubtestId.get(s.id) || 0) === 0),
+    [invalidAmbiguousSubtests, normCountBySubtestId],
+  );
+  const ambiguousWithNormsCount = invalidAmbiguousSubtests.length - ambiguousWithoutNorms.length;
   const hasInvalidAmbiguousSubtests = invalidAmbiguousSubtests.length > 0;
   const totalDuplicateNormExcess = useMemo(
     () => normDupSummary.reduce((acc, row) => acc + (row.total_excess_rows || 0), 0),
@@ -259,6 +297,15 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
     () => invalidAmbiguousSubtests.length + subtestDupPairs.length + totalDuplicateNormExcess + qualityFlags.length,
     [invalidAmbiguousSubtests.length, subtestDupPairs.length, totalDuplicateNormExcess, qualityFlags.length],
   );
+  const qualityFlagTypeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    qualityFlags.forEach((flag) => {
+      counts.set(flag.flag_code, (counts.get(flag.flag_code) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+  }, [qualityFlags]);
   const getSubtestDisplayName = (subtest: Pick<AdminSubtestRecord, 'id' | 'name' | 'abbreviation'>): string => {
     const meta = subtestDisplayMetaMap.get(subtest.id);
     if (meta) return meta.displayName;
@@ -611,16 +658,93 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
 
   const handleMergeSubtests = async (sourceIds: string[], targetId: string) => {
     if (!bundle) return;
-    if (!confirm(`Fusionner ${sourceIds.length} sous-test(s) dans la cible ? Les normes seront déplacées.`)) return;
+    const dedupedSourceIds = Array.from(new Set(sourceIds)).filter((id) => id !== targetId);
+    if (dedupedSourceIds.length === 0) {
+      toast.error('Selection vide: choisissez au moins une source differente de la cible.');
+      return;
+    }
+    if (!confirm(`Fusionner ${dedupedSourceIds.length} sous-test(s) dans la cible ? Les normes seront déplacées.`)) return;
+    setIsMergingSubtests(true);
     try {
-      const result = await AdminService.mergeSubtests(sourceIds, targetId);
+      const result = await AdminService.mergeSubtests(dedupedSourceIds, targetId);
       toast.success(`Fusion réussie : ${result.migrated_norms} normes déplacées dans « ${result.target_name} ».`);
       setSubtestDupPairs([]);
+      setManualMergeSourceIds([]);
       await loadBundle(bundle.test.id);
     } catch (e) {
       Logger.error('DB', 'Merge subtests failed', e);
       toast.error('Erreur lors de la fusion des sous-tests.');
+    } finally {
+      setIsMergingSubtests(false);
     }
+  };
+
+  const handleDeleteAmbiguousWithoutNorms = async () => {
+    if (!bundle) return;
+    if (ambiguousWithoutNorms.length === 0) {
+      toast.info('Aucune variante ambiguë sans norme a supprimer.');
+      return;
+    }
+
+    const warningSuffix = ambiguousWithNormsCount > 0
+      ? ` Les ${ambiguousWithNormsCount} variante(s) ambiguë(s) avec normes ne seront pas touchees.`
+      : '';
+    if (!confirm(`Supprimer ${ambiguousWithoutNorms.length} variante(s) ambiguë(s) sans norme ?${warningSuffix}`)) return;
+
+    setIsDeletingAmbiguousWithoutNorms(true);
+    try {
+      const newSubtestIds = new Set(ambiguousWithoutNorms.filter((s) => s.isNew).map((s) => s.id));
+      if (newSubtestIds.size > 0) {
+        setBundle((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            subtests: prev.subtests.filter((s) => !newSubtestIds.has(s.id)),
+            norms: prev.norms.filter((n) => !newSubtestIds.has(n.subtest_id)),
+          };
+        });
+        if (selectedSubtestId && newSubtestIds.has(selectedSubtestId)) {
+          setSelectedSubtestId(null);
+        }
+        setIsDirty(true);
+      }
+
+      const persistedSubtests = ambiguousWithoutNorms.filter((s) => !s.isNew);
+      for (const subtest of persistedSubtests) {
+        await AdminService.deleteSubtest(subtest.id);
+      }
+
+      if (persistedSubtests.length > 0) {
+        await loadBundle(bundle.test.id);
+      }
+      toast.success(`${ambiguousWithoutNorms.length} variante(s) ambiguë(s) sans norme supprimee(s).`);
+    } catch (e) {
+      Logger.error('DB', 'Bulk delete ambiguous subtests without norms failed', e);
+      toast.error('Suppression en lot impossible.');
+      await loadBundle(bundle.test.id);
+    } finally {
+      setIsDeletingAmbiguousWithoutNorms(false);
+    }
+  };
+
+  const toggleManualMergeSource = (subtestId: string) => {
+    setManualMergeSourceIds((prev) => (
+      prev.includes(subtestId)
+        ? prev.filter((id) => id !== subtestId)
+        : [...prev, subtestId]
+    ));
+  };
+
+  const handleManualMergeSubmit = async () => {
+    if (!manualMergeTargetId) {
+      toast.error('Selectionnez un sous-test cible.');
+      return;
+    }
+    if (manualMergeSourceIds.length === 0) {
+      toast.error('Selectionnez au moins un sous-test source.');
+      return;
+    }
+    await handleMergeSubtests(manualMergeSourceIds, manualMergeTargetId);
   };
 
   const handleScanNormDups = async () => {
@@ -674,6 +798,38 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
 
   const getQualityFlagKey = (flag: Pick<NormQualityFlag, 'norm_id' | 'flag_code'>) => `${flag.norm_id}::${flag.flag_code}`;
 
+  const dismissQualityFlagsBatch = async (targetFlags: NormQualityFlag[]) => {
+    const uniqueFlags = Array.from(
+      new Map(targetFlags.map((flag) => [getQualityFlagKey(flag), flag])).values(),
+    );
+    const chunkSize = 40;
+    const failedKeys = new Set<string>();
+    let dismissedCount = 0;
+
+    for (let start = 0; start < uniqueFlags.length; start += chunkSize) {
+      const chunk = uniqueFlags.slice(start, start + chunkSize);
+      const settled = await Promise.allSettled(
+        chunk.map((flag) => AdminService.setNormIssueDismissed({
+          normId: flag.norm_id,
+          flagCode: flag.flag_code,
+          dismissed: true,
+        })),
+      );
+
+      settled.forEach((result, idx) => {
+        const key = getQualityFlagKey(chunk[idx]);
+        if (result.status === 'fulfilled') {
+          dismissedCount += 1;
+        } else {
+          failedKeys.add(key);
+        }
+      });
+    }
+
+    setQualityFlags((prev) => prev.filter((flag) => failedKeys.has(getQualityFlagKey(flag))));
+    return { dismissedCount, failedCount: failedKeys.size };
+  };
+
   const handleDismissQualityFlag = async (flag: NormQualityFlag) => {
     const key = getQualityFlagKey(flag);
     setDismissingQualityKey(key);
@@ -690,6 +846,73 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
       toast.error("Impossible d'ignorer cette issue.");
     } finally {
       setDismissingQualityKey(null);
+    }
+  };
+
+  const handleDismissAllQualityFlags = async () => {
+    if (!bundle || qualityFlags.length === 0) return;
+    if (!confirm(`Ignorer ${qualityFlags.length} flag(s) qualite pour ce test ?`)) return;
+
+    setIsDismissingAllQuality(true);
+    try {
+      const { dismissedCount, failedCount } = await dismissQualityFlagsBatch(qualityFlags);
+
+      if (dismissedCount > 0) {
+        toast.success(`${dismissedCount} issue(s) ignoree(s).`);
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} issue(s) n'ont pas pu etre ignoree(s).`);
+      }
+
+      setIssuesAnalyzedTestId(null);
+      await analyzeIssuesForCurrentTest(true);
+    } catch (e) {
+      Logger.error('DB', 'Bulk dismiss norm quality issues failed', e);
+      toast.error("Impossible d'ignorer toutes les issues.");
+    } finally {
+      setIsDismissingAllQuality(false);
+    }
+  };
+
+  const openDismissByTypeModal = () => {
+    if (qualityFlagTypeOptions.length === 0) {
+      toast.info('Aucun type de flag a ignorer.');
+      return;
+    }
+    const defaultCode = qualityFlagTypeOptions.some((opt) => opt.code === dismissByTypeCode)
+      ? dismissByTypeCode
+      : qualityFlagTypeOptions[0].code;
+    setDismissByTypeCode(defaultCode);
+    setShowDismissByTypeModal(true);
+  };
+
+  const handleConfirmDismissByType = async () => {
+    if (!bundle || !dismissByTypeCode) return;
+    const targetFlags = qualityFlags.filter((flag) => flag.flag_code === dismissByTypeCode);
+    if (targetFlags.length === 0) {
+      setShowDismissByTypeModal(false);
+      return;
+    }
+    if (!confirm(`Ignorer ${targetFlags.length} flag(s) du type ${dismissByTypeCode} ?`)) return;
+
+    setShowDismissByTypeModal(false);
+    setIsDismissingAllQuality(true);
+    try {
+      const { dismissedCount, failedCount } = await dismissQualityFlagsBatch(targetFlags);
+      if (dismissedCount > 0) {
+        toast.success(`${dismissedCount} issue(s) ${dismissByTypeCode} ignoree(s).`);
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} issue(s) ${dismissByTypeCode} n'ont pas pu etre ignoree(s).`);
+      }
+
+      setIssuesAnalyzedTestId(null);
+      await analyzeIssuesForCurrentTest(true);
+    } catch (e) {
+      Logger.error('DB', 'Bulk dismiss norm quality issues by type failed', e);
+      toast.error("Impossible d'ignorer ce type de flag.");
+    } finally {
+      setIsDismissingAllQuality(false);
     }
   };
 
@@ -922,10 +1145,22 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                 <div className="text-rose-200/90">
                   Corrigez ces sous-tests avant sauvegarde/promotion. Les variantes ambiguës sans tag sont invalides.
                 </div>
+                <div className="flex items-center justify-between gap-2 text-[10px]">
+                  <span className="text-rose-200/80">
+                    {ambiguousWithoutNorms.length} sans norme · {ambiguousWithNormsCount} avec normes
+                  </span>
+                  <button
+                    onClick={() => void handleDeleteAmbiguousWithoutNorms()}
+                    disabled={isDeletingAmbiguousWithoutNorms || ambiguousWithoutNorms.length === 0}
+                    className="text-rose-200 hover:text-white bg-rose-500/20 px-2 py-1 rounded disabled:opacity-50"
+                  >
+                    {isDeletingAmbiguousWithoutNorms ? 'Suppression...' : `Supprimer sans norme (${ambiguousWithoutNorms.length})`}
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1">
                   {invalidAmbiguousSubtests.map((subtest) => (
                     <span key={subtest.id} className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200 text-[10px] font-semibold">
-                      {subtest.name}
+                      {subtest.name} ({normCountBySubtestId.get(subtest.id) || 0}n)
                     </span>
                   ))}
                 </div>
@@ -1391,19 +1626,40 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                   </div>
                 </div>
 
+
                 {invalidAmbiguousSubtests.length > 0 && (
                   <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 space-y-2">
-                    <h5 className="text-sm font-bold text-rose-300">Variantes ambiguës sans abréviation</h5>
+                    <div className="flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-bold text-rose-300">Variantes ambiguës sans abréviation</h5>
+                      <button
+                        onClick={() => void handleDeleteAmbiguousWithoutNorms()}
+                        disabled={isDeletingAmbiguousWithoutNorms || ambiguousWithoutNorms.length === 0}
+                        className="text-xs text-rose-200 hover:text-white disabled:opacity-50"
+                      >
+                        {isDeletingAmbiguousWithoutNorms ? 'Suppression...' : `Supprimer sans norme (${ambiguousWithoutNorms.length})`}
+                      </button>
+                    </div>
                     <div className="space-y-1">
                       {invalidAmbiguousSubtests.map((sub) => (
                         <div key={sub.id} className="flex items-center justify-between text-[11px] bg-white/5 rounded-lg px-3 py-2">
                           <span className="text-white font-bold">{sub.name}</span>
-                          <button
-                            onClick={() => { setSubTab('normes'); setSelectedSubtestId(sub.id); }}
-                            className="text-rose-300 hover:text-rose-200"
-                          >
-                            Corriger
-                          </button>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`text-[10px] font-semibold ${(normCountBySubtestId.get(sub.id) || 0) === 0 ? 'text-rose-300' : 'text-stone-400'}`}>
+                              {normCountBySubtestId.get(sub.id) || 0} normes
+                            </span>
+                            <button
+                              onClick={() => void deleteSubtest(sub)}
+                              className="text-rose-300 hover:text-rose-200"
+                            >
+                              Supprimer
+                            </button>
+                            <button
+                              onClick={() => { setSubTab('normes'); setSelectedSubtestId(sub.id); }}
+                              className="text-rose-300 hover:text-rose-200"
+                            >
+                              Corriger
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1426,15 +1682,17 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               onClick={() => handleMergeSubtests([p.subtest_id_b], p.subtest_id_a)}
-                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                              disabled={isMergingSubtests}
+                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Garder A
+                              Fusionner vers A
                             </button>
                             <button
                               onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
-                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded"
+                              disabled={isMergingSubtests}
+                              className="text-[10px] text-violet-300 hover:text-violet-200 px-1.5 py-0.5 bg-violet-500/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Garder B
+                              Fusionner vers B
                             </button>
                           </div>
                         </div>
@@ -1476,7 +1734,25 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
 
                 {qualityFlags.length > 0 && (
                   <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-2">
-                    <h5 className="text-sm font-bold text-amber-300">Flags qualité</h5>
+                    <div className="flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-bold text-amber-300">Flags qualite</h5>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={openDismissByTypeModal}
+                          disabled={isDismissingAllQuality || isAnalyzingIssues || qualityFlags.length === 0}
+                          className="text-xs text-stone-300 hover:text-white disabled:opacity-50"
+                        >
+                          Ignorer par type
+                        </button>
+                        <button
+                          onClick={() => void handleDismissAllQualityFlags()}
+                          disabled={isDismissingAllQuality || isAnalyzingIssues || qualityFlags.length === 0}
+                          className="text-xs text-stone-500 hover:text-stone-300 disabled:opacity-50"
+                        >
+                          Tout
+                        </button>
+                      </div>
+                    </div>
                     <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar">
                       {qualityFlags.map((f, idx) => (
                         <div key={idx} className="text-[11px] flex items-center justify-between bg-white/5 rounded p-2 gap-2">
@@ -1488,7 +1764,7 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               onClick={() => void handleDismissQualityFlag(f)}
-                              disabled={dismissingQualityKey === getQualityFlagKey(f)}
+                              disabled={isDismissingAllQuality || dismissingQualityKey === getQualityFlagKey(f)}
                               className="text-[10px] text-stone-300 hover:text-white disabled:opacity-50"
                             >
                               {dismissingQualityKey === getQualityFlagKey(f) ? '...' : 'Ignorer'}
@@ -1540,7 +1816,23 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                         <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
                           <AlertTriangle size={12} /> {qualityFlags.length} problème(s) détecté(s)
                         </span>
-                        <button onClick={() => setQualityFlags([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={openDismissByTypeModal}
+                            disabled={isDismissingAllQuality || isAnalyzingIssues || qualityFlags.length === 0}
+                            className="text-[10px] text-stone-300 hover:text-white disabled:opacity-50"
+                          >
+                            {isDismissingAllQuality ? 'Ignorer...' : 'Ignorer par type'}
+                          </button>
+                          <button
+                            onClick={() => void handleDismissAllQualityFlags()}
+                            disabled={isDismissingAllQuality || isAnalyzingIssues || qualityFlags.length === 0}
+                            className="text-[10px] text-stone-500 hover:text-stone-300 disabled:opacity-50"
+                          >
+                            Tout
+                          </button>
+                          <button onClick={() => setQualityFlags([])} className="text-[10px] text-stone-500 hover:text-stone-300">Fermer</button>
+                        </div>
                       </div>
                       <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
                         {qualityFlags.map((f, idx) => (
@@ -1554,7 +1846,7 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                             <span className="text-stone-600 ml-auto mr-2">{f.details}</span>
                             <button
                               onClick={() => void handleDismissQualityFlag(f)}
-                              disabled={dismissingQualityKey === getQualityFlagKey(f)}
+                              disabled={isDismissingAllQuality || dismissingQualityKey === getQualityFlagKey(f)}
                               className="text-[9px] text-stone-300 hover:text-white disabled:opacity-50"
                             >
                               {dismissingQualityKey === getQualityFlagKey(f) ? '...' : 'Ignorer'}
@@ -1599,20 +1891,69 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                             <button
                               onClick={() => handleMergeSubtests([p.subtest_id_b], p.subtest_id_a)}
                               className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
-                              title={`Garder « ${p.subtest_name_a} »`}
+                              title={`Fusionner vers « ${p.subtest_name_a} »`}
                             >
-                              ? Garder A
+                              Fusionner vers A
                             </button>
                             <button
                               onClick={() => handleMergeSubtests([p.subtest_id_a], p.subtest_id_b)}
                               className="text-[9px] text-violet-400 hover:text-violet-300 px-1.5 py-0.5 bg-violet-500/10 rounded"
-                              title={`Garder « ${p.subtest_name_b} »`}
+                              title={`Fusionner vers « ${p.subtest_name_b} »`}
                             >
-                              Garder B ?
+                              Fusionner vers B
                             </button>
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {bundle.subtests.length > 1 && (
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-violet-300 uppercase">Fusion manuelle</span>
+                        <span className="text-[10px] text-stone-500">{manualMergeSourceIds.length} source(s)</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Sous-test cible</label>
+                          <select
+                            value={manualMergeTargetId || ''}
+                            onChange={(e) => setManualMergeTargetId(e.target.value || null)}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-white"
+                          >
+                            {bundle.subtests.map((s) => (
+                              <option key={s.id} value={s.id} className="bg-[#23252F] text-stone-200">
+                                {getSubtestDisplayName(s)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Sources a fusionner</label>
+                          <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                            {bundle.subtests
+                              .filter((s) => s.id !== manualMergeTargetId)
+                              .map((s) => (
+                                <label key={s.id} className="flex items-center gap-2 text-[11px] text-stone-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={manualMergeSourceIds.includes(s.id)}
+                                    onChange={() => toggleManualMergeSource(s.id)}
+                                    className="rounded border-white/20 bg-white/5"
+                                  />
+                                  <span className="truncate">{getSubtestDisplayName(s)}</span>
+                                </label>
+                              ))}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => void handleManualMergeSubmit()}
+                        disabled={!manualMergeTargetId || manualMergeSourceIds.length === 0 || isMergingSubtests}
+                        className="text-[11px] text-violet-300 hover:text-violet-200 px-2 py-1 bg-violet-500/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isMergingSubtests ? 'Fusion...' : 'Fusionner selection vers la cible'}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1667,8 +2008,52 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
           </>
         )}
       </div>
+
+      {showDismissByTypeModal && (
+        <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#131419] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div>
+              <h4 className="text-base font-bold text-white">Ignorer un type de flag</h4>
+              <p className="text-xs text-stone-400 mt-1">
+                Selectionne un type. Seules les issues de ce type seront ignorees.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-stone-500 uppercase">Type de flag</label>
+              <select
+                value={dismissByTypeCode}
+                onChange={(e) => setDismissByTypeCode(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#E07A5F]"
+              >
+                {qualityFlagTypeOptions.map((option) => (
+                  <option key={option.code} value={option.code} className="bg-[#23252F] text-stone-200">
+                    {option.code} ({option.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setShowDismissByTypeModal(false)}
+                disabled={isDismissingAllQuality}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-stone-300 hover:text-white border border-white/10 disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => void handleConfirmDismissByType()}
+                disabled={isDismissingAllQuality || !dismissByTypeCode}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E07A5F] text-white hover:bg-[#d0694e] disabled:opacity-50"
+              >
+                {isDismissingAllQuality ? 'Ignorer...' : 'Ignorer ce type'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
 

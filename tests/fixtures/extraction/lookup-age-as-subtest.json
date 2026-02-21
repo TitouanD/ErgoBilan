@@ -1,0 +1,16 @@
+{
+  "pageId": "fixture-age-captured",
+  "structure": "LOOKUP",
+  "rows": [
+    { "id": "a10", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "10", "standard": "120", "zScore": "1.33", "percentile": "91", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 10, "hidden_raw_max": 10 },
+    { "id": "a9", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "9", "standard": "115", "zScore": "1", "percentile": "84", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 9, "hidden_raw_max": 9 },
+    { "id": "a8", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "8", "standard": "110", "zScore": "0.67", "percentile": "75", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 8, "hidden_raw_max": 8 },
+    { "id": "a7", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "7", "standard": "105", "zScore": "0.33", "percentile": "63", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 7, "hidden_raw_max": 7 },
+    { "id": "a6", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "6", "standard": "100", "zScore": "0", "percentile": "50", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 6, "hidden_raw_max": 6 },
+    { "id": "a5", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "5", "standard": "95", "zScore": "-0.33", "percentile": "37", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 5, "hidden_raw_max": 5 },
+    { "id": "a4", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "4", "standard": "90", "zScore": "-0.67", "percentile": "25", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 4, "hidden_raw_max": 4 },
+    { "id": "a3", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "3", "standard": "85", "zScore": "-1", "percentile": "16", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 3, "hidden_raw_max": 3 },
+    { "id": "a2", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "2", "standard": "80", "zScore": "-1.33", "percentile": "9", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 2, "hidden_raw_max": 2 },
+    { "id": "a1", "subtest": "4-0 THROUGH 4-3", "label": "4;0 - 4;3", "raw": "1", "standard": "75", "zScore": "-1.67", "percentile": "5", "hidden_age_min": 48, "hidden_age_max": 51, "hidden_raw_min": 1, "hidden_raw_max": 1 }
+  ]
+}

@@ -233,11 +233,13 @@ type CanonicalSubtestEntry = {
     id: string;
     name: string;
     abbreviation?: string | null;
+    scoreType?: string | null;
 };
 
 type CanonicalGroupedEntry = {
     name: string;
     abbreviation?: string | null;
+    scoreType?: string | null;
     displayName: string;
     rows: ExtractedRow[];
 };
@@ -802,6 +804,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 id: sub.id,
                 name: parsed.baseName || sub.name.trim(),
                 abbreviation: normalizedAbbr || null,
+                scoreType: sub.scoreType || null,
             };
         })
     ), [canonicalSubtests]);
@@ -905,7 +908,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                 const { data: subs, error: subsError } = await supabase
                     .from('view_unified_subtests')
-                    .select('id, name, abbreviation')
+                    .select('id, name, abbreviation, score_type')
                     .eq('test_id', matchedTest.id);
 
                 if (subsError) throw subsError;
@@ -913,10 +916,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 if (!canceled) {
                     setCanonicalTest({ id: matchedTest.id, name: matchedTest.label });
                     setCanonicalSubtests(
-                        (subs || []).map((sub: { id: string; name: string; abbreviation?: string | null }) => ({
+                        (subs || []).map((sub: { id: string; name: string; abbreviation?: string | null; score_type?: string | null }) => ({
                             id: sub.id,
                             name: sub.name,
                             abbreviation: sub.abbreviation ?? null,
+                            scoreType: sub.score_type ?? null,
                         }))
                     );
                 }
@@ -980,14 +984,421 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     // --- HELPER FUNCTIONS ---
 
+    const normalizeDashChars = (val: string): string => val.replace(/[\u2012\u2013\u2014\u2212]/g, '-');
+
+    const isIntervalLikeNumber = (val: string): boolean =>
+        /\d+\s*[-]\s*\d+/.test(normalizeDashChars(val || ''));
+
     const cleanNumberStr = (val: string): string => {
         if (!val) return "";
-        let cleaned = val.replace(/,/g, '.').replace(/[^\d.-]/g, '');
+        let cleaned = normalizeDashChars(val).replace(/,/g, '.').replace(/[^\d.-]/g, '');
         const parts = cleaned.split('.');
         if (parts.length > 2) {
             cleaned = parts[0] + '.' + parts.slice(1).join('');
         }
         return cleaned;
+    };
+
+    const parseSingleNumericCell = (val?: string): number | null => {
+        const raw = String(val || '').trim();
+        if (!raw) return null;
+        if (isIntervalLikeNumber(raw)) return null;
+        const cleaned = cleanNumberStr(raw);
+        if (!cleaned) return null;
+        const parsed = parseFloat(cleaned);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const inferCollapsedPercentileBand = (val?: string): { min: number; max: number } | null => {
+        const raw = String(val || '').trim().replace(/\s+/g, '');
+        if (!/^\d{3,4}$/.test(raw)) return null;
+
+        const splits: Array<{ left: string; right: string }> = [];
+        if (raw.length === 3) {
+            splits.push({ left: raw.slice(0, 1), right: raw.slice(1) });
+            splits.push({ left: raw.slice(0, 2), right: raw.slice(2) });
+        } else {
+            splits.push({ left: raw.slice(0, 2), right: raw.slice(2) });
+            splits.push({ left: raw.slice(0, 1), right: raw.slice(1) });
+            splits.push({ left: raw.slice(0, 3), right: raw.slice(3) });
+        }
+
+        const candidates = splits
+            .map(({ left, right }) => ({ min: Number(left), max: Number(right) }))
+            .filter(({ min, max }) => Number.isFinite(min) && Number.isFinite(max))
+            .filter(({ min, max }) => min >= 0 && max <= 100 && min < max);
+
+        if (candidates.length === 0) return null;
+
+        const best = candidates.sort((a, b) => {
+            const spanA = a.max - a.min;
+            const spanB = b.max - b.min;
+            if (spanA !== spanB) return spanA - spanB;
+            if (a.min !== b.min) return a.min - b.min;
+            return a.max - b.max;
+        })[0];
+
+        return best;
+    };
+
+    const parsePercentileCell = (val?: string): number | null => {
+        const raw = String(val || '').trim();
+        if (!raw) return null;
+
+        const compact = normalizeDashChars(raw).replace(/\s+/g, '').replace(',', '.').replace(/%/g, '');
+        const rangeMatch = compact.match(/^(\d{1,3})-(\d{1,3})$/);
+        if (rangeMatch) {
+            const min = Number(rangeMatch[1]);
+            const max = Number(rangeMatch[2]);
+            if (Number.isFinite(min) && Number.isFinite(max) && min >= 0 && max <= 100 && min < max) {
+                return min;
+            }
+        }
+
+        const ltMatch = compact.match(/^<(\d{1,3})$/);
+        if (ltMatch) {
+            const upper = Number(ltMatch[1]);
+            return Number.isFinite(upper) && upper >= 0 && upper <= 100 ? upper : null;
+        }
+
+        const gtMatch = compact.match(/^>(\d{1,3})$/);
+        if (gtMatch) {
+            const lower = Number(gtMatch[1]);
+            return Number.isFinite(lower) && lower >= 0 && lower <= 100 ? lower : null;
+        }
+
+        const collapsed = inferCollapsedPercentileBand(compact);
+        if (collapsed) return collapsed.min;
+
+        const single = parseSingleNumericCell(compact);
+        if (single === null) return null;
+        if (single < 0 || single > 100) return null;
+        return single;
+    };
+
+    const normalizeLookupScoresForPayload = (row: ExtractedRow): { standardScore: number | null; percentile: number | null } => {
+        let standardScore = parseSingleNumericCell(row.standard);
+        let percentile = parsePercentileCell(row.percentile);
+
+        const collapsedFromStandard = inferCollapsedPercentileBand(normalizeDashChars(String(row.standard || '')));
+        if (collapsedFromStandard) {
+            if (percentile === null) percentile = collapsedFromStandard.min;
+            standardScore = null;
+        }
+
+        if (standardScore !== null && standardScore > 200) {
+            standardScore = null;
+        }
+
+        return { standardScore, percentile };
+    };
+
+    const mapDerivedStandardToPercentile = (value: number): number | null => {
+        const rounded = Math.round(value);
+        if (rounded === 69) return 2;
+        if (rounded === 77) return 6;
+        if (rounded === 82) return 11;
+        if (rounded === 90) return 26;
+        if (rounded === 100) return 51;
+        if (rounded === 110) return 75;
+        return null;
+    };
+
+    type PayloadScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+    type FitScaleType = Exclude<PayloadScoreType, 'percentile' | 'none'>;
+
+    type LookupFitCandidate = {
+        type: PayloadScoreType;
+        mean?: number;
+        sd?: number;
+        softMin?: number;
+        softMax?: number;
+        hardMin?: number;
+        hardMax?: number;
+    };
+
+    const FIT_SCALE_TARGETS: Record<FitScaleType, { mean: number; sd: number }> = {
+        standard: { mean: 100, sd: 15 },
+        scaled: { mean: 10, sd: 3 },
+        't-score': { mean: 50, sd: 10 },
+        sten: { mean: 5.5, sd: 2 },
+    };
+
+    const LOOKUP_FIT_CANDIDATES: LookupFitCandidate[] = [
+        { type: 'percentile' },
+        { type: 'sten', ...FIT_SCALE_TARGETS.sten, softMin: 1, softMax: 10, hardMin: 0, hardMax: 12 },
+        { type: 'scaled', ...FIT_SCALE_TARGETS.scaled, softMin: 1, softMax: 19, hardMin: 0, hardMax: 30 },
+        { type: 't-score', ...FIT_SCALE_TARGETS['t-score'], softMin: 20, softMax: 80, hardMin: 10, hardMax: 90 },
+        { type: 'standard', ...FIT_SCALE_TARGETS.standard, softMin: 55, softMax: 145, hardMin: 20, hardMax: 200 },
+    ];
+
+    const average = (values: number[]): number => (
+        values.reduce((sum, value) => sum + value, 0) / values.length
+    );
+
+    const median = (values: number[]): number => {
+        if (values.length === 0) return NaN;
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 0
+            ? (sorted[mid - 1] + sorted[mid]) / 2
+            : sorted[mid];
+    };
+
+    const sampleStdDev = (values: number[]): number => {
+        if (values.length < 2) return 0;
+        const mu = average(values);
+        const variance = values.reduce((sum, value) => sum + (value - mu) ** 2, 0) / (values.length - 1);
+        return Math.sqrt(Math.max(variance, 0));
+    };
+
+    const parseRawOrderingValue = (row: ExtractedRow): number | null => {
+        if (typeof row.hidden_raw_min === 'number' && Number.isFinite(row.hidden_raw_min)) {
+            return row.hidden_raw_min;
+        }
+
+        const raw = normalizeDashChars(String(row.raw || '')).trim().replace(',', '.');
+        if (!raw) return null;
+
+        const ltMatch = raw.match(/^<\s*(-?\d+(?:\.\d+)?)$/);
+        if (ltMatch) return Number(ltMatch[1]) - 0.5;
+
+        const gtMatch = raw.match(/^>\s*(-?\d+(?:\.\d+)?)$/);
+        if (gtMatch) return Number(gtMatch[1]) + 0.5;
+
+        const plusMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*\+$/);
+        if (plusMatch) return Number(plusMatch[1]) + 0.5;
+
+        const rangeMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)$/);
+        if (rangeMatch) return Number(rangeMatch[1]);
+
+        return parseSingleNumericCell(raw);
+    };
+
+    const softRangePenalty = (
+        value: number,
+        softMin: number,
+        softMax: number,
+        hardMin: number,
+        hardMax: number
+    ): number => {
+        if (value < hardMin) {
+            return 6 + (hardMin - value) / Math.max(1, softMin - hardMin);
+        }
+        if (value > hardMax) {
+            return 6 + (value - hardMax) / Math.max(1, hardMax - softMax);
+        }
+        if (value < softMin) {
+            return (softMin - value) / Math.max(1, softMin - hardMin);
+        }
+        if (value > softMax) {
+            return (value - softMax) / Math.max(1, hardMax - softMax);
+        }
+        return 0;
+    };
+
+    const monotonicPenalty = (
+        points: Array<{ order: number; metric: number }>,
+        tolerance: number,
+        normalization: number
+    ): number => {
+        if (points.length < 3) return 0;
+        const sorted = [...points].sort((a, b) => a.order - b.order);
+
+        // Some LOOKUP tables are "higher raw = better", others are "higher raw = worse"
+        // (e.g. error counts). Evaluate both directions and keep the best fit.
+        const computeDirectionalPenalty = (direction: 'increasing' | 'decreasing'): number => {
+            const sign = direction === 'increasing' ? 1 : -1;
+            let penalty = 0;
+            for (let i = 1; i < sorted.length; i += 1) {
+                const delta = sign * (sorted[i].metric - sorted[i - 1].metric);
+                if (delta < -tolerance) {
+                    penalty += Math.abs(delta) / Math.max(0.1, normalization);
+                }
+            }
+            return penalty / (sorted.length - 1);
+        };
+
+        return Math.min(
+            computeDirectionalPenalty('increasing'),
+            computeDirectionalPenalty('decreasing'),
+        );
+    };
+
+    const inferLookupScoreTypeFromRows = (rows: ExtractedRow[]): PayloadScoreType | null => {
+        const normalized = rows.map((row) => {
+            const scores = normalizeLookupScoresForPayload(row);
+            const derivedPercentile = scores.standardScore === null
+                ? null
+                : mapDerivedStandardToPercentile(scores.standardScore);
+            return {
+                standardScore: scores.standardScore,
+                percentile: scores.percentile,
+                derivedPercentile,
+                rawOrder: parseRawOrderingValue(row),
+            };
+        });
+
+        const standards = normalized
+            .map((item) => item.standardScore)
+            .filter((value): value is number => value !== null);
+        const percentiles = normalized
+            .map((item) => item.percentile)
+            .filter((value): value is number => value !== null);
+
+        if (standards.length === 0) {
+            return percentiles.length > 0 ? 'percentile' : null;
+        }
+
+        const scoresByCandidate = LOOKUP_FIT_CANDIDATES.map((candidate) => {
+            let score = 0;
+
+            if (candidate.type === 'percentile') {
+                const derivedCount = normalized.filter((item) => item.derivedPercentile !== null).length;
+                const unmappedStandards = standards.length - derivedCount;
+
+                if (percentiles.length === 0 && derivedCount === 0) {
+                    score += 8;
+                }
+                if (standards.length > 0) {
+                    score += (unmappedStandards / standards.length) * 3.5;
+                }
+
+                const monotonicPoints = normalized
+                    .filter((item): item is { rawOrder: number; percentile: number | null; derivedPercentile: number | null; standardScore: number | null } =>
+                        item.rawOrder !== null)
+                    .map((item) => ({
+                        order: item.rawOrder,
+                        metric: item.percentile ?? item.derivedPercentile,
+                    }))
+                    .filter((item): item is { order: number; metric: number } => item.metric !== null);
+                score += monotonicPenalty(monotonicPoints, 0.5, 12);
+            } else {
+                const { mean, sd, softMin, softMax, hardMin, hardMax } = candidate;
+                if (
+                    mean === undefined || sd === undefined ||
+                    softMin === undefined || softMax === undefined ||
+                    hardMin === undefined || hardMax === undefined
+                ) {
+                    return { type: candidate.type, score: Number.POSITIVE_INFINITY };
+                }
+
+                const rangePenalty = standards
+                    .map((value) => softRangePenalty(value, softMin, softMax, hardMin, hardMax))
+                    .reduce((sum, value) => sum + value, 0) / standards.length;
+                score += rangePenalty;
+
+                const meanObserved = average(standards);
+                const sdObserved = sampleStdDev(standards);
+                score += Math.abs(meanObserved - mean) / Math.max(1, sd * 2.5);
+                if (sdObserved > 0) {
+                    score += Math.abs(sdObserved - sd) / Math.max(1, sd * 2.5);
+                }
+
+                const percentilePairs = normalized
+                    .filter((item): item is { standardScore: number; percentile: number; rawOrder: number | null; derivedPercentile: number | null } =>
+                        item.standardScore !== null && item.percentile !== null);
+                if (percentilePairs.length > 0) {
+                    const mae = average(percentilePairs.map((pair) => {
+                        const predicted = zScoreToPercentile((pair.standardScore - mean) / sd);
+                        return Math.abs(predicted - pair.percentile);
+                    }));
+                    score += mae / 12;
+                }
+
+                const monotonicPoints = normalized
+                    .filter((item): item is { rawOrder: number; standardScore: number; percentile: number | null; derivedPercentile: number | null } =>
+                        item.rawOrder !== null && item.standardScore !== null)
+                    .map((item) => ({ order: item.rawOrder, metric: item.standardScore }));
+                score += monotonicPenalty(monotonicPoints, 0.25, Math.max(1, sd));
+            }
+
+            return { type: candidate.type, score };
+        })
+            .filter((entry) => Number.isFinite(entry.score))
+            .sort((a, b) => a.score - b.score);
+
+        if (scoresByCandidate.length === 0) return null;
+
+        const best = scoresByCandidate[0];
+        const second = scoresByCandidate[1];
+        const gap = second ? second.score - best.score : 1;
+
+        if (best.score > 2.6) return null;
+        if (gap < 0.22) return null;
+        return best.type;
+    };
+
+    const inferParametricScoreTypeFromRows = (rows: ExtractedRow[]): PayloadScoreType | null => {
+        const means = rows
+            .map((row) => parseSingleNumericCell(row.mean))
+            .filter((value): value is number => value !== null);
+        const sds = rows
+            .map((row) => parseSingleNumericCell(row.sd))
+            .filter((value): value is number => value !== null);
+        if (means.length === 0 || sds.length === 0) return null;
+
+        const meanCenter = median(means);
+        const sdCenter = median(sds);
+        const meanAvg = average(means);
+        const sdAvg = average(sds);
+
+        const scoredCandidates = (Object.entries(FIT_SCALE_TARGETS) as Array<[FitScaleType, { mean: number; sd: number }]>)
+            .map(([type, target]) => {
+                const centerPenalty = Math.abs(meanCenter - target.mean) / Math.max(1, target.sd);
+                const spreadPenalty = Math.abs(sdCenter - target.sd) / Math.max(1, target.sd);
+                const avgPenalty =
+                    Math.abs(meanAvg - target.mean) / Math.max(1, target.sd * 1.8) +
+                    Math.abs(sdAvg - target.sd) / Math.max(1, target.sd * 1.8);
+
+                const rowPenalty = rows.reduce((sum, row) => {
+                    const m = parseSingleNumericCell(row.mean);
+                    const s = parseSingleNumericCell(row.sd);
+                    if (m === null || s === null) return sum;
+                    return sum +
+                        Math.abs(m - target.mean) / Math.max(1, target.sd * 4) +
+                        Math.abs(s - target.sd) / Math.max(1, target.sd * 3);
+                }, 0) / Math.max(1, rows.length);
+
+                return {
+                    type: type as PayloadScoreType,
+                    score: centerPenalty + spreadPenalty + avgPenalty + rowPenalty,
+                };
+            })
+            .sort((a, b) => a.score - b.score);
+
+        if (scoredCandidates.length === 0) return null;
+
+        const best = scoredCandidates[0];
+        const second = scoredCandidates[1];
+        const gap = second ? second.score - best.score : 1;
+
+        if (best.score > 3.2) return null;
+        if (gap < 0.2) return null;
+        return best.type;
+    };
+
+    const normalizeScoreTypeToken = (value?: string | null): PayloadScoreType | null => {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return null;
+        if (raw === 'standard') return 'standard';
+        if (raw === 'scaled') return 'scaled';
+        if (raw === 'percentile') return 'percentile';
+        if (raw === 'sten') return 'sten';
+        if (raw === 'none') return 'none';
+        if (raw === 't-score' || raw === 't_score' || raw === 't score' || raw === 'tscore') return 't-score';
+        return null;
+    };
+
+    const resolveSubtestScoreType = (entry: CanonicalGroupedEntry): PayloadScoreType => {
+        const canonicalType = normalizeScoreTypeToken(entry.scoreType);
+        const inferredType = tableStructure === 'LOOKUP'
+            ? inferLookupScoreTypeFromRows(entry.rows)
+            : inferParametricScoreTypeFromRows(entry.rows);
+
+        if (canonicalType) return canonicalType;
+        if (inferredType) return inferredType;
+        return 'none';
     };
 
     const formatLabel = (rawLabel: string): string => {
@@ -1033,19 +1444,30 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return newRow;
         }
 
-        // Si Lookup : Calculs automatiques de cohérence
-        if ((triggerField === 'standard' && !isNaN(sVal)) || (!triggerField && !isNaN(sVal) && isNaN(zVal))) {
+        // Si Lookup : ne pas inférer automatiquement à l'import.
+        // L'auto-calcul ne se fait que lors d'une édition explicite.
+        if (!triggerField) return newRow;
+
+        if (triggerField === 'standard' && isIntervalLikeNumber(newRow.standard || '')) {
+            return newRow;
+        }
+        if (triggerField === 'percentile' && isIntervalLikeNumber(newRow.percentile || '')) {
+            return newRow;
+        }
+
+        // Si Lookup : Calculs automatiques de cohérence sur édition manuelle
+        if (triggerField === 'standard' && !isNaN(sVal)) {
             const type = sVal > 20 ? 'standard' : 'scaled';
             const res = calculateFromStandard(sVal, type);
             newRow.zScore = res.zScore.toString();
             newRow.percentile = res.percentile.toString();
         }
-        else if ((triggerField === 'zScore' && !isNaN(zVal)) || (!triggerField && !isNaN(zVal) && isNaN(sVal))) {
+        else if (triggerField === 'zScore' && !isNaN(zVal)) {
             const res = calculateFromZ(zVal, 'standard');
             newRow.percentile = res.percentile.toString();
             if (!newRow.standard) newRow.standard = res.standard;
         }
-        else if ((triggerField === 'percentile' && !isNaN(pVal)) || (!triggerField && !isNaN(pVal) && isNaN(zVal))) {
+        else if (triggerField === 'percentile' && !isNaN(pVal)) {
             const res = calculateFromPercentile(pVal, 'standard');
             newRow.zScore = res.zScore.toString();
             if (!newRow.standard) newRow.standard = res.standard;
@@ -1873,6 +2295,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return {
                 name: fallbackName,
                 abbreviation: sourceAbbr || null,
+                scoreType: null,
                 displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null, false),
                 isAmbiguous: false,
                 isHiddenInvalidAmbiguous: false,
@@ -1892,6 +2315,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return {
                 name: candidateName,
                 abbreviation: displayAbbr,
+                scoreType: candidate.scoreType || null,
                 displayName: formatSubtestDisplayName(candidateName, displayAbbr, isAmbiguous),
                 isAmbiguous,
                 isHiddenInvalidAmbiguous,
@@ -1911,6 +2335,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     return {
                         name: exactName,
                         abbreviation: exactAbbr || null,
+                        scoreType: exact.scoreType || null,
                         displayName: formatSubtestDisplayName(exactName, exactAbbr || null, isAmbiguous),
                         isAmbiguous,
                         isHiddenInvalidAmbiguous,
@@ -1930,6 +2355,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 return {
                     name: narrowedDisplayName,
                     abbreviation: narrowedAbbr || null,
+                    scoreType: narrowed.scoreType || null,
                     displayName: formatSubtestDisplayName(narrowedDisplayName, narrowedAbbr || null, isAmbiguous),
                     isAmbiguous,
                     isHiddenInvalidAmbiguous,
@@ -1941,6 +2367,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         return {
             name: fallbackName,
             abbreviation: sourceAbbr || null,
+            scoreType: null,
             displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null, false),
             isAmbiguous: false,
             isHiddenInvalidAmbiguous: false,
@@ -1950,8 +2377,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const VARIANT_PATTERN = /\(variante \d+\)$/;
     const unrenamedVariants = useMemo(() => {
-        return Array.from(new Set(currentRows.map((row) => row.subtest)))
-            .filter(name => VARIANT_PATTERN.test(name));
+        return Array.from(new Set<string>(currentRows.map((row) => String(row.subtest || '').trim())))
+            .filter((name) => !!name && VARIANT_PATTERN.test(name));
     }, [currentRows]);
     const hasUnrenamedVariants = unrenamedVariants.length > 0;
 
@@ -1969,10 +2396,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const existing = grouped.get(key);
             if (existing) {
                 existing.rows.push(row);
+                if (!existing.scoreType && resolved.scoreType) {
+                    existing.scoreType = resolved.scoreType;
+                }
             } else {
                 grouped.set(key, {
                     name: resolved.name,
                     abbreviation: resolved.abbreviation || null,
+                    scoreType: resolved.scoreType || null,
                     displayName: resolved.displayName,
                     rows: [row],
                 });
@@ -2008,20 +2439,50 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         setPages(prev => prev.map(page => withPageReview({ ...page, rows: updater(page.rows) })));
     };
 
+    const stripSourceColumnIsolation = (row: ExtractedRow): ExtractedRow => {
+        if (!row.source_column_key && !row.source_abbreviation) return row;
+        const next = { ...row };
+        delete next.source_column_key;
+        delete next.source_abbreviation;
+        return next;
+    };
+
+    const applyManualRenamesWithMerge = (rows: ExtractedRow[], renames: Record<string, string>): ExtractedRow[] => {
+        const sourceNamesByTarget = new Map<string, Set<string>>();
+        rows.forEach((row) => {
+            const sourceName = (row.subtest || '').trim();
+            const renamed = (renames[sourceName] ?? sourceName).trim();
+            if (!sourceName || !renamed) return;
+            if (!sourceNamesByTarget.has(renamed)) sourceNamesByTarget.set(renamed, new Set<string>());
+            sourceNamesByTarget.get(renamed)!.add(sourceName);
+        });
+
+        const mergeTargets = new Set(
+            Array.from(sourceNamesByTarget.entries())
+                .filter(([, sources]) => sources.size > 1)
+                .map(([target]) => target),
+        );
+
+        return rows.map((row) => {
+            const sourceName = (row.subtest || '').trim();
+            const renamed = (renames[sourceName] ?? sourceName).trim();
+            const renamedRow = renamed !== row.subtest ? { ...row, subtest: renamed } : row;
+            if (!mergeTargets.has(renamed)) return renamedRow;
+            return stripSourceColumnIsolation(renamedRow);
+        });
+    };
+
     /** Apply user-supplied renames from DisambiguationModal to all rows across all pages. */
     const handleDisambiguationConfirm = useCallback((renames: Record<string, string>) => {
         setPages(prev => prev.map(page => ({
             ...withPageReview({
                 ...page,
-                rows: page.rows.map(row => {
-                const newName = renames[row.subtest];
-                return newName ? { ...row, subtest: newName } : row;
-                }),
+                rows: applyManualRenamesWithMerge(page.rows, renames),
             }),
         })));
         setDuplicatedSids([]);
         setShowDisambiguationModal(false);
-        toast.success('Sous-tests renommés avec succès.');
+        toast.success('Sous-tests renommés/fusionnés avec succès.');
     }, [toast, withPageReview]);
 
     const handleValidateCurrentPage = () => {
@@ -2154,7 +2615,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     };
 
     const handleSubtestNameChange = (oldName: string, iName: string) => {
-        updateAllPagesRows(prev => prev.map(r => r.subtest === oldName ? { ...r, subtest: iName } : r));
+        const targetName = iName.trim();
+        if (!targetName) return;
+        updateAllPagesRows(prev => applyManualRenamesWithMerge(prev, { [oldName]: targetName }));
     };
 
     const handleAddRowToSubtest = (subtestName: string) => {
@@ -2261,8 +2724,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     ]);
 
     // --- HELPER: Build norm payload from an ExtractedRow ---
-    const buildNormPayload = (row: ExtractedRow) => {
+    const buildNormPayload = (row: ExtractedRow, scoreType?: PayloadScoreType) => {
         const mode: TableStructure = tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP';
+        let lookupScores = mode === 'LOOKUP'
+            ? normalizeLookupScoresForPayload(row)
+            : { standardScore: null as number | null, percentile: null as number | null };
+
+        if (mode === 'LOOKUP' && scoreType === 'percentile') {
+            if (lookupScores.percentile === null && lookupScores.standardScore !== null) {
+                lookupScores.percentile = mapDerivedStandardToPercentile(lookupScores.standardScore);
+            }
+            lookupScores.standardScore = null;
+        }
+
         // AGE: AI values first, JS fallback
         let ageMin = row.hidden_age_min;
         let ageMax = row.hidden_age_max;
@@ -2296,7 +2770,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 rawMin = row.hidden_raw_min;
                 rawMax = row.hidden_raw_max;
             } else {
-                const cleanRaw = row.raw.replace(',', '.').replace(/[^\d.-]/g, '');
+                const cleanRaw = normalizeDashChars(row.raw).replace(',', '.').replace(/[^\d.-]/g, '');
                 if (cleanRaw.includes('-')) {
                     const parts = cleanRaw.split('-');
                     rawMin = parseFloat(parts[0]);
@@ -2319,8 +2793,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             raw_max: rawMax,
             mean,
             sd,
-            standard_score: mode === 'LOOKUP' ? (parseFloat(row.standard) || null) : null,
-            percentile: mode === 'LOOKUP' ? (parseFloat(row.percentile) || null) : null
+            standard_score: mode === 'LOOKUP' ? lookupScores.standardScore : null,
+            percentile: mode === 'LOOKUP' ? lookupScores.percentile : null
         };
     };
 
@@ -2338,16 +2812,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             version: '1.0',
             structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
         },
-        subtests: canonicalGroupedEntries.map((entry) => ({
-            name: entry.name,
-            abbreviation: normalizeAbbreviation(entry.abbreviation) || null,
-            unit: 'pts',
-            score_type: 'scaled',
-            computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
-            input_model: 'numeric_4mode',
-            input_config: {},
-            norms: entry.rows.map(row => buildNormPayload(row))
-        }))
+        subtests: canonicalGroupedEntries.map((entry) => {
+            const scoreType = resolveSubtestScoreType(entry);
+            return {
+                name: entry.name,
+                abbreviation: normalizeAbbreviation(entry.abbreviation) || null,
+                unit: 'pts',
+                score_type: scoreType,
+                computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
+                input_model: scoreType === 'none' ? 'raw_only' : 'numeric_4mode',
+                input_config: {},
+                norms: entry.rows.map(row => buildNormPayload(row, scoreType))
+            };
+        })
     });
 
     // --- DETECT DUPLICATE & ASK USER (cross-scope fuzzy search) ---

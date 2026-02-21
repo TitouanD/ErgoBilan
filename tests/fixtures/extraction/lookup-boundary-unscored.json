@@ -1,0 +1,17 @@
+{
+  "pageId": "fixture-boundary",
+  "structure": "LOOKUP",
+  "rows": [
+    { "id": "b10", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "10", "standard": "", "zScore": "", "percentile": "", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 10, "hidden_raw_max": 10 },
+    { "id": "b9", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "9", "standard": "", "zScore": "", "percentile": "", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 9, "hidden_raw_max": 9 },
+    { "id": "b8", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "8", "standard": "", "zScore": "", "percentile": "", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 8, "hidden_raw_max": 8 },
+    { "id": "b7", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "7", "standard": "120", "zScore": "1.33", "percentile": "91", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 7, "hidden_raw_max": 7 },
+    { "id": "b6", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "6", "standard": "112", "zScore": "0.8", "percentile": "79", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 6, "hidden_raw_max": 6 },
+    { "id": "b5", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "5", "standard": "104", "zScore": "0.27", "percentile": "61", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 5, "hidden_raw_max": 5 },
+    { "id": "b4", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "4", "standard": "96", "zScore": "-0.27", "percentile": "39", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 4, "hidden_raw_max": 4 },
+    { "id": "b3", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "3", "standard": "88", "zScore": "-0.8", "percentile": "21", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 3, "hidden_raw_max": 3 },
+    { "id": "b2", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "2", "standard": "80", "zScore": "-1.33", "percentile": "9", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 2, "hidden_raw_max": 2 },
+    { "id": "b1", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "1", "standard": "70", "zScore": "-2", "percentile": "2", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 1, "hidden_raw_max": 1 },
+    { "id": "b0", "subtest": "Integration Visuo-Motrice", "label": "4;0 - 4;1", "raw": "0", "standard": "", "zScore": "", "percentile": "", "hidden_age_min": 48, "hidden_age_max": 49, "hidden_raw_min": 0, "hidden_raw_max": 0 }
+  ]
+}

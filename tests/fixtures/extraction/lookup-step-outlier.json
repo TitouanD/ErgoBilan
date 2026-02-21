@@ -1,0 +1,16 @@
+{
+  "pageId": "fixture-outlier",
+  "structure": "LOOKUP",
+  "rows": [
+    { "id": "o1", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "1", "standard": "70", "zScore": "-2", "percentile": "2", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 1, "hidden_raw_max": 1 },
+    { "id": "o2", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "2", "standard": "75", "zScore": "-1.67", "percentile": "5", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 2, "hidden_raw_max": 2 },
+    { "id": "o3", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "3", "standard": "80", "zScore": "-1.33", "percentile": "9", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 3, "hidden_raw_max": 3 },
+    { "id": "o4", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "4", "standard": "85", "zScore": "-1", "percentile": "16", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 4, "hidden_raw_max": 4 },
+    { "id": "o5", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "5", "standard": "90", "zScore": "-0.67", "percentile": "25", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 5, "hidden_raw_max": 5 },
+    { "id": "o6", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "6", "standard": "95", "zScore": "-0.33", "percentile": "37", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 6, "hidden_raw_max": 6 },
+    { "id": "o7", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "7", "standard": "130", "zScore": "2", "percentile": "98", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 7, "hidden_raw_max": 7 },
+    { "id": "o8", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "8", "standard": "133", "zScore": "2.2", "percentile": "99", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 8, "hidden_raw_max": 8 },
+    { "id": "o9", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "9", "standard": "136", "zScore": "2.4", "percentile": "99.5", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 9, "hidden_raw_max": 9 },
+    { "id": "o10", "subtest": "Coordination Motrice", "label": "4;8 - 4;11", "raw": "10", "standard": "139", "zScore": "2.6", "percentile": "99.8", "hidden_age_min": 56, "hidden_age_max": 59, "hidden_raw_min": 10, "hidden_raw_max": 10 }
+  ]
+}
