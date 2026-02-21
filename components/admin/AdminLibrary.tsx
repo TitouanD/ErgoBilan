@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
-import type { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord, SubtestDuplicatePair, NormDuplicateSummary, NormQualityFlag, DuplicatePair, MergeResult } from '../../types';
+import type { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord, SubtestDuplicatePair, NormDuplicateSummary, NormQualityFlag, DuplicatePair, MergeResult, FittingScoreType } from '../../types';
 import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle, Settings, Wrench, Database, ArrowRight } from 'lucide-react';
 import { normalizeSubtestName } from '../../utils';
 import { supabase } from '../../services/db';
@@ -18,6 +18,15 @@ interface NormDraft extends AdminNormRecord {
 
 interface Props {
   focusTestId?: string | null;
+  focusSubtestId?: string | null;
+  focusSuggestedScoreType?: FittingScoreType | null;
+  focusValueFixes?: Array<{
+    normId: string;
+    field: 'standard_score' | 'percentile' | 'mean' | 'sd';
+    value: number;
+    confidence: number;
+    reason: string;
+  }>;
   focusNonce?: number;
 }
 
@@ -60,7 +69,13 @@ const QUALITATIVE_5_BUCKETS_PRESET = {
   defaultMetric: 'raw',
 } as const;
 
-export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce = 0 }) => {
+export const AdminLibrary: React.FC<Props> = ({
+  focusTestId = null,
+  focusSubtestId = null,
+  focusSuggestedScoreType = null,
+  focusValueFixes = [],
+  focusNonce = 0,
+}) => {
   const toast = useToast();
   const [scope, setScope] = useState<'public' | 'private' | 'all'>('public');
   const [search, setSearch] = useState('');
@@ -97,6 +112,17 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
   const [dismissByTypeCode, setDismissByTypeCode] = useState('');
   const [isAnalyzingIssues, setIsAnalyzingIssues] = useState(false);
   const [issuesAnalyzedTestId, setIssuesAnalyzedTestId] = useState<string | null>(null);
+  const [focusedFittingPayload, setFocusedFittingPayload] = useState<{
+    subtestId: string | null;
+    suggestedScoreType: FittingScoreType | null;
+    valueFixes: Array<{
+      normId: string;
+      field: 'standard_score' | 'percentile' | 'mean' | 'sd';
+      value: number;
+      confidence: number;
+      reason: string;
+    }>;
+  } | null>(null);
   const [isDeletingAmbiguousWithoutNorms, setIsDeletingAmbiguousWithoutNorms] = useState(false);
 
   // Test-level dedup state
@@ -200,7 +226,7 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
     }
   };
 
-  const loadBundle = async (testId: string) => {
+  const loadBundle = async (testId: string, preferredSubtestId?: string | null) => {
     setBundle(null);
     setSelectedSubtestId(null);
     setIsDirty(false);
@@ -214,7 +240,10 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
       const subtests = (data.subtests || []) as SubtestDraft[];
       const norms = (data.norms || []) as NormDraft[];
       setBundle({ ...data, subtests, norms });
-      setSelectedSubtestId(subtests[0]?.id || null);
+      const preferred = preferredSubtestId && subtests.some((s) => s.id === preferredSubtestId)
+        ? preferredSubtestId
+        : null;
+      setSelectedSubtestId(preferred || subtests[0]?.id || null);
     } catch (e) {
       Logger.error('DB', 'Admin bundle load failed', e);
       toast.error('Impossible de charger le test.');
@@ -239,9 +268,14 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
 
   useEffect(() => {
     if (!focusTestId || focusNonce === 0) return;
+    setFocusedFittingPayload({
+      subtestId: focusSubtestId || null,
+      suggestedScoreType: focusSuggestedScoreType || null,
+      valueFixes: focusValueFixes || [],
+    });
     setSelectedTestId(focusTestId);
-    void loadBundle(focusTestId);
-  }, [focusTestId, focusNonce]);
+    void loadBundle(focusTestId, focusSubtestId || null);
+  }, [focusTestId, focusSubtestId, focusSuggestedScoreType, focusValueFixes, focusNonce]);
 
   useEffect(() => {
     if (!bundle) {
@@ -444,6 +478,49 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
     });
   };
 
+  const applyFocusedScoreTypeSuggestion = () => {
+    if (!activeSubtest || !focusedFittingPayload?.suggestedScoreType) return;
+    updateSubtestField(activeSubtest.id, 'score_type', focusedFittingPayload.suggestedScoreType);
+    toast.success(`Score type appliqué: ${focusedFittingPayload.suggestedScoreType}.`);
+  };
+
+  const applyFocusedValueFixes = (normIds?: string[]) => {
+    if (!focusedFittingPayload || focusedFittingPayload.valueFixes.length === 0) return;
+    const filtered = focusedFittingPayload.valueFixes.filter((fix) => (
+      !normIds || normIds.includes(fix.normId)
+    ));
+    if (filtered.length === 0) return;
+
+    setBundle((prev) => {
+      if (!prev) return prev;
+      const fixesMap = new Map<string, Array<typeof filtered[number]>>();
+      filtered.forEach((fix) => {
+        const current = fixesMap.get(fix.normId) || [];
+        current.push(fix);
+        fixesMap.set(fix.normId, current);
+      });
+
+      const nextNorms = prev.norms.map((norm) => {
+        const key = (norm.id || (norm as NormDraft).temp_id) as string;
+        const fixes = fixesMap.get(key);
+        if (!fixes || fixes.length === 0) return norm;
+        let next = { ...norm };
+        fixes.forEach((fix) => {
+          if (fix.field === 'standard_score') next.standard_score = fix.value;
+          if (fix.field === 'percentile') next.percentile = fix.value;
+          if (fix.field === 'mean') next.mean = fix.value;
+          if (fix.field === 'sd') next.sd = fix.value;
+        });
+        return next;
+      });
+
+      setIsDirty(true);
+      return { ...prev, norms: nextNorms };
+    });
+
+    toast.success(`${filtered.length} correction(s) de valeurs appliquée(s).`);
+  };
+
   const sanitizeBundle = (raw: AdminTestBundle): AdminTestBundle => {
     const test = {
       id: raw.test.id,
@@ -549,6 +626,32 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
   const subtestNorms = bundle?.norms.filter(n => n.subtest_id === selectedSubtestId) || [];
   const pendingNormsForSubtest = subtestNorms.filter(n => n.organization_id);
   const publicNormsForSubtest = subtestNorms.filter(n => !n.organization_id);
+  const focusedSubtestSuggestions = useMemo(() => {
+    if (!activeSubtest || !focusedFittingPayload) return null;
+    if (focusedFittingPayload.subtestId !== activeSubtest.id) return null;
+    const valueFixes = focusedFittingPayload.valueFixes.filter((fix) => (
+      subtestNorms.some((norm) => norm.id === fix.normId)
+    ));
+    return {
+      suggestedScoreType: focusedFittingPayload.suggestedScoreType,
+      valueFixes,
+    };
+  }, [activeSubtest, focusedFittingPayload, subtestNorms]);
+  const focusedValueFixesByNormId = useMemo(() => {
+    const map = new Map<string, Array<{ field: 'standard_score' | 'percentile' | 'mean' | 'sd'; value: number; confidence: number; reason: string }>>();
+    if (!focusedSubtestSuggestions) return map;
+    focusedSubtestSuggestions.valueFixes.forEach((fix) => {
+      const current = map.get(fix.normId) || [];
+      current.push({
+        field: fix.field,
+        value: fix.value,
+        confidence: fix.confidence,
+        reason: fix.reason,
+      });
+      map.set(fix.normId, current);
+    });
+    return map;
+  }, [focusedSubtestSuggestions]);
 
   // Pending norms count per subtest (for badges)
   const pendingNormCounts = useMemo(() => {
@@ -962,6 +1065,7 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
               key={t.id}
               onClick={() => {
                 if (isDirty && !confirm('Modifications non sauvegardées. Continuer ?')) return;
+                setFocusedFittingPayload(null);
                 setSelectedTestId(t.id);
                 loadBundle(t.id);
               }}
@@ -1244,6 +1348,42 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                     </div>
                   ) : (
                     <>
+                      {focusedSubtestSuggestions && (
+                        <div className="mb-3 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-lg px-3 py-2 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-[10px] uppercase font-bold text-fuchsia-300">Suggestion fitting</div>
+                              <div className="text-xs text-stone-200 mt-0.5">
+                                {focusedSubtestSuggestions.suggestedScoreType
+                                  ? `Score type recommandé: ${focusedSubtestSuggestions.suggestedScoreType}`
+                                  : 'Pas de score type recommandé'}
+                                {focusedSubtestSuggestions.valueFixes.length > 0 && (
+                                  <span className="text-stone-400"> · {focusedSubtestSuggestions.valueFixes.length} correction(s) de valeurs proposées</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {focusedSubtestSuggestions.suggestedScoreType && focusedSubtestSuggestions.suggestedScoreType !== (activeSubtest.score_type || 'none') && (
+                                <button
+                                  onClick={applyFocusedScoreTypeSuggestion}
+                                  className="text-[10px] font-bold text-fuchsia-200 hover:text-white bg-fuchsia-500/20 px-2 py-1 rounded"
+                                >
+                                  Appliquer score_type
+                                </button>
+                              )}
+                              {focusedSubtestSuggestions.valueFixes.length > 0 && (
+                                <button
+                                  onClick={() => applyFocusedValueFixes()}
+                                  className="text-[10px] font-bold text-fuchsia-200 hover:text-white bg-fuchsia-500/20 px-2 py-1 rounded"
+                                >
+                                  Appliquer toutes les valeurs
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-12 gap-4 mb-4">
                         <div className="col-span-6">
                           <label className="text-[10px] font-bold text-stone-500 uppercase">Nom</label>
@@ -1381,6 +1521,7 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                           <tbody>
                             {subtestNorms.map((n, idx) => {
                               const key = (n.id || (n as NormDraft).temp_id || String(idx)) as string;
+                              const normFixes = n.id ? (focusedValueFixesByNormId.get(n.id) || []) : [];
                               return (
                                 <tr key={key} className="border-t border-white/5">
                                   <td className="p-1 text-center" title={n.organization_id ? `Org: ${n.organization_id}` : 'Publique'}>
@@ -1402,6 +1543,15 @@ export const AdminLibrary: React.FC<Props> = ({ focusTestId = null, focusNonce =
                                   <td className="p-1"><input value={n.standard_score ?? ''} onChange={(e) => updateNormField(key, 'standard_score', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
                                   <td className="p-1"><input value={n.percentile ?? ''} onChange={(e) => updateNormField(key, 'percentile', e.target.value)} className="w-16 bg-white/5 border border-white/10 rounded px-2 py-1" /></td>
                                   <td className="p-1 text-right">
+                                    {normFixes.length > 0 && (
+                                      <button
+                                        onClick={() => applyFocusedValueFixes([n.id as string])}
+                                        className="text-[9px] text-fuchsia-300 hover:text-fuchsia-100 mr-2"
+                                        title={normFixes.map((fix) => `${fix.field}=${fix.value} (${Math.round(fix.confidence * 100)}%)`).join(' · ')}
+                                      >
+                                        Appliquer
+                                      </button>
+                                    )}
                                     <button onClick={() => deleteNorm(key)} className="text-rose-400 hover:text-rose-300">
                                       <Trash2 size={12} />
                                     </button>

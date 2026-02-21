@@ -5,9 +5,11 @@ import { ClinicalInsights } from './ClinicalInsights';
 import { OpsMonitoring } from './OpsMonitoring';
 import { AdminLibrary } from './AdminLibrary';
 import { AdminIssuesBoard } from './AdminIssuesBoard';
+import { AdminNormQualityBoard } from './AdminNormQualityBoard';
 import { AdminUsers } from './AdminUsers';
-import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, ClipboardList, Users2 } from 'lucide-react';
+import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, ClipboardList, Users2, FlaskConical } from 'lucide-react';
 import { Logger } from '../../utils/logger';
+import type { FittingScoreType } from '../../types';
 
 interface Props {
   userProfile: UserProfile;
@@ -15,8 +17,20 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'catalogue' | 'issues' | 'users' | 'insights' | 'ops'>('catalogue');
-  const [catalogFocus, setCatalogFocus] = useState<{ testId: string; nonce: number } | null>(null);
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'issues' | 'norm_quality' | 'users' | 'insights' | 'ops'>('catalogue');
+  const [catalogFocus, setCatalogFocus] = useState<{
+    testId: string;
+    subtestId?: string | null;
+    suggestedScoreType?: FittingScoreType | null;
+    valueFixes?: Array<{
+      normId: string;
+      field: 'standard_score' | 'percentile' | 'mean' | 'sd';
+      value: number;
+      confidence: number;
+      reason: string;
+    }>;
+    nonce: number;
+  } | null>(null);
   const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
 
@@ -83,6 +97,12 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
             <ClipboardList size={18} /> Issues Globales
           </button>
           <button
+            onClick={() => setActiveTab('norm_quality')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'norm_quality' ? 'bg-fuchsia-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'}`}
+          >
+            <FlaskConical size={18} /> Qualité Normes
+          </button>
+          <button
             onClick={() => setActiveTab('users')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'}`}
           >
@@ -118,6 +138,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
           <h2 className="font-bold text-white text-lg">
             {activeTab === 'catalogue' && "Catalogue Officiel"}
             {activeTab === 'issues' && "Backlog Global des Issues"}
+            {activeTab === 'norm_quality' && "Audit Fitting Global des Normes"}
             {activeTab === 'users' && "Gestion Utilisateurs & Abonnements"}
             {activeTab === 'insights' && "Analyse Statistique & Normative"}
             {activeTab === 'ops' && "Supervision Technique & IA"}
@@ -131,11 +152,33 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-0 bg-[#1A1C23]">
-          {activeTab === 'catalogue' && <AdminLibrary focusTestId={catalogFocus?.testId || null} focusNonce={catalogFocus?.nonce || 0} />}
+          {activeTab === 'catalogue' && (
+            <AdminLibrary
+              focusTestId={catalogFocus?.testId || null}
+              focusSubtestId={catalogFocus?.subtestId || null}
+              focusSuggestedScoreType={catalogFocus?.suggestedScoreType || null}
+              focusValueFixes={catalogFocus?.valueFixes || []}
+              focusNonce={catalogFocus?.nonce || 0}
+            />
+          )}
           {activeTab === 'issues' && (
             <AdminIssuesBoard
               onOpenTest={(testId) => {
                 setCatalogFocus({ testId, nonce: Date.now() });
+                setActiveTab('catalogue');
+              }}
+            />
+          )}
+          {activeTab === 'norm_quality' && (
+            <AdminNormQualityBoard
+              onOpenInCatalog={(payload) => {
+                setCatalogFocus({
+                  testId: payload.testId,
+                  subtestId: payload.subtestId || null,
+                  suggestedScoreType: payload.suggestedScoreType || null,
+                  valueFixes: payload.valueFixes || [],
+                  nonce: Date.now(),
+                });
                 setActiveTab('catalogue');
               }}
             />

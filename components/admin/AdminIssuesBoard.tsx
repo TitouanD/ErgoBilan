@@ -4,6 +4,7 @@ import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import type { AdminIssueBacklogItem } from '../../types';
+import { analyzeAdminNormFittingDataset, buildFittingIssueCountByTest } from '../../utils/adminNormFittingAudit';
 
 interface Props {
   onOpenTest: (testId: string) => void;
@@ -16,11 +17,19 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
   const [scope, setScope] = useState<'all' | 'public' | 'private'>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [dedupingTestId, setDedupingTestId] = useState<string | null>(null);
+  const [fittingIssueCountByTest, setFittingIssueCountByTest] = useState<Map<string, number>>(new Map());
 
   const loadIssues = async () => {
     setIsLoading(true);
     try {
-      const rows = await AdminService.listIssueBacklog();
+      const [rows, dataset, overrides] = await Promise.all([
+        AdminService.listIssueBacklog(),
+        AdminService.listNormFittingDataset({ scope: 'all' }),
+        AdminService.listNormFittingIssueOverrides(),
+      ]);
+      const dismissedKeys = new Set(overrides.filter((row) => row.dismissed).map((row) => row.issue_key));
+      const fittingAudits = analyzeAdminNormFittingDataset(dataset, dismissedKeys);
+      setFittingIssueCountByTest(buildFittingIssueCountByTest(fittingAudits));
       setIssues(rows);
     } catch (e) {
       Logger.error('DB', 'Failed to load global issues backlog', e);
@@ -41,30 +50,37 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
       if (scope === 'private' && row.organization_id === null) return false;
       if (!q) return true;
       return row.test_name.toLowerCase().includes(q) || row.test_id.toLowerCase().includes(q);
+    }).sort((a, b) => {
+      const totalA = (a.total_issues || 0) + (fittingIssueCountByTest.get(a.test_id) || 0);
+      const totalB = (b.total_issues || 0) + (fittingIssueCountByTest.get(b.test_id) || 0);
+      if (totalB !== totalA) return totalB - totalA;
+      return a.test_name.localeCompare(b.test_name);
     });
-  }, [issues, scope, search]);
+  }, [fittingIssueCountByTest, issues, scope, search]);
 
   const summary = useMemo(() => (
     visibleIssues.reduce((acc, row) => {
+      const fitting = fittingIssueCountByTest.get(row.test_id) || 0;
       acc.tests += 1;
-      acc.total += row.total_issues || 0;
+      acc.total += (row.total_issues || 0) + fitting;
       acc.missingTags += row.missing_ambiguous_tags || 0;
       acc.dupSubtests += row.duplicate_subtest_excess || 0;
       acc.dupNorms += row.duplicate_norm_excess || 0;
       acc.quality += row.quality_flag_count || 0;
+      acc.fitting += fitting;
       return acc;
-    }, { tests: 0, total: 0, missingTags: 0, dupSubtests: 0, dupNorms: 0, quality: 0 })
-  ), [visibleIssues]);
+    }, { tests: 0, total: 0, missingTags: 0, dupSubtests: 0, dupNorms: 0, quality: 0, fitting: 0 })
+  ), [fittingIssueCountByTest, visibleIssues]);
 
   const handleDeduplicateNorms = async (testId: string) => {
     setDedupingTestId(testId);
     try {
       const result = await AdminService.deduplicateNorms({ testId });
-      toast.success(`${result.deleted} norme(s) dédupliquée(s).`);
+      toast.success(`${result.deleted} norme(s) dedupliquee(s).`);
       await loadIssues();
     } catch (e) {
       Logger.error('DB', 'Global deduplicate norms failed', e);
-      toast.error('Erreur pendant la déduplication.');
+      toast.error('Erreur pendant la deduplication.');
     } finally {
       setDedupingTestId(null);
     }
@@ -79,7 +95,7 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
               <ShieldAlert size={16} className="text-amber-400" /> Backlog global des issues
             </h3>
             <p className="text-[11px] text-stone-500 mt-1">
-              Vue cross-tests: tags manquants, doublons et qualité des normes.
+              Vue cross-tests: tags manquants, doublons, qualite des normes et fitting.
             </p>
           </div>
           <button
@@ -92,7 +108,7 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-6 gap-2">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-7 gap-2">
           <div className="bg-white/5 border border-white/10 rounded-lg p-2">
             <div className="text-[10px] uppercase text-stone-500 font-bold">Tests</div>
             <div className="text-lg text-white font-bold">{summary.tests}</div>
@@ -114,8 +130,12 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
             <div className="text-lg text-white font-bold">{summary.dupNorms}</div>
           </div>
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
-            <div className="text-[10px] uppercase text-amber-300 font-bold">Qualité</div>
+            <div className="text-[10px] uppercase text-amber-300 font-bold">Qualite</div>
             <div className="text-lg text-white font-bold">{summary.quality}</div>
+          </div>
+          <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-2">
+            <div className="text-[10px] uppercase text-fuchsia-300 font-bold">Fitting</div>
+            <div className="text-lg text-white font-bold">{summary.fitting}</div>
           </div>
         </div>
       </div>
@@ -141,7 +161,7 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
                   : 'bg-white/5 text-stone-400 border-white/10 hover:text-white'
               }`}
             >
-              {value === 'all' ? 'Tous' : value === 'public' ? 'Public' : 'Privé'}
+              {value === 'all' ? 'Tous' : value === 'public' ? 'Public' : 'Prive'}
             </button>
           ))}
         </div>
@@ -155,53 +175,59 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
                 <th className="text-right px-3 py-2">Tags</th>
                 <th className="text-right px-3 py-2">Dup ST</th>
                 <th className="text-right px-3 py-2">Dup Normes</th>
-                <th className="text-right px-3 py-2">Qualité</th>
+                <th className="text-right px-3 py-2">Qualite</th>
+                <th className="text-right px-3 py-2">Fitting</th>
                 <th className="text-right px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {visibleIssues.map((row) => (
-                <tr key={row.test_id} className="border-t border-white/5">
-                  <td className="px-3 py-2">
-                    <div className="font-bold text-white">{row.test_name}</div>
-                    <div className="text-[10px] text-stone-500 flex items-center gap-2">
-                      <span>{row.test_id}</span>
-                      <span className={`px-1.5 py-0.5 rounded ${row.organization_id ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
-                        {row.organization_id ? 'privé' : 'public'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right text-white font-bold">{row.total_issues}</td>
-                  <td className="px-3 py-2 text-right text-rose-300">{row.missing_ambiguous_tags}</td>
-                  <td className="px-3 py-2 text-right text-violet-300">{row.duplicate_subtest_excess}</td>
-                  <td className="px-3 py-2 text-right text-emerald-300">{row.duplicate_norm_excess}</td>
-                  <td className="px-3 py-2 text-right text-amber-300">{row.quality_flag_count}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {row.duplicate_norm_excess > 0 && (
+              {visibleIssues.map((row) => {
+                const fittingCount = fittingIssueCountByTest.get(row.test_id) || 0;
+                const totalIssues = (row.total_issues || 0) + fittingCount;
+                return (
+                  <tr key={row.test_id} className="border-t border-white/5">
+                    <td className="px-3 py-2">
+                      <div className="font-bold text-white">{row.test_name}</div>
+                      <div className="text-[10px] text-stone-500 flex items-center gap-2">
+                        <span>{row.test_id}</span>
+                        <span className={`px-1.5 py-0.5 rounded ${row.organization_id ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
+                          {row.organization_id ? 'prive' : 'public'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right text-white font-bold">{totalIssues}</td>
+                    <td className="px-3 py-2 text-right text-rose-300">{row.missing_ambiguous_tags}</td>
+                    <td className="px-3 py-2 text-right text-violet-300">{row.duplicate_subtest_excess}</td>
+                    <td className="px-3 py-2 text-right text-emerald-300">{row.duplicate_norm_excess}</td>
+                    <td className="px-3 py-2 text-right text-amber-300">{row.quality_flag_count}</td>
+                    <td className="px-3 py-2 text-right text-fuchsia-300">{fittingCount}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {row.duplicate_norm_excess > 0 && (
+                          <button
+                            onClick={() => void handleDeduplicateNorms(row.test_id)}
+                            disabled={dedupingTestId === row.test_id}
+                            className="text-[10px] text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 px-2 py-1 rounded disabled:opacity-50 flex items-center gap-1"
+                          >
+                            {dedupingTestId === row.test_id ? <Loader2 size={10} className="animate-spin" /> : <Wrench size={10} />}
+                            Dedupliquer
+                          </button>
+                        )}
                         <button
-                          onClick={() => void handleDeduplicateNorms(row.test_id)}
-                          disabled={dedupingTestId === row.test_id}
-                          className="text-[10px] text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 px-2 py-1 rounded disabled:opacity-50 flex items-center gap-1"
+                          onClick={() => onOpenTest(row.test_id)}
+                          className="text-[10px] text-amber-300 hover:text-amber-200 bg-amber-500/10 px-2 py-1 rounded flex items-center gap-1"
                         >
-                          {dedupingTestId === row.test_id ? <Loader2 size={10} className="animate-spin" /> : <Wrench size={10} />}
-                          Dédupliquer
+                          Ouvrir <ArrowRight size={10} />
                         </button>
-                      )}
-                      <button
-                        onClick={() => onOpenTest(row.test_id)}
-                        className="text-[10px] text-amber-300 hover:text-amber-200 bg-amber-500/10 px-2 py-1 rounded flex items-center gap-1"
-                      >
-                        Ouvrir <ArrowRight size={10} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!isLoading && visibleIssues.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-12 text-center text-stone-500">
+                  <td colSpan={8} className="px-3 py-12 text-center text-stone-500">
                     <AlertTriangle size={18} className="mx-auto mb-2 opacity-60" />
                     Aucune issue pour ce filtre.
                   </td>

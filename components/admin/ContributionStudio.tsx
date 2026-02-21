@@ -1,7 +1,7 @@
 ﻿
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock, AlertTriangle, CircleOff, RotateCcw, ListChecks } from 'lucide-react';
-import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch, ReviewFlag, ReviewFlagCounts } from '../../types';
+import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch, ReviewFlag, ReviewFlagCounts, FittingRow, FittingScoreType } from '../../types';
 import { callExtractionTask } from '../../services/extractionProxy';
 import { fileToGenerativePart, dataUrlToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
@@ -15,6 +15,7 @@ import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
 import { DisambiguationModal } from './DisambiguationModal';
 import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
+import { inferScoreTypeForLookup, inferScoreTypeForParametric, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
 import {
     buildConditionalSubtestDisplayName,
     buildSubtestDisplayMetaMap,
@@ -1104,297 +1105,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         return null;
     };
 
-    type PayloadScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
-    type FitScaleType = Exclude<PayloadScoreType, 'percentile' | 'none'>;
-
-    type LookupFitCandidate = {
-        type: PayloadScoreType;
-        mean?: number;
-        sd?: number;
-        softMin?: number;
-        softMax?: number;
-        hardMin?: number;
-        hardMax?: number;
-    };
-
-    const FIT_SCALE_TARGETS: Record<FitScaleType, { mean: number; sd: number }> = {
-        standard: { mean: 100, sd: 15 },
-        scaled: { mean: 10, sd: 3 },
-        't-score': { mean: 50, sd: 10 },
-        sten: { mean: 5.5, sd: 2 },
-    };
-
-    const LOOKUP_FIT_CANDIDATES: LookupFitCandidate[] = [
-        { type: 'percentile' },
-        { type: 'sten', ...FIT_SCALE_TARGETS.sten, softMin: 1, softMax: 10, hardMin: 0, hardMax: 12 },
-        { type: 'scaled', ...FIT_SCALE_TARGETS.scaled, softMin: 1, softMax: 19, hardMin: 0, hardMax: 30 },
-        { type: 't-score', ...FIT_SCALE_TARGETS['t-score'], softMin: 20, softMax: 80, hardMin: 10, hardMax: 90 },
-        { type: 'standard', ...FIT_SCALE_TARGETS.standard, softMin: 55, softMax: 145, hardMin: 20, hardMax: 200 },
-    ];
-
-    const average = (values: number[]): number => (
-        values.reduce((sum, value) => sum + value, 0) / values.length
+    const toFittingRows = (rows: ExtractedRow[]): FittingRow[] => (
+        rows.map((row) => {
+            const lookup = normalizeLookupScoresForPayload(row);
+            return {
+                seriesKey: `${row.hidden_age_min ?? 'na'}|${row.hidden_age_max ?? 'na'}|${row.label || row.source_column_key || 'default'}`,
+                rawText: row.raw,
+                rawMin: typeof row.hidden_raw_min === 'number' ? row.hidden_raw_min : null,
+                rawMax: typeof row.hidden_raw_max === 'number' ? row.hidden_raw_max : null,
+                standardScore: lookup.standardScore,
+                percentile: lookup.percentile,
+                mean: parseSingleNumericCell(row.mean),
+                sd: parseSingleNumericCell(row.sd),
+            };
+        })
     );
 
-    const median = (values: number[]): number => {
-        if (values.length === 0) return NaN;
-        const sorted = [...values].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 === 0
-            ? (sorted[mid - 1] + sorted[mid]) / 2
-            : sorted[mid];
-    };
-
-    const sampleStdDev = (values: number[]): number => {
-        if (values.length < 2) return 0;
-        const mu = average(values);
-        const variance = values.reduce((sum, value) => sum + (value - mu) ** 2, 0) / (values.length - 1);
-        return Math.sqrt(Math.max(variance, 0));
-    };
-
-    const parseRawOrderingValue = (row: ExtractedRow): number | null => {
-        if (typeof row.hidden_raw_min === 'number' && Number.isFinite(row.hidden_raw_min)) {
-            return row.hidden_raw_min;
-        }
-
-        const raw = normalizeDashChars(String(row.raw || '')).trim().replace(',', '.');
-        if (!raw) return null;
-
-        const ltMatch = raw.match(/^<\s*(-?\d+(?:\.\d+)?)$/);
-        if (ltMatch) return Number(ltMatch[1]) - 0.5;
-
-        const gtMatch = raw.match(/^>\s*(-?\d+(?:\.\d+)?)$/);
-        if (gtMatch) return Number(gtMatch[1]) + 0.5;
-
-        const plusMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*\+$/);
-        if (plusMatch) return Number(plusMatch[1]) + 0.5;
-
-        const rangeMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)$/);
-        if (rangeMatch) return Number(rangeMatch[1]);
-
-        return parseSingleNumericCell(raw);
-    };
-
-    const softRangePenalty = (
-        value: number,
-        softMin: number,
-        softMax: number,
-        hardMin: number,
-        hardMax: number
-    ): number => {
-        if (value < hardMin) {
-            return 6 + (hardMin - value) / Math.max(1, softMin - hardMin);
-        }
-        if (value > hardMax) {
-            return 6 + (value - hardMax) / Math.max(1, hardMax - softMax);
-        }
-        if (value < softMin) {
-            return (softMin - value) / Math.max(1, softMin - hardMin);
-        }
-        if (value > softMax) {
-            return (value - softMax) / Math.max(1, hardMax - softMax);
-        }
-        return 0;
-    };
-
-    const monotonicPenalty = (
-        points: Array<{ order: number; metric: number }>,
-        tolerance: number,
-        normalization: number
-    ): number => {
-        if (points.length < 3) return 0;
-        const sorted = [...points].sort((a, b) => a.order - b.order);
-
-        // Some LOOKUP tables are "higher raw = better", others are "higher raw = worse"
-        // (e.g. error counts). Evaluate both directions and keep the best fit.
-        const computeDirectionalPenalty = (direction: 'increasing' | 'decreasing'): number => {
-            const sign = direction === 'increasing' ? 1 : -1;
-            let penalty = 0;
-            for (let i = 1; i < sorted.length; i += 1) {
-                const delta = sign * (sorted[i].metric - sorted[i - 1].metric);
-                if (delta < -tolerance) {
-                    penalty += Math.abs(delta) / Math.max(0.1, normalization);
-                }
-            }
-            return penalty / (sorted.length - 1);
-        };
-
-        return Math.min(
-            computeDirectionalPenalty('increasing'),
-            computeDirectionalPenalty('decreasing'),
-        );
-    };
-
-    const inferLookupScoreTypeFromRows = (rows: ExtractedRow[]): PayloadScoreType | null => {
-        const normalized = rows.map((row) => {
-            const scores = normalizeLookupScoresForPayload(row);
-            const derivedPercentile = scores.standardScore === null
-                ? null
-                : mapDerivedStandardToPercentile(scores.standardScore);
-            return {
-                standardScore: scores.standardScore,
-                percentile: scores.percentile,
-                derivedPercentile,
-                rawOrder: parseRawOrderingValue(row),
-            };
-        });
-
-        const standards = normalized
-            .map((item) => item.standardScore)
-            .filter((value): value is number => value !== null);
-        const percentiles = normalized
-            .map((item) => item.percentile)
-            .filter((value): value is number => value !== null);
-
-        if (standards.length === 0) {
-            return percentiles.length > 0 ? 'percentile' : null;
-        }
-
-        const scoresByCandidate = LOOKUP_FIT_CANDIDATES.map((candidate) => {
-            let score = 0;
-
-            if (candidate.type === 'percentile') {
-                const derivedCount = normalized.filter((item) => item.derivedPercentile !== null).length;
-                const unmappedStandards = standards.length - derivedCount;
-
-                if (percentiles.length === 0 && derivedCount === 0) {
-                    score += 8;
-                }
-                if (standards.length > 0) {
-                    score += (unmappedStandards / standards.length) * 3.5;
-                }
-
-                const monotonicPoints = normalized
-                    .filter((item): item is { rawOrder: number; percentile: number | null; derivedPercentile: number | null; standardScore: number | null } =>
-                        item.rawOrder !== null)
-                    .map((item) => ({
-                        order: item.rawOrder,
-                        metric: item.percentile ?? item.derivedPercentile,
-                    }))
-                    .filter((item): item is { order: number; metric: number } => item.metric !== null);
-                score += monotonicPenalty(monotonicPoints, 0.5, 12);
-            } else {
-                const { mean, sd, softMin, softMax, hardMin, hardMax } = candidate;
-                if (
-                    mean === undefined || sd === undefined ||
-                    softMin === undefined || softMax === undefined ||
-                    hardMin === undefined || hardMax === undefined
-                ) {
-                    return { type: candidate.type, score: Number.POSITIVE_INFINITY };
-                }
-
-                const rangePenalty = standards
-                    .map((value) => softRangePenalty(value, softMin, softMax, hardMin, hardMax))
-                    .reduce((sum, value) => sum + value, 0) / standards.length;
-                score += rangePenalty;
-
-                const meanObserved = average(standards);
-                const sdObserved = sampleStdDev(standards);
-                score += Math.abs(meanObserved - mean) / Math.max(1, sd * 2.5);
-                if (sdObserved > 0) {
-                    score += Math.abs(sdObserved - sd) / Math.max(1, sd * 2.5);
-                }
-
-                const percentilePairs = normalized
-                    .filter((item): item is { standardScore: number; percentile: number; rawOrder: number | null; derivedPercentile: number | null } =>
-                        item.standardScore !== null && item.percentile !== null);
-                if (percentilePairs.length > 0) {
-                    const mae = average(percentilePairs.map((pair) => {
-                        const predicted = zScoreToPercentile((pair.standardScore - mean) / sd);
-                        return Math.abs(predicted - pair.percentile);
-                    }));
-                    score += mae / 12;
-                }
-
-                const monotonicPoints = normalized
-                    .filter((item): item is { rawOrder: number; standardScore: number; percentile: number | null; derivedPercentile: number | null } =>
-                        item.rawOrder !== null && item.standardScore !== null)
-                    .map((item) => ({ order: item.rawOrder, metric: item.standardScore }));
-                score += monotonicPenalty(monotonicPoints, 0.25, Math.max(1, sd));
-            }
-
-            return { type: candidate.type, score };
-        })
-            .filter((entry) => Number.isFinite(entry.score))
-            .sort((a, b) => a.score - b.score);
-
-        if (scoresByCandidate.length === 0) return null;
-
-        const best = scoresByCandidate[0];
-        const second = scoresByCandidate[1];
-        const gap = second ? second.score - best.score : 1;
-
-        if (best.score > 2.6) return null;
-        if (gap < 0.22) return null;
-        return best.type;
-    };
-
-    const inferParametricScoreTypeFromRows = (rows: ExtractedRow[]): PayloadScoreType | null => {
-        const means = rows
-            .map((row) => parseSingleNumericCell(row.mean))
-            .filter((value): value is number => value !== null);
-        const sds = rows
-            .map((row) => parseSingleNumericCell(row.sd))
-            .filter((value): value is number => value !== null);
-        if (means.length === 0 || sds.length === 0) return null;
-
-        const meanCenter = median(means);
-        const sdCenter = median(sds);
-        const meanAvg = average(means);
-        const sdAvg = average(sds);
-
-        const scoredCandidates = (Object.entries(FIT_SCALE_TARGETS) as Array<[FitScaleType, { mean: number; sd: number }]>)
-            .map(([type, target]) => {
-                const centerPenalty = Math.abs(meanCenter - target.mean) / Math.max(1, target.sd);
-                const spreadPenalty = Math.abs(sdCenter - target.sd) / Math.max(1, target.sd);
-                const avgPenalty =
-                    Math.abs(meanAvg - target.mean) / Math.max(1, target.sd * 1.8) +
-                    Math.abs(sdAvg - target.sd) / Math.max(1, target.sd * 1.8);
-
-                const rowPenalty = rows.reduce((sum, row) => {
-                    const m = parseSingleNumericCell(row.mean);
-                    const s = parseSingleNumericCell(row.sd);
-                    if (m === null || s === null) return sum;
-                    return sum +
-                        Math.abs(m - target.mean) / Math.max(1, target.sd * 4) +
-                        Math.abs(s - target.sd) / Math.max(1, target.sd * 3);
-                }, 0) / Math.max(1, rows.length);
-
-                return {
-                    type: type as PayloadScoreType,
-                    score: centerPenalty + spreadPenalty + avgPenalty + rowPenalty,
-                };
-            })
-            .sort((a, b) => a.score - b.score);
-
-        if (scoredCandidates.length === 0) return null;
-
-        const best = scoredCandidates[0];
-        const second = scoredCandidates[1];
-        const gap = second ? second.score - best.score : 1;
-
-        if (best.score > 3.2) return null;
-        if (gap < 0.2) return null;
-        return best.type;
-    };
-
-    const normalizeScoreTypeToken = (value?: string | null): PayloadScoreType | null => {
-        const raw = String(value || '').trim().toLowerCase();
-        if (!raw) return null;
-        if (raw === 'standard') return 'standard';
-        if (raw === 'scaled') return 'scaled';
-        if (raw === 'percentile') return 'percentile';
-        if (raw === 'sten') return 'sten';
-        if (raw === 'none') return 'none';
-        if (raw === 't-score' || raw === 't_score' || raw === 't score' || raw === 'tscore') return 't-score';
-        return null;
-    };
-
-    const resolveSubtestScoreType = (entry: CanonicalGroupedEntry): PayloadScoreType => {
+    const resolveSubtestScoreType = (entry: CanonicalGroupedEntry): FittingScoreType => {
         const canonicalType = normalizeScoreTypeToken(entry.scoreType);
+        const fittingRows = toFittingRows(entry.rows);
         const inferredType = tableStructure === 'LOOKUP'
-            ? inferLookupScoreTypeFromRows(entry.rows)
-            : inferParametricScoreTypeFromRows(entry.rows);
+            ? inferScoreTypeForLookup(fittingRows).scoreType
+            : inferScoreTypeForParametric(fittingRows).scoreType;
 
         if (canonicalType) return canonicalType;
         if (inferredType) return inferredType;
@@ -2724,7 +2456,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     ]);
 
     // --- HELPER: Build norm payload from an ExtractedRow ---
-    const buildNormPayload = (row: ExtractedRow, scoreType?: PayloadScoreType) => {
+    const buildNormPayload = (row: ExtractedRow, scoreType?: FittingScoreType) => {
         const mode: TableStructure = tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP';
         let lookupScores = mode === 'LOOKUP'
             ? normalizeLookupScoresForPayload(row)

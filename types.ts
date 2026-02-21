@@ -636,6 +636,108 @@ export interface NormQualityFlag {
     details: string;
 }
 
+export type FittingScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+export type FittingStructure = 'LOOKUP' | 'PARAMETRIC';
+export type FittingIssueSeverity = 'blocking' | 'warning' | 'info';
+export type FittingSuggestionKind = 'score_type' | 'value_fix';
+export type FittingIssueCode =
+    | 'FIT_SCORE_TYPE_MISMATCH'
+    | 'FIT_LOW_CONFIDENCE'
+    | 'FIT_LOOKUP_NON_MONOTONIC'
+    | 'FIT_LOOKUP_STEP_OUTLIER'
+    | 'FIT_LOOKUP_VALUE_INCONSISTENT'
+    | 'FIT_LOOKUP_VALUE_OUT_OF_RANGE'
+    | 'FIT_PARAMETRIC_MEAN_SD_DRIFT';
+
+export interface FittingRow {
+    normId?: string | null;
+    seriesKey?: string | null;
+    rawText?: string | null;
+    rawMin?: number | null;
+    rawMax?: number | null;
+    standardScore?: number | null;
+    percentile?: number | null;
+    mean?: number | null;
+    sd?: number | null;
+}
+
+export interface FittingIssue {
+    id: string;
+    code: FittingIssueCode;
+    severity: FittingIssueSeverity;
+    message: string;
+    confidence: number;
+    normId?: string | null;
+}
+
+export interface FittingSuggestion {
+    id: string;
+    kind: FittingSuggestionKind;
+    confidence: number;
+    reason: string;
+    scoreType?: FittingScoreType;
+    normId?: string | null;
+    field?: 'standard_score' | 'percentile' | 'mean' | 'sd';
+    value?: number;
+}
+
+export interface FittingResult {
+    structure: FittingStructure;
+    currentScoreType: FittingScoreType;
+    suggestedScoreType: FittingScoreType | null;
+    confidence: number;
+    riskScore: number;
+    issues: FittingIssue[];
+    suggestions: FittingSuggestion[];
+}
+
+export interface AdminNormFittingDatasetRow {
+    test_id: string;
+    test_name: string;
+    organization_id: string | null;
+    subtest_id: string;
+    subtest_name: string;
+    score_type: string | null;
+    computation_mode: string | null;
+    norm_id: string;
+    age_min_months: number | null;
+    age_max_months: number | null;
+    gender: string | null;
+    raw_min: number | null;
+    raw_max: number | null;
+    mean: number | null;
+    sd: number | null;
+    standard_score: number | null;
+    percentile: number | null;
+}
+
+export interface AdminNormFittingIssueOverride {
+    issue_key: string;
+    test_id: string;
+    subtest_id: string;
+    issue_code: string;
+    dismissed: boolean;
+    reason: string | null;
+    dismissed_by: string | null;
+    dismissed_at: string;
+    updated_at: string;
+}
+
+export interface AdminNormFittingSubtestAudit {
+    testId: string;
+    testName: string;
+    organizationId: string | null;
+    subtestId: string;
+    subtestName: string;
+    structure: FittingStructure;
+    currentScoreType: FittingScoreType;
+    suggestedScoreType: FittingScoreType | null;
+    confidence: number;
+    riskScore: number;
+    issues: FittingIssue[];
+    suggestions: FittingSuggestion[];
+}
+
 /** Aggregated cross-test issue backlog row */
 export interface AdminIssueBacklogItem {
     test_id: string;

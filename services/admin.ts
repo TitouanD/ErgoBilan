@@ -17,7 +17,9 @@ import type {
     AdminIssueBacklogItem,
     AdminUserRow,
     AdminUserUpdatePayload,
-    InsightQualityAlert
+    InsightQualityAlert,
+    AdminNormFittingDatasetRow,
+    AdminNormFittingIssueOverride
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -524,6 +526,54 @@ export const AdminService = {
         });
         if (error) throw error;
         return data as { ok: boolean; norm_id: string; flag_code: string; dismissed: boolean };
+    },
+
+    // --- NORM FITTING AUDIT ---
+
+    listNormFittingDataset: async (params?: {
+        scope?: 'all' | 'public' | 'private';
+        testId?: string | null;
+        subtestId?: string | null;
+    }): Promise<AdminNormFittingDatasetRow[]> => {
+        const { data, error } = await supabase.rpc('admin_list_norm_fitting_dataset', {
+            p_scope: params?.scope || 'all',
+            p_test_id: params?.testId ?? null,
+            p_subtest_id: params?.subtestId ?? null,
+        });
+        if (error) throw error;
+        return (data || []) as AdminNormFittingDatasetRow[];
+    },
+
+    listNormFittingIssueOverrides: async (params?: {
+        testId?: string | null;
+        subtestId?: string | null;
+    }): Promise<AdminNormFittingIssueOverride[]> => {
+        const { data, error } = await supabase.rpc('admin_list_norm_fitting_issue_overrides', {
+            p_test_id: params?.testId ?? null,
+            p_subtest_id: params?.subtestId ?? null,
+        });
+        if (error) throw error;
+        return (data || []) as AdminNormFittingIssueOverride[];
+    },
+
+    setNormFittingIssueDismissed: async (params: {
+        issueKey: string;
+        testId: string;
+        subtestId: string;
+        issueCode: string;
+        dismissed: boolean;
+        reason?: string | null;
+    }) => {
+        const { data, error } = await supabase.rpc('admin_set_norm_fitting_issue_dismissed', {
+            p_issue_key: params.issueKey,
+            p_test_id: params.testId,
+            p_subtest_id: params.subtestId,
+            p_issue_code: params.issueCode,
+            p_dismissed: params.dismissed,
+            p_reason: params.reason ?? null,
+        });
+        if (error) throw error;
+        return data as { ok: boolean; issue_key: string; dismissed: boolean };
     },
 
     // --- MODULE C : Télémétrie Passive & Anonyme ---
