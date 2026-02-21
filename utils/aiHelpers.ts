@@ -81,6 +81,35 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
 };
 
 /**
+ * Convert a data URL (stored page preview) to a Gemini-compatible generative part.
+ * Used when source File objects are no longer available (restored draft flow).
+ */
+export const dataUrlToGenerativePart = (dataUrl: string): { inlineData: { data: string; mimeType: string } } => {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    throw new Error('INVALID_DATA_URL');
+  }
+
+  const commaIndex = dataUrl.indexOf(',');
+  if (commaIndex <= 0) {
+    throw new Error('INVALID_DATA_URL');
+  }
+
+  const header = dataUrl.slice(0, commaIndex);
+  const payload = dataUrl.slice(commaIndex + 1);
+  const mimeMatch = header.match(/^data:([^;]+);base64$/i);
+  if (!mimeMatch || !payload) {
+    throw new Error('INVALID_DATA_URL');
+  }
+
+  return {
+    inlineData: {
+      data: payload,
+      mimeType: mimeMatch[1],
+    },
+  };
+};
+
+/**
  * Cleans and parses JSON returned by an LLM, including markdown code blocks.
  */
 export const cleanAndParseJson = (text: string | undefined): unknown => {

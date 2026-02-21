@@ -44,8 +44,46 @@ const subtestBucketKey = (row: ExtractedRow): string => {
   return `${row.subtest}::${sourceKey}`;
 };
 
-const hasLookupValue = (row: ExtractedRow): boolean => {
-  return [row.raw, row.standard, row.percentile, row.zScore].some((value) => cleanText(value).length > 0);
+const hasLookupRawValue = (row: ExtractedRow): boolean => cleanText(row.raw).length > 0;
+const hasLookupScoreValue = (row: ExtractedRow): boolean => {
+  return [row.standard, row.percentile, row.zScore].some((value) => cleanText(value).length > 0);
+};
+
+const hasLookupScoredRow = (row: ExtractedRow): boolean => {
+  return hasLookupRawValue(row) && hasLookupScoreValue(row);
+};
+
+const parseRawBoundsFromText = (rawValue: string): { min: number; max: number } | null => {
+  const trimmed = cleanText(rawValue);
+  if (!trimmed) return null;
+
+  const normalizedRange = trimmed.replace(/[\u2013\u2014]/g, '-');
+  const rangeMatch = normalizedRange.match(/(-?\d+(?:[.,]\d+)?)\s*-\s*(-?\d+(?:[.,]\d+)?)/);
+  if (rangeMatch) {
+    const min = toFiniteNumber(rangeMatch[1]);
+    const max = toFiniteNumber(rangeMatch[2]);
+    if (min === null || max === null) return null;
+    if (min > max) return { min: max, max: min };
+    return { min, max };
+  }
+
+  const single = toFiniteNumber(trimmed);
+  if (single === null) return null;
+  return { min: single, max: single };
+};
+
+const getRawBounds = (row: ExtractedRow): { min: number; max: number } | null => {
+  const hiddenMin = row.hidden_raw_min;
+  const hiddenMax = row.hidden_raw_max;
+  if (typeof hiddenMin === 'number' && typeof hiddenMax === 'number' && Number.isFinite(hiddenMin) && Number.isFinite(hiddenMax)) {
+    return hiddenMin <= hiddenMax ? { min: hiddenMin, max: hiddenMax } : { min: hiddenMax, max: hiddenMin };
+  }
+  return parseRawBoundsFromText(row.raw);
+};
+
+const expectedZFromStandard = (standard: number): number => {
+  if (standard > 20) return (standard - 100) / 15;
+  return (standard - 10) / 3;
 };
 
 const hasParametricValue = (row: ExtractedRow): boolean => {
@@ -143,9 +181,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
   const flags: ReviewFlag[] = [];
 
   const shouldCheckAges = (row: ExtractedRow): boolean => {
-    if (structure === 'LOOKUP') return hasLookupValue(row);
+    if (structure === 'LOOKUP') return hasLookupScoredRow(row);
     if (structure === 'PARAMETRIC') return hasParametricValue(row);
-    return hasLookupValue(row) || hasParametricValue(row);
+    return hasLookupScoredRow(row) || hasParametricValue(row);
   };
 
   rows.forEach((row) => {
@@ -237,14 +275,15 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
   }
 
   rows.forEach((row) => {
-    if (!hasLookupValue(row)) return;
     const rawValue = cleanText(row.raw);
-    const standardValue = cleanText(row.standard);
-    if (!rawValue || !standardValue) {
+    const hasScoreValue = hasLookupScoreValue(row);
+    if (!rawValue && !hasScoreValue) return;
+    if (rawValue && !hasScoreValue) return;
+    if (!rawValue || !hasScoreValue) {
       flags.push(makeFlag({
         code: 'LOOKUP_REQUIRED_FIELD_MISSING',
         severity: 'blocking',
-        message: `Ligne LOOKUP incomplète (Brut et NS requis) pour "${row.subtest}" (${cleanGroupLabel(row)}).`,
+        message: `Ligne LOOKUP incomplète (Brut + score standardise requis) pour "${row.subtest}" (${cleanGroupLabel(row)}).`,
         subtest: row.subtest,
         groupLabel: cleanGroupLabel(row),
         rowId: row.id,
@@ -268,8 +307,24 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       }
     }
 
+    const standardNumeric = toFiniteNumber(cleanText(row.standard));
     const zValue = toFiniteNumber(cleanText(row.zScore));
     const percentileValue = toFiniteNumber(percentileRaw);
+    if (standardNumeric !== null && zValue !== null) {
+      const expectedZ = expectedZFromStandard(standardNumeric);
+      if (Math.abs(expectedZ - zValue) >= 0.5) {
+        flags.push(makeFlag({
+          code: 'LOOKUP_STANDARD_Z_INCONSISTENT',
+          severity: 'warning',
+          message: `Incoherence NS/Z pour "${row.subtest}" (${cleanGroupLabel(row)}): NS ${row.standard} -> Z attendu ~${expectedZ.toFixed(2)}, recu ${row.zScore}.`,
+          subtest: row.subtest,
+          groupLabel: cleanGroupLabel(row),
+          rowId: row.id,
+          confidence: 0.95,
+        }));
+      }
+    }
+
     if (zValue !== null && percentileValue !== null && !isIntervalLike(percentileRaw) && !collapsedFlagRowIds.has(row.id)) {
       const expectedPercentile = zScoreToPercentile(zValue);
       if (Math.abs(expectedPercentile - percentileValue) >= 5) {
@@ -286,9 +341,84 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     }
   });
 
+  const lookupBuckets = new Map<string, ExtractedRow[]>();
+  rows.forEach((row) => {
+    if (!hasLookupScoredRow(row)) return;
+    const key = `${subtestBucketKey(row)}::${cleanGroupLabel(row)}`;
+    if (!lookupBuckets.has(key)) lookupBuckets.set(key, []);
+    lookupBuckets.get(key)!.push(row);
+  });
+
+  for (const bucketRows of lookupBuckets.values()) {
+    const orderedRows = bucketRows
+      .map((row) => {
+        const bounds = getRawBounds(row);
+        if (!bounds) return null;
+        return {
+          row,
+          rawMin: bounds.min,
+          rawMax: bounds.max,
+          standard: toFiniteNumber(cleanText(row.standard)),
+          percentile: toFiniteNumber(cleanText(row.percentile)),
+        };
+      })
+      .filter((entry): entry is {
+        row: ExtractedRow;
+        rawMin: number;
+        rawMax: number;
+        standard: number | null;
+        percentile: number | null;
+      } => !!entry)
+      .sort((a, b) => {
+        if (a.rawMin !== b.rawMin) return a.rawMin - b.rawMin;
+        return a.rawMax - b.rawMax;
+      });
+
+    for (let i = 1; i < orderedRows.length; i += 1) {
+      const prev = orderedRows[i - 1];
+      const curr = orderedRows[i];
+
+      if (curr.rawMin < prev.rawMax) {
+        flags.push(makeFlag({
+          code: 'LOOKUP_RAW_RANGE_OVERLAP',
+          severity: 'warning',
+          message: `Chevauchement de plages brutes pour "${curr.row.subtest}" (${cleanGroupLabel(curr.row)}): ${prev.rawMin}-${prev.rawMax} puis ${curr.rawMin}-${curr.rawMax}.`,
+          subtest: curr.row.subtest,
+          groupLabel: cleanGroupLabel(curr.row),
+          rowId: curr.row.id,
+          confidence: 0.92,
+        }));
+      }
+
+      if (prev.standard !== null && curr.standard !== null && curr.standard + 0.5 < prev.standard) {
+        flags.push(makeFlag({
+          code: 'LOOKUP_STANDARD_NON_MONOTONIC',
+          severity: 'warning',
+          message: `NS non monotone pour "${curr.row.subtest}" (${cleanGroupLabel(curr.row)}): ${prev.standard} -> ${curr.standard} alors que le brut augmente.`,
+          subtest: curr.row.subtest,
+          groupLabel: cleanGroupLabel(curr.row),
+          rowId: curr.row.id,
+          confidence: 0.95,
+        }));
+      }
+
+      if (prev.percentile !== null && curr.percentile !== null && curr.percentile + 1 < prev.percentile) {
+        flags.push(makeFlag({
+          code: 'LOOKUP_PERCENTILE_NON_MONOTONIC',
+          severity: 'warning',
+          message: `Percentile non monotone pour "${curr.row.subtest}" (${cleanGroupLabel(curr.row)}): ${prev.percentile} -> ${curr.percentile} alors que le brut augmente.`,
+          subtest: curr.row.subtest,
+          groupLabel: cleanGroupLabel(curr.row),
+          rowId: curr.row.id,
+          confidence: 0.93,
+        }));
+      }
+    }
+  }
+
   const groupCounts = new Map<string, Map<string, { subtest: string; count: number }>>();
   rows.forEach((row) => {
-    if (!hasLookupValue(row)) return;
+    if (!hasLookupRawValue(row)) return;
     const groupLabel = cleanGroupLabel(row);
     if (!groupCounts.has(groupLabel)) {
       groupCounts.set(groupLabel, new Map<string, { subtest: string; count: number }>());

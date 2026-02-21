@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { X, Upload, FileText, Check, ArrowLeft, ShieldAlert, ZoomIn, ZoomOut, Save, Layers, Camera, Database, Sparkles, Trash2, Plus, Calculator, Table as TableIcon, Loader2, ArrowRight, Scale, BookOpen, Scan, Link2, Globe, Lock, AlertTriangle, CircleOff, RotateCcw, ListChecks } from 'lucide-react';
 import type { Contribution, ExtractedRow, AIExtractionResult, AIExtractedTable, AIExtractedNormRow, SimilarTestMatch, ReviewFlag, ReviewFlagCounts } from '../../types';
 import { callExtractionTask } from '../../services/extractionProxy';
-import { fileToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
+import { fileToGenerativePart, dataUrlToGenerativePart, cleanAndParseJson, expandCompactKeys } from '../../utils/aiHelpers';
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
 import { AdminService } from '../../services/admin';
@@ -206,9 +206,11 @@ const parseAgeFromFilename = (filename: string): { min: number; max: number } | 
 
 type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
 type PageStatus = 'pending' | 'validated' | 'rejected';
+type RepairMode = 'auto' | 'manual';
 type ExtractionPage = {
     id: string;
     fileIndex: number;
+    sourceFilename?: string;
     rows: ExtractedRow[];
     status: PageStatus;
     detectedStructure: TableStructure;
@@ -216,6 +218,9 @@ type ExtractionPage = {
     flags: ReviewFlag[];
     flagCounts: ReviewFlagCounts;
     previewDataUrl?: string;
+    repairAttemptsUsed: number;
+    repairBudgetMax: number;
+    autoRepairApplied: boolean;
 };
 
 type CategoryOption = {
@@ -270,6 +275,45 @@ const withSourceColumnSuffix = (name: string, columnIndex: number | null): strin
     return `${name} - Colonne ${columnIndex}`;
 };
 
+const normalizeAgeQualifierToken = (value?: string | null): string => (
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+        .trim()
+);
+
+const isLikelyAgeQualifier = (value?: string | null): boolean => {
+    const token = normalizeAgeQualifierToken(value);
+    if (!token) return false;
+
+    if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+        return true;
+    }
+
+    if (/\b(?:CP|CE1|CE2|CM1|CM2|6E|5E|4E|3E|2NDE|2DE|1ERE|1RE|TERMINALE|TLE)\b/.test(token)) {
+        return true;
+    }
+
+    if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) {
+        return true;
+    }
+
+    return false;
+};
+
+const stripAgeLikeTrailingQualifier = (name: string): { baseName: string; strippedQualifier?: string } => {
+    const parsed = splitTrailingTag(name);
+    if (!parsed.trailingTag || !isLikelyAgeQualifier(parsed.trailingTag)) {
+        return { baseName: name.trim() };
+    }
+    return {
+        baseName: parsed.baseName.trim() || name.trim(),
+        strippedQualifier: parsed.trailingTag.trim(),
+    };
+};
+
 const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): string => (
     `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
 );
@@ -280,6 +324,8 @@ const DRAFT_IMAGES_KEY = 'contrib_studio_draft_images_v1';
 const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_DRAFT_IMAGE_BYTES = 1 * 1024 * 1024;
 const MAX_DRAFT_IMAGES_TOTAL_BYTES = 6 * 1024 * 1024;
+const PAGE_REPAIR_BUDGET_MAX = 1;
+const AUTO_REPAIR_MISMATCH_THRESHOLD = 3;
 
 interface ContribDraftV2 {
     version: 2;
@@ -291,7 +337,12 @@ interface ContribDraftV2 {
     savedAt: string;
 }
 
-type LegacyExtractionPage = Omit<ExtractionPage, 'status' | 'flags' | 'flagCounts'> & { validated?: boolean };
+type LegacyExtractionPage = Omit<ExtractionPage, 'status' | 'flags' | 'flagCounts' | 'repairAttemptsUsed' | 'repairBudgetMax' | 'autoRepairApplied'> & {
+    validated?: boolean;
+    repairAttemptsUsed?: number;
+    repairBudgetMax?: number;
+    autoRepairApplied?: boolean;
+};
 type LegacyContribDraft = Omit<ContribDraftV2, 'version' | 'pages' | 'imagesByPage'> & {
     pages: LegacyExtractionPage[];
 };
@@ -327,10 +378,14 @@ const migrateLegacyPage = (page: LegacyExtractionPage): ExtractionPage => {
     const status: PageStatus = page.validated ? 'validated' : 'pending';
     return {
         ...page,
+        sourceFilename: page.sourceFilename,
         status,
         flags: [],
         flagCounts: EMPTY_FLAG_COUNTS,
         rejectionReason: undefined,
+        repairAttemptsUsed: typeof page.repairAttemptsUsed === 'number' ? page.repairAttemptsUsed : 0,
+        repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : PAGE_REPAIR_BUDGET_MAX,
+        autoRepairApplied: page.autoRepairApplied === true,
     };
 };
 
@@ -359,6 +414,9 @@ const loadDraft = (): ContribDraftV2 | null => {
                     status: page.status || 'pending',
                     flags: Array.isArray(page.flags) ? page.flags : [],
                     flagCounts: page.flagCounts || EMPTY_FLAG_COUNTS,
+                    repairAttemptsUsed: typeof page.repairAttemptsUsed === 'number' ? page.repairAttemptsUsed : 0,
+                    repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : PAGE_REPAIR_BUDGET_MAX,
+                    autoRepairApplied: page.autoRepairApplied === true,
                 })),
                 imagesByPage: maybeV2.imagesByPage || {},
                 savedAt: maybeV2.savedAt,
@@ -498,6 +556,10 @@ const reDisambiguateByAbbreviation = (pages: ExtractionPage[]): void => {
     pages.forEach(page => {
         page.rows.forEach(row => {
             const normalizedAbbr = normalizeAbbreviation(row.source_abbreviation);
+            if (isLikelyAgeQualifier(normalizedAbbr)) {
+                row.source_abbreviation = undefined;
+                return;
+            }
             if (!normalizedAbbr) return;
             row.source_abbreviation = normalizedAbbr;
             if (!subtestAbbrMap.has(row.subtest)) subtestAbbrMap.set(row.subtest, new Set());
@@ -531,6 +593,7 @@ const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
     const subtestSourceKeys = new Map<string, Set<string>>();
     pages.forEach((page) => {
         page.rows.forEach((row) => {
+            if (isLikelyAgeQualifier(row.source_abbreviation)) return;
             const sourceKey = (row.source_column_key || '').trim();
             if (!sourceKey) return;
             const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
@@ -555,6 +618,7 @@ const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
 
     pages.forEach((page) => {
         page.rows.forEach((row) => {
+            if (isLikelyAgeQualifier(row.source_abbreviation)) return;
             const sourceKey = (row.source_column_key || '').trim();
             if (!sourceKey) return;
             const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
@@ -609,6 +673,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
     const [showFlaggedOnly, setShowFlaggedOnly] = useState(true);
     const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+    const [isRepairingPage, setIsRepairingPage] = useState(false);
 
     const toast = useToast();
 
@@ -1022,18 +1087,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     // --- PROCESSING FUNCTION (now uses dedicated extract-norms edge function with restored prompts) ---
 
-    const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
-        const imagePart = await fileToGenerativePart(file);
-        const filename = file.name;
-
-        const response = await callExtractionTask({
-            filename,
-            imagePart,
-            knownSubtestNames: knownSubtestNames || [],
-            canonicalSubtestNames: canonicalNameInventory,
-        });
-
-        const expandedData = expandCompactKeys(cleanAndParseJson(response.text));
+    const buildRowsFromExtractionText = (responseText: string | null, filename: string) => {
+        const expandedData = expandCompactKeys(cleanAndParseJson(responseText || undefined));
         const extractedData = expandedData as AIExtractionResult | null;
         const flatRows: ExtractedRow[] = [];
         const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
@@ -1049,43 +1104,63 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
         const duplicatedBaseNames: string[] = [];
         if (extractedData && Array.isArray(extractedData.tables)) {
+            const normalizedTables = extractedData.tables.map((table: AIExtractedTable) => {
+                const rawSid = (table.subtest_id || extractedData?.test_context || "Global").trim();
+                const normalizedSidFromTag = stripAgeLikeTrailingQualifier(rawSid);
+                const normalizedSid = normalizedSidFromTag.baseName || rawSid || "Global";
+                const rawSourceAbbr = String(table.source_abbreviation || '').trim();
+                const sourceAbbrIsAgeLike = isLikelyAgeQualifier(rawSourceAbbr);
+                const strippedSidIsAgeLike = !!normalizedSidFromTag.strippedQualifier;
+                const normalizedSourceAbbr = sourceAbbrIsAgeLike ? undefined : (rawSourceAbbr || undefined);
+                const shouldKeepSourceColumnKey = !sourceAbbrIsAgeLike && !strippedSidIsAgeLike;
+                return {
+                    table,
+                    normalizedSid,
+                    normalizedSourceAbbr,
+                    shouldKeepSourceColumnKey,
+                };
+            });
+
             // --- DETECT DUPLICATE subtest_ids across tables ---
             const sidCounts = new Map<string, number>();
-            extractedData.tables.forEach((table: AIExtractedTable) => {
-                const sid = table.subtest_id || extractedData?.test_context || "Global";
-                sidCounts.set(sid, (sidCounts.get(sid) || 0) + 1);
+            normalizedTables.forEach((entry) => {
+                if (!entry.shouldKeepSourceColumnKey) return;
+                sidCounts.set(entry.normalizedSid, (sidCounts.get(entry.normalizedSid) || 0) + 1);
             });
 
             // Pre-collect abbreviations per sid: if every duplicate table for a given
             // sid carries a unique source_abbreviation, use it instead of "(variante N)".
             const sidAbbrSets = new Map<string, Set<string>>();
-            extractedData.tables.forEach((table: AIExtractedTable) => {
-                const sid = table.subtest_id || extractedData?.test_context || "Global";
-                if (table.source_abbreviation) {
-                    if (!sidAbbrSets.has(sid)) sidAbbrSets.set(sid, new Set());
-                    sidAbbrSets.get(sid)!.add(table.source_abbreviation);
-                }
+            normalizedTables.forEach((entry) => {
+                if (!entry.shouldKeepSourceColumnKey || !entry.normalizedSourceAbbr) return;
+                if (!sidAbbrSets.has(entry.normalizedSid)) sidAbbrSets.set(entry.normalizedSid, new Set());
+                sidAbbrSets.get(entry.normalizedSid)!.add(entry.normalizedSourceAbbr);
             });
             const canUseAbbrNaming = (sid: string): boolean => {
+                const count = sidCounts.get(sid) || 0;
+                if (count <= 1) return false;
                 const abbrs = sidAbbrSets.get(sid);
-                return !!abbrs && abbrs.size === (sidCounts.get(sid) || 0);
+                return !!abbrs && abbrs.size === count;
             };
 
             const sidCounters = new Map<string, number>();
             const sourceColumnOrdinals = new Map<string, number>();
 
-            extractedData.tables.forEach((table: AIExtractedTable) => {
-                const originalSid = table.subtest_id || extractedData?.test_context || "Global";
-                const sourceAbbr = normalizeAbbreviation(table.source_abbreviation) || 'NOABBR';
-                const sourceOrdinal = (sourceColumnOrdinals.get(originalSid) || 0) + 1;
-                sourceColumnOrdinals.set(originalSid, sourceOrdinal);
-                const sourceColumnKey = `${originalSid}::${sourceAbbr}::${sourceOrdinal}`;
+            normalizedTables.forEach(({ table, normalizedSid, normalizedSourceAbbr, shouldKeepSourceColumnKey }) => {
+                const originalSid = normalizedSid || extractedData?.test_context || "Global";
+                let sourceColumnKey: string | undefined;
+                if (shouldKeepSourceColumnKey) {
+                    const sourceAbbr = normalizeAbbreviation(normalizedSourceAbbr) || 'NOABBR';
+                    const sourceOrdinal = (sourceColumnOrdinals.get(originalSid) || 0) + 1;
+                    sourceColumnOrdinals.set(originalSid, sourceOrdinal);
+                    sourceColumnKey = `${originalSid}::${sourceAbbr}::${sourceOrdinal}`;
+                }
                 let effectiveSid = originalSid;
-                if ((sidCounts.get(originalSid) || 0) > 1) {
+                if (shouldKeepSourceColumnKey && (sidCounts.get(originalSid) || 0) > 1) {
                     const counter = (sidCounters.get(originalSid) || 0) + 1;
                     sidCounters.set(originalSid, counter);
-                    if (canUseAbbrNaming(originalSid) && table.source_abbreviation) {
-                        effectiveSid = `${originalSid} (${table.source_abbreviation})`;
+                    if (canUseAbbrNaming(originalSid) && normalizedSourceAbbr) {
+                        effectiveSid = `${originalSid} (${normalizedSourceAbbr})`;
                     } else {
                         effectiveSid = `${originalSid} (variante ${counter})`;
                     }
@@ -1115,7 +1190,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             hidden_group_label: parsedGroupAge?.classLabel || undefined,
 
                             // Preserve original column abbreviation for disambiguation UI
-                            source_abbreviation: table.source_abbreviation || undefined,
+                            source_abbreviation: normalizedSourceAbbr,
                             // Stable source column id to prevent accidental frontend fusion
                             source_column_key: sourceColumnKey,
                         };
@@ -1141,6 +1216,247 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             testContext: extractedData?.test_context || '',
             duplicatedSids: duplicatedBaseNames
         };
+    };
+
+    const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
+        const imagePart = await fileToGenerativePart(file);
+        const filename = file.name;
+
+        const response = await callExtractionTask({
+            filename,
+            imagePart,
+            knownSubtestNames: knownSubtestNames || [],
+            canonicalSubtestNames: canonicalNameInventory,
+        });
+
+        return buildRowsFromExtractionText(response.text, filename);
+    };
+
+    const parseExpectedCountFromFlag = (flag: ReviewFlag): number | null => {
+        const match = (flag.message || '').match(/au lieu de\s+(\d+)/i);
+        if (!match) return null;
+        const value = parseInt(match[1], 10);
+        return Number.isFinite(value) ? value : null;
+    };
+
+    const buildRepairSubtestKey = (name: string, sourceAbbreviation?: string | null): string => {
+        const parsed = splitSubtestDisplayName(name);
+        const base = stripSourceColumnSuffix(parsed.baseName || name).trim();
+        const normalizedName = normalizeSubtestName(base);
+        const rawAbbr = normalizeAbbreviation(sourceAbbreviation || parsed.abbreviation);
+        const normalizedAbbr = isLikelyAgeQualifier(rawAbbr) ? '' : rawAbbr;
+        return `${normalizedName || base.toLowerCase()}::${normalizedAbbr || 'NOABBR'}`;
+    };
+
+    const buildPageRepairPayload = (page: ExtractionPage) => {
+        const mismatchFlags = page.flags.filter((flag) => flag.code === 'GROUP_ROW_COUNT_MISMATCH');
+        if (mismatchFlags.length === 0) return null;
+
+        const bySubtest = new Map<string, ExtractedRow[]>();
+        page.rows.forEach((row) => {
+            const list = bySubtest.get(row.subtest) || [];
+            list.push(row);
+            bySubtest.set(row.subtest, list);
+        });
+
+        const targetSubtests = Array.from(new Set(mismatchFlags.map((flag) => flag.subtest).filter(Boolean)));
+        const focusSubtests = targetSubtests.map((subtest) => {
+            const rows = bySubtest.get(subtest) || [];
+            const rawSourceAbbreviation = normalizeAbbreviation(rows[0]?.source_abbreviation);
+            const sourceAbbreviation = isLikelyAgeQualifier(rawSourceAbbreviation) ? '' : rawSourceAbbreviation;
+            const parsed = splitSubtestDisplayName(subtest);
+            const baseName = stripSourceColumnSuffix(parsed.baseName || subtest).trim();
+            const rawFallbackAbbr = normalizeAbbreviation(parsed.abbreviation);
+            const fallbackAbbr = isLikelyAgeQualifier(rawFallbackAbbr) ? '' : rawFallbackAbbr;
+            return {
+                name: baseName || subtest,
+                abbreviation: sourceAbbreviation || fallbackAbbr || null,
+            };
+        });
+
+        const expectedByGroup = new Map<string, number>();
+        mismatchFlags.forEach((flag) => {
+            const expected = parseExpectedCountFromFlag(flag);
+            if (!expected) return;
+            const key = (flag.groupLabel || '').trim() || 'Sans groupe';
+            const current = expectedByGroup.get(key) || 0;
+            if (expected > current) expectedByGroup.set(key, expected);
+        });
+        const expectedGroupCounts = Array.from(expectedByGroup.entries()).map(([groupLabel, expectedCount]) => ({
+            groupLabel,
+            expectedCount,
+        }));
+
+        const existingSubtests = Array.from(new Set(page.rows.map((row) => row.subtest).filter(Boolean)));
+        const includeNeighborColumns = targetSubtests.length / Math.max(existingSubtests.length, 1) >= 0.5;
+
+        return {
+            mismatchCount: mismatchFlags.length,
+            focusSubtests,
+            expectedGroupCounts,
+            includeNeighborColumns,
+            existingSubtests,
+        };
+    };
+
+    const resolveImagePartForPage = async (page: ExtractionPage, fileOverride?: File) => {
+        if (fileOverride) {
+            return fileToGenerativePart(fileOverride);
+        }
+        const sourceFile = files[page.fileIndex];
+        if (sourceFile) {
+            return fileToGenerativePart(sourceFile);
+        }
+        if (page.previewDataUrl) {
+            return dataUrlToGenerativePart(page.previewDataUrl);
+        }
+        throw new Error('Aucune image disponible pour relancer cette page.');
+    };
+
+    const mergeRepairedRowsForTargets = (
+        existingRows: ExtractedRow[],
+        repairedRows: ExtractedRow[],
+        targetSubtests: Array<{ name: string; abbreviation?: string | null }>,
+        includeNeighborColumns: boolean,
+    ): ExtractedRow[] => {
+        const targetKeys = new Set(
+            targetSubtests.map((target) => buildRepairSubtestKey(target.name, target.abbreviation || null)),
+        );
+
+        const existingByKey = new Map<string, ExtractedRow[]>();
+        existingRows.forEach((row) => {
+            const key = buildRepairSubtestKey(row.subtest, row.source_abbreviation);
+            const list = existingByKey.get(key) || [];
+            list.push(row);
+            existingByKey.set(key, list);
+        });
+
+        const repairedByKey = new Map<string, ExtractedRow[]>();
+        repairedRows.forEach((row) => {
+            const key = buildRepairSubtestKey(row.subtest, row.source_abbreviation);
+            const list = repairedByKey.get(key) || [];
+            list.push(row);
+            repairedByKey.set(key, list);
+        });
+
+        const merged: ExtractedRow[] = [];
+
+        existingRows.forEach((row) => {
+            const key = buildRepairSubtestKey(row.subtest, row.source_abbreviation);
+            if (!targetKeys.has(key)) merged.push(row);
+        });
+
+        targetKeys.forEach((key) => {
+            const replacement = repairedByKey.get(key);
+            if (replacement && replacement.length > 0) {
+                merged.push(...replacement);
+            } else {
+                const previous = existingByKey.get(key) || [];
+                merged.push(...previous);
+            }
+        });
+
+        if (includeNeighborColumns) {
+            const existingKeys = new Set(existingByKey.keys());
+            repairedByKey.forEach((rows, key) => {
+                if (targetKeys.has(key)) return;
+                if (existingKeys.has(key)) return;
+                merged.push(...rows);
+            });
+        }
+
+        return merged;
+    };
+
+    const runTargetedRepairForPage = async (
+        page: ExtractionPage,
+        mode: RepairMode,
+        fileOverride?: File,
+    ): Promise<{ page: ExtractionPage; attempted: boolean; failed?: boolean; reason?: string; beforeBlocking: number; afterBlocking: number; targetCount: number }> => {
+        const beforeBlocking = page.flagCounts.blocking;
+
+        if (page.detectedStructure !== 'LOOKUP') {
+            return { page, attempted: false, reason: 'Relance ciblée réservée aux tableaux LOOKUP.', beforeBlocking, afterBlocking: beforeBlocking, targetCount: 0 };
+        }
+
+        if (page.repairAttemptsUsed >= page.repairBudgetMax) {
+            return { page, attempted: false, reason: 'Budget de relance épuisé pour cette page.', beforeBlocking, afterBlocking: beforeBlocking, targetCount: 0 };
+        }
+
+        const repairPayload = buildPageRepairPayload(page);
+        if (!repairPayload) {
+            return { page, attempted: false, reason: 'Aucun mismatch de groupe détecté.', beforeBlocking, afterBlocking: beforeBlocking, targetCount: 0 };
+        }
+        if (mode === 'auto' && repairPayload.mismatchCount < AUTO_REPAIR_MISMATCH_THRESHOLD) {
+            return { page, attempted: false, reason: 'Seuil auto non atteint.', beforeBlocking, afterBlocking: beforeBlocking, targetCount: repairPayload.focusSubtests.length };
+        }
+
+        const imagePart = await resolveImagePartForPage(page, fileOverride);
+        const filename = page.sourceFilename || `page-${page.fileIndex + 1}.jpg`;
+        const attemptedPage: ExtractionPage = {
+            ...page,
+            repairAttemptsUsed: page.repairAttemptsUsed + 1,
+            autoRepairApplied: page.autoRepairApplied || mode === 'auto',
+        };
+
+        try {
+            const response = await callExtractionTask({
+                filename,
+                imagePart,
+                knownSubtestNames: repairPayload.existingSubtests,
+                canonicalSubtestNames: canonicalNameInventory,
+                repairRequest: {
+                    focusSubtests: repairPayload.focusSubtests,
+                    expectedGroupCounts: repairPayload.expectedGroupCounts,
+                    includeNeighborColumns: repairPayload.includeNeighborColumns,
+                    existingSubtests: repairPayload.existingSubtests,
+                },
+            });
+
+            const repaired = buildRowsFromExtractionText(response.text, filename);
+            const mergedRows = mergeRepairedRowsForTargets(
+                page.rows,
+                repaired.rows,
+                repairPayload.focusSubtests,
+                repairPayload.includeNeighborColumns,
+            );
+
+            const repairedPageCandidate: ExtractionPage = {
+                ...attemptedPage,
+                rows: mergedRows,
+            };
+            const normalizedPages = [{ ...repairedPageCandidate, rows: repairedPageCandidate.rows.map((row) => ({ ...row })) }];
+            reDisambiguateByAbbreviation(normalizedPages);
+            preserveDistinctSourceColumns(normalizedPages);
+            const reviewedPage = withPageReview(normalizedPages[0]);
+
+            const afterBlocking = reviewedPage.flagCounts.blocking;
+            Logger.info(
+                'AI',
+                `Targeted ${mode} repair on page ${page.fileIndex + 1}: blocking ${beforeBlocking} -> ${afterBlocking} (targets=${repairPayload.focusSubtests.length})`
+            );
+
+            return {
+                page: reviewedPage,
+                attempted: true,
+                beforeBlocking,
+                afterBlocking,
+                targetCount: repairPayload.focusSubtests.length,
+            };
+        } catch (error) {
+            const reviewedPage = withPageReview(attemptedPage);
+            const reason = error instanceof Error ? error.message : String(error);
+            Logger.warn('AI', `Targeted ${mode} repair failed on page ${page.fileIndex + 1}`, error);
+            return {
+                page: reviewedPage,
+                attempted: true,
+                failed: true,
+                reason,
+                beforeBlocking,
+                afterBlocking: reviewedPage.flagCounts.blocking,
+                targetCount: repairPayload.focusSubtests.length,
+            };
+        }
     };
 
     const processFilesSequentially = async (inputFiles: File[]) => {
@@ -1218,16 +1534,36 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                 const pageId = crypto.randomUUID();
                 const previewDataUrl = draftImagePrep.byIndex[i];
-                const page = withPageReview({
+                let page = withPageReview({
                     id: pageId,
                     fileIndex: i,
+                    sourceFilename: inputFiles[i]?.name,
                     rows: result.rows,
                     status: 'pending',
                     detectedStructure: result.detectedStructure,
                     flags: [],
                     flagCounts: EMPTY_FLAG_COUNTS,
                     previewDataUrl,
+                    repairAttemptsUsed: 0,
+                    repairBudgetMax: PAGE_REPAIR_BUDGET_MAX,
+                    autoRepairApplied: false,
                 });
+
+                try {
+                    const autoRepair = await runTargetedRepairForPage(page, 'auto', inputFiles[i]);
+                    if (autoRepair.attempted) {
+                        page = autoRepair.page;
+                        if (autoRepair.failed) {
+                            toast.error(`Auto-relance page ${i + 1} échouée: ${autoRepair.reason || 'erreur inconnue'}.`);
+                        } else {
+                            toast.info(
+                                `Auto-correction page ${i + 1}: issues bloquantes ${autoRepair.beforeBlocking} -> ${autoRepair.afterBlocking}.`
+                            );
+                        }
+                    }
+                } catch (autoErr) {
+                    Logger.warn('AI', `Auto targeted repair failed on page ${i + 1}`, autoErr);
+                }
                 nextPages.push(page);
 
                 if (previewDataUrl) {
@@ -1265,7 +1601,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     const kept: ExtractedRow[] = [];
                     page.rows.forEach(row => {
                         const parsed = splitSubtestDisplayName(row.subtest);
-                        const rowAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+                        const rawRowAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+                        const rowAbbr = isLikelyAgeQualifier(rawRowAbbr) ? '' : rawRowAbbr;
                         const aliased = resolveSubtestAlias(
                             resolvedTestName,
                             stripSourceColumnSuffix(parsed.baseName || row.subtest),
@@ -1426,6 +1763,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         () => suggestFixes(currentPageFlags, currentRows),
         [currentPageFlags, currentRows],
     );
+    const currentPageRepairRemaining = useMemo(() => {
+        if (!currentPage) return 0;
+        return Math.max(0, currentPage.repairBudgetMax - currentPage.repairAttemptsUsed);
+    }, [currentPage]);
+    const currentPageBlockingSubtests = useMemo(() => {
+        if (!currentPage) return [];
+        return Array.from(
+            new Set(
+                currentPage.flags
+                    .filter((flag) => flag.severity === 'blocking')
+                    .map((flag) => (flag.subtest || '').trim())
+                    .filter((name) => name.length > 0),
+            ),
+        );
+    }, [currentPage]);
+    const currentPageCanPartialValidate = useMemo(() => {
+        if (!currentPage) return false;
+        if (currentPageBlockingSubtests.length === 0) return false;
+        const blocked = new Set(currentPageBlockingSubtests);
+        return currentPage.rows.some((row) => !blocked.has((row.subtest || '').trim()));
+    }, [currentPage, currentPageBlockingSubtests]);
 
     const focusRow = (rowId?: string) => {
         if (!rowId) return;
@@ -1451,6 +1809,36 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         toast.success(`${currentPageFixableFlags.length} correction(s) appliquée(s).`);
     };
 
+    const handleRepairCurrentPage = async () => {
+        if (!currentPage) return;
+        setIsRepairingPage(true);
+        try {
+            toast.info(`Relance ciblée lancée (bloquantes actuelles: ${currentPage.flagCounts.blocking}).`);
+            const repair = await runTargetedRepairForPage(currentPage, 'manual');
+            if (!repair.attempted) {
+                toast.error(repair.reason || 'Relance ciblée indisponible pour cette page.');
+                return;
+            }
+
+            setPages((prev) => prev.map((page, index) => (
+                index === currentFileIndex ? repair.page : page
+            )));
+            if (repair.failed) {
+                toast.error(`Relance ciblée échouée: ${repair.reason || 'erreur inconnue'}`);
+                return;
+            }
+            toast.success(
+                `Relance ciblée terminée: bloquantes ${repair.beforeBlocking} -> ${repair.afterBlocking} (cibles: ${repair.targetCount}).`
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            Logger.error('AI', 'Manual targeted repair failed', error);
+            toast.error(`Relance ciblée échouée: ${message}`);
+        } finally {
+            setIsRepairingPage(false);
+        }
+    };
+
     const stripAgeQualifier = useCallback((name: string): string => {
         const trimmed = name.trim();
         if (!trimmed) return trimmed;
@@ -1471,7 +1859,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const parsed = splitSubtestDisplayName(row.subtest);
         const sourceColumnIndex = getSourceColumnIndexFromName(parsed.baseName || row.subtest);
         const baseWithoutColumnSuffix = stripSourceColumnSuffix(parsed.baseName || row.subtest);
-        const sourceAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+        const rawSourceAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
+        const sourceAbbr = isLikelyAgeQualifier(rawSourceAbbr) ? '' : rawSourceAbbr;
         const baseName = canonicalSubtestsNormalized.length > 0
             ? stripAgeQualifier(baseWithoutColumnSuffix)
             : baseWithoutColumnSuffix;
@@ -1571,7 +1960,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         includedRows.forEach((row) => {
             const resolved = resolveCanonicalSubtest(row);
             if (resolved.isHiddenInvalidAmbiguous) return;
-            const key = `${buildSubtestIdentityKey(resolved.name, resolved.abbreviation)}::${row.source_column_key || 'nosource'}`;
+            const shouldIsolateBySourceColumn = !!row.source_column_key
+                && !!normalizeAbbreviation(row.source_abbreviation)
+                && !isLikelyAgeQualifier(row.source_abbreviation);
+            const key = shouldIsolateBySourceColumn
+                ? `${buildSubtestIdentityKey(resolved.name, resolved.abbreviation)}::${row.source_column_key}`
+                : buildSubtestIdentityKey(resolved.name, resolved.abbreviation);
             const existing = grouped.get(key);
             if (existing) {
                 existing.rows.push(row);
@@ -1645,6 +2039,51 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 rejectionReason: undefined,
             });
         }));
+    };
+
+    const handleValidateCurrentPageExcludingIssues = () => {
+        const page = pages[currentFileIndex];
+        if (!page) return;
+
+        const blockingSubtests = Array.from(
+            new Set(
+                page.flags
+                    .filter((flag) => flag.severity === 'blocking')
+                    .map((flag) => (flag.subtest || '').trim())
+                    .filter((name) => name.length > 0),
+            ),
+        );
+
+        if (blockingSubtests.length === 0) {
+            handleValidateCurrentPage();
+            return;
+        }
+
+        const blocked = new Set(blockingSubtests);
+        const keptRows = page.rows.filter((row) => !blocked.has((row.subtest || '').trim()));
+        const removedRows = page.rows.length - keptRows.length;
+
+        if (keptRows.length === 0) {
+            toast.error("Cette action retirerait toute la page. Corrigez les issues ou refusez la page.");
+            return;
+        }
+
+        const confirmation = window.confirm(
+            `Valider la page en excluant ${blockingSubtests.length} sous-test(s) en issue bloquante (${removedRows} ligne(s) retirée(s)) ?`,
+        );
+        if (!confirmation) return;
+
+        setPages((prev) => prev.map((candidate, index) => {
+            if (index !== currentFileIndex) return candidate;
+            return withPageReview({
+                ...candidate,
+                rows: keptRows,
+                status: 'validated',
+                rejectionReason: undefined,
+            });
+        }));
+
+        toast.success(`Page validée partiellement: ${removedRows} ligne(s) exclue(s), ${keptRows.length} conservée(s).`);
     };
 
     const handleRejectCurrentPage = () => {
@@ -2047,7 +2486,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
         } catch (e: unknown) {
             Logger.error('DB', "Erreur merge/attach test:", e);
-            toast.error("Erreur lors de la fusion : " + (e instanceof Error ? e.message : String(e)));
+            const message = e instanceof Error ? e.message : String(e);
+            if (message.includes('ATTACH_TIMEOUT_CHUNK_')) {
+                toast.error("Le rattachement est volumineux et a dépassé le temps SQL sur un lot. Relancez: la reprise est idempotente et ajoutera uniquement le manquant.");
+            } else {
+                toast.error("Erreur lors de la fusion : " + message);
+            }
         } finally {
             setIsSaving(false);
         }
@@ -2359,6 +2803,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 Valider
                                             </button>
                                             <button
+                                                onClick={handleValidateCurrentPageExcludingIssues}
+                                                disabled={!currentPage || currentPage.status === 'validated' || !currentPageCanPartialValidate}
+                                                className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-emerald-50 text-emerald-700 border-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                title="Valider la page en retirant les sous-tests avec issues bloquantes"
+                                            >
+                                                Valider (hors issues)
+                                            </button>
+                                            <button
                                                 onClick={handleRejectCurrentPage}
                                                 disabled={!currentPage || currentPage.status === 'rejected'}
                                                 className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-rose-100 text-rose-700 border-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2465,6 +2917,22 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             >
                                                 Appliquer corrections suggérées (page)
                                             </button>
+                                            <button
+                                                onClick={handleRepairCurrentPage}
+                                                disabled={!currentPage || currentPageRepairRemaining <= 0 || isRepairingPage}
+                                                className="text-xs px-3 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                title={
+                                                    currentPageRepairRemaining <= 0
+                                                        ? 'Budget de relance atteint pour cette page.'
+                                                        : 'Relance ciblée sur les sous-tests en mismatch'
+                                                }
+                                            >
+                                                {isRepairingPage ? <Loader2 size={12} className="animate-spin" /> : null}
+                                                Relancer extraction ciblée (page)
+                                            </button>
+                                            <span className="text-[10px] text-[var(--text-secondary)]">
+                                                Budget relance: {currentPageRepairRemaining}/{currentPage?.repairBudgetMax || PAGE_REPAIR_BUDGET_MAX}
+                                            </span>
                                         </div>
                                     </div>
 

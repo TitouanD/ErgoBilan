@@ -21,6 +21,113 @@ import type {
 } from '../types';
 import { Logger } from '../utils/logger';
 
+const ATTACH_MAX_SUBTESTS_PER_CHUNK = 10;
+const ATTACH_MAX_NORMS_PER_CHUNK = 450;
+const ATTACH_MAX_NORMS_PER_SUBTEST_FRAGMENT = 450;
+
+type ContributionSubtestPayload = {
+    norms?: unknown[];
+    [key: string]: unknown;
+};
+
+type ContributionTestPayload = {
+    test?: Record<string, unknown>;
+    subtests?: ContributionSubtestPayload[];
+    [key: string]: unknown;
+};
+
+const getSubtestNorms = (subtest: ContributionSubtestPayload): unknown[] => (
+    Array.isArray(subtest.norms) ? subtest.norms : []
+);
+
+const cloneSubtestWithNorms = (subtest: ContributionSubtestPayload, norms: unknown[]): ContributionSubtestPayload => ({
+    ...subtest,
+    norms,
+});
+
+const flattenSubtestsForChunking = (
+    subtests: ContributionSubtestPayload[],
+    maxNormsPerSubtestFragment: number,
+): ContributionSubtestPayload[] => {
+    const flattened: ContributionSubtestPayload[] = [];
+
+    subtests.forEach((subtest) => {
+        const norms = getSubtestNorms(subtest);
+        if (norms.length <= maxNormsPerSubtestFragment) {
+            flattened.push(cloneSubtestWithNorms(subtest, norms));
+            return;
+        }
+
+        for (let start = 0; start < norms.length; start += maxNormsPerSubtestFragment) {
+            const fragment = norms.slice(start, start + maxNormsPerSubtestFragment);
+            flattened.push(cloneSubtestWithNorms(subtest, fragment));
+        }
+    });
+
+    return flattened;
+};
+
+const splitContributionPayloadIntoChunks = (
+    payload: ContributionTestPayload,
+    options?: {
+        maxSubtestsPerChunk?: number;
+        maxNormsPerChunk?: number;
+        maxNormsPerSubtestFragment?: number;
+    },
+): ContributionTestPayload[] => {
+    const maxSubtestsPerChunk = options?.maxSubtestsPerChunk ?? ATTACH_MAX_SUBTESTS_PER_CHUNK;
+    const maxNormsPerChunk = options?.maxNormsPerChunk ?? ATTACH_MAX_NORMS_PER_CHUNK;
+    const maxNormsPerSubtestFragment = options?.maxNormsPerSubtestFragment ?? ATTACH_MAX_NORMS_PER_SUBTEST_FRAGMENT;
+
+    const subtests = Array.isArray(payload?.subtests) ? payload.subtests : [];
+    if (subtests.length === 0) {
+        return [{ ...payload, subtests: [] }];
+    }
+
+    const flattenedSubtests = flattenSubtestsForChunking(subtests, maxNormsPerSubtestFragment);
+
+    const chunks: ContributionTestPayload[] = [];
+    let currentSubtests: ContributionSubtestPayload[] = [];
+    let currentNormCount = 0;
+
+    const pushCurrentChunk = () => {
+        if (currentSubtests.length === 0) return;
+        chunks.push({
+            ...payload,
+            subtests: currentSubtests,
+        });
+        currentSubtests = [];
+        currentNormCount = 0;
+    };
+
+    flattenedSubtests.forEach((subtest) => {
+        const normCount = getSubtestNorms(subtest).length;
+        const wouldOverflow =
+            currentSubtests.length > 0
+            && (
+                currentSubtests.length >= maxSubtestsPerChunk
+                || (currentNormCount + normCount > maxNormsPerChunk)
+            );
+
+        if (wouldOverflow) {
+            pushCurrentChunk();
+        }
+
+        currentSubtests.push(subtest);
+        currentNormCount += normCount;
+    });
+
+    pushCurrentChunk();
+    return chunks;
+};
+
+const isStatementTimeoutError = (error: unknown): boolean => {
+    const value = error as { code?: string; message?: string } | null;
+    const code = String(value?.code || '');
+    const message = String(value?.message || '').toLowerCase();
+    return code === '57014' || message.includes('statement timeout');
+};
+
 // Données simulées pour le Dashboard Ops
 const MOCK_AI_STATS = {
     dailyUsage: [
@@ -235,9 +342,57 @@ export const AdminService = {
      * Subtests are scoped to the user's organization.
      */
     attachSubtestsToTest: async (testId: string, payload: any): Promise<AttachResult> => {
-        const { data, error } = await supabase.rpc('attach_subtests_to_test', { p_test_id: testId, p_payload: payload });
-        if (error) throw error;
-        return data as AttachResult;
+        const typedPayload = (payload || {}) as ContributionTestPayload;
+        const chunks = splitContributionPayloadIntoChunks(typedPayload);
+
+        if (chunks.length === 1) {
+            const { data, error } = await supabase.rpc('attach_subtests_to_test', { p_test_id: testId, p_payload: typedPayload });
+            if (error) throw error;
+            return data as AttachResult;
+        }
+
+        Logger.info('DB', `Attach payload split into ${chunks.length} chunks for test ${testId}`);
+
+        let totalNewSubtests = 0;
+        let totalNewNorms = 0;
+
+        for (let index = 0; index < chunks.length; index += 1) {
+            const chunkPayload = chunks[index];
+            const chunkSubtests = Array.isArray(chunkPayload.subtests) ? chunkPayload.subtests.length : 0;
+            const chunkNorms = (chunkPayload.subtests || []).reduce((sum, subtest) => {
+                const norms = getSubtestNorms(subtest);
+                return sum + norms.length;
+            }, 0);
+
+            Logger.info(
+                'DB',
+                `Attach chunk ${index + 1}/${chunks.length} -> ${chunkSubtests} subtests, ${chunkNorms} norms`,
+            );
+
+            const { data, error } = await supabase.rpc('attach_subtests_to_test', {
+                p_test_id: testId,
+                p_payload: chunkPayload,
+            });
+
+            if (error) {
+                if (isStatementTimeoutError(error)) {
+                    throw new Error(
+                        `ATTACH_TIMEOUT_CHUNK_${index + 1}_OF_${chunks.length}: opération volumineuse, relancez pour reprendre (idempotent).`,
+                    );
+                }
+                throw error;
+            }
+
+            const chunkResult = (data || {}) as Partial<AttachResult>;
+            totalNewSubtests += Number(chunkResult.new_subtests || 0);
+            totalNewNorms += Number(chunkResult.new_norms || 0);
+        }
+
+        return {
+            new_subtests: totalNewSubtests,
+            new_norms: totalNewNorms,
+            test_id: testId,
+        };
     },
 
     // --- ADMIN DEDUPLICATION ---

@@ -1,5 +1,6 @@
 import { supabase, ensureFreshSession } from './db';
 import { Logger } from '../utils/logger';
+import type { ExtractionCallMeta, ExtractionRepairRequest } from '../types';
 
 const FUNCTION_NAME = 'extract-norms';
 const CLIENT_MAX_RETRIES = 2;
@@ -10,10 +11,12 @@ export interface ExtractionParams {
   imagePart: unknown;
   knownSubtestNames?: string[];
   canonicalSubtestNames?: string[];
+  repairRequest?: ExtractionRepairRequest;
 }
 
 export interface ExtractionResponse {
   text: string | null;
+  meta?: ExtractionCallMeta;
 }
 
 export interface ExtractionBatchResult {
@@ -125,7 +128,10 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
       continue;
     }
 
-    return { text: data?.text ?? null };
+    return {
+      text: data?.text ?? null,
+      meta: data?.meta ?? undefined,
+    };
   }
 
   throw lastError ?? new Error('Extraction failed after retries');

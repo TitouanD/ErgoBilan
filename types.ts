@@ -331,6 +331,10 @@ export type ReviewFlagCode =
     | 'LOOKUP_COLLAPSED_INTERVAL'
     | 'LOOKUP_REQUIRED_FIELD_MISSING'
     | 'LOOKUP_Z_PERCENTILE_INCONSISTENT'
+    | 'LOOKUP_STANDARD_Z_INCONSISTENT'
+    | 'LOOKUP_STANDARD_NON_MONOTONIC'
+    | 'LOOKUP_PERCENTILE_NON_MONOTONIC'
+    | 'LOOKUP_RAW_RANGE_OVERLAP'
     | 'GROUP_ROW_COUNT_MISMATCH'
     | 'PARAMETRIC_REQUIRED_FIELD_MISSING'
     | 'AGE_RANGE_MISSING_OR_INVALID'
@@ -527,6 +531,30 @@ export interface AIExtractionResult {
     test_context?: string;
     structure_type?: 'PARAMETRIC' | 'LOOKUP';
     tables?: AIExtractedTable[];
+}
+
+export interface ExtractionRepairFocusSubtest {
+    name: string;
+    abbreviation?: string | null;
+}
+
+export interface ExtractionRepairExpectedGroupCount {
+    groupLabel: string;
+    expectedCount: number;
+}
+
+export interface ExtractionRepairRequest {
+    focusSubtests: ExtractionRepairFocusSubtest[];
+    expectedGroupCounts: ExtractionRepairExpectedGroupCount[];
+    includeNeighborColumns: boolean;
+    existingSubtests: string[];
+}
+
+export interface ExtractionCallMeta {
+    strategy: string;
+    apiCalls: number;
+    repairedSubtests?: string[];
+    inventoryMode?: 'off' | 'conditional';
 }
 
 // ── Deduplication types ──

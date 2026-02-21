@@ -56,6 +56,37 @@ interface InventoryResult {
   domains: InventoryDomain[];
 }
 
+interface RepairFocusSubtest {
+  name: string;
+  abbreviation?: string | null;
+}
+
+interface RepairExpectedGroupCount {
+  groupLabel: string;
+  expectedCount: number;
+}
+
+interface RepairRequestPayload {
+  focusSubtests: RepairFocusSubtest[];
+  expectedGroupCounts: RepairExpectedGroupCount[];
+  includeNeighborColumns: boolean;
+  existingSubtests: string[];
+}
+
+type InventoryMode = 'off' | 'conditional';
+
+interface ExtractionMeta {
+  strategy: string;
+  apiCalls: number;
+  repairedSubtests?: string[];
+  inventoryMode?: InventoryMode;
+}
+
+interface ExtractionRunResult {
+  text: string;
+  meta: ExtractionMeta;
+}
+
 // ── RETRY UTILITY ──────────────────────────────────────────────────────────
 
 const retryWithBackoff = async <T>(
@@ -175,6 +206,61 @@ For LOOKUP tables:
 - Keep one unique sid per lookup column variant and store the source abbreviation in "ab".
 - If two columns would collide to the same sid, add a qualifier or fallback to abbreviation.
 `;
+};
+
+const normalizePromptToken = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+const parseRepairRequest = (raw: unknown): RepairRequestPayload | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const input = raw as Record<string, unknown>;
+
+  const focusSubtests = Array.isArray(input.focusSubtests)
+    ? input.focusSubtests
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const value = entry as Record<string, unknown>;
+          const name = normalizePromptToken(value.name);
+          const abbreviation = normalizePromptToken(value.abbreviation);
+          if (!name) return null;
+          return {
+            name,
+            abbreviation: abbreviation || null,
+          } as RepairFocusSubtest;
+        })
+        .filter((entry): entry is RepairFocusSubtest => !!entry)
+    : [];
+
+  if (focusSubtests.length === 0) return null;
+
+  const expectedGroupCounts = Array.isArray(input.expectedGroupCounts)
+    ? input.expectedGroupCounts
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const value = entry as Record<string, unknown>;
+          const groupLabel = normalizePromptToken(value.groupLabel);
+          const expectedRaw = Number(value.expectedCount);
+          const expectedCount = Number.isFinite(expectedRaw) ? Math.trunc(expectedRaw) : NaN;
+          if (!groupLabel || !Number.isFinite(expectedCount) || expectedCount <= 0) return null;
+          return { groupLabel, expectedCount } as RepairExpectedGroupCount;
+        })
+        .filter((entry): entry is RepairExpectedGroupCount => !!entry)
+    : [];
+
+  const existingSubtests = Array.isArray(input.existingSubtests)
+    ? input.existingSubtests
+        .map((name) => normalizePromptToken(name))
+        .filter((name) => !!name)
+    : [];
+
+  return {
+    focusSubtests,
+    expectedGroupCounts,
+    includeNeighborColumns: input.includeNeighborColumns === true,
+    existingSubtests,
+  };
 };
 
 const EXTRACTION_RULES = `
@@ -377,48 +463,208 @@ ${JSON_SCHEMA}`;
   };
 };
 
+// ── BUILD REPAIR EXTRACTION PROMPT (single-call targeted repair) ────────────
+
+const buildRepairExtractionTask = (
+  payload: Record<string, unknown>,
+  repairRequest: RepairRequestPayload
+) => {
+  const filename = String(payload.filename || 'document');
+  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const imagePart = payload.imagePart;
+
+  const focusList = repairRequest.focusSubtests.map((entry) => ({
+    sid: entry.name,
+    ab: entry.abbreviation || null,
+  }));
+  const expectedCountsBlock = repairRequest.expectedGroupCounts.length > 0
+    ? `EXPECTED ROW COUNTS PER AGE/GROUP (must be respected):
+${repairRequest.expectedGroupCounts.map((entry) => `- "${entry.groupLabel}" => ${entry.expectedCount} rows per targeted subtest`).join('\n')}`
+    : 'EXPECTED ROW COUNTS PER AGE/GROUP: not provided.';
+  const existingSubtestsBlock = repairRequest.existingSubtests.length > 0
+    ? `EXISTING SUBTESTS ALREADY PRESENT ON THIS PAGE (for name consistency only): ${JSON.stringify(repairRequest.existingSubtests)}`
+    : '';
+  const neighborColumnsRule = repairRequest.includeNeighborColumns
+    ? 'If you detect clearly missing adjacent columns tied to the same domain block, include them as additional tables to recover omissions.'
+    : 'Do NOT include any non-targeted column. Restrict output strictly to targeted subtests.';
+
+  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
+CONTEXT: The filename is "${filename}".
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
+REPAIR MODE: targeted re-extraction after quality issues.
+TARGET SUBTESTS (extract these first, exhaustively): ${JSON.stringify(focusList)}
+${expectedCountsBlock}
+${existingSubtestsBlock}
+${neighborColumnsRule}
+
+MANDATORY REPAIR RULES:
+- Extract ALL rows for each targeted subtest.
+- Respect expected row counts when provided. If the page has one age group header, that count applies to that group.
+- Keep one unique sid per physical source column variant and keep original abbreviation in "ab".
+- Reuse known/canonical names when possible. Avoid creating duplicate aliases for the same target.
+- Output valid JSON only.
+
+${EXTRACTION_RULES}
+${JSON_SCHEMA}`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
 // ── MERGE EXTRACTION RESULTS ───────────────────────────────────────────────
 
-const mergeExtractionResults = (results: ExtractionResult[]): ExtractionResult => {
+const normalizeStableKeyPart = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+const hasStableValue = (value: unknown): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
+};
+
+const stableRowScore = (row: Record<string, unknown>): number =>
+  Object.values(row).reduce((score, value) => score + (hasStableValue(value) ? 1 : 0), 0);
+
+const stableRowValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  return String(value);
+};
+
+const mergeStableRow = (
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>
+): Record<string, unknown> => {
+  const existingScore = stableRowScore(existing);
+  const incomingScore = stableRowScore(incoming);
+  const preferIncomingOnConflict = incomingScore > existingScore;
+
+  const merged: Record<string, unknown> = { ...existing };
+  const keys = new Set([...Object.keys(existing), ...Object.keys(incoming)]);
+  for (const key of keys) {
+    const current = existing[key];
+    const next = incoming[key];
+    const currentHasValue = hasStableValue(current);
+    const nextHasValue = hasStableValue(next);
+    if (!currentHasValue && nextHasValue) {
+      merged[key] = next;
+      continue;
+    }
+    if (currentHasValue && nextHasValue && preferIncomingOnConflict) {
+      const currentNorm = stableRowValue(current);
+      const nextNorm = stableRowValue(next);
+      if (currentNorm !== nextNorm) {
+        merged[key] = next;
+      }
+    }
+  }
+  return merged;
+};
+
+const isStableParametricRow = (row: Record<string, unknown>): boolean => (
+  hasStableValue(row.m) || hasStableValue(row.s)
+);
+
+const stableLookupRowKey = (row: Record<string, unknown>): string => (
+  `L|${[
+    stableRowValue(row.a0),
+    stableRowValue(row.a1),
+    stableRowValue(row.r0),
+    stableRowValue(row.r1),
+    stableRowValue(row.r),
+    stableRowValue(row.n),
+    stableRowValue(row.gl),
+  ].join('|')}`
+);
+
+const stableParametricRowKey = (row: Record<string, unknown>): string => (
+  `P|${[
+    stableRowValue(row.a0),
+    stableRowValue(row.a1),
+    stableRowValue(row.gl),
+  ].join('|')}`
+);
+
+const stableMergeRowKey = (row: Record<string, unknown>): string => (
+  isStableParametricRow(row) ? stableParametricRowKey(row) : stableLookupRowKey(row)
+);
+
+const sortStableRows = (rows: Record<string, unknown>[]): Record<string, unknown>[] => {
+  return [...rows].sort((a, b) => {
+    const a0 = Number.isFinite(Number(a.a0)) ? Number(a.a0) : Number.MAX_SAFE_INTEGER;
+    const b0 = Number.isFinite(Number(b.a0)) ? Number(b.a0) : Number.MAX_SAFE_INTEGER;
+    if (a0 !== b0) return a0 - b0;
+    const a1 = Number.isFinite(Number(a.a1)) ? Number(a.a1) : Number.MAX_SAFE_INTEGER;
+    const b1 = Number.isFinite(Number(b.a1)) ? Number(b.a1) : Number.MAX_SAFE_INTEGER;
+    if (a1 !== b1) return a1 - b1;
+    const ar0 = Number.isFinite(Number(a.r0)) ? Number(a.r0) : Number.MAX_SAFE_INTEGER;
+    const br0 = Number.isFinite(Number(b.r0)) ? Number(b.r0) : Number.MAX_SAFE_INTEGER;
+    if (ar0 !== br0) return ar0 - br0;
+    const ar1 = Number.isFinite(Number(a.r1)) ? Number(a.r1) : Number.MAX_SAFE_INTEGER;
+    const br1 = Number.isFinite(Number(b.r1)) ? Number(b.r1) : Number.MAX_SAFE_INTEGER;
+    if (ar1 !== br1) return ar1 - br1;
+    return stableRowValue(a.r).localeCompare(stableRowValue(b.r));
+  });
+};
+
+const mergeExtractionResultsStable = (results: ExtractionResult[]): ExtractionResult => {
   const merged: ExtractionResult = {
     tc: '',
     st: 'LOOKUP',
     tables: [],
   };
 
-  const seenSubtests = new Set<string>();
+  const tableMap = new Map<string, { sid: string; ab?: string; rows: Map<string, Record<string, unknown>> }>();
 
   for (const result of results) {
     if (!result) continue;
     if (result.tc && !merged.tc) merged.tc = result.tc;
     if (result.st) merged.st = result.st;
 
-    if (Array.isArray(result.tables)) {
-      for (const table of result.tables) {
-        if (!table.sid) continue;
-        // Deduplicate: if the same sid appears in multiple chunks, append a chunk suffix
-        // to preserve ALL data rather than silently dropping shorter results.
-        if (seenSubtests.has(table.sid)) {
-          const existing = merged.tables!.find((t) => t.sid === table.sid);
-          if (existing && table.rows.length > existing.rows.length) {
-            // The new chunk has more rows — replace the existing entry's rows
-            existing.rows = table.rows;
-            if (table.ab && !existing.ab) existing.ab = table.ab;
-          } else {
-            // Same length or existing is longer — add as a distinct chunk entry
-            let suffix = 2;
-            while (seenSubtests.has(`${table.sid} (chunk ${suffix})`)) suffix++;
-            const chunkSid = `${table.sid} (chunk ${suffix})`;
-            seenSubtests.add(chunkSid);
-            merged.tables!.push({ ...table, sid: chunkSid });
-          }
+    if (!Array.isArray(result.tables)) continue;
+    for (const table of result.tables) {
+      const sid = String(table?.sid || '').trim();
+      if (!sid || !Array.isArray(table?.rows)) continue;
+      const ab = typeof table.ab === 'string' ? table.ab.trim() : '';
+      const tableKey = `${normalizeStableKeyPart(sid)}::${normalizeStableKeyPart(ab || 'NOABBR')}`;
+
+      if (!tableMap.has(tableKey)) {
+        tableMap.set(tableKey, {
+          sid,
+          ab: ab || undefined,
+          rows: new Map<string, Record<string, unknown>>(),
+        });
+      }
+
+      const accumulator = tableMap.get(tableKey)!;
+      if (!accumulator.ab && ab) accumulator.ab = ab;
+
+      for (const rawRow of table.rows) {
+        if (!rawRow || typeof rawRow !== 'object') continue;
+        const row = rawRow as Record<string, unknown>;
+        const rowKey = stableMergeRowKey(row);
+        const existing = accumulator.rows.get(rowKey);
+        if (!existing) {
+          accumulator.rows.set(rowKey, { ...row });
         } else {
-          seenSubtests.add(table.sid);
-          merged.tables!.push(table);
+          accumulator.rows.set(rowKey, mergeStableRow(existing, row));
         }
       }
     }
   }
+
+  merged.tables = Array.from(tableMap.values()).map((entry) => ({
+    sid: entry.sid,
+    ab: entry.ab,
+    rows: sortStableRows(Array.from(entry.rows.values())),
+  }));
 
   return merged;
 };
@@ -467,6 +713,50 @@ const normalizeToken = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '');
+
+const normalizeAgeQualifierToken = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isLikelyAgeQualifierToken = (value: unknown): boolean => {
+  const token = normalizeAgeQualifierToken(value);
+  if (!token) return false;
+
+  if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+    return true;
+  }
+
+  if (/\b(?:CP|CE1|CE2|CM1|CM2|6E|5E|4E|3E|2NDE|2DE|1ERE|1RE|TERMINALE|TLE)\b/.test(token)) {
+    return true;
+  }
+
+  if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) {
+    return true;
+  }
+
+  return false;
+};
+
+const stripAgeQualifierFromSid = (sid: string): { sid: string; strippedQualifier?: string } => {
+  const trimmed = sid.trim();
+  if (!trimmed) return { sid: '' };
+
+  const match = trimmed.match(/^(.*)\(([^()]{1,80})\)\s*$/u);
+  if (!match) return { sid: trimmed };
+
+  const qualifier = match[2].trim();
+  if (!isLikelyAgeQualifierToken(qualifier)) return { sid: trimmed };
+
+  const baseSid = match[1].trim();
+  return {
+    sid: baseSid || trimmed,
+    strippedQualifier: qualifier,
+  };
+};
 
 const STAT_MEAN_TOKENS = new Set(['M', 'MOY', 'MOYENNE', 'MEAN', 'AVG']);
 const STAT_SD_TOKENS = new Set(['ET', 'SD', 'SIGMA', 'ECARTTYPE', 'ECARTTYPESTD', 'STDDEV']);
@@ -641,16 +931,74 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
   };
 };
 
+const sanitizeLookupExtraction = (result: ExtractionResult): ExtractionResult => {
+  if (String(result.st || '').toUpperCase() !== 'LOOKUP' || !Array.isArray(result.tables)) {
+    return result;
+  }
+
+  const tableMap = new Map<string, { sid: string; ab?: string; rows: Map<string, Record<string, unknown>> }>();
+
+  for (const table of result.tables) {
+    const sidRaw = String(table?.sid || '').trim();
+    if (!sidRaw || !Array.isArray(table?.rows)) continue;
+
+    const normalizedSid = stripAgeQualifierFromSid(sidRaw).sid || sidRaw;
+    if (!normalizedSid) continue;
+
+    const abRaw = typeof table.ab === 'string' ? table.ab.trim() : '';
+    const normalizedAb = isLikelyAgeQualifierToken(abRaw) ? '' : abRaw;
+    const tableKey = `${normalizeStableKeyPart(normalizedSid)}::${normalizeStableKeyPart(normalizedAb || 'NOABBR')}`;
+
+    if (!tableMap.has(tableKey)) {
+      tableMap.set(tableKey, {
+        sid: normalizedSid,
+        ab: normalizedAb || undefined,
+        rows: new Map<string, Record<string, unknown>>(),
+      });
+    }
+
+    const accumulator = tableMap.get(tableKey)!;
+    if (!accumulator.ab && normalizedAb) accumulator.ab = normalizedAb;
+
+    for (const rawRow of table.rows) {
+      if (!rawRow || typeof rawRow !== 'object') continue;
+      const row = rawRow as Record<string, unknown>;
+      const rowKey = stableLookupRowKey(row);
+      const existing = accumulator.rows.get(rowKey);
+      if (!existing) {
+        accumulator.rows.set(rowKey, { ...row });
+      } else {
+        accumulator.rows.set(rowKey, mergeStableRow(existing, row));
+      }
+    }
+  }
+
+  const sanitizedTables: ExtractedTable[] = Array.from(tableMap.values())
+    .map((entry) => ({
+      sid: entry.sid,
+      ab: entry.ab,
+      rows: sortStableRows(Array.from(entry.rows.values())),
+    }))
+    .filter((entry) => entry.rows.length > 0);
+
+  return {
+    ...result,
+    tables: sanitizedTables,
+  };
+};
+
 const sanitizeExtractionResult = (result: ExtractionResult): ExtractionResult => {
-  if (String(result.st || '').toUpperCase() !== 'PARAMETRIC') return result;
-  return sanitizeParametricExtraction(result);
+  const structure = String(result.st || '').toUpperCase();
+  if (structure === 'PARAMETRIC') return sanitizeParametricExtraction(result);
+  if (structure === 'LOOKUP') return sanitizeLookupExtraction(result);
+  return result;
 };
 
 // ── ORCHESTRATOR: Try single call, fallback to chunked ─────────────────────
 
 const extractWithFallback = async (
   payload: Record<string, unknown>
-): Promise<{ text: string; strategy: string; apiCalls: number }> => {
+): Promise<ExtractionRunResult> => {
   // ── PHASE 1: Try single full extraction ──
   const fullTask = buildFullExtractionTask(payload);
   const { text: fullText, finishReason } = await callGemini(fullTask.contents);
@@ -659,7 +1007,7 @@ const extractWithFallback = async (
 
   if (!wasTruncated && fullText) {
     // Single call succeeded without truncation — cheapest path
-    return { text: fullText, strategy: 'single', apiCalls: 1 };
+    return { text: fullText, meta: { strategy: 'single', apiCalls: 1 } };
   }
 
   // Parse what we got (may be partial)
@@ -668,7 +1016,7 @@ const extractWithFallback = async (
 
   // If we got a reasonable number of subtests and no truncation signal, trust the result
   if (!wasTruncated && extractedSubtestCount >= 3) {
-    return { text: fullText!, strategy: 'single', apiCalls: 1 };
+    return { text: fullText!, meta: { strategy: 'single', apiCalls: 1 } };
   }
 
   // ── PHASE 2: Inventory scan to discover all subtests ──
@@ -684,8 +1032,8 @@ const extractWithFallback = async (
 
   if (!inventory || !Array.isArray(inventory.domains) || inventory.domains.length === 0) {
     // Inventory failed — return the partial result from Phase 1 if we have anything
-    if (fullText) {
-      return { text: fullText, strategy: 'single-fallback', apiCalls: 2 };
+    if (!wasTruncated && fullText) {
+      return { text: fullText, meta: { strategy: 'single-fallback', apiCalls: 2 } };
     }
     throw new Error('Both full extraction and inventory scan failed');
   }
@@ -694,8 +1042,8 @@ const extractWithFallback = async (
 
   // If inventory shows few subtests, the single call should have been enough
   // The issue might be something else — return partial
-  if (totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
-    return { text: fullText, strategy: 'single-verified', apiCalls: 2 };
+  if (!wasTruncated && totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
+    return { text: fullText, meta: { strategy: 'single-verified', apiCalls: 2 } };
   }
 
   // ── PHASE 3: Chunked extraction by domain ──
@@ -732,14 +1080,42 @@ const extractWithFallback = async (
     allResults.push(partialResult);
   }
 
-  const merged = mergeExtractionResults(allResults);
+  const merged = mergeExtractionResultsStable(allResults);
   const mergedText = JSON.stringify(merged);
 
   // Total API calls: 1 (full) + 1 (inventory) + N (chunks)
-  return { text: mergedText, strategy: `chunked-${chunks.length}`, apiCalls: 2 + chunks.length };
+  return {
+    text: mergedText,
+    meta: {
+      strategy: `chunked-${chunks.length}`,
+      apiCalls: 2 + chunks.length,
+    },
+  };
 };
 
 // ── MAIN HANDLER ───────────────────────────────────────────────────────────
+
+const extractWithRepair = async (
+  payload: Record<string, unknown>,
+  repairRequest: RepairRequestPayload
+): Promise<ExtractionRunResult> => {
+  const task = buildRepairExtractionTask(payload, repairRequest);
+  const { text } = await callGemini(task.contents);
+  if (!text) {
+    throw new Error('Repair extraction returned empty response');
+  }
+
+  const repairedSubtests = repairRequest.focusSubtests.map((entry) => entry.name);
+  return {
+    text,
+    meta: {
+      strategy: 'repair-focused',
+      apiCalls: 1,
+      repairedSubtests,
+      inventoryMode: repairRequest.includeNeighborColumns ? 'conditional' : 'off',
+    },
+  };
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -833,10 +1209,16 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── EXTRACT WITH SMART FALLBACK ──
-    let result: { text: string; strategy: string; apiCalls: number };
+    const repairRequest = parseRepairRequest(payload.repairRequest);
+
+    let result: ExtractionRunResult;
 
     try {
-      result = await extractWithFallback(payload);
+      if (repairRequest) {
+        result = await extractWithRepair(payload, repairRequest);
+      } else {
+        result = await extractWithFallback(payload);
+      }
     } catch (err) {
       const errMsg = String(err);
       const retryable = errMsg.includes('timeout') || errMsg.includes('429') || errMsg.includes('503');
@@ -862,12 +1244,16 @@ Deno.serve(async (req: Request) => {
         filename: String(payload.filename || 'unknown'),
         status: 'completed',
         token_estimate: tokenEstimate,
+        strategy: result.meta.strategy,
+        api_calls: result.meta.apiCalls,
+        repair_mode: repairRequest ? 'targeted' : 'none',
+        repair_targets_count: repairRequest?.focusSubtests.length || 0,
       });
     } catch (_logErr) {
       // Non-blocking
     }
 
-    return new Response(JSON.stringify({ text: result.text }), {
+    return new Response(JSON.stringify({ text: result.text, meta: result.meta }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
