@@ -16,7 +16,11 @@ const MIN_PASSWORD_LENGTH = parsePositiveInt(Deno.env.get("SIGNUP_MIN_PASSWORD_L
 const FAIL_DELAY_MS = parsePositiveInt(Deno.env.get("SIGNUP_FAIL_DELAY_MS"), 400);
 const TURNSTILE_SECRET_KEY = (Deno.env.get("TURNSTILE_SECRET_KEY") || "").trim();
 const SIGNUP_ACCESS_CODE = (Deno.env.get("SIGNUP_ACCESS_CODE") || "").trim();
+const SERVICE_ROLE_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
+const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
 
 const allowedOrigins = (Deno.env.get("SIGNUP_ALLOWED_ORIGINS") || "")
   .split(",")
@@ -75,21 +79,25 @@ const constantTimeEquals = (a: string, b: string) => {
 };
 
 const getClientIp = (req: Request) => {
+  const cfIp = (req.headers.get("cf-connecting-ip") || "").trim();
+  if (cfIp) return cfIp;
+  const realIp = (req.headers.get("x-real-ip") || "").trim();
+  if (realIp) return realIp;
   const forwarded = req.headers.get("x-forwarded-for") || "";
   if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "";
+  return "";
 };
 
 const isAllowedOrigin = (req: Request) => {
-  if (allowedOrigins.length === 0) return true;
+  if (allowedOrigins.length === 0) return !IS_PRODUCTION;
   const origin = (req.headers.get("origin") || "").trim();
   if (!origin) return false;
   return allowedOrigins.includes(origin);
 };
 
-const verifyTurnstileToken = async (token: string, ip: string) => {
+const verifyTurnstileToken = async (secret: string, token: string, ip: string) => {
   const body = new URLSearchParams();
-  body.set("secret", TURNSTILE_SECRET_KEY);
+  body.set("secret", secret);
   body.set("response", token);
   if (ip) body.set("remoteip", ip);
 
@@ -131,8 +139,14 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    if (!SERVICE_ROLE_KEY) {
+      return await fail("SERVER_MISCONFIGURED", "Signup endpoint is not configured.", 500);
+    }
+
+    const supabase = createClient(supabaseUrl, SERVICE_ROLE_KEY);
+    const anonClient = createClient(supabaseUrl, supabaseAnonKey);
 
     if (!isAllowedOrigin(req)) {
       return await fail("FORBIDDEN_ORIGIN", "Origin is not allowed.", 403);
@@ -182,11 +196,15 @@ Deno.serve(async (req: Request) => {
 
     const ip = getClientIp(req);
 
-    if (TURNSTILE_SECRET_KEY) {
+    const requiresTurnstile = IS_PRODUCTION || TURNSTILE_SECRET_KEY.length > 0;
+    if (requiresTurnstile) {
+      if (!TURNSTILE_SECRET_KEY) {
+        return await fail("SERVER_MISCONFIGURED", "Captcha protection is not configured.", 500);
+      }
       if (!captchaToken) {
         return await fail("CAPTCHA_REQUIRED", "Captcha token is required.", 400);
       }
-      const captchaOk = await verifyTurnstileToken(captchaToken, ip);
+      const captchaOk = await verifyTurnstileToken(TURNSTILE_SECRET_KEY, captchaToken, ip);
       if (!captchaOk) {
         return await fail("CAPTCHA_FAILED", "Captcha verification failed.", 403);
       }
@@ -206,35 +224,37 @@ Deno.serve(async (req: Request) => {
       return await fail("RATE_LIMITED", "Too many signup attempts. Please retry later.", 429);
     }
 
-    const signupRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-      body: JSON.stringify({ email, password }),
+    const { data: createdData, error: createErr } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: false,
     });
 
-    const signupData = await signupRes.json();
-
-    if (!signupRes.ok) {
-      const rawMessage = String(signupData?.message || "");
-      if (signupRes.status === 429) {
-        return await fail("RATE_LIMITED", "Too many signup attempts. Please retry later.", 429);
-      }
+    if (createErr || !createdData?.user) {
+      const rawMessage = String(createErr?.message || "");
       if (/already|registered|exists/i.test(rawMessage)) {
         return await fail("SIGNUP_FAILED", "Signup is not available right now.", 400);
       }
-      console.warn("Auth signup rejected", {
-        status: signupRes.status,
-        error: signupData?.error,
-        message: rawMessage,
-      });
+      console.warn("Auth createUser rejected", { message: rawMessage });
       return await fail("SIGNUP_FAILED", "Signup is not available right now.", 400);
     }
 
-    return responseJson({ ok: true, data: signupData });
+    const { data: signInData, error: signInErr } = await anonClient.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    const payload: Record<string, unknown> = {
+      user: createdData.user,
+    };
+
+    if (!signInErr && signInData?.session) {
+      payload.session = signInData.session;
+      payload.access_token = signInData.session.access_token;
+      payload.refresh_token = signInData.session.refresh_token;
+    }
+
+    return responseJson({ ok: true, data: payload });
   } catch (err) {
     console.error("Signup edge error:", err);
     return await fail("INTERNAL", "Internal server error.", 500);

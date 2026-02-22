@@ -100,29 +100,6 @@ export const SubscriptionService = {
     },
 
     /**
-     * Rembourse un crédit en cas d'échec de génération.
-     * Nécessite un generation_id valide.
-     * Protégé contre le farming : limité à 5 min après consommation.
-     */
-    refundCredit: async (generationId?: string): Promise<boolean> => {
-        try {
-            if (!generationId) {
-                Logger.warn('DB', 'Refund skipped — no generation_id provided');
-                return false;
-            }
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return false;
-            const { error } = await supabase.rpc('refund_credit', { p_generation_id: generationId });
-            if (error) throw error;
-            Logger.info('DB', 'Credit refunded for generation', generationId);
-            return true;
-        } catch (e) {
-            Logger.error('DB', 'Credit refund error:', e);
-            return false;
-        }
-    },
-
-    /**
      * Écoute les changements sur la table practitioners (ex: ajout de crédits par admin)
      */
     subscribeToCredits: (userId: string, onUpdate: (newCredits: number) => void) => {

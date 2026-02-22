@@ -8,6 +8,14 @@ const GEMINI_TIMEOUT_MS = 110_000;
 const MAX_REQUESTS_PER_HOUR = 15;
 const GEMINI_MAX_RETRIES = 2;
 const GEMINI_RETRY_BASE_MS = 2_000;
+const GENERATION_REUSE_WINDOW_MINUTES = 20;
+
+const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
+const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
 
 type AITask = 'report_bio' | 'report_diagnostic';
 
@@ -27,14 +35,25 @@ const corsHeaders = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isRetryableStatus = (status: number) => status === 503 || status === 429;
 
-const safeRefund = async (
+const isAllowedOrigin = (req: Request): boolean => {
+  const origin = (req.headers.get('origin') || '').trim();
+  if (ALLOWED_ORIGINS.length > 0) return !!origin && ALLOWED_ORIGINS.includes(origin);
+  return !IS_PRODUCTION;
+};
+
+const safeFinalize = async (
   sb: ReturnType<typeof createClient> | null,
   genId: string | null,
-  isReused: boolean,
+  success: boolean,
+  errorCode: string | null = null,
 ) => {
-  if (isReused || !sb || !genId) return;
+  if (!sb || !genId) return;
   try {
-    await sb.rpc('refund_credit', { p_generation_id: genId });
+    await sb.rpc('finalize_generation', {
+      p_generation_id: genId,
+      p_success: success,
+      p_error_code: errorCode,
+    });
   } catch (_e) {
     // no-op
   }
@@ -289,9 +308,17 @@ Deno.serve(async (req: Request) => {
 
   let supabase: ReturnType<typeof createClient> | null = null;
   let generationId: string | null = null;
-  let isReusedSession = false;
+  let currentTask: AITask | null = null;
+  let finalized = false;
 
   try {
+    if (!isAllowedOrigin(req)) {
+      return new Response(JSON.stringify({ error: 'FORBIDDEN_ORIGIN' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -328,6 +355,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const task = String(body.task || '') as AITask;
+    currentTask = task;
     const payload = (body.payload || {}) as Record<string, unknown>;
     const providedGenId = typeof body.generation_id === 'string' ? body.generation_id : null;
 
@@ -335,24 +363,40 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    if (providedGenId) {
-      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    if (task === 'report_bio' && providedGenId) {
+      return new Response(JSON.stringify({ error: 'INVALID_GENERATION_SESSION' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (task === 'report_diagnostic' && !providedGenId) {
+      return new Response(JSON.stringify({ error: 'MISSING_GENERATION_SESSION' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (task === 'report_diagnostic') {
+      const windowStart = new Date(Date.now() - GENERATION_REUSE_WINDOW_MINUTES * 60 * 1000).toISOString();
       const { data: validGen } = await supabase
         .from('generation_log')
         .select('id')
         .eq('id', providedGenId)
         .eq('user_id', user.id)
-        .neq('status', 'refunded')
-        .gte('created_at', tenMinAgo)
+        .eq('status', 'pending')
+        .gte('created_at', windowStart)
         .single();
 
-      if (validGen) {
-        generationId = providedGenId;
-        isReusedSession = true;
+      if (!validGen) {
+        return new Response(JSON.stringify({ error: 'INVALID_GENERATION_SESSION' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
-    }
 
-    if (!isReusedSession) {
+      generationId = providedGenId;
+    } else {
       const { data: genId, error: creditErr } = await supabase.rpc('consume_credit');
       if (creditErr || !genId) {
         return new Response(JSON.stringify({ error: 'CREDIT_INSUFFICIENT', message: 'Credits insuffisants.' }), {
@@ -364,7 +408,8 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!GEMINI_API_KEY) {
-      await safeRefund(supabase, generationId, isReusedSession);
+      await safeFinalize(supabase, generationId, false, 'AI_NOT_CONFIGURED');
+      finalized = true;
       return new Response(JSON.stringify({ error: 'AI service not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -422,14 +467,16 @@ Deno.serve(async (req: Request) => {
       } catch (err) {
         clearTimeout(timer);
         if (err instanceof DOMException && err.name === 'AbortError') {
-          await safeRefund(supabase, generationId, isReusedSession);
+          await safeFinalize(supabase, generationId, false, 'GEMINI_TIMEOUT');
+          finalized = true;
           return new Response(JSON.stringify({ error: 'Gemini request timed out', retryable: true }), {
             status: 504,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
         if (attempt === GEMINI_MAX_RETRIES) {
-          await safeRefund(supabase, generationId, isReusedSession);
+          await safeFinalize(supabase, generationId, false, 'GEMINI_EXCEPTION');
+          finalized = true;
           throw err;
         }
         lastGeminiStatus = 0;
@@ -439,7 +486,8 @@ Deno.serve(async (req: Request) => {
 
     if (!geminiResponse || !geminiResponse.ok) {
       const retryable = isRetryableStatus(lastGeminiStatus);
-      await safeRefund(supabase, generationId, isReusedSession);
+      await safeFinalize(supabase, generationId, false, retryable ? 'GEMINI_RETRYABLE_ERROR' : 'GEMINI_ERROR');
+      finalized = true;
       return new Response(JSON.stringify({ error: 'AI generation failed', details: lastGeminiStatus || 0, retryable }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -449,12 +497,20 @@ Deno.serve(async (req: Request) => {
     const geminiData = await geminiResponse.json();
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 
+    if (task === 'report_diagnostic') {
+      await safeFinalize(supabase, generationId, true);
+      finalized = true;
+    }
+
     return new Response(JSON.stringify({ text, generationId }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (_err) {
-    await safeRefund(supabase, generationId, isReusedSession);
+    if (!finalized && (currentTask === 'report_bio' || currentTask === 'report_diagnostic')) {
+      await safeFinalize(supabase, generationId, false, 'INTERNAL_ERROR');
+      finalized = true;
+    }
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

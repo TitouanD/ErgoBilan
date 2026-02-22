@@ -167,8 +167,13 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             // --- ÉTAPE 3 : CRÉATION / MISE À JOUR ROBUSTE (Profil Praticien) ---
             setStatusMessage("Synchronisation avec la base de données...");
 
+            const { error: bootstrapPractitionerError } = await supabase
+                .rpc('bootstrap_practitioner_for_user', { p_user_id: userId, p_email: formData.email });
+            if (bootstrapPractitionerError) {
+                Logger.warn('AUTH', 'bootstrap_practitioner_for_user failed before profile update', bootstrapPractitionerError.message);
+            }
+
             const practitionerPayload = {
-                id: userId,
                 email: formData.email,
                 first_name: formData.firstName,
                 last_name: formData.lastName,
@@ -183,14 +188,15 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             for (let i = 0; i < 5; i++) {
                 const { data, error } = await supabase
                     .from('practitioners')
-                    .upsert(practitionerPayload, { onConflict: 'id' })
-                    .select();
+                    .update(practitionerPayload)
+                    .eq('id', userId)
+                    .select('id');
 
                 if (error) {
-                    Logger.warn('AUTH', `Tentative Upsert Practitioner ${i + 1}/5 échouée:`, error.message);
+                    Logger.warn('AUTH', `Tentative Update Practitioner ${i + 1}/5 échouée:`, error.message);
                 } else if (data && data.length > 0) {
                     profileUpdated = true;
-                    Logger.info('AUTH', "Practitioner profile upserted successfully.");
+                    Logger.info('AUTH', "Practitioner profile updated successfully.");
                     break;
                 }
 

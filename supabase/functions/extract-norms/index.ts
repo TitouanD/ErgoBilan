@@ -5,11 +5,19 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const GEMINI_TIMEOUT_MS = 180_000; // Allow extra time for chunked fallback
-const MAX_EXTRACTIONS_PER_HOUR = 50;
+const MAX_EXTRACTIONS_PER_HOUR = Number(Deno.env.get("EXTRACTION_MAX_PER_HOUR") || "20");
+const MAX_EXTRACTIONS_PER_DAY = Number(Deno.env.get("EXTRACTION_MAX_PER_DAY") || "60");
 const GEMINI_MAX_RETRIES = 2;
 const GEMINI_RETRY_BASE_MS = 2_000;
 const MAX_OUTPUT_TOKENS = 65536;
 const CHUNKED_SUBTEST_THRESHOLD = 8; // Trigger chunked fallback if inventory finds > N subtests
+
+const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
+const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,6 +27,12 @@ const corsHeaders = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isRetryableStatus = (status: number) => status === 503 || status === 429;
+
+const isAllowedOrigin = (req: Request): boolean => {
+  const origin = (req.headers.get('origin') || '').trim();
+  if (ALLOWED_ORIGINS.length > 0) return !!origin && ALLOWED_ORIGINS.includes(origin);
+  return !IS_PRODUCTION;
+};
 
 // ── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -1125,6 +1139,12 @@ Deno.serve(async (req: Request) => {
   let supabase: ReturnType<typeof createClient> | null = null;
 
   try {
+    if (!isAllowedOrigin(req)) {
+      return new Response(JSON.stringify({ error: 'FORBIDDEN_ORIGIN' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     // ── AUTH VALIDATION ──
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -1184,9 +1204,41 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const { data: accessData, error: accessErr } = await supabase.rpc('check_extraction_access');
+    const accessRow = Array.isArray(accessData) ? accessData[0] : accessData;
+    const hasAccess = accessRow?.has_access === true;
+    const remainingQuota = Number(accessRow?.remaining_quota ?? 0);
+
+    if (accessErr || !hasAccess) {
+      return new Response(
+        JSON.stringify({
+          error: 'PAID_PLAN_REQUIRED',
+          message: 'Extraction reservee aux abonnes payants actifs.',
+        }),
+        {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    if (remainingQuota <= 0) {
+      return new Response(
+        JSON.stringify({
+          error: 'EXTRACTION_QUOTA_EXCEEDED',
+          message: 'Quota mensuel d\'extraction atteint.',
+        }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     // ── RATE LIMITING (HOURLY CAP) ──
     const { data: withinLimit, error: rlErr } = await supabase.rpc('check_extraction_rate_limit', {
       p_max_per_hour: MAX_EXTRACTIONS_PER_HOUR,
+      p_max_per_day: MAX_EXTRACTIONS_PER_DAY,
     });
     if (rlErr || !withinLimit) {
       return new Response(
@@ -1239,11 +1291,13 @@ Deno.serve(async (req: Request) => {
     // ── LOG EXTRACTION (with strategy tracking) ──
     try {
       const tokenEstimate = result.text ? Math.ceil(result.text.length / 4) : 0;
+      const remainingQuotaAfter = Math.max(0, remainingQuota - 1);
       await supabase.from('extraction_log').insert({
         user_id: user.id,
         filename: String(payload.filename || 'unknown'),
         status: 'completed',
         token_estimate: tokenEstimate,
+        remaining_quota: remainingQuotaAfter,
         strategy: result.meta.strategy,
         api_calls: result.meta.apiCalls,
         repair_mode: repairRequest ? 'targeted' : 'none',
@@ -1253,7 +1307,11 @@ Deno.serve(async (req: Request) => {
       // Non-blocking
     }
 
-    return new Response(JSON.stringify({ text: result.text, meta: result.meta }), {
+    return new Response(JSON.stringify({
+      text: result.text,
+      meta: result.meta,
+      remainingQuota: Math.max(0, remainingQuota - 1),
+    }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

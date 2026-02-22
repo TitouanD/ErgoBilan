@@ -44,6 +44,12 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isMountedRef.current = true;
 
     const loadPromise = (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        Logger.warn('DB', 'Catalog load skipped: user not authenticated');
+        return;
+      }
+
       setLoading(true);
       try {
         Logger.info('DB', 'Initializing Unified Catalog (Black Box Strategy)...');

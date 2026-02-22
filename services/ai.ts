@@ -1,6 +1,4 @@
 import { callAIProxyTask } from './aiProxy';
-import { SubscriptionService } from './subscription';
-import { supabase } from './db';
 import { cleanAndParseJson } from '../utils/aiHelpers';
 import type { ClinicalSynthesis, GeneratedReportSection, Patient } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
@@ -113,24 +111,9 @@ export const AIService = {
         },
       ];
 
-      if (sessionGenerationId) {
-        const genId = sessionGenerationId;
-        (async () => {
-          try {
-            const { error } = await supabase.from('generation_log').update({ status: 'completed' }).eq('id', genId);
-            if (error) Logger.warn('AI', 'Failed to mark generation completed', error);
-          } catch (e) {
-            Logger.warn('AI', 'Exception marking generation completed', e);
-          }
-        })();
-      }
-
       return sections;
     } catch (e: unknown) {
       Logger.error('AI', 'Generation failed', e);
-      if (sessionGenerationId) {
-        await SubscriptionService.refundCredit(sessionGenerationId).catch(() => undefined);
-      }
       throw e;
     }
   },

@@ -115,6 +115,8 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
 
     // Non-retryable errors
     if (edgeError === 'RATE_LIMITED') throw new Error('RATE_LIMITED');
+    if (edgeError === 'PAID_PLAN_REQUIRED') throw new Error('PAID_PLAN_REQUIRED');
+    if (edgeError === 'EXTRACTION_QUOTA_EXCEEDED') throw new Error('EXTRACTION_QUOTA_EXCEEDED');
     if (edgeError === 'Missing authorization' || edgeError === 'Unauthorized')
       throw new Error('SESSION_EXPIRED');
 
