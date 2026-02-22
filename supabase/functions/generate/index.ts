@@ -508,7 +508,7 @@ Deno.serve(async (req: Request) => {
 
     if (task === 'report_diagnostic') {
       const windowStart = new Date(Date.now() - GENERATION_REUSE_WINDOW_MINUTES * 60 * 1000).toISOString();
-      const { data: validGen } = await supabase
+      const { data: validGen } = await adminSupabase!
         .from('generation_log')
         .select('id, error_code')
         .eq('id', providedGenId)

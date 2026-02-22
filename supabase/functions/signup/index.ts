@@ -268,6 +268,9 @@ Deno.serve(async (req: Request) => {
       email,
       password,
       email_confirm: security.relaxedDevMode && SIGNUP_AUTO_CONFIRM_IN_DEV,
+      user_metadata: {
+        signup_flow: "edge_signup_v1",
+      },
       app_metadata: {
         signup_channel: "edge_signup_v1",
         signup_mode: security.relaxedDevMode ? "dev_relaxed" : "strict",

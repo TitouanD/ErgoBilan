@@ -1443,7 +1443,7 @@ Deno.serve(async (req: Request) => {
       const errMsg = String(err);
       const retryable = errMsg.includes('timeout') || errMsg.includes('429') || errMsg.includes('503');
       await safeLogExtractionFailure(
-        supabase,
+        adminSupabase,
         currentUserId,
         requestFilename,
         remainingQuota,
@@ -1468,7 +1468,7 @@ Deno.serve(async (req: Request) => {
     try {
       const tokenEstimate = result.text ? Math.ceil(result.text.length / 4) : 0;
       const remainingQuotaAfter = Math.max(0, remainingQuota - 1);
-      await supabase.from('extraction_log').insert({
+      await adminSupabase.from('extraction_log').insert({
         user_id: currentUserId,
         filename: requestFilename,
         status: 'completed',
@@ -1493,7 +1493,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (_err) {
     await safeLogExtractionFailure(
-      supabase,
+      adminSupabase,
       currentUserId,
       requestFilename,
       remainingQuota,
