@@ -15,7 +15,7 @@ import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
 import { DisambiguationModal } from './DisambiguationModal';
 import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
-import { inferScoreTypeForLookup, inferScoreTypeForParametric, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
+import { analyzeFitting, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
 import {
     buildConditionalSubtestDisplayName,
     buildSubtestDisplayMetaMap,
@@ -1121,16 +1121,40 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         })
     );
 
-    const resolveSubtestScoreType = (entry: CanonicalGroupedEntry): FittingScoreType => {
+    const resolveSubtestScoreType = (entry: CanonicalGroupedEntry): {
+        scoreType: FittingScoreType;
+        confidence: number;
+        source: 'heuristic' | 'manual' | 'admin_override';
+    } => {
         const canonicalType = normalizeScoreTypeToken(entry.scoreType);
-        const fittingRows = toFittingRows(entry.rows);
-        const inferredType = tableStructure === 'LOOKUP'
-            ? inferScoreTypeForLookup(fittingRows).scoreType
-            : inferScoreTypeForParametric(fittingRows).scoreType;
+        if (canonicalType) {
+            return { scoreType: canonicalType, confidence: 1, source: 'manual' };
+        }
 
-        if (canonicalType) return canonicalType;
-        if (inferredType) return inferredType;
-        return 'none';
+        const fittingRows = toFittingRows(entry.rows);
+        const structure = tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP';
+        const fitted = analyzeFitting({
+            rows: fittingRows,
+            structure,
+            currentScoreType: 'none',
+        });
+
+        const threshold = structure === 'PARAMETRIC' ? 0.85 : 0.8;
+        const suggested = fitted.suggestedScoreType || 'none';
+
+        if (suggested !== 'none' && fitted.confidence >= threshold) {
+            return {
+                scoreType: suggested,
+                confidence: fitted.confidence,
+                source: 'heuristic',
+            };
+        }
+
+        return {
+            scoreType: 'none',
+            confidence: fitted.confidence,
+            source: 'heuristic',
+        };
     };
 
     const formatLabel = (rawLabel: string): string => {
@@ -2545,7 +2569,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
         },
         subtests: canonicalGroupedEntries.map((entry) => {
-            const scoreType = resolveSubtestScoreType(entry);
+            const scoreTypeDetection = resolveSubtestScoreType(entry);
+            const scoreType = scoreTypeDetection.scoreType;
             return {
                 name: entry.name,
                 abbreviation: normalizeAbbreviation(entry.abbreviation) || null,
@@ -2553,7 +2578,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 score_type: scoreType,
                 computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
                 input_model: scoreType === 'none' ? 'raw_only' : 'numeric_4mode',
-                input_config: {},
+                input_config: {
+                    score_type_detection_confidence: scoreTypeDetection.confidence,
+                    score_type_detection_source: scoreTypeDetection.source,
+                },
                 norms: entry.rows.map(row => buildNormPayload(row, scoreType))
             };
         })

@@ -528,6 +528,25 @@ export const AdminService = {
         return data as { ok: boolean; norm_id: string; flag_code: string; dismissed: boolean };
     },
 
+    /**
+     * Create/update an organization-scoped direction override clone for a subtest.
+     */
+    createOrUpdateSubtestOverrideClone: async (params: {
+        sourceSubtestId: string;
+        rawDirection: 'higher_better' | 'lower_better';
+        reason?: string | null;
+    }): Promise<{ effective_subtest_id: string; created: boolean; updated_norms_count: number } | null> => {
+        const { data, error } = await supabase.rpc('admin_create_or_update_subtest_override_clone', {
+            p_source_subtest_id: params.sourceSubtestId,
+            p_raw_direction: params.rawDirection,
+            p_reason: params.reason ?? null,
+        });
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) return null;
+        return row as { effective_subtest_id: string; created: boolean; updated_norms_count: number };
+    },
+
     // --- NORM FITTING AUDIT ---
 
     listNormFittingDataset: async (params?: {

@@ -35,6 +35,7 @@ import {
     getCornerRadius,
     getLogoHeight,
 } from '../../utils/pdfStyles';
+import { sanitizeReportText } from '../../utils/textSanitizer';
 
 // ─── Props ───────────────────────────────────────────────────────────────
 interface PdfDocumentProps {
@@ -303,7 +304,7 @@ const PdfTextSection: React.FC<{
     if (!section) return null;
 
     // Parse content into paragraphs
-    const lines = section.content.split('\n').filter(l => l.trim() !== '');
+    const lines = sanitizeReportText(section.content).split('\n').filter(l => l.trim() !== '');
     const attachments = section.attachments || [];
 
     // Build rendered elements, intercalating attachments at their positionIndex

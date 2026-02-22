@@ -67,9 +67,11 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
       acc.dupSubtests += row.duplicate_subtest_excess || 0;
       acc.dupNorms += row.duplicate_norm_excess || 0;
       acc.quality += row.quality_flag_count || 0;
+      acc.zeroNorms += row.zero_norm_subtests_count || 0;
+      acc.lowConfidence += row.low_confidence_score_type_count || 0;
       acc.fitting += fitting;
       return acc;
-    }, { tests: 0, total: 0, missingTags: 0, dupSubtests: 0, dupNorms: 0, quality: 0, fitting: 0 })
+    }, { tests: 0, total: 0, missingTags: 0, dupSubtests: 0, dupNorms: 0, quality: 0, zeroNorms: 0, lowConfidence: 0, fitting: 0 })
   ), [fittingIssueCountByTest, visibleIssues]);
 
   const handleDeduplicateNorms = async (testId: string) => {
@@ -108,7 +110,7 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-7 gap-2">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-9 gap-2">
           <div className="bg-white/5 border border-white/10 rounded-lg p-2">
             <div className="text-[10px] uppercase text-stone-500 font-bold">Tests</div>
             <div className="text-lg text-white font-bold">{summary.tests}</div>
@@ -132,6 +134,14 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
             <div className="text-[10px] uppercase text-amber-300 font-bold">Qualite</div>
             <div className="text-lg text-white font-bold">{summary.quality}</div>
+          </div>
+          <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg p-2">
+            <div className="text-[10px] uppercase text-sky-300 font-bold">0 normes</div>
+            <div className="text-lg text-white font-bold">{summary.zeroNorms}</div>
+          </div>
+          <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+            <div className="text-[10px] uppercase text-orange-300 font-bold">Type faible conf.</div>
+            <div className="text-lg text-white font-bold">{summary.lowConfidence}</div>
           </div>
           <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-2">
             <div className="text-[10px] uppercase text-fuchsia-300 font-bold">Fitting</div>
@@ -176,6 +186,8 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
                 <th className="text-right px-3 py-2">Dup ST</th>
                 <th className="text-right px-3 py-2">Dup Normes</th>
                 <th className="text-right px-3 py-2">Qualite</th>
+                <th className="text-right px-3 py-2">0 Normes</th>
+                <th className="text-right px-3 py-2">Type faible conf.</th>
                 <th className="text-right px-3 py-2">Fitting</th>
                 <th className="text-right px-3 py-2">Actions</th>
               </tr>
@@ -200,6 +212,8 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
                     <td className="px-3 py-2 text-right text-violet-300">{row.duplicate_subtest_excess}</td>
                     <td className="px-3 py-2 text-right text-emerald-300">{row.duplicate_norm_excess}</td>
                     <td className="px-3 py-2 text-right text-amber-300">{row.quality_flag_count}</td>
+                    <td className="px-3 py-2 text-right text-sky-300">{row.zero_norm_subtests_count}</td>
+                    <td className="px-3 py-2 text-right text-orange-300">{row.low_confidence_score_type_count}</td>
                     <td className="px-3 py-2 text-right text-fuchsia-300">{fittingCount}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-1.5">
@@ -227,7 +241,7 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
 
               {!isLoading && visibleIssues.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-12 text-center text-stone-500">
+                  <td colSpan={10} className="px-3 py-12 text-center text-stone-500">
                     <AlertTriangle size={18} className="mx-auto mb-2 opacity-60" />
                     Aucune issue pour ce filtre.
                   </td>

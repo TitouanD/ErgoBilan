@@ -238,6 +238,10 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                             subtest={st}
                             result={res}
                             onChange={(val) => handleSubtestChange(test.id, st.id, val)}
+                            hasNorms
+                            normsStatusCode="ok"
+                            effectiveDirection={st.rawDirection === 'lower_better' ? 'lower_better' : 'higher_better'}
+                            baseDirection={st.rawDirection === 'lower_better' ? 'lower_better' : 'higher_better'}
                             isExpanded={expandedSubtestId === uniqueId}
                             onToggleExpand={() => setExpandedSubtestId(expandedSubtestId === uniqueId ? null : uniqueId)}
                             onFocus={() => setExpandedSubtestId(null)}

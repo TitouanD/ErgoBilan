@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { ReportSection, Patient } from '../../types';
 import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info, CheckCheck } from 'lucide-react';
+import { sanitizeReportText } from '../../utils/textSanitizer';
 
 interface Props {
   sections: ReportSection[];
@@ -21,9 +22,10 @@ const parseBold = (text: string) => {
 };
 
 const renderMarkdown = (text: string) => {
-    if (!text) return <p className="text-stone-400 dark:text-[var(--text-disabled)] italic">Aucun contenu.</p>;
+    const safeText = sanitizeReportText(text);
+    if (!safeText) return <p className="text-stone-400 dark:text-[var(--text-disabled)] italic">Aucun contenu.</p>;
 
-    return text.split('\n').map((line, idx) => {
+    return safeText.split('\n').map((line, idx) => {
         const trimmed = line.trim();
         if (!trimmed) return <div key={idx} className="h-4"></div>;
         if (trimmed.startsWith('### ')) {
@@ -76,11 +78,11 @@ const SectionCard: React.FC<{
     onValidate: (id: string, content?: string) => void;
 }> = ({ section, onValidate }) => {
     const [isEditing, setIsEditing] = useState(false);
-    const [editContent, setEditContent] = useState(section.content);
+    const [editContent, setEditContent] = useState(sanitizeReportText(section.content));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const handleSave = () => {
-        onValidate(section.id, editContent);
+        onValidate(section.id, sanitizeReportText(editContent));
         setIsEditing(false);
     };
 
@@ -192,7 +194,7 @@ const SectionCard: React.FC<{
                         </button>
                         {!isValidated && (
                             <button 
-                                onClick={() => onValidate(section.id, section.content)}
+                                onClick={() => onValidate(section.id, sanitizeReportText(section.content))}
                                 className="flex items-center gap-2 bg-stone-900 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-600 transition-all font-bold text-xs uppercase tracking-wider shadow-md"
                             >
                                 <Check size={16} /> Valider

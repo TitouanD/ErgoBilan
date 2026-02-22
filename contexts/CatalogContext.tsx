@@ -6,6 +6,7 @@ import type {
   SubtestDef,
   ScoreType,
   ComputationMode,
+  RawDirection,
   SubtestInputConfig,
   SubtestInputModel,
 } from '../data/testCatalog';
@@ -68,9 +69,18 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         Logger.info('DB', 'Catalog view sample', (viewRows || [])[0] || null);
 
-        const { data: subtestsData, error: subError } = await supabase
+        let subtestsData: any[] | null = null;
+        let subError: any = null;
+        ({ data: subtestsData, error: subError } = await supabase
           .from('view_unified_subtests')
-          .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config');
+          .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone'));
+
+        if (subError && String(subError.code || '') === '42703') {
+          // Backward-compat: allow older DB schema before raw_direction rollout.
+          ({ data: subtestsData, error: subError } = await supabase
+            .from('view_unified_subtests')
+            .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config'));
+        }
 
         if (subError) {
           Logger.warn('DB', 'Subtests view unavailable, continuing without subtests.', subError);
@@ -109,6 +119,13 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return 'numeric_4mode';
         };
 
+        const normalizeRawDirection = (value?: string | null): RawDirection => {
+          const normalized = String(value || '').toLowerCase().trim();
+          if (normalized === 'higher_better') return 'higher_better';
+          if (normalized === 'lower_better') return 'lower_better';
+          return 'auto';
+        };
+
         const normalizeInputConfig = (value: unknown): SubtestInputConfig | undefined => {
           if (!value || typeof value !== 'object') return undefined;
           const raw = value as Record<string, unknown>;
@@ -133,11 +150,16 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const defaultMetric = ['raw', 'standard', 'z', 'percentile'].includes(defaultMetricRaw)
             ? (defaultMetricRaw as 'raw' | 'standard' | 'z' | 'percentile')
             : undefined;
+          const rawDirectionHintRaw = typeof raw.rawDirectionHint === 'string' ? raw.rawDirectionHint.trim() : '';
+          const rawDirectionHint = ['auto', 'higher_better', 'lower_better'].includes(rawDirectionHintRaw)
+            ? (rawDirectionHintRaw as 'auto' | 'higher_better' | 'lower_better')
+            : undefined;
 
-          if ((!options || options.length === 0) && !defaultMetric) return undefined;
+          if ((!options || options.length === 0) && !defaultMetric && !rawDirectionHint) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
             ...(defaultMetric ? { defaultMetric } : {}),
+            ...(rawDirectionHint ? { rawDirectionHint } : {}),
           };
         };
 
@@ -165,6 +187,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             unit: s.unit || 'pts',
             scoreType: normalizeScoreType(s.score_type),
             lowerIsBetter: false,
+            rawDirection: normalizeRawDirection(s.raw_direction),
+            sourceSubtestId: s.source_subtest_id || null,
+            isOverrideClone: s.is_override_clone === true,
             computationMode: normalizeComputationMode(s.computation_mode),
             inputModel,
             inputConfig,

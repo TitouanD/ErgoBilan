@@ -184,6 +184,7 @@ REGLES NON NEGOCIABLES :
 9. **Ton clinique factuel** : PAS de metaphores ("le pilote", "le moteur de l'action", "rush graphique"). PAS de guillemets dramatisants. PAS d'interpretation causale ("cela s'explique par", "ce decalage entre"). Decris le constat, pas la theorie.
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique (PPH, CIF, MCRO...) ni de protocole d'evaluation dans le rapport. Le rapport est centre sur l'enfant.
 11. **Scores atypiques** : Si un z-score depasse +4 ou -4, signale-le comme "score atypique necessitant verification" au lieu de l'interpreter comme un resultat clinique valide.
+12. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires (ex: "évaluation", "résultats", "compétences", "supérieures", "à", "où", "ça"). Ne rends jamais un texte volontairement sans accents.
 
 EXEMPLES DE BON STYLE :
 - "Sur le plan moteur fin et praxique, {{PATIENT_PRENOM}} presente des fragilites en motricite fine, particulierement dans les taches requerant de la precision."
@@ -205,7 +206,8 @@ REGLES NON NEGOCIABLES :
 8. **Format** : JSON valide strict. Valeurs = strings Markdown. Tirets "-" pour les listes.
 9. **Ton clinique factuel** : PAS de metaphores ni de guillemets dramatisants. PAS d'interpretation causale. Decris le constat.
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique (PPH, CIF, MCRO...) dans le rapport.
-11. **Scores atypiques** : Si un z-score depasse +4 ou -4, signale-le comme "score atypique necessitant verification".`;
+11. **Scores atypiques** : Si un z-score depasse +4 ou -4, signale-le comme "score atypique necessitant verification".
+12. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires (ex: "évaluation", "résultats", "compétences", "supérieures", "à", "où", "ça"). Ne rends jamais un texte volontairement sans accents.`;
 
 // ── JSON Schemas for Gemini responseSchema constraint ──────────────────────
 
@@ -271,6 +273,7 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '- Ton clinique mais accessible.',
     '- Paragraphes aeres (double saut de ligne).',
     '- Tirets "-" pour les listes.',
+    '- Orthographe francaise correcte avec accents obligatoires.',
     '- Ne repete pas les memes informations entre sections.',
     '- N\'invente rien : si une donnee est absente, ne la mentionne pas.',
   ].join('\n');
@@ -387,6 +390,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '- Paragraphes aeres (double saut de ligne entre chaque domaine).',
     '- Ton clinique factuel, accessible aux parents et enseignants.',
     '- Tirets "-" pour les listes.',
+    '- Orthographe francaise correcte avec accents obligatoires.',
     '- PAS de metaphores, PAS de guillemets dramatisants, PAS de repetition d\'explications de termes.',
     '- N\'invente rien : si une donnee est absente, ne la mentionne pas.',
   ].join('\n');

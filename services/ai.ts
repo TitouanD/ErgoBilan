@@ -3,6 +3,7 @@ import { cleanAndParseJson } from '../utils/aiHelpers';
 import type { ClinicalSynthesis, GeneratedReportSection, Patient } from '../types';
 import { hydrateReport } from '../utils/anonymizer';
 import { Logger } from '../utils/logger';
+import { sanitizeReportText } from '../utils/textSanitizer';
 
 interface BioResponse {
   mandat_referencement?: string;
@@ -70,42 +71,42 @@ export const AIService = {
         {
           id: 'mandat_ref',
           title: 'Mandat de r\u00e9f\u00e9rencement en ergoth\u00e9rapie',
-          content: hydrateReport(jsonBio?.mandat_referencement || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonBio?.mandat_referencement || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
         {
           id: 'mandat_eval',
           title: "Mandat d'\u00e9valuation en ergoth\u00e9rapie",
-          content: hydrateReport(jsonBio?.mandat_evaluation || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonBio?.mandat_evaluation || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
         {
           id: 'profil',
           title: 'Profil occupationnel',
-          content: hydrateReport(jsonBio?.profil_occupationnel || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonBio?.profil_occupationnel || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
         {
           id: 'diagnostic',
           title: 'Diagnostique en ergoth\u00e9rapie',
-          content: hydrateReport(jsonDiag?.synthese_diagnostic || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonDiag?.synthese_diagnostic || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
         {
           id: 'recommandations',
           title: profile === 'adult' ? 'Pr\u00e9conisations' : 'Recommandations',
-          content: hydrateReport(jsonDiag?.recommandations || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonDiag?.recommandations || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
         {
           id: 'objectifs',
           title: 'Les objectifs g\u00e9n\u00e9raux',
-          content: hydrateReport(jsonDiag?.objectifs_generaux || 'Non g\u00e9n\u00e9r\u00e9.', patient),
+          content: sanitizeReportText(hydrateReport(jsonDiag?.objectifs_generaux || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },

@@ -3,13 +3,17 @@ import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '
 import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef } from '../../data/testCatalog';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { calculateFromPercentile, calculateFromStandard, calculateFromZ } from '../../utils/scoring';
+import { getNormStatusMessage, resolveEffectiveDirection, type EffectiveDirection, type NormsStatusCode } from '../../utils/scoreDirection';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { supabase } from '../../services/db';
+import { useToast } from '../../contexts/ToastContext';
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   CheckCheck,
   ChevronDown,
   ChevronRight,
@@ -44,6 +48,12 @@ interface Props {
 
 type Metric = 'raw' | 'standard' | 'z' | 'percentile';
 
+type NormsStatus = {
+  hasNorms: boolean;
+  hasApplicableNorms: boolean;
+  statusCode: NormsStatusCode;
+};
+
 const parseNum = (value: string): number | null => {
   const n = parseFloat(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
@@ -61,6 +71,71 @@ const getScaleLabel = (scoreType?: ScoreType): string | null => {
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const getDirectionBadgeLabel = (direction: EffectiveDirection): string => (
+  direction === 'lower_better' ? 'Brut croissant -> score decroissant' : 'Brut croissant -> score croissant'
+);
+
+const getDirectionBadgeTooltip = (direction: EffectiveDirection, interactive: boolean): string => {
+  const base = direction === 'lower_better'
+    ? 'Sens brut: plus le brut augmente, plus le score baisse.'
+    : 'Sens brut: plus le brut augmente, plus le score augmente.';
+  return interactive ? `${base} Cliquer pour inverser ce sens.` : base;
+};
+
+const DirectionBadge: React.FC<{
+  direction: EffectiveDirection;
+  pending?: boolean;
+  interactive?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}> = ({
+  direction,
+  pending = false,
+  interactive = false,
+  disabled = false,
+  onClick,
+}) => {
+  const isLower = direction === 'lower_better';
+  const Icon = isLower ? ArrowDown : ArrowUp;
+  const toneClass = isLower
+    ? 'text-rose-500 bg-rose-500/10 border-rose-500/30'
+    : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30';
+  const title = getDirectionBadgeTooltip(direction, interactive);
+  const commonClass = `inline-flex items-center justify-center rounded-full border transition-colors ${toneClass} ${pending ? 'ring-1 ring-[#E07A5F]/50' : ''}`;
+
+  if (interactive) {
+    return (
+      <button
+        type="button"
+        disabled={disabled || !onClick}
+        onClick={onClick}
+        title={title}
+        aria-label={getDirectionBadgeLabel(direction)}
+        className={`${commonClass} h-6 w-6 hover:brightness-110 ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+      >
+        <Icon size={13} strokeWidth={2.8} />
+      </button>
+    );
+  }
+
+  return (
+    <span
+      title={title}
+      aria-label={getDirectionBadgeLabel(direction)}
+      className={`${commonClass} h-5 w-5`}
+    >
+      <Icon size={12} strokeWidth={2.8} />
+    </span>
+  );
+};
+
+const humanizeComputeWarning = (warning: string): string => {
+  if (warning === 'direction_auto_applied') return 'Sens brut auto appliqué.';
+  if (warning === 'direction_override_clone_applied') return 'Sens brut personnalisé organisation appliqué.';
+  if (warning === 'score_type_unset') return 'Type de score non défini (calcul auto désactivé).';
+  return warning;
+};
 
 /** Infer the preferred display metric (NS or ET) for a given subtest */
 const getPreferredMetric = (subtest: SubtestDef): 'standard' | 'z' => {
@@ -246,7 +321,26 @@ const NumericRow: React.FC<{
   readOnly?: boolean;
   onFocus?: () => void;
   hasNorms?: boolean;
-}> = ({ testId, patient, subtest, result, onChange, readOnly, onFocus, hasNorms }) => {
+  normsStatusCode?: NormsStatusCode;
+  effectiveDirection: EffectiveDirection;
+  baseDirection: EffectiveDirection;
+  onToggleDirection?: () => void;
+  hasPendingDirectionOverride?: boolean;
+}> = ({
+  testId,
+  patient,
+  subtest,
+  result,
+  onChange,
+  readOnly,
+  onFocus,
+  hasNorms,
+  normsStatusCode,
+  effectiveDirection,
+  baseDirection,
+  onToggleDirection,
+  hasPendingDirectionOverride,
+}) => {
   const [isComputing, setIsComputing] = useState(false);
   const [warn, setWarn] = useState<string | null>(null);
   const [localZText, setLocalZText] = useState<string | null>(null);
@@ -262,26 +356,50 @@ const NumericRow: React.FC<{
       setPatch({ raw, derived: { source: 'manual' } });
       return;
     }
+    if (!hasNorms) {
+      const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
+      setWarn(statusWarn);
+      setPatch({ raw, derived: { source: 'manual' } });
+      return;
+    }
 
     setIsComputing(true);
     try {
       const dbSubtestId = subtest.id.includes('_') ? subtest.id : `${testId}_${subtest.id}`;
       const out = await ScoringEngine.compute(dbSubtestId, value, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
       if (!out || !out.normFound) {
-        setWarn('Normes introuvables — poursuivez en saisie manuelle.');
+        const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
+        setWarn(statusWarn);
         setPatch({ raw, derived: { source: 'manual' } });
         return;
       }
-      setWarn(out.warnings.length > 0 ? out.warnings.join(' | ') : null);
+
+      let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
+      let standardToUse = out.standard ?? '';
+      let percentileToUse = out.percentile ?? '';
+
+      if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
+        zToUse = -zToUse;
+        const recalculated = calculateFromZ(zToUse, subtest.scoreType || 'standard');
+        standardToUse = recalculated.standard ?? '';
+        percentileToUse = recalculated.percentile ?? '';
+      }
+
+      const warningList = out.warnings.map(humanizeComputeWarning);
+      if (effectiveDirection !== baseDirection) {
+        warningList.push('Sens brut inversé localement (en attente de sauvegarde).');
+      }
+      setWarn(warningList.length > 0 ? warningList.join(' | ') : null);
+
       setPatch({
         raw,
-        standard: out.standard ?? '',
-        percentile: out.percentile ?? '',
-        zScore: typeof out.zScore === 'number' ? out.zScore : undefined,
+        standard: standardToUse,
+        percentile: percentileToUse,
+        zScore: zToUse ?? undefined,
         derived: {
-          standard: out.standard ?? undefined,
-          percentile: out.percentile ?? undefined,
-          zScore: typeof out.zScore === 'number' ? out.zScore : undefined,
+          standard: standardToUse || undefined,
+          percentile: percentileToUse || undefined,
+          zScore: zToUse ?? undefined,
           source: 'auto',
         },
         scoreSource: 'auto',
@@ -367,6 +485,10 @@ const NumericRow: React.FC<{
     return `${base} ${sizeClass} ${borderClass} ${colorClass} ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`;
   };
 
+  const statusMessage = getNormStatusMessage(normsStatusCode);
+  const showDirectionControl = (subtest.computationMode || 'LOOKUP') === 'PARAMETRIC'
+    && subtest.scoreType !== 'none';
+
   return (
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
@@ -385,6 +507,23 @@ const NumericRow: React.FC<{
                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
                   Normes
                 </span>
+              )}
+              {!hasNorms && statusMessage && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  {normsStatusCode === 'no_norms' && '0 norme'}
+                  {normsStatusCode === 'no_applicable_age_gender' && 'Normes non applicables'}
+                  {normsStatusCode === 'onboarding_required' && 'Onboarding requis'}
+                  {normsStatusCode === 'access_restricted' && 'Accès restreint'}
+                </span>
+              )}
+              {showDirectionControl && (
+                <DirectionBadge
+                  direction={effectiveDirection}
+                  pending={hasPendingDirectionOverride}
+                  interactive
+                  disabled={readOnly || !onToggleDirection}
+                  onClick={onToggleDirection}
+                />
               )}
             </div>
           </div>
@@ -535,6 +674,19 @@ const NumericRow: React.FC<{
           </div>
         )}
 
+        {!hasNorms && statusMessage && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
+            <AlertTriangle size={12} />
+            {statusMessage}
+          </div>
+        )}
+        {hasPendingDirectionOverride && (
+          <div className="mt-2 rounded-lg border border-[#E07A5F]/30 bg-[#E07A5F]/10 px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
+            <AlertTriangle size={12} />
+            Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
+          </div>
+        )}
+
         {/* Gauss inline */}
         <div className="mt-2">
           <GaussBand z={visualZ} />
@@ -647,11 +799,43 @@ const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange:
   );
 };
 
-const FlexibleSubtestRow = React.memo((props: { testId: string; patient: Patient; subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void; isExpanded?: boolean; onToggleExpand?: () => void; hasNorms?: boolean }) => {
+const FlexibleSubtestRow = React.memo((props: {
+  testId: string;
+  patient: Patient;
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  hasNorms?: boolean;
+  normsStatusCode?: NormsStatusCode;
+  effectiveDirection: EffectiveDirection;
+  baseDirection: EffectiveDirection;
+  onToggleDirection?: () => void;
+  hasPendingDirectionOverride?: boolean;
+}) => {
   const model = props.subtest.inputModel || 'numeric_4mode';
   if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'raw_only' || props.subtest.scoreType === 'none') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
-  return <NumericRow testId={props.testId} patient={props.patient} subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} hasNorms={props.hasNorms} />;
+  return (
+    <NumericRow
+      testId={props.testId}
+      patient={props.patient}
+      subtest={props.subtest}
+      result={props.result}
+      onChange={props.onChange}
+      readOnly={props.readOnly}
+      onFocus={props.onFocus}
+      hasNorms={props.hasNorms}
+      normsStatusCode={props.normsStatusCode}
+      effectiveDirection={props.effectiveDirection}
+      baseDirection={props.baseDirection}
+      onToggleDirection={props.onToggleDirection}
+      hasPendingDirectionOverride={props.hasPendingDirectionOverride}
+    />
+  );
 });
 
 const CompactSubtestRow: React.FC<{
@@ -699,9 +883,10 @@ const TableView: React.FC<{
   patient: Patient;
   subtests: SubtestDef[];
   tests: TestData;
-  normsMap: Record<string, boolean>;
+  normsStatusMap: Record<string, NormsStatus>;
+  directionByDbSubtestId: Record<string, EffectiveDirection>;
   updateSubtest: (testId: string, subId: string, patch: Partial<ScoreResult>) => void;
-}> = ({ testId, patient, subtests, tests, normsMap, updateSubtest }) => {
+}> = ({ testId, patient, subtests, tests, normsStatusMap, directionByDbSubtestId, updateSubtest }) => {
   const [localZ, setLocalZ] = useState<Record<string, string>>({});
 
   const getResult = (subId: string): ScoreResult => tests[testId]?.[subId] || emptyScore();
@@ -727,15 +912,28 @@ const TableView: React.FC<{
 
     if (metric === 'raw') {
       setPatch({ entryMetric: 'raw', raw: text });
-      if (n !== null && (subtest.computationMode || 'LOOKUP') !== 'NONE') {
+      const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
+      const status = normsStatusMap[dbSubtestId];
+      const canCompute = status?.statusCode === 'ok';
+      if (n !== null && (subtest.computationMode || 'LOOKUP') !== 'NONE' && canCompute) {
         try {
-          const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
           const out = await ScoringEngine.compute(dbSubtestId, n, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
           if (out?.normFound) {
+            let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
+            let standardToUse = out.standard ?? '';
+            let percentileToUse = out.percentile ?? '';
+            const baseDirection = resolveEffectiveDirection(subtest.rawDirection, subtest.name);
+            const effectiveDirection = directionByDbSubtestId[dbSubtestId] || baseDirection;
+            if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
+              zToUse = -zToUse;
+              const recalculated = calculateFromZ(zToUse, subtest.scoreType || 'standard');
+              standardToUse = recalculated.standard ?? '';
+              percentileToUse = recalculated.percentile ?? '';
+            }
             setPatch({
-              raw: text, standard: out.standard ?? '', percentile: out.percentile ?? '',
-              zScore: typeof out.zScore === 'number' ? out.zScore : undefined,
-              derived: { standard: out.standard ?? undefined, percentile: out.percentile ?? undefined, zScore: typeof out.zScore === 'number' ? out.zScore : undefined, source: 'auto' },
+              raw: text, standard: standardToUse, percentile: percentileToUse,
+              zScore: zToUse ?? undefined,
+              derived: { standard: standardToUse || undefined, percentile: percentileToUse || undefined, zScore: zToUse ?? undefined, source: 'auto' },
               scoreSource: 'auto',
             });
           }
@@ -771,7 +969,8 @@ const TableView: React.FC<{
           {subtests.map(st => {
             const res = getResult(st.id);
             const dbSubId = st.id.includes('_') ? st.id : `${testId}_${st.id}`;
-            const stHasNorms = normsMap[dbSubId] === true;
+            const stStatus = normsStatusMap[dbSubId];
+            const stHasNorms = stStatus?.statusCode === 'ok';
             const pref = getPreferredMetric(st);
             const isQual = st.inputModel === 'qualitative_category';
             const isRawOnly = st.inputModel === 'raw_only' || st.scoreType === 'none';
@@ -821,6 +1020,13 @@ const TableView: React.FC<{
               <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''}`}>
                 <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
                   <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
+                  {st.computationMode === 'PARAMETRIC' && (
+                    <span className="mt-1 inline-flex">
+                      <DirectionBadge
+                        direction={directionByDbSubtestId[dbSubId] || resolveEffectiveDirection(st.rawDirection, st.name)}
+                      />
+                    </span>
+                  )}
                 </td>
                 {/* Brut — disabled/greyed when no norms */}
                 <td className="py-1 px-1">
@@ -1189,6 +1395,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
 };
 
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack, onContribute }) => {
+  const toast = useToast();
   const { catalog, ensureCatalogLoaded } = useCatalog();
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogTargetTestId, setCatalogTargetTestId] = useState<string | null>(null);
@@ -1197,7 +1404,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const [subtestFilters, setSubtestFilters] = useState<Record<string, string>>({});
   const [showWarning, setShowWarning] = useState(false);
   const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
-  const [normsMap, setNormsMap] = useState<Record<string, boolean>>({});
+  const [normsStatusMap, setNormsStatusMap] = useState<Record<string, NormsStatus>>({});
+  const [pendingDirectionOverrides, setPendingDirectionOverrides] = useState<Record<string, EffectiveDirection>>({});
+  const [isPersistingDirectionOverrides, setIsPersistingDirectionOverrides] = useState(false);
   const [viewMode, setViewMode] = useState<Record<string, 'accordion' | 'table'>>({});
   const normsLoadedRef = useRef<string>('');
 
@@ -1205,7 +1414,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     ensureCatalogLoaded();
   }, [ensureCatalogLoaded]);
 
-  // Load norms applicability for all current subtests (age/gender aware)
+  // Load norms status for all current subtests (age/gender aware)
   useEffect(() => {
     const allSubtestIds: string[] = [];
     Object.entries(tests).forEach(([testId, subtests]) => {
@@ -1214,60 +1423,215 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         allSubtestIds.push(dbId);
       });
     });
+    const uniqueIds = Array.from(new Set(allSubtestIds));
     const age = ageMonths(patient.dob);
     const gender = patient.gender === 'F' ? 'F' : 'M';
-    const key = `${age}|${gender}|${allSubtestIds.sort().join(',')}`;
+    const key = `${age}|${gender}|${uniqueIds.sort().join(',')}`;
     if (!key || key === normsLoadedRef.current) return;
     normsLoadedRef.current = key;
 
     let cancelled = false;
-    const applyMap = (map: Record<string, boolean>) => {
-      if (!cancelled) setNormsMap(map);
+    const applyMap = (map: Record<string, NormsStatus>) => {
+      if (!cancelled) setNormsStatusMap(map);
     };
 
-    const loadLegacyAvailability = async () => {
+    const loadLegacyStatus = async () => {
       try {
-        const { data: fallbackData } = await supabase.rpc('check_norms_availability', { p_subtest_ids: allSubtestIds });
-        if (!fallbackData) return;
-        const map: Record<string, boolean> = {};
-        (fallbackData as Array<{ subtest_id: string; has_norms: boolean }>).forEach((r) => {
-          map[r.subtest_id] = r.has_norms;
+        const [availabilityRes, applicabilityRes, onboardRes] = await Promise.all([
+          supabase.rpc('check_norms_availability', { p_subtest_ids: uniqueIds }),
+          supabase.rpc('check_norms_applicability', { p_subtest_ids: uniqueIds, p_age_months: age, p_gender: gender }),
+          supabase.rpc('is_current_user_onboarded'),
+        ]);
+
+        const onboarded = onboardRes.data === true;
+        const hasNormsById: Record<string, boolean> = {};
+        const hasApplicableById: Record<string, boolean> = {};
+        (availabilityRes.data as Array<{ subtest_id: string; has_norms: boolean }> | null || []).forEach((row) => {
+          hasNormsById[row.subtest_id] = row.has_norms === true;
+        });
+        (applicabilityRes.data as Array<{ subtest_id: string; has_applicable_norms: boolean }> | null || []).forEach((row) => {
+          hasApplicableById[row.subtest_id] = row.has_applicable_norms === true;
+        });
+
+        const map: Record<string, NormsStatus> = {};
+        uniqueIds.forEach((subtestId) => {
+          if (!onboarded) {
+            map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'onboarding_required' };
+            return;
+          }
+          const hasNorms = hasNormsById[subtestId] === true;
+          const hasApplicableNorms = hasApplicableById[subtestId] === true;
+          map[subtestId] = {
+            hasNorms,
+            hasApplicableNorms,
+            statusCode: !hasNorms ? 'no_norms' : hasApplicableNorms ? 'ok' : 'no_applicable_age_gender',
+          };
         });
         applyMap(map);
       } catch {
-        // silent fallback failure
+        const map: Record<string, NormsStatus> = {};
+        uniqueIds.forEach((subtestId) => {
+          map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'access_restricted' };
+        });
+        applyMap(map);
       }
     };
 
-    const loadApplicability = async () => {
-      try {
-        const { data, error } = await supabase.rpc('check_norms_applicability', {
-          p_subtest_ids: allSubtestIds,
-          p_age_months: age,
-          p_gender: gender,
-        });
+    const loadStatus = async () => {
+      const rows = await ScoringEngine.checkNormsStatus(uniqueIds, age, gender);
+      if (!rows) {
+        await loadLegacyStatus();
+        return;
+      }
 
-        if (error || !data) {
-          await loadLegacyAvailability();
-          return;
+      const map: Record<string, NormsStatus> = {};
+      rows.forEach((row) => {
+        map[row.subtestId] = {
+          hasNorms: row.hasNorms,
+          hasApplicableNorms: row.hasApplicableNorms,
+          statusCode: row.statusCode,
+        };
+      });
+      uniqueIds.forEach((subtestId) => {
+        if (!map[subtestId]) {
+          map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'access_restricted' };
         }
-
-        const map: Record<string, boolean> = {};
-        (data as Array<{ subtest_id: string; has_applicable_norms: boolean }>).forEach((r) => {
-          map[r.subtest_id] = r.has_applicable_norms === true;
-        });
-        applyMap(map);
-      } catch {
-        await loadLegacyAvailability();
-      }
+      });
+      applyMap(map);
     };
 
-    void loadApplicability();
+    void loadStatus();
 
     return () => {
       cancelled = true;
     };
   }, [tests, patient.dob, patient.gender]);
+
+  useEffect(() => {
+    const currentDbIds = new Set<string>();
+    Object.entries(tests).forEach(([testId, subtests]) => {
+      Object.keys(subtests).forEach((subId) => {
+        currentDbIds.add(subId.includes('_') ? subId : `${testId}_${subId}`);
+      });
+    });
+    setPendingDirectionOverrides((prev) => {
+      const next: Record<string, EffectiveDirection> = {};
+      (Object.entries(prev) as Array<[string, EffectiveDirection]>).forEach(([dbSubtestId, direction]) => {
+        if (currentDbIds.has(dbSubtestId)) next[dbSubtestId] = direction;
+      });
+      return next;
+    });
+  }, [tests]);
+
+  const getSubtestDefByDbSubtestId = useCallback((dbSubtestId: string): SubtestDef | null => {
+    for (const category of catalog) {
+      for (const test of category.tests) {
+        const match = test.subtests.find((subtest) => {
+          const candidate = subtest.id.includes('_') ? subtest.id : `${test.id}_${subtest.id}`;
+          return candidate === dbSubtestId;
+        });
+        if (match) return match;
+      }
+    }
+    return null;
+  }, [catalog]);
+
+  const resolveBaseDirectionForDbSubtest = useCallback((dbSubtestId: string, fallbackSubtest?: SubtestDef): EffectiveDirection => {
+    const subtest = fallbackSubtest || getSubtestDefByDbSubtestId(dbSubtestId);
+    if (!subtest) return 'higher_better';
+    return resolveEffectiveDirection(subtest.rawDirection, subtest.name);
+  }, [getSubtestDefByDbSubtestId]);
+
+  const toggleSubtestDirection = useCallback((dbSubtestId: string, subtest: SubtestDef) => {
+    const baseDirection = resolveBaseDirectionForDbSubtest(dbSubtestId, subtest);
+    setPendingDirectionOverrides((prev) => {
+      const currentDirection = prev[dbSubtestId] || baseDirection;
+      const nextDirection: EffectiveDirection = currentDirection === 'higher_better' ? 'lower_better' : 'higher_better';
+      if (nextDirection === baseDirection) {
+        const { [dbSubtestId]: _discarded, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [dbSubtestId]: nextDirection };
+    });
+
+    const scoreType = subtest.scoreType || 'standard';
+    let touched = false;
+    const nextTests: TestData = { ...tests };
+
+    Object.entries(tests).forEach(([testId, subtests]) => {
+      Object.entries(subtests).forEach(([subId, result]) => {
+        const candidateDbId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        if (candidateDbId !== dbSubtestId) return;
+
+        let zToFlip: number | null = null;
+        if (typeof result.zScore === 'number' && Number.isFinite(result.zScore)) {
+          zToFlip = result.zScore;
+        } else {
+          const standardValue = parseNum(result.standard || '');
+          if (standardValue !== null) {
+            zToFlip = calculateFromStandard(standardValue, scoreType).zScore;
+          } else {
+            const percentileValue = parseNum(result.percentile || '');
+            if (percentileValue !== null) {
+              zToFlip = calculateFromPercentile(percentileValue, scoreType).zScore;
+            }
+          }
+        }
+        if (zToFlip === null) return;
+
+        const flippedZ = -zToFlip;
+        const recalculated = calculateFromZ(flippedZ, scoreType);
+        nextTests[testId] = {
+          ...nextTests[testId],
+          [subId]: {
+            ...result,
+            standard: recalculated.standard ?? '',
+            percentile: recalculated.percentile ?? '',
+            zScore: flippedZ,
+            derived: {
+              standard: recalculated.standard || undefined,
+              percentile: recalculated.percentile || undefined,
+              zScore: flippedZ,
+              source: result.scoreSource === 'auto' ? 'auto' : 'assisted',
+            },
+          },
+        };
+        touched = true;
+      });
+    });
+
+    if (touched) {
+      updateTests(nextTests);
+    }
+  }, [resolveBaseDirectionForDbSubtest, tests, updateTests]);
+
+  const persistPendingDirectionOverrides = useCallback(async (): Promise<boolean> => {
+    const entries = Object.entries(pendingDirectionOverrides) as Array<[string, EffectiveDirection]>;
+    if (entries.length === 0) return true;
+
+    setIsPersistingDirectionOverrides(true);
+    try {
+      for (const [dbSubtestId, overrideDirection] of entries) {
+        const subtestDef = getSubtestDefByDbSubtestId(dbSubtestId);
+        const sourceSubtestId = subtestDef?.sourceSubtestId || dbSubtestId;
+        const result = await ScoringEngine.upsertRawDirectionOverrideClone(sourceSubtestId, overrideDirection, 'step2_user_override');
+        if (!result) {
+          toast.error(`Impossible d'enregistrer le sens brut pour ${getSubtestDisplayName(subtestDef || { name: dbSubtestId, displayName: undefined })}.`);
+          return false;
+        }
+      }
+      setPendingDirectionOverrides({});
+      return true;
+    } finally {
+      setIsPersistingDirectionOverrides(false);
+    }
+  }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, toast]);
+
+  const handleProceedToNext = useCallback(async () => {
+    const ok = await persistPendingDirectionOverrides();
+    if (!ok) return;
+    onNext();
+  }, [onNext, persistPendingDirectionOverrides]);
 
   const addTests = useCallback((selection: Record<string, string[]>) => {
     const next = { ...tests };
@@ -1337,6 +1701,19 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
     return groups;
   }, [tests, catalog]);
+
+  const directionByDbSubtestId = useMemo(() => {
+    const map: Record<string, EffectiveDirection> = {};
+    Object.entries(tests).forEach(([testId, subtests]) => {
+      Object.keys(subtests).forEach((subId) => {
+        const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        const subtestDef = getSubtestDefByDbSubtestId(dbSubtestId);
+        const baseDirection = subtestDef ? resolveEffectiveDirection(subtestDef.rawDirection, subtestDef.name) : 'higher_better';
+        map[dbSubtestId] = pendingDirectionOverrides[dbSubtestId] || baseDirection;
+      });
+    });
+    return map;
+  }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, tests]);
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-32">
@@ -1481,7 +1858,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                 patient={patient}
                                 subtests={filteredSubtests}
                                 tests={tests}
-                                normsMap={normsMap}
+                                normsStatusMap={normsStatusMap}
+                                directionByDbSubtestId={directionByDbSubtestId}
                                 updateSubtest={updateSubtest}
                               />
                             </div>
@@ -1492,6 +1870,10 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                               {filteredSubtests.map((st) => {
                                 const res = tests[test.id]?.[st.id] || emptyScore();
                                 const dbSubId = st.id.includes('_') ? st.id : `${test.id}_${st.id}`;
+                                const normsStatus = normsStatusMap[dbSubId];
+                                const hasApplicableNorms = normsStatus?.statusCode === 'ok';
+                                const baseDirection = resolveBaseDirectionForDbSubtest(dbSubId, st);
+                                const effectiveDirection = directionByDbSubtestId[dbSubId] || baseDirection;
                                 const subKey = `${test.id}__${st.id}`;
                                 const isSubExpanded = expandedSubKey === subKey;
                                 const isSubReviewed = reviewed(res);
@@ -1508,7 +1890,20 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                     } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
                                   >
                                     {isSubExpanded ? (
-                                      <FlexibleSubtestRow testId={test.id} patient={patient} subtest={st} result={res} onChange={(patch) => updateSubtest(test.id, st.id, patch)} hasNorms={normsMap[dbSubId] === true} onFocus={() => setExpandedSubKey(subKey)} />
+                                      <FlexibleSubtestRow
+                                        testId={test.id}
+                                        patient={patient}
+                                        subtest={st}
+                                        result={res}
+                                        onChange={(patch) => updateSubtest(test.id, st.id, patch)}
+                                        hasNorms={hasApplicableNorms}
+                                        normsStatusCode={normsStatus?.statusCode}
+                                        effectiveDirection={effectiveDirection}
+                                        baseDirection={baseDirection}
+                                        onToggleDirection={() => toggleSubtestDirection(dbSubId, st)}
+                                        hasPendingDirectionOverride={pendingDirectionOverrides[dbSubId] !== undefined}
+                                        onFocus={() => setExpandedSubKey(subKey)}
+                                      />
                                     ) : (
                                       <CompactSubtestRow subtest={st} result={res} onClick={() => setExpandedSubKey(subKey)} />
                                     )}
@@ -1535,10 +1930,11 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         <div className="max-w-4xl w-full flex justify-between items-center">
           <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
           <button
-            onClick={() => (stat.pending > 0 ? setShowWarning(true) : onNext())}
+            onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
+            disabled={isPersistingDirectionOverrides}
             className="flex items-center gap-3 px-7 py-3 bg-gradient-to-r from-[#E07A5F] to-[#d0694e] text-white rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:brightness-105 transition-all"
           >
-            <span>Passer au diagnostic</span>
+            <span>{isPersistingDirectionOverrides ? 'Enregistrement...' : 'Passer au diagnostic'}</span>
             <ArrowRight size={20} />
           </button>
         </div>
@@ -1551,7 +1947,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
           <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-[var(--border-color)]">
             <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Eléments non revus</h4></div>
             <p className="text-sm text-[var(--text-main)]">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
+            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); void handleProceedToNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
           </div>
         </div>
       )}

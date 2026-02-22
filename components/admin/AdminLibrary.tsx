@@ -69,6 +69,24 @@ const QUALITATIVE_5_BUCKETS_PRESET = {
   defaultMetric: 'raw',
 } as const;
 
+type BulkScoreScope = 'all_subtests' | 'selected_subtest' | 'zero_norms' | 'low_confidence' | 'flag_type';
+
+const parseDetectionConfidence = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isLowConfidenceScoreType = (subtest: AdminSubtestRecord): boolean => {
+  const scoreType = String(subtest.score_type || 'none').toLowerCase();
+  if (scoreType === 'none') return true;
+  const confidence = parseDetectionConfidence(subtest.input_config?.score_type_detection_confidence);
+  if (confidence === null) return false;
+  const mode = String(subtest.computation_mode || 'LOOKUP').toUpperCase();
+  return mode === 'PARAMETRIC' ? confidence < 0.85 : confidence < 0.80;
+};
+
 export const AdminLibrary: React.FC<Props> = ({
   focusTestId = null,
   focusSubtestId = null,
@@ -110,6 +128,11 @@ export const AdminLibrary: React.FC<Props> = ({
   const [isDismissingAllQuality, setIsDismissingAllQuality] = useState(false);
   const [showDismissByTypeModal, setShowDismissByTypeModal] = useState(false);
   const [dismissByTypeCode, setDismissByTypeCode] = useState('');
+  const [bulkScoreScope, setBulkScoreScope] = useState<BulkScoreScope>('low_confidence');
+  const [bulkScoreFlagCode, setBulkScoreFlagCode] = useState('');
+  const [bulkRawDirection, setBulkRawDirection] = useState<'higher_better' | 'lower_better'>('lower_better');
+  const [isApplyingBulkNone, setIsApplyingBulkNone] = useState(false);
+  const [isApplyingBulkOverrideClone, setIsApplyingBulkOverrideClone] = useState(false);
   const [isAnalyzingIssues, setIsAnalyzingIssues] = useState(false);
   const [issuesAnalyzedTestId, setIssuesAnalyzedTestId] = useState<string | null>(null);
   const [focusedFittingPayload, setFocusedFittingPayload] = useState<{
@@ -321,6 +344,14 @@ export const AdminLibrary: React.FC<Props> = ({
     () => invalidAmbiguousSubtests.filter((s) => (normCountBySubtestId.get(s.id) || 0) === 0),
     [invalidAmbiguousSubtests, normCountBySubtestId],
   );
+  const zeroNormSubtests = useMemo(
+    () => (bundle?.subtests || []).filter((s) => (normCountBySubtestId.get(s.id) || 0) === 0),
+    [bundle?.subtests, normCountBySubtestId],
+  );
+  const lowConfidenceScoreTypeSubtests = useMemo(
+    () => (bundle?.subtests || []).filter((s) => isLowConfidenceScoreType(s)),
+    [bundle?.subtests],
+  );
   const ambiguousWithNormsCount = invalidAmbiguousSubtests.length - ambiguousWithoutNorms.length;
   const hasInvalidAmbiguousSubtests = invalidAmbiguousSubtests.length > 0;
   const totalDuplicateNormExcess = useMemo(
@@ -328,8 +359,22 @@ export const AdminLibrary: React.FC<Props> = ({
     [normDupSummary],
   );
   const issueTodoCount = useMemo(
-    () => invalidAmbiguousSubtests.length + subtestDupPairs.length + totalDuplicateNormExcess + qualityFlags.length,
-    [invalidAmbiguousSubtests.length, subtestDupPairs.length, totalDuplicateNormExcess, qualityFlags.length],
+    () => (
+      invalidAmbiguousSubtests.length
+      + subtestDupPairs.length
+      + totalDuplicateNormExcess
+      + qualityFlags.length
+      + zeroNormSubtests.length
+      + lowConfidenceScoreTypeSubtests.length
+    ),
+    [
+      invalidAmbiguousSubtests.length,
+      lowConfidenceScoreTypeSubtests.length,
+      qualityFlags.length,
+      subtestDupPairs.length,
+      totalDuplicateNormExcess,
+      zeroNormSubtests.length,
+    ],
   );
   const qualityFlagTypeOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -340,11 +385,53 @@ export const AdminLibrary: React.FC<Props> = ({
       .map(([code, count]) => ({ code, count }))
       .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
   }, [qualityFlags]);
+  const bulkScoreTargetSubtests = useMemo(() => {
+    if (!bundle) return [] as AdminSubtestRecord[];
+    const byId = new Map(bundle.subtests.map((subtest) => [subtest.id, subtest]));
+    if (bulkScoreScope === 'selected_subtest') {
+      const selected = selectedSubtestId ? byId.get(selectedSubtestId) : undefined;
+      return selected ? [selected] : [];
+    }
+    if (bulkScoreScope === 'zero_norms') {
+      return bundle.subtests.filter((subtest) => (normCountBySubtestId.get(subtest.id) || 0) === 0);
+    }
+    if (bulkScoreScope === 'low_confidence') {
+      return bundle.subtests.filter((subtest) => isLowConfidenceScoreType(subtest));
+    }
+    if (bulkScoreScope === 'flag_type') {
+      if (!bulkScoreFlagCode) return [];
+      const ids = new Set(
+        qualityFlags
+          .filter((flag) => flag.flag_code === bulkScoreFlagCode)
+          .map((flag) => flag.subtest_id),
+      );
+      return Array.from(ids).map((subtestId) => byId.get(subtestId)).filter((row): row is AdminSubtestRecord => Boolean(row));
+    }
+    return bundle.subtests;
+  }, [bulkScoreFlagCode, bulkScoreScope, bundle, normCountBySubtestId, qualityFlags, selectedSubtestId]);
+  const bulkScoreScopeLabel = useMemo(() => {
+    if (bulkScoreScope === 'selected_subtest') return 'Sous-test sélectionné';
+    if (bulkScoreScope === 'zero_norms') return 'Sous-tests sans norme';
+    if (bulkScoreScope === 'low_confidence') return 'Sous-tests score_type faible confiance';
+    if (bulkScoreScope === 'flag_type') return `Sous-tests du flag ${bulkScoreFlagCode || '-'}`;
+    return 'Tous les sous-tests';
+  }, [bulkScoreFlagCode, bulkScoreScope]);
   const getSubtestDisplayName = (subtest: Pick<AdminSubtestRecord, 'id' | 'name' | 'abbreviation'>): string => {
     const meta = subtestDisplayMetaMap.get(subtest.id);
     if (meta) return meta.displayName;
     return formatSubtestDisplayName(subtest, false);
   };
+
+  useEffect(() => {
+    if (bulkScoreScope !== 'flag_type') return;
+    if (qualityFlagTypeOptions.length === 0) {
+      setBulkScoreFlagCode('');
+      return;
+    }
+    if (!qualityFlagTypeOptions.some((opt) => opt.code === bulkScoreFlagCode)) {
+      setBulkScoreFlagCode(qualityFlagTypeOptions[0].code);
+    }
+  }, [bulkScoreFlagCode, bulkScoreScope, qualityFlagTypeOptions]);
 
   const updateTestField = (field: keyof AdminTestBundle['test'], value: any) => {
     setBundle(prev => {
@@ -402,6 +489,9 @@ export const AdminLibrary: React.FC<Props> = ({
       input_model: 'numeric_4mode',
       input_config: {},
       organization_id: bundle.test.organization_id || null,
+      raw_direction: 'auto',
+      source_subtest_id: null,
+      is_override_clone: false,
       isNew: true
     };
     setBundle(prev => prev ? ({ ...prev, subtests: [...prev.subtests, newSub] }) : prev);
@@ -544,6 +634,9 @@ export const AdminLibrary: React.FC<Props> = ({
         input_model: s.input_model || 'numeric_4mode',
         input_config: s.input_config || {},
         organization_id: s.organization_id || test.organization_id || null,
+        raw_direction: s.raw_direction || 'auto',
+        source_subtest_id: s.source_subtest_id || null,
+        is_override_clone: s.is_override_clone === true,
       };
     });
 
@@ -1016,6 +1109,99 @@ export const AdminLibrary: React.FC<Props> = ({
       toast.error("Impossible d'ignorer ce type de flag.");
     } finally {
       setIsDismissingAllQuality(false);
+    }
+  };
+
+  const handleBulkSetScoreTypeNone = async () => {
+    if (!bundle) return;
+    const targetSubtests = bulkScoreTargetSubtests.filter((subtest) => (
+      String(subtest.score_type || 'none').toLowerCase() !== 'none'
+      || String(subtest.input_model || 'numeric_4mode').toLowerCase() !== 'raw_only'
+    ));
+    if (targetSubtests.length === 0) {
+      toast.info('Aucun sous-test cible a passer en none.');
+      return;
+    }
+    if (!confirm(`Passer ${targetSubtests.length} sous-test(s) en score_type=none + raw_only (${bulkScoreScopeLabel}) ?`)) return;
+
+    setIsApplyingBulkNone(true);
+    try {
+      const targetIds = new Set(targetSubtests.map((subtest) => subtest.id));
+      const nextBundle: AdminTestBundle = {
+        ...bundle,
+        subtests: bundle.subtests.map((subtest) => {
+          if (!targetIds.has(subtest.id)) return subtest;
+          return {
+            ...subtest,
+            score_type: 'none',
+            input_model: 'raw_only',
+            input_config: {
+              ...(subtest.input_config || {}),
+              score_type_detection_source: 'admin_override',
+            },
+          };
+        }),
+      };
+
+      await AdminService.saveTestBundle(sanitizeBundle(nextBundle));
+      toast.success(`${targetSubtests.length} sous-test(s) passes en none.`);
+      setBundle(nextBundle);
+      setIsDirty(false);
+      setIssuesAnalyzedTestId(null);
+      await loadBundle(bundle.test.id, selectedSubtestId);
+      await analyzeIssuesForCurrentTest(true);
+    } catch (e) {
+      Logger.error('DB', 'Bulk score_type=none failed', e);
+      toast.error("Impossible d'appliquer le passage en none.");
+    } finally {
+      setIsApplyingBulkNone(false);
+    }
+  };
+
+  const handleBulkCreateDirectionOverrideClones = async () => {
+    if (!bundle) return;
+    const targetSubtests = bulkScoreTargetSubtests.filter((subtest) => (
+      String(subtest.computation_mode || 'LOOKUP').toUpperCase() === 'PARAMETRIC'
+    ));
+    if (targetSubtests.length === 0) {
+      toast.info('Aucun sous-test parametrique cible pour override clone.');
+      return;
+    }
+    if (!confirm(`Creer/mettre a jour ${targetSubtests.length} override clone(s) (${bulkScoreScopeLabel}) avec direction ${bulkRawDirection} ?`)) return;
+
+    setIsApplyingBulkOverrideClone(true);
+    try {
+      const settled = await Promise.allSettled(
+        targetSubtests.map((subtest) => AdminService.createOrUpdateSubtestOverrideClone({
+          sourceSubtestId: subtest.source_subtest_id || subtest.id,
+          rawDirection: bulkRawDirection,
+          reason: 'admin_library_bulk_override',
+        })),
+      );
+
+      let successCount = 0;
+      settled.forEach((result) => {
+        if (result.status === 'fulfilled') successCount += 1;
+      });
+      const failedCount = settled.length - successCount;
+
+      if (successCount > 0) {
+        toast.success(`${successCount} override clone(s) appliques.`);
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} override clone(s) en echec.`);
+      }
+
+      if (successCount > 0) {
+        setIssuesAnalyzedTestId(null);
+        await loadBundle(bundle.test.id, selectedSubtestId);
+        await analyzeIssuesForCurrentTest(true);
+      }
+    } catch (e) {
+      Logger.error('DB', 'Bulk override clone failed', e);
+      toast.error("Impossible d'appliquer les override clones.");
+    } finally {
+      setIsApplyingBulkOverrideClone(false);
     }
   };
 
@@ -1757,7 +1943,7 @@ export const AdminLibrary: React.FC<Props> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                   <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
                     <div className="text-[10px] uppercase font-bold text-rose-300">Tags manquants</div>
                     <div className="text-xl font-bold text-white mt-1">{invalidAmbiguousSubtests.length}</div>
@@ -1773,6 +1959,92 @@ export const AdminLibrary: React.FC<Props> = ({
                   <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
                     <div className="text-[10px] uppercase font-bold text-amber-300">Flags qualité</div>
                     <div className="text-xl font-bold text-white mt-1">{qualityFlags.length}</div>
+                  </div>
+                  <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-cyan-300">Sous-tests 0 norme</div>
+                    <div className="text-xl font-bold text-white mt-1">{zeroNormSubtests.length}</div>
+                  </div>
+                  <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-bold text-orange-300">Score_type faible confiance</div>
+                    <div className="text-xl font-bold text-white mt-1">{lowConfidenceScoreTypeSubtests.length}</div>
+                  </div>
+                </div>
+
+                <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-bold text-sky-300">Actions bulk score</h5>
+                      <p className="text-[10px] text-stone-400 mt-1">
+                        Cible: {bulkScoreScopeLabel} ({bulkScoreTargetSubtests.length} sous-test(s)).
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-stone-500">
+                      {bulkScoreTargetSubtests.length > 0 ? bulkScoreTargetSubtests.slice(0, 2).map((subtest) => getSubtestDisplayName(subtest)).join(', ') : 'Aucune cible'}
+                      {bulkScoreTargetSubtests.length > 2 ? ` +${bulkScoreTargetSubtests.length - 2}` : ''}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-500 uppercase">Portee</label>
+                      <select
+                        value={bulkScoreScope}
+                        onChange={(e) => setBulkScoreScope(e.target.value as BulkScoreScope)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F]"
+                      >
+                        <option value="all_subtests" className="bg-[#23252F] text-stone-200">Tous les sous-tests</option>
+                        <option value="selected_subtest" className="bg-[#23252F] text-stone-200">Sous-test selectionne</option>
+                        <option value="zero_norms" className="bg-[#23252F] text-stone-200">Sous-tests sans norme</option>
+                        <option value="low_confidence" className="bg-[#23252F] text-stone-200">Score_type faible confiance</option>
+                        <option value="flag_type" className="bg-[#23252F] text-stone-200">Sous-tests d'un flag qualite</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-500 uppercase">Type de flag</label>
+                      <select
+                        value={bulkScoreFlagCode}
+                        onChange={(e) => setBulkScoreFlagCode(e.target.value)}
+                        disabled={bulkScoreScope !== 'flag_type' || qualityFlagTypeOptions.length === 0}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F] disabled:opacity-50"
+                      >
+                        {qualityFlagTypeOptions.length === 0 && (
+                          <option value="" className="bg-[#23252F] text-stone-200">Aucun flag</option>
+                        )}
+                        {qualityFlagTypeOptions.map((option) => (
+                          <option key={option.code} value={option.code} className="bg-[#23252F] text-stone-200">
+                            {option.code} ({option.count})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-stone-500 uppercase">Direction override clone</label>
+                      <select
+                        value={bulkRawDirection}
+                        onChange={(e) => setBulkRawDirection(e.target.value as 'higher_better' | 'lower_better')}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F]"
+                      >
+                        <option value="lower_better" className="bg-[#23252F] text-stone-200">lower_better</option>
+                        <option value="higher_better" className="bg-[#23252F] text-stone-200">higher_better</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      onClick={() => void handleBulkSetScoreTypeNone()}
+                      disabled={isApplyingBulkNone || isApplyingBulkOverrideClone || bulkScoreTargetSubtests.length === 0}
+                      className="text-xs text-amber-300 hover:text-amber-200 px-3 py-1.5 rounded-lg bg-amber-500/10 disabled:opacity-50"
+                    >
+                      {isApplyingBulkNone ? 'Application...' : 'Passer en none'}
+                    </button>
+                    <button
+                      onClick={() => void handleBulkCreateDirectionOverrideClones()}
+                      disabled={isApplyingBulkNone || isApplyingBulkOverrideClone || bulkScoreTargetSubtests.length === 0}
+                      className="text-xs text-sky-300 hover:text-sky-200 px-3 py-1.5 rounded-lg bg-sky-500/10 disabled:opacity-50"
+                    >
+                      {isApplyingBulkOverrideClone ? 'Application...' : 'Creer override clone'}
+                    </button>
                   </div>
                 </div>
 

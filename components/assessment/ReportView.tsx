@@ -3,6 +3,7 @@ import type { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig
 import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Check, Mail, Phone, ArrowDown, ArrowUp, Home, Star, Sparkles, PieChart, Bold, Italic, List, Heading2, Heading3, Type, Pencil } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { sanitizeReportText } from '../../utils/textSanitizer';
 
 interface Props {
     patient: Patient;
@@ -523,13 +524,14 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         const [insertIndex, setInsertIndex] = useState<number | null>(null);
         const [insertType, setInsertType] = useState<'image-full' | 'image-text'>('image-full');
         if (!section) return null;
-        const paragraphs = (section.content || '').split('\n').filter(line => line.trim().length > 0);
+        const sanitizedContent = sanitizeReportText(section.content || '');
+        const paragraphs = sanitizedContent.split('\n').filter(line => line.trim().length > 0);
 
         const saveParagraph = (index: number, newText: string) => {
             if (!onUpdateSection) return;
             const newParagraphs = [...paragraphs];
-            newParagraphs[index] = newText;
-            onUpdateSection(section.id, { content: newParagraphs.join('\n\n') });
+            newParagraphs[index] = sanitizeReportText(newText);
+            onUpdateSection(section.id, { content: sanitizeReportText(newParagraphs.join('\n\n')) });
             setEditingIndex(null);
         };
 
@@ -773,7 +775,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.displayName || subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">• {subDef?.displayName || subDef?.name}</td>
                                                                 <td className={`py-3 text-center ${isScoreable && (currentMode === 'ET' || currentMode === 'NS') ? colorClass : 'text-stone-500'}`}>{displayScore}</td>
                                                                 <td className="py-3 pl-4 italic text-xs text-stone-500">{result.observation || "-"}</td>
                                                             </tr>
@@ -809,7 +811,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
 
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
-                                                                <td className="py-3 pr-4 font-medium">� {subDef?.displayName || subDef?.name}</td>
+                                                                <td className="py-3 pr-4 font-medium">• {subDef?.displayName || subDef?.name}</td>
                                                                 <td className="py-3 text-center font-semibold text-[#3D405B]">{displayCategory}</td>
                                                                 <td className="py-3 pl-3 text-xs text-stone-600">{displayInterpretation}</td>
                                                                 <td className="py-3 pl-3 italic text-xs text-stone-500">{result.observation || "-"}</td>

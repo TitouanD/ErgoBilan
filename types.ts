@@ -455,8 +455,14 @@ export interface AdminSubtestRecord {
     input_config?: {
         options?: Array<{ code: string; label: string; order: number; reportText?: string }>;
         defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+        score_type_detection_confidence?: number | string;
+        score_type_detection_source?: string;
+        rawDirectionHint?: 'auto' | 'higher_better' | 'lower_better';
     };
     organization_id?: string | null;
+    raw_direction?: 'auto' | 'higher_better' | 'lower_better' | null;
+    source_subtest_id?: string | null;
+    is_override_clone?: boolean;
 }
 
 export interface AdminNormRecord {
@@ -749,6 +755,8 @@ export interface AdminIssueBacklogItem {
     duplicate_norm_groups: number;
     duplicate_norm_excess: number;
     quality_flag_count: number;
+    zero_norm_subtests_count: number;
+    low_confidence_score_type_count: number;
     total_issues: number;
 }
 
