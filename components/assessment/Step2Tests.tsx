@@ -8,6 +8,7 @@ import { useCatalog } from '../../contexts/CatalogContext';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { supabase } from '../../services/db';
 import { useToast } from '../../contexts/ToastContext';
+import { Logger } from '../../utils/logger';
 import {
   Activity,
   AlertTriangle,
@@ -407,7 +408,7 @@ const NumericRow: React.FC<{
     } catch (e) {
       setWarn('Erreur lors du calcul automatique.');
       setPatch({ raw, derived: { source: 'manual' } });
-      console.error(e);
+      Logger.error('SYSTEM', 'Auto scoring failed', e);
     } finally {
       setIsComputing(false);
     }

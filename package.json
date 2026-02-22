@@ -15,6 +15,12 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,css,md}\""
   },
   "dependencies": {
+    "@fontsource/lato": "^5.2.7",
+    "@fontsource/merriweather": "^5.2.11",
+    "@fontsource/open-sans": "^5.2.7",
+    "@fontsource/playfair-display": "^5.2.8",
+    "@fontsource/quicksand": "^5.2.10",
+    "@fontsource/roboto": "^5.2.10",
     "@react-pdf/renderer": "^4.3.2",
     "@supabase/supabase-js": "2.39.7",
     "lucide-react": "^0.563.0",

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Patient } from '../../types';
 import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key, FileText } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
-import { supabase } from '../../services/db';
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
 import { Logger } from '../../utils/logger';
@@ -11,13 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 
 /** Crée un client Supabase anonyme avec le header x-questionnaire-token pour les policies RLS. */
 const createPortalClient = (accessToken: string) => {
-  const defaultUrl = 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
-  const defaultPublishableKey = 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
-  const url = import.meta.env.VITE_SUPABASE_URL || defaultUrl;
-  const anonKey = import.meta.env.DEV
-    ? defaultPublishableKey
-    : (import.meta.env.VITE_SUPABASE_ANON_KEY || defaultPublishableKey);
-  return createClient(url, anonKey, {
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { 'x-questionnaire-token': accessToken } },
   });
 };

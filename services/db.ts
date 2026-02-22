@@ -1,18 +1,21 @@
 import { createClient, type Session } from '@supabase/supabase-js';
 
 // --- CONFIGURATION SUPABASE ---
-// Prefer env vars so keys can rotate without rebuild.
-// Fallbacks are kept for backward compatibility.
+// Production requires explicit Vite env vars.
+// Local dev can use built-in defaults for fast startup.
 
-const DEFAULT_SUPABASE_URL = 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
+const DEV_SUPABASE_URL = 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
+const DEV_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
 const envSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const envSupabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const isDev = import.meta.env.DEV;
 
-export const SUPABASE_URL = envSupabaseUrl || DEFAULT_SUPABASE_URL;
-export const SUPABASE_ANON_KEY = import.meta.env.DEV
-	? DEFAULT_SUPABASE_PUBLISHABLE_KEY
-	: (envSupabaseKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY);
+if (!isDev && (!envSupabaseUrl || !envSupabaseKey)) {
+	throw new Error('Missing required env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+}
+
+export const SUPABASE_URL = isDev ? (envSupabaseUrl || DEV_SUPABASE_URL) : envSupabaseUrl;
+export const SUPABASE_ANON_KEY = isDev ? (envSupabaseKey || DEV_SUPABASE_PUBLISHABLE_KEY) : envSupabaseKey;
 
 // Safe storage wrapper to prevent corrupt cache from breaking auth.
 // Falls back to in-memory storage if localStorage is unavailable.

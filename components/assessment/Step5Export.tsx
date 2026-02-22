@@ -6,6 +6,7 @@ import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCatalog } from '../../contexts/CatalogContext';
+import { Logger } from '../../utils/logger';
 
 interface Props {
     patient: Patient;
@@ -422,7 +423,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
             const url = URL.createObjectURL(blob);
             window.open(url, '_blank');
         } catch (err) {
-            console.error('Print PDF error:', err);
+            Logger.error('SYSTEM', 'Print PDF error', err);
             // Fallback to browser print
             window.print();
         } finally {
@@ -494,7 +495,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                 onDemoConvert('Exporter le PDF');
             }
         } catch (err) {
-            console.error('PDF export error:', err);
+            Logger.error('SYSTEM', 'PDF export error', err);
             toast?.error?.('Erreur lors de l\'export PDF');
         } finally {
             setIsExporting(false);
