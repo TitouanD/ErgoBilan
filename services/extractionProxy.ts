@@ -29,6 +29,7 @@ export interface ExtractionBatchResult {
 
 const isLikelyJwt = (token: string | undefined): token is string => {
   if (!token) return false;
+  if (token.startsWith('sb_publishable_') || token.startsWith('sb_secret_')) return false;
   const parts = token.split('.');
   return parts.length === 3 && parts.every((p) => p.length > 0);
 };
@@ -40,6 +41,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // ── HELPER: Check if error is invalid JWT ─────────────────────────────────
 
 const isInvalidJwtError = (error: any): boolean => {
+  const status =
+    typeof error?.status === 'number'
+      ? error.status
+      : typeof error?.context?.status === 'number'
+        ? error.context.status
+        : undefined;
+  if (status === 401) return true;
   const msg = String(error?.message ?? '').toLowerCase();
   return /invalid.*jwt|jwt.*expired|unauthorized/i.test(msg);
 };
@@ -47,8 +55,18 @@ const isInvalidJwtError = (error: any): boolean => {
 // ── HELPER: Extract error from edge response ──────────────────────────────
 
 const getEdgeBody = (data: any, error: any): any => {
-  if (error) return null;
-  if (typeof data === 'object' && data !== null) return data;
+  if (data && typeof data === 'object') return data;
+  const ctx = error?.context;
+  if (ctx && typeof ctx === 'object') {
+    if (ctx.body && typeof ctx.body === 'object') return ctx.body;
+    if (typeof ctx.body === 'string') {
+      try {
+        return JSON.parse(ctx.body);
+      } catch {
+        return null;
+      }
+    }
+  }
   return null;
 };
 

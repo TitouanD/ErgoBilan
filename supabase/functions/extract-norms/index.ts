@@ -1,16 +1,35 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = 180_000; // Allow extra time for chunked fallback
-const MAX_EXTRACTIONS_PER_HOUR = Number(Deno.env.get("EXTRACTION_MAX_PER_HOUR") || "20");
-const MAX_EXTRACTIONS_PER_DAY = Number(Deno.env.get("EXTRACTION_MAX_PER_DAY") || "60");
-const GEMINI_MAX_RETRIES = 2;
-const GEMINI_RETRY_BASE_MS = 2_000;
-const MAX_OUTPUT_TOKENS = 65536;
-const CHUNKED_SUBTEST_THRESHOLD = 8; // Trigger chunked fallback if inventory finds > N subtests
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 180_000); // Allow extra time for chunked fallback
+const MAX_EXTRACTIONS_PER_HOUR = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PER_HOUR"), 20);
+const MAX_EXTRACTIONS_PER_DAY = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PER_DAY"), 60);
+const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 2);
+const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
+const MAX_OUTPUT_TOKENS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_OUTPUT_TOKENS"), 65536);
+const CHUNKED_SUBTEST_THRESHOLD = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNKED_SUBTEST_THRESHOLD"), 8); // Trigger chunked fallback if inventory finds > N subtests
+const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PAYLOAD_BYTES"), 10_000_000);
+const MAX_IMAGE_PART_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_IMAGE_BYTES"), 8_000_000);
+
+const allowedMimeTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+]);
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
 const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
@@ -147,9 +166,12 @@ const callGemini = async (
       const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
       try {
-        const res = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        const res = await fetch(GEMINI_API_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY,
+          },
           body: JSON.stringify(geminiBody),
           signal: controller.signal,
         });
@@ -1131,12 +1153,128 @@ const extractWithRepair = async (
   };
 };
 
+const getImagePartByteSize = (imagePart: unknown): number => {
+  if (!imagePart || typeof imagePart !== 'object') return 0;
+  const inlineData = (imagePart as { inlineData?: { data?: unknown } }).inlineData;
+  const base64 = typeof inlineData?.data === 'string' ? inlineData.data.trim() : '';
+  if (!base64) return 0;
+  return Math.floor((base64.length * 3) / 4);
+};
+
+const isValidImagePart = (imagePart: unknown): boolean => {
+  if (!imagePart || typeof imagePart !== 'object') return false;
+  const inlineData = (imagePart as { inlineData?: { mimeType?: unknown; data?: unknown } }).inlineData;
+  const mimeType = typeof inlineData?.mimeType === 'string' ? inlineData.mimeType.trim().toLowerCase() : '';
+  const base64 = typeof inlineData?.data === 'string' ? inlineData.data.trim() : '';
+  if (!mimeType || !base64) return false;
+  if (!allowedMimeTypes.has(mimeType)) return false;
+  const imageBytes = getImagePartByteSize(imagePart);
+  return imageBytes > 0 && imageBytes <= MAX_IMAGE_PART_BYTES;
+};
+
+const safeLogExtractionFailure = async (
+  sb: ReturnType<typeof createClient> | null,
+  userId: string | null,
+  filename: string,
+  remainingQuota: number,
+  strategy: string,
+  repairRequest: RepairRequestPayload | null,
+) => {
+  if (!sb || !userId) return;
+  try {
+    await sb.from('extraction_log').insert({
+      user_id: userId,
+      filename,
+      status: 'failed',
+      token_estimate: 0,
+      remaining_quota: Math.max(0, remainingQuota),
+      strategy,
+      api_calls: 0,
+      repair_mode: repairRequest ? 'targeted' : 'none',
+      repair_targets_count: repairRequest?.focusSubtests.length || 0,
+    });
+  } catch (_err) {
+    // no-op
+  }
+};
+
+const isMissingRpcError = (error: { message?: string } | null | undefined, rpcName: string): boolean => {
+  if (!error) return false;
+  const msg = String(error.message || '').toLowerCase();
+  const name = rpcName.toLowerCase();
+  return msg.includes(name) && (msg.includes('does not exist') || msg.includes('not found'));
+};
+
+const checkExtractionAccess = async (
+  userClient: ReturnType<typeof createClient>,
+  adminClient: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<{ hasAccess: boolean; remainingQuota: number }> => {
+  try {
+    const { data, error } = await adminClient.rpc('check_extraction_access_for_user', {
+      p_user_id: userId,
+    });
+    if (error) {
+      if (!isMissingRpcError(error, 'check_extraction_access_for_user')) {
+        return { hasAccess: false, remainingQuota: 0 };
+      }
+      const { data: legacyData, error: legacyError } = await userClient.rpc('check_extraction_access');
+      const legacyRow = Array.isArray(legacyData) ? legacyData[0] : legacyData;
+      if (legacyError || !legacyRow) return { hasAccess: false, remainingQuota: 0 };
+      return {
+        hasAccess: legacyRow.has_access === true,
+        remainingQuota: Number(legacyRow.remaining_quota ?? 0),
+      };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      hasAccess: row?.has_access === true,
+      remainingQuota: Number(row?.remaining_quota ?? 0),
+    };
+  } catch {
+    return { hasAccess: false, remainingQuota: 0 };
+  }
+};
+
+const checkExtractionRateLimit = async (
+  userClient: ReturnType<typeof createClient>,
+  adminClient: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<boolean> => {
+  try {
+    const { data, error } = await adminClient.rpc('check_extraction_rate_limit_for_user', {
+      p_user_id: userId,
+      p_max_per_hour: MAX_EXTRACTIONS_PER_HOUR,
+      p_max_per_day: MAX_EXTRACTIONS_PER_DAY,
+    });
+    if (error) {
+      if (!isMissingRpcError(error, 'check_extraction_rate_limit_for_user')) return false;
+      const { data: legacyData, error: legacyError } = await userClient.rpc('check_extraction_rate_limit', {
+        p_max_per_hour: MAX_EXTRACTIONS_PER_HOUR,
+        p_max_per_day: MAX_EXTRACTIONS_PER_DAY,
+      });
+      return !legacyError && legacyData === true;
+    }
+    return data === true;
+  } catch {
+    return false;
+  }
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
+    if (!isAllowedOrigin(req)) {
+      return new Response('forbidden', { status: 403, headers: corsHeaders });
+    }
     return new Response('ok', { headers: corsHeaders });
   }
 
   let supabase: ReturnType<typeof createClient> | null = null;
+  let adminSupabase: ReturnType<typeof createClient> | null = null;
+  let currentUserId: string | null = null;
+  let requestFilename = 'unknown';
+  let remainingQuota = 0;
+  let activeRepairRequest: RepairRequestPayload | null = null;
 
   try {
     if (!isAllowedOrigin(req)) {
@@ -1192,10 +1330,37 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    currentUserId = user.id;
+
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return new Response(JSON.stringify({ error: 'SERVER_MISCONFIGURED' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    adminSupabase = createClient(Deno.env.get('SUPABASE_URL')!, SUPABASE_SERVICE_ROLE_KEY);
 
     // ── PARSE PAYLOAD & VALIDATE EARLY ──
+    const contentLength = Number(req.headers.get('content-length') || '0');
+    if (Number.isFinite(contentLength) && contentLength > MAX_PAYLOAD_BYTES) {
+      return new Response(JSON.stringify({ error: 'PAYLOAD_TOO_LARGE' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const body = await req.json();
     const payload = (body.payload || {}) as Record<string, unknown>;
+    const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+
+    requestFilename = String(payload.filename || 'unknown').slice(0, 255);
+
+    if (payloadBytes > MAX_PAYLOAD_BYTES) {
+      return new Response(JSON.stringify({ error: 'PAYLOAD_TOO_LARGE' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!payload.imagePart) {
       return new Response(JSON.stringify({ error: 'Missing imagePart in payload' }), {
@@ -1204,12 +1369,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: accessData, error: accessErr } = await supabase.rpc('check_extraction_access');
-    const accessRow = Array.isArray(accessData) ? accessData[0] : accessData;
-    const hasAccess = accessRow?.has_access === true;
-    const remainingQuota = Number(accessRow?.remaining_quota ?? 0);
+    if (!isValidImagePart(payload.imagePart)) {
+      return new Response(JSON.stringify({ error: 'INVALID_IMAGE_PART' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (accessErr || !hasAccess) {
+    const accessState = await checkExtractionAccess(supabase, adminSupabase!, currentUserId!);
+    remainingQuota = accessState.remainingQuota;
+
+    if (!accessState.hasAccess) {
       return new Response(
         JSON.stringify({
           error: 'PAID_PLAN_REQUIRED',
@@ -1236,11 +1406,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── RATE LIMITING (HOURLY CAP) ──
-    const { data: withinLimit, error: rlErr } = await supabase.rpc('check_extraction_rate_limit', {
-      p_max_per_hour: MAX_EXTRACTIONS_PER_HOUR,
-      p_max_per_day: MAX_EXTRACTIONS_PER_DAY,
-    });
-    if (rlErr || !withinLimit) {
+    const withinLimit = await checkExtractionRateLimit(supabase, adminSupabase!, currentUserId!);
+    if (!withinLimit) {
       return new Response(
         JSON.stringify({
           error: 'RATE_LIMITED',
@@ -1262,6 +1429,7 @@ Deno.serve(async (req: Request) => {
 
     // ── EXTRACT WITH SMART FALLBACK ──
     const repairRequest = parseRepairRequest(payload.repairRequest);
+    activeRepairRequest = repairRequest;
 
     let result: ExtractionRunResult;
 
@@ -1274,6 +1442,14 @@ Deno.serve(async (req: Request) => {
     } catch (err) {
       const errMsg = String(err);
       const retryable = errMsg.includes('timeout') || errMsg.includes('429') || errMsg.includes('503');
+      await safeLogExtractionFailure(
+        supabase,
+        currentUserId,
+        requestFilename,
+        remainingQuota,
+        'failed_ai',
+        activeRepairRequest,
+      );
       return new Response(
         JSON.stringify({ error: 'AI extraction failed', details: errMsg, retryable }),
         {
@@ -1293,8 +1469,8 @@ Deno.serve(async (req: Request) => {
       const tokenEstimate = result.text ? Math.ceil(result.text.length / 4) : 0;
       const remainingQuotaAfter = Math.max(0, remainingQuota - 1);
       await supabase.from('extraction_log').insert({
-        user_id: user.id,
-        filename: String(payload.filename || 'unknown'),
+        user_id: currentUserId,
+        filename: requestFilename,
         status: 'completed',
         token_estimate: tokenEstimate,
         remaining_quota: remainingQuotaAfter,
@@ -1316,6 +1492,14 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (_err) {
+    await safeLogExtractionFailure(
+      supabase,
+      currentUserId,
+      requestFilename,
+      remainingQuota,
+      'failed_internal',
+      activeRepairRequest,
+    );
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -1,15 +1,23 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = 110_000;
-const MAX_REQUESTS_PER_HOUR = 15;
-const GEMINI_MAX_RETRIES = 2;
-const GEMINI_RETRY_BASE_MS = 2_000;
-const GENERATION_REUSE_WINDOW_MINUTES = 20;
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 110_000);
+const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get("AI_MAX_REQUESTS_PER_HOUR"), 15);
+const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 2);
+const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
+const GENERATION_REUSE_WINDOW_MINUTES = parsePositiveInt(Deno.env.get("GENERATION_REUSE_WINDOW_MINUTES"), 20);
+const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get("GENERATION_LOCK_TTL_SECONDS"), 300);
+const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("GENERATE_MAX_PAYLOAD_BYTES"), 220_000);
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
 const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
@@ -42,6 +50,9 @@ const isAllowedOrigin = (req: Request): boolean => {
   return !IS_PRODUCTION;
 };
 
+const looksLikeUuid = (value: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
 const safeFinalize = async (
   sb: ReturnType<typeof createClient> | null,
   genId: string | null,
@@ -59,6 +70,83 @@ const safeFinalize = async (
     });
   } catch (_e) {
     // no-op
+  }
+};
+
+const claimGenerationSession = async (
+  sb: ReturnType<typeof createClient>,
+  genId: string,
+  userId: string,
+): Promise<boolean> => {
+  try {
+    const { data, error } = await sb.rpc('claim_generation_session', {
+      p_generation_id: genId,
+      p_user_id: userId,
+      p_lock_ttl_seconds: GENERATION_LOCK_TTL_SECONDS,
+    });
+    if (error) {
+      const msg = String(error.message || '').toLowerCase();
+      if (msg.includes('claim_generation_session') && (msg.includes('does not exist') || msg.includes('not found'))) {
+        // Backward compatibility: migration not yet applied.
+        return true;
+      }
+      return false;
+    }
+    return data === true;
+  } catch {
+    return false;
+  }
+};
+
+const isMissingRpcError = (error: { message?: string } | null | undefined, rpcName: string): boolean => {
+  if (!error) return false;
+  const msg = String(error.message || '').toLowerCase();
+  const name = rpcName.toLowerCase();
+  return msg.includes(name) && (msg.includes('does not exist') || msg.includes('not found'));
+};
+
+const checkRateLimit = async (
+  userClient: ReturnType<typeof createClient>,
+  adminClient: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<boolean> => {
+  try {
+    const { data, error } = await adminClient.rpc('check_rate_limit_for_user', {
+      p_user_id: userId,
+      p_max_per_hour: MAX_REQUESTS_PER_HOUR,
+    });
+    if (error) {
+      if (!isMissingRpcError(error, 'check_rate_limit_for_user')) return false;
+      const { data: legacyData, error: legacyError } = await userClient.rpc('check_rate_limit', {
+        p_max_per_hour: MAX_REQUESTS_PER_HOUR,
+      });
+      return !legacyError && legacyData === true;
+    }
+    return data === true;
+  } catch {
+    return false;
+  }
+};
+
+const consumeCredit = async (
+  userClient: ReturnType<typeof createClient>,
+  adminClient: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string | null> => {
+  try {
+    const { data, error } = await adminClient.rpc('consume_credit_for_user', {
+      p_user_id: userId,
+    });
+    if (error) {
+      if (!isMissingRpcError(error, 'consume_credit_for_user')) return null;
+      const { data: legacyData, error: legacyError } = await userClient.rpc('consume_credit');
+      if (legacyError || !legacyData) return null;
+      return String(legacyData);
+    }
+    if (!data) return null;
+    return String(data);
+  } catch {
+    return null;
   }
 };
 
@@ -306,6 +394,9 @@ const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult 
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
+    if (!isAllowedOrigin(req)) {
+      return new Response('forbidden', { status: 403, headers: corsHeaders });
+    }
     return new Response('ok', { headers: corsHeaders });
   }
 
@@ -360,10 +451,18 @@ Deno.serve(async (req: Request) => {
 
     adminSupabase = createClient(Deno.env.get('SUPABASE_URL')!, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: withinLimit, error: rlErr } = await supabase.rpc('check_rate_limit', { p_max_per_hour: MAX_REQUESTS_PER_HOUR });
-    if (rlErr || !withinLimit) {
+    const withinLimit = await checkRateLimit(supabase, adminSupabase!, user.id);
+    if (!withinLimit) {
       return new Response(JSON.stringify({ error: 'RATE_LIMITED', message: 'Trop de requetes. Reessayez plus tard.' }), {
         status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const contentLength = Number(req.headers.get('content-length') || '0');
+    if (Number.isFinite(contentLength) && contentLength > MAX_PAYLOAD_BYTES) {
+      return new Response(JSON.stringify({ error: 'PAYLOAD_TOO_LARGE' }), {
+        status: 413,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -372,10 +471,25 @@ Deno.serve(async (req: Request) => {
     const task = String(body.task || '') as AITask;
     currentTask = task;
     const payload = (body.payload || {}) as Record<string, unknown>;
+    const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).length;
     const providedGenId = typeof body.generation_id === 'string' ? body.generation_id : null;
+
+    if (payloadBytes > MAX_PAYLOAD_BYTES) {
+      return new Response(JSON.stringify({ error: 'PAYLOAD_TOO_LARGE' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!['report_bio', 'report_diagnostic'].includes(task)) {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (providedGenId && !looksLikeUuid(providedGenId)) {
+      return new Response(JSON.stringify({ error: 'INVALID_GENERATION_SESSION' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (task === 'report_bio' && providedGenId) {
@@ -396,7 +510,7 @@ Deno.serve(async (req: Request) => {
       const windowStart = new Date(Date.now() - GENERATION_REUSE_WINDOW_MINUTES * 60 * 1000).toISOString();
       const { data: validGen } = await supabase
         .from('generation_log')
-        .select('id')
+        .select('id, error_code')
         .eq('id', providedGenId)
         .eq('user_id', user.id)
         .eq('status', 'pending')
@@ -410,10 +524,18 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      const claimed = await claimGenerationSession(adminSupabase!, providedGenId, user.id);
+      if (!claimed) {
+        return new Response(JSON.stringify({ error: 'GENERATION_SESSION_BUSY' }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       generationId = providedGenId;
     } else {
-      const { data: genId, error: creditErr } = await supabase.rpc('consume_credit');
-      if (creditErr || !genId) {
+      const genId = await consumeCredit(supabase, adminSupabase!, user.id);
+      if (!genId) {
         return new Response(JSON.stringify({ error: 'CREDIT_INSUFFICIENT', message: 'Credits insuffisants.' }), {
           status: 402,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -464,9 +586,12 @@ Deno.serve(async (req: Request) => {
       const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
       try {
-        geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        geminiResponse = await fetch(GEMINI_API_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY,
+          },
           body: JSON.stringify(geminiBody),
           signal: controller.signal,
         });

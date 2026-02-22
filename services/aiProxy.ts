@@ -46,9 +46,19 @@ const invokeTask = async (jwt: string, params: TaskParams) => {
 };
 
 const getEdgeBody = (data: any, error: any): any => {
-  if (data) return data;
+  if (data && typeof data === 'object') return data;
   const ctx = error?.context;
-  if (ctx && typeof ctx === 'object') return ctx;
+  if (ctx && typeof ctx === 'object') {
+    if (ctx.body && typeof ctx.body === 'object') return ctx.body;
+    if (typeof ctx.body === 'string') {
+      try {
+        return JSON.parse(ctx.body);
+      } catch {
+        return null;
+      }
+    }
+    return ctx;
+  }
   return null;
 };
 

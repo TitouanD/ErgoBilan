@@ -14,6 +14,8 @@ const parsePositiveInt = (value: string | undefined, fallback: number) => {
 const MAX_SIGNUPS_PER_HOUR = parsePositiveInt(Deno.env.get("SIGNUP_MAX_PER_HOUR"), 3);
 const MIN_PASSWORD_LENGTH = parsePositiveInt(Deno.env.get("SIGNUP_MIN_PASSWORD_LENGTH"), 10);
 const FAIL_DELAY_MS = parsePositiveInt(Deno.env.get("SIGNUP_FAIL_DELAY_MS"), 400);
+const MAX_BODY_BYTES = parsePositiveInt(Deno.env.get("SIGNUP_MAX_BODY_BYTES"), 16_384);
+const TURNSTILE_TIMEOUT_MS = parsePositiveInt(Deno.env.get("TURNSTILE_TIMEOUT_MS"), 10_000);
 const TURNSTILE_SECRET_KEY = (Deno.env.get("TURNSTILE_SECRET_KEY") || "").trim();
 const SIGNUP_ACCESS_CODE = (Deno.env.get("SIGNUP_ACCESS_CODE") || "").trim();
 const SERVICE_ROLE_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
@@ -21,6 +23,12 @@ const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/sit
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
 const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+const ALLOW_LOOPBACK_ORIGINS =
+  (Deno.env.get("SIGNUP_ALLOW_LOOPBACK_ORIGINS") || "true").trim().toLowerCase() !== "false";
+const SIGNUP_DEV_MODE =
+  (Deno.env.get("SIGNUP_DEV_MODE") || "false").trim().toLowerCase() === "true";
+const SIGNUP_AUTO_CONFIRM_IN_DEV =
+  (Deno.env.get("SIGNUP_AUTO_CONFIRM_IN_DEV") || "true").trim().toLowerCase() !== "false";
 
 const allowedOrigins = (Deno.env.get("SIGNUP_ALLOWED_ORIGINS") || "")
   .split(",")
@@ -84,11 +92,28 @@ const getClientIp = (req: Request) => {
   return "";
 };
 
-const isAllowedOrigin = (req: Request) => {
-  if (allowedOrigins.length === 0) return !IS_PRODUCTION;
+const isLoopbackOrigin = (origin: string): boolean => {
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+};
+
+const getRequestSecurityContext = (req: Request) => {
   const origin = (req.headers.get("origin") || "").trim();
-  if (!origin) return false;
-  return allowedOrigins.includes(origin);
+  const loopbackOrigin = ALLOW_LOOPBACK_ORIGINS && !!origin && isLoopbackOrigin(origin);
+  // Automatic relaxed dev mode for localhost while no captcha secret is configured.
+  const relaxedDevMode = SIGNUP_DEV_MODE || (!TURNSTILE_SECRET_KEY && loopbackOrigin);
+  const originAllowed = (() => {
+    if (!origin) return !IS_PRODUCTION || relaxedDevMode;
+    if (loopbackOrigin) return true;
+    if (allowedOrigins.length === 0) return !IS_PRODUCTION || relaxedDevMode;
+    return allowedOrigins.includes(origin);
+  })();
+  return { origin, loopbackOrigin, relaxedDevMode, originAllowed };
 };
 
 const verifyTurnstileToken = async (secret: string, token: string, ip: string) => {
@@ -97,11 +122,21 @@ const verifyTurnstileToken = async (secret: string, token: string, ip: string) =
   body.set("response", token);
   if (ip) body.set("remoteip", ip);
 
-  const res = await fetch(TURNSTILE_VERIFY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TURNSTILE_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(timer);
+    return false;
+  }
+  clearTimeout(timer);
 
   if (!res.ok) return false;
   const data = await res.json();
@@ -121,6 +156,10 @@ const fail = async (error: string, message: string, status: number) => {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
+    const security = getRequestSecurityContext(req);
+    if (!security.originAllowed) {
+      return new Response("forbidden", { status: 403, headers: corsHeaders });
+    }
     return new Response("ok", { headers: corsHeaders });
   }
 
@@ -144,13 +183,18 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, SERVICE_ROLE_KEY);
     const anonClient = createClient(supabaseUrl, supabaseAnonKey);
 
-    if (!isAllowedOrigin(req)) {
+    const security = getRequestSecurityContext(req);
+    if (!security.originAllowed) {
       return await fail("FORBIDDEN_ORIGIN", "Origin is not allowed.", 403);
     }
 
     let body: Record<string, unknown>;
     try {
-      body = await req.json();
+      const rawBody = await req.text();
+      if (new TextEncoder().encode(rawBody).length > MAX_BODY_BYTES) {
+        return await fail("PAYLOAD_TOO_LARGE", "Request payload too large.", 413);
+      }
+      body = JSON.parse(rawBody);
     } catch {
       return await fail("INVALID_PAYLOAD", "Invalid request payload.", 400);
     }
@@ -192,7 +236,7 @@ Deno.serve(async (req: Request) => {
 
     const ip = getClientIp(req);
 
-    const requiresTurnstile = IS_PRODUCTION || TURNSTILE_SECRET_KEY.length > 0;
+    const requiresTurnstile = !security.relaxedDevMode && (IS_PRODUCTION || TURNSTILE_SECRET_KEY.length > 0);
     if (requiresTurnstile) {
       if (!TURNSTILE_SECRET_KEY) {
         return await fail("SERVER_MISCONFIGURED", "Captcha protection is not configured.", 500);
@@ -223,9 +267,10 @@ Deno.serve(async (req: Request) => {
     const { data: createdData, error: createErr } = await supabase.auth.admin.createUser({
       email,
       password,
-      email_confirm: false,
+      email_confirm: security.relaxedDevMode && SIGNUP_AUTO_CONFIRM_IN_DEV,
       app_metadata: {
         signup_channel: "edge_signup_v1",
+        signup_mode: security.relaxedDevMode ? "dev_relaxed" : "strict",
       },
     });
 
