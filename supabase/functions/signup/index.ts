@@ -81,10 +81,6 @@ const constantTimeEquals = (a: string, b: string) => {
 const getClientIp = (req: Request) => {
   const cfIp = (req.headers.get("cf-connecting-ip") || "").trim();
   if (cfIp) return cfIp;
-  const realIp = (req.headers.get("x-real-ip") || "").trim();
-  if (realIp) return realIp;
-  const forwarded = req.headers.get("x-forwarded-for") || "";
-  if (forwarded) return forwarded.split(",")[0].trim();
   return "";
 };
 
@@ -228,6 +224,9 @@ Deno.serve(async (req: Request) => {
       email,
       password,
       email_confirm: false,
+      app_metadata: {
+        signup_channel: "edge_signup_v1",
+      },
     });
 
     if (createErr || !createdData?.user) {

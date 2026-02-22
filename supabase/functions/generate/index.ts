@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const GEMINI_TIMEOUT_MS = 110_000;
@@ -44,13 +45,15 @@ const isAllowedOrigin = (req: Request): boolean => {
 const safeFinalize = async (
   sb: ReturnType<typeof createClient> | null,
   genId: string | null,
+  userId: string | null,
   success: boolean,
   errorCode: string | null = null,
 ) => {
-  if (!sb || !genId) return;
+  if (!sb || !genId || !userId) return;
   try {
-    await sb.rpc('finalize_generation', {
+    await sb.rpc('finalize_generation_internal', {
       p_generation_id: genId,
+      p_user_id: userId,
       p_success: success,
       p_error_code: errorCode,
     });
@@ -307,7 +310,9 @@ Deno.serve(async (req: Request) => {
   }
 
   let supabase: ReturnType<typeof createClient> | null = null;
+  let adminSupabase: ReturnType<typeof createClient> | null = null;
   let generationId: string | null = null;
+  let userId: string | null = null;
   let currentTask: AITask | null = null;
   let finalized = false;
 
@@ -344,6 +349,16 @@ Deno.serve(async (req: Request) => {
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    userId = user.id;
+
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return new Response(JSON.stringify({ error: 'SERVER_MISCONFIGURED' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    adminSupabase = createClient(Deno.env.get('SUPABASE_URL')!, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: withinLimit, error: rlErr } = await supabase.rpc('check_rate_limit', { p_max_per_hour: MAX_REQUESTS_PER_HOUR });
     if (rlErr || !withinLimit) {
@@ -408,7 +423,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!GEMINI_API_KEY) {
-      await safeFinalize(supabase, generationId, false, 'AI_NOT_CONFIGURED');
+      await safeFinalize(adminSupabase, generationId, userId, false, 'AI_NOT_CONFIGURED');
       finalized = true;
       return new Response(JSON.stringify({ error: 'AI service not configured' }), {
         status: 500,
@@ -467,7 +482,7 @@ Deno.serve(async (req: Request) => {
       } catch (err) {
         clearTimeout(timer);
         if (err instanceof DOMException && err.name === 'AbortError') {
-          await safeFinalize(supabase, generationId, false, 'GEMINI_TIMEOUT');
+          await safeFinalize(adminSupabase, generationId, userId, false, 'GEMINI_TIMEOUT');
           finalized = true;
           return new Response(JSON.stringify({ error: 'Gemini request timed out', retryable: true }), {
             status: 504,
@@ -475,7 +490,7 @@ Deno.serve(async (req: Request) => {
           });
         }
         if (attempt === GEMINI_MAX_RETRIES) {
-          await safeFinalize(supabase, generationId, false, 'GEMINI_EXCEPTION');
+          await safeFinalize(adminSupabase, generationId, userId, false, 'GEMINI_EXCEPTION');
           finalized = true;
           throw err;
         }
@@ -486,7 +501,7 @@ Deno.serve(async (req: Request) => {
 
     if (!geminiResponse || !geminiResponse.ok) {
       const retryable = isRetryableStatus(lastGeminiStatus);
-      await safeFinalize(supabase, generationId, false, retryable ? 'GEMINI_RETRYABLE_ERROR' : 'GEMINI_ERROR');
+      await safeFinalize(adminSupabase, generationId, userId, false, retryable ? 'GEMINI_RETRYABLE_ERROR' : 'GEMINI_ERROR');
       finalized = true;
       return new Response(JSON.stringify({ error: 'AI generation failed', details: lastGeminiStatus || 0, retryable }), {
         status: 502,
@@ -498,7 +513,7 @@ Deno.serve(async (req: Request) => {
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 
     if (task === 'report_diagnostic') {
-      await safeFinalize(supabase, generationId, true);
+      await safeFinalize(adminSupabase, generationId, userId, true);
       finalized = true;
     }
 
@@ -508,7 +523,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (_err) {
     if (!finalized && (currentTask === 'report_bio' || currentTask === 'report_diagnostic')) {
-      await safeFinalize(supabase, generationId, false, 'INTERNAL_ERROR');
+      await safeFinalize(adminSupabase, generationId, userId, false, 'INTERNAL_ERROR');
       finalized = true;
     }
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
