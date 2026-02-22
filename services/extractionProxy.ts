@@ -1,10 +1,12 @@
-import { supabase, ensureFreshSession } from './db';
+import { getVerifiedAccessToken, SUPABASE_ANON_KEY, SUPABASE_URL } from './db';
 import { Logger } from '../utils/logger';
 import type { ExtractionCallMeta, ExtractionRepairRequest } from '../types';
 
 const FUNCTION_NAME = 'extract-norms';
+const REQUEST_TIMEOUT_MS = 180_000;
 const CLIENT_MAX_RETRIES = 2;
 const CLIENT_RETRY_BASE_MS = 2_000;
+const MIN_TOKEN_VALIDITY_MS = 120_000;
 
 export interface ExtractionParams {
   filename: string;
@@ -25,34 +27,65 @@ export interface ExtractionBatchResult {
   error?: string;
 }
 
-// ── HELPER: Check if JWT looks valid ──────────────────────────────────────
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const isLikelyJwt = (token: string | undefined): token is string => {
-  if (!token) return false;
-  if (token.startsWith('sb_publishable_') || token.startsWith('sb_secret_')) return false;
-  const parts = token.split('.');
-  return parts.length === 3 && parts.every((p) => p.length > 0);
+const parseResponseBody = async (res: Response): Promise<any> => {
+  const raw = await res.text();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 };
 
-// ── HELPER: Sleep utility ─────────────────────────────────────────────────
+const invokeTask = async (jwt: string, params: ExtractionParams) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payload: params }),
+      signal: controller.signal,
+    });
 
-// ── HELPER: Check if error is invalid JWT ─────────────────────────────────
+    const parsedBody = await parseResponseBody(res);
 
-const isInvalidJwtError = (error: any): boolean => {
-  const status =
-    typeof error?.status === 'number'
-      ? error.status
-      : typeof error?.context?.status === 'number'
-        ? error.context.status
-        : undefined;
-  if (status === 401) return true;
-  const msg = String(error?.message ?? '').toLowerCase();
-  return /invalid.*jwt|jwt.*expired|unauthorized/i.test(msg);
+    if (!res.ok) {
+      return {
+        data: null,
+        error: {
+          status: res.status,
+          message:
+            (parsedBody && typeof parsedBody === 'object' && (parsedBody.message || parsedBody.error)) ||
+            `HTTP_${res.status}`,
+          context: {
+            status: res.status,
+            body: parsedBody,
+          },
+        },
+      };
+    }
+
+    return { data: parsedBody, error: null };
+  } catch (error) {
+    const isAbort = error instanceof DOMException && error.name === 'AbortError';
+    return {
+      data: null,
+      error: {
+        message: isAbort ? 'TIMEOUT_EXTRACTION' : String((error as Error)?.message || error),
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 };
-
-// ── HELPER: Extract error from edge response ──────────────────────────────
 
 const getEdgeBody = (data: any, error: any): any => {
   if (data && typeof data === 'object') return data;
@@ -66,39 +99,49 @@ const getEdgeBody = (data: any, error: any): any => {
         return null;
       }
     }
+    return ctx;
   }
   return null;
 };
 
-// ── HELPER: Check if error is retryable ───────────────────────────────────
+const isInvalidJwtError = (error: any): boolean => {
+  const status =
+    typeof error?.status === 'number'
+      ? error.status
+      : typeof error?.context?.status === 'number'
+        ? error.context.status
+        : undefined;
+
+  if (status === 401) return true;
+
+  return /invalid jwt|jwt expired|unauthorized/i.test(String(error?.message ?? ''));
+};
 
 const isRetryable = (edgeBody: any, error: any): boolean => {
   if (edgeBody?.retryable === true) return true;
-  return /fetch failed|network|econnreset|socket/i.test(String(error?.message ?? ''));
+  const status =
+    typeof error?.status === 'number'
+      ? error.status
+      : typeof error?.context?.status === 'number'
+        ? error.context.status
+        : undefined;
+
+  if (status && status >= 500) return true;
+
+  return /fetch failed|network|econnreset|socket|timeout_extraction/i.test(String(error?.message ?? ''));
 };
-
-// ── CORE: Invoke extraction task ──────────────────────────────────────────
-
-const invokeTask = async (accessToken: string, params: ExtractionParams) => {
-  // Note: AbortController.signal is not supported by supabase.functions.invoke
-  // Timeout is handled at the edge function level (30s)
-  const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, {
-    body: { payload: params },
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return { data, error };
-};
-
-// ── PUBLIC: Call extraction task with retry logic ─────────────────────────
 
 export const callExtractionTask = async (params: ExtractionParams): Promise<ExtractionResponse> => {
-  const { session, error: sessionErr } = await ensureFreshSession();
-  if (!isLikelyJwt(session?.access_token)) {
-    Logger.warn('AI', 'No valid session for extraction task', sessionErr);
+  const initialToken = await getVerifiedAccessToken({
+    minValidityMs: MIN_TOKEN_VALIDITY_MS,
+    maxAttempts: 2,
+  });
+  if (!initialToken.token) {
+    Logger.warn('AI', 'No verified session for extraction task', initialToken.error);
     throw new Error('SESSION_EXPIRED');
   }
 
-  let accessToken = session.access_token;
+  let accessToken = initialToken.token;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= CLIENT_MAX_RETRIES; attempt++) {
@@ -109,34 +152,38 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
         `Retrying extraction for ${params.filename} (${attempt + 1}/${CLIENT_MAX_RETRIES + 1}) after ${delayMs}ms`
       );
       await sleep(delayMs);
-      const refreshInBackoff = await ensureFreshSession();
-      if (isLikelyJwt(refreshInBackoff.session?.access_token)) {
-        accessToken = refreshInBackoff.session.access_token;
+      const refreshed = await getVerifiedAccessToken({
+        minValidityMs: MIN_TOKEN_VALIDITY_MS,
+        maxAttempts: 2,
+      });
+      if (refreshed.token) {
+        accessToken = refreshed.token;
       }
     }
 
     let { data, error } = await invokeTask(accessToken, params);
 
-    // Handle JWT refresh if needed
     if (error && isInvalidJwtError(error)) {
-      Logger.warn('AI', 'Invalid JWT detected - refreshing session and retrying');
-      const refreshResult = await ensureFreshSession({ forceRefresh: true });
-      if (!isLikelyJwt(refreshResult.session?.access_token)) {
+      Logger.warn('AI', 'Invalid JWT detected for extraction - refreshing session and retrying');
+      const refreshResult = await getVerifiedAccessToken({
+        minValidityMs: MIN_TOKEN_VALIDITY_MS,
+        forceRefresh: true,
+        maxAttempts: 3,
+      });
+      if (!refreshResult.token) {
         throw new Error('SESSION_EXPIRED');
       }
-      accessToken = refreshResult.session.access_token;
+      accessToken = refreshResult.token;
       ({ data, error } = await invokeTask(accessToken, params));
     }
 
     const edgeBody = getEdgeBody(data, error);
     const edgeError: string | undefined = edgeBody?.error;
 
-    // Non-retryable errors
     if (edgeError === 'RATE_LIMITED') throw new Error('RATE_LIMITED');
     if (edgeError === 'PAID_PLAN_REQUIRED') throw new Error('PAID_PLAN_REQUIRED');
     if (edgeError === 'EXTRACTION_QUOTA_EXCEEDED') throw new Error('EXTRACTION_QUOTA_EXCEEDED');
-    if (edgeError === 'Missing authorization' || edgeError === 'Unauthorized')
-      throw new Error('SESSION_EXPIRED');
+    if (edgeError === 'Missing authorization' || edgeError === 'Unauthorized') throw new Error('SESSION_EXPIRED');
 
     const retryable = isRetryable(edgeBody, error);
     if ((error || edgeError) && !retryable) {
@@ -157,15 +204,12 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
   throw lastError ?? new Error('Extraction failed after retries');
 };
 
-// ── PUBLIC: Batch extraction with parallelization ─────────────────────────
-
 export const callExtractionBatch = async (
   files: File[],
   knownSubtestNames?: string[]
 ): Promise<ExtractionBatchResult[]> => {
   const { fileToGenerativePart } = await import('../utils/aiHelpers');
 
-  // Convert all files to image parts first
   const filePromises = files.map(async (file, index) => {
     const imagePart = await fileToGenerativePart(file);
     return {
@@ -178,7 +222,6 @@ export const callExtractionBatch = async (
 
   const fileData = await Promise.all(filePromises);
 
-  // Execute all extractions in parallel
   Logger.info('AI', `Starting batch extraction of ${files.length} files`);
 
   const extractionPromises = fileData.map(async (data) => {
@@ -206,6 +249,5 @@ export const callExtractionBatch = async (
 
   const results = await Promise.all(extractionPromises);
 
-  // Sort by original index to maintain order
   return results.sort((a, b) => a.index - b.index);
 };

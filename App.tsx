@@ -108,7 +108,8 @@ const AppRouter = () => {
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'authenticated') {
-            setMode(prev => (prev === 'assessment' || prev === 'portal' || prev === 'contribution' || prev === 'admin') ? prev : 'dashboard');
+            // Preserve in-app context if auth state briefly refreshes mid-workflow.
+            setMode(prev => (prev === 'landing' ? 'dashboard' : prev));
             setShowAuthModal(false);
             setIsLoggingIn(false);
         } else if (authState === 'registering') {
@@ -155,7 +156,7 @@ const AppRouter = () => {
 
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
-    const handleUnlock = (key: CryptoKey) => { unlockSession(key); setMode('dashboard'); };
+    const handleUnlock = (key: CryptoKey) => { unlockSession(key); };
     const handleWizardComplete = async (_p: PractitionerProfile, key: CryptoKey) => {
         // Fermer le modal AVANT reload pour éviter le flash du AuthWizard
         // quand authState passe brièvement par 'authenticating'

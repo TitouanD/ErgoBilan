@@ -33,6 +33,10 @@ const allowedMimeTypes = new Set([
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
 const IS_PRODUCTION = APP_ENV === "production" || APP_ENV === "prod" || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+const ALLOW_LOOPBACK_ORIGINS =
+  (Deno.env.get("AI_ALLOW_LOOPBACK_ORIGINS") || "true").trim().toLowerCase() !== "false";
+const AI_DEV_MODE =
+  (Deno.env.get("AI_DEV_MODE") || "false").trim().toLowerCase() === "true";
 const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
   .split(",")
   .map((value) => value.trim())
@@ -47,10 +51,22 @@ const corsHeaders = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isRetryableStatus = (status: number) => status === 503 || status === 429;
 
+const isLoopbackOrigin = (origin: string): boolean => {
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+};
+
 const isAllowedOrigin = (req: Request): boolean => {
   const origin = (req.headers.get('origin') || '').trim();
+  const loopbackOrigin = ALLOW_LOOPBACK_ORIGINS && !!origin && isLoopbackOrigin(origin);
+  if (loopbackOrigin) return true;
   if (ALLOWED_ORIGINS.length > 0) return !!origin && ALLOWED_ORIGINS.includes(origin);
-  return !IS_PRODUCTION;
+  return !IS_PRODUCTION || AI_DEV_MODE;
 };
 
 // ── TYPES ──────────────────────────────────────────────────────────────────

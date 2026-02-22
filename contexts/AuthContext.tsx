@@ -633,7 +633,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
           if (!isDemoMode) {
-              const { session, error } = await ensureFreshSession({ forceRefresh: true });
+              const { session, error } = await ensureFreshSession({ minValidityMs: 10_000 });
               if (!session) {
                   Logger.warn('AUTH', 'Session expired during unlock', error);
                   await forceLogout('Session expired');

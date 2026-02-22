@@ -11,8 +11,12 @@ import { useToast } from '../../contexts/ToastContext';
 
 /** Crée un client Supabase anonyme avec le header x-questionnaire-token pour les policies RLS. */
 const createPortalClient = (accessToken: string) => {
-  const url = import.meta.env.VITE_SUPABASE_URL || 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
+  const defaultUrl = 'https://hxlsjpkwrqunuqpaukmg.supabase.co';
+  const defaultPublishableKey = 'sb_publishable_40vGTw4K7qqKFSrSs1OPIQ_yurzA3qm';
+  const url = import.meta.env.VITE_SUPABASE_URL || defaultUrl;
+  const anonKey = import.meta.env.DEV
+    ? defaultPublishableKey
+    : (import.meta.env.VITE_SUPABASE_ANON_KEY || defaultPublishableKey);
   return createClient(url, anonKey, {
     global: { headers: { 'x-questionnaire-token': accessToken } },
   });
