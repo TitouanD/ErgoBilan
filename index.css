@@ -1,3 +1,227 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Light theme (default) */
+:root,
+body.light-theme {
+  --app-bg: #faf8f4;
+  --primary: #e07a5f;
+  --secondary: #3d405b;
+  --success: #81b29a;
+  --warning: #f2cc8f;
+  --text-main: #3d405b;
+  --text-heading: #1c1c1e;
+  --text-secondary: #6b7280;
+  --text-light: #9ca3af;
+  --text-disabled: #d1d5db;
+  --card-bg: #ffffff;
+  --card-bg-raised: #f9f9f9;
+  --border-color: #e5e7eb;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --hover-bg: #f3f4f6;
+  --shadow: rgba(61, 64, 91, 0.08);
+  --badge-neutral-bg: #f3f4f6;
+  --badge-neutral-text: #374151;
+  --btn-secondary-bg: #f3f4f6;
+  --btn-secondary-text: #374151;
+  --progress-bg: #e5e7eb;
+  --modal-overlay: rgba(61, 64, 91, 0.7);
+  color-scheme: light;
+}
+
+/* Dark theme */
+body.dark-theme {
+  --app-bg: #12131f;
+  --primary: #e07a5f;
+  --secondary: #8b9dc3;
+  --success: #81b29a;
+  --warning: #f2cc8f;
+  --text-main: #c8cfe0;
+  --text-heading: #e8ebf4;
+  --text-secondary: #8892aa;
+  --text-light: #5a6278;
+  --text-disabled: #3a4055;
+  --card-bg: #1c1e30;
+  --card-bg-raised: #242640;
+  --border-color: rgba(100, 116, 180, 0.18);
+  --input-bg: #242640;
+  --input-border: rgba(100, 116, 180, 0.25);
+  --hover-bg: #242640;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --badge-neutral-bg: #1e2038;
+  --badge-neutral-text: #c8cfe0;
+  --btn-secondary-bg: #1e2038;
+  --btn-secondary-text: #c8cfe0;
+  --progress-bg: #1e2038;
+  --modal-overlay: rgba(12, 13, 25, 0.8);
+  color-scheme: dark;
+}
+
+/* Global smooth theme transition */
+*,
+*::before,
+*::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease;
+}
+
+/* Exclude transitions that should remain instant */
+.no-theme-transition,
+.no-theme-transition * {
+  transition: none !important;
+}
+
+body {
+  font-family: "Quicksand", sans-serif;
+  background-color: var(--app-bg);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-serif {
+  font-family: "Merriweather", serif;
+}
+
+input,
+textarea,
+select {
+  font-family: "Quicksand", sans-serif;
+  font-weight: 600;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(224, 122, 95, 0.15);
+}
+
+/* Utility transition helper */
+.smooth-transition {
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Hide scrollbar while keeping scroll behavior */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--input-border);
+}
+
+/* Screen view: simulate A4 paper */
+.page-a4 {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 15mm;
+  margin: 10mm auto;
+  background: #ffffff;
+  color: #1c1c1e;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15), 0 10px 30px rgba(0, 0, 0, 0.08);
+  position: relative;
+  box-sizing: border-box;
+  transition: none !important;
+}
+
+/* PDF viewer panel gets themed; A4 canvas remains white */
+.pdf-viewer-panel {
+  background-color: var(--app-bg);
+}
+
+/* Print styles */
+@media print {
+  @page {
+    margin: 0;
+    size: A4;
+  }
+
+  body {
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-report,
+  #printable-report * {
+    visibility: visible;
+  }
+
+  #printable-report {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .page-a4 {
+    margin: 0;
+    box-shadow: none;
+    page-break-after: always;
+    min-height: 297mm;
+    height: auto;
+    width: 100%;
+    border: none;
+    padding: 15mm;
+  }
+
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  .break-inside-avoid {
+    page-break-inside: avoid;
+  }
+}
+
+/* PDF export mode (applied via body.pdf-mode by html2pdf.js) */
+body.pdf-mode .no-print,
+body.pdf-mode .no-print * {
+  display: none !important;
+}
+
+body.pdf-mode .break-inside-avoid {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+body.pdf-mode #printable-report {
+  width: 794px !important;
+}
+
+body.pdf-mode .page-a4 {
+  box-shadow: none;
+  margin: 0;
+  border: none;
+}

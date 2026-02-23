@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ErgoBilan">
+  <rect width="64" height="64" rx="18" fill="#FFFFFF" />
+  <rect x="0.5" y="0.5" width="63" height="63" rx="17.5" fill="none" stroke="#E5E7EB" />
+  <g transform="translate(8 8) scale(2)">
+    <path
+      d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"
+      fill="#E07A5F33"
+      stroke="#E07A5F"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path d="M20 3v4" stroke="#E07A5F" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M22 5h-4" stroke="#E07A5F" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M4 17v2" stroke="#E07A5F" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M5 18H3" stroke="#E07A5F" stroke-width="1.8" stroke-linecap="round" />
+  </g>
+</svg>
