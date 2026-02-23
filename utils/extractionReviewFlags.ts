@@ -660,6 +660,30 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       }
     }
 
+    // Check for non-integer scores on integer-based scales
+    // If the median standard score is clearly on a scale like Scaled (10) or Standard (100) or T-Score (50)
+    // then non-integers are suspicious.
+    const allStandardValues = ordered.map(e => e.standardValue).filter((v): v is number => v !== null);
+    if (allStandardValues.length >= 3) {
+      const medVal = median(allStandardValues);
+      const isIntegerScale = (medVal > 0 && medVal < 30) || (medVal > 30 && medVal < 70) || (medVal > 70 && medVal < 160);
+      if (isIntegerScale) {
+        ordered.forEach((entry) => {
+          if (entry.standardValue !== null && !Number.isInteger(entry.standardValue)) {
+            flags.push(makeFlag({
+              code: 'LOOKUP_NON_INTEGER_SCORE',
+              severity: 'warning',
+              message: `Valeur non entiere (${entry.row.standard}) detectee pour un score standard sur "${bucket.subtest}".`,
+              subtest: bucket.subtest,
+              groupLabel: bucket.groupLabel,
+              rowId: entry.row.id,
+              confidence: 0.9,
+            }));
+          }
+        });
+      }
+    }
+
     const standardOutlier = detectNumericStepOutlier(
       standardSteps,
       LOOKUP_STANDARD_STEP_OUTLIER_MIN_DELTA,
@@ -748,6 +772,32 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       groupLabel: bucket.groupLabel,
       confidence: 0.9,
     }));
+  }
+
+  // Cross-subtest duplicate content detection (detecting repetitive hallucination)
+  const subtestSignatures = new Map<string, string>();
+  for (const bucket of lookupBuckets.values()) {
+    const signature = bucket.rows
+      .map(r => `${r.raw}|${r.standard}|${r.zScore}|${r.percentile}`)
+      .sort()
+      .join(';');
+    if (!signature || bucket.rows.length < 3) continue;
+
+    if (subtestSignatures.has(signature)) {
+      const otherSubtest = subtestSignatures.get(signature)!;
+      if (otherSubtest !== bucket.subtest) {
+        flags.push(makeFlag({
+          code: 'SUBTEST_CONTENT_DUPLICATE',
+          severity: 'blocking',
+          message: `Contenu identique detecte pour "${bucket.subtest}" et "${otherSubtest}". Probable repetition AI ou erreur d'extraction.`,
+          subtest: bucket.subtest,
+          groupLabel: bucket.groupLabel,
+          confidence: 0.98,
+        }));
+      }
+    } else {
+      subtestSignatures.set(signature, bucket.subtest);
+    }
   }
 
   return sortFlags(flags);
