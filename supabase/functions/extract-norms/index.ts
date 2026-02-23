@@ -1299,22 +1299,10 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    // ── AUTH VALIDATION (verify_jwt: true guarantees a valid token) ──
+    // ── AUTH VALIDATION ──
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    const payloadBase64 = token.split('.')[1];
-    const decodedPayload = JSON.parse(atob(payloadBase64));
-    currentUserId = decodedPayload.sub;
-
-    if (!currentUserId) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -1327,6 +1315,15 @@ Deno.serve(async (req: Request) => {
         global: { headers: { Authorization: authHeader } },
       }
     );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    currentUserId = user.id;
 
     if (!SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'SERVER_MISCONFIGURED' }), {

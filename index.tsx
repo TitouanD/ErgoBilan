@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Local font assets for lower startup latency and fewer third-party requests.
 import '@fontsource/quicksand/latin-300.css';
@@ -38,5 +40,7 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <App />
+    <Analytics />
+    <SpeedInsights />
   </React.StrictMode>
 );
