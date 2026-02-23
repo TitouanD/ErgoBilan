@@ -18,11 +18,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY);
       if (stored === 'dark' || stored === 'light') {
-        Logger.info('THEME', `Loaded theme from storage: ${stored}`);
+        Logger.info('UI', `Loaded theme from storage: ${stored}`);
         return stored;
       }
     } catch (error) {
-      Logger.warn('THEME', 'Failed to load theme from localStorage', error);
+      Logger.warn('UI', 'Failed to load theme from localStorage', error);
     }
     // Default theme is always light when no user preference is stored.
     return 'light';
@@ -32,13 +32,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Apply theme class to document body
     document.body.classList.remove('light-theme', 'dark-theme');
     document.body.classList.add(`${theme}-theme`);
-    
+
     // Persist theme to localStorage
     try {
       localStorage.setItem(THEME_STORAGE_KEY, theme);
-      Logger.info('THEME', `Theme switched to: ${theme}`);
+      Logger.info('UI', `Theme switched to: ${theme}`);
     } catch (error) {
-      Logger.warn('THEME', 'Failed to save theme to localStorage', error);
+      Logger.warn('UI', 'Failed to save theme to localStorage', error);
     }
   }, [theme]);
 

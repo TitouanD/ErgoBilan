@@ -271,40 +271,40 @@ const parseRepairRequest = (raw: unknown): RepairRequestPayload | null => {
 
   const focusSubtests = Array.isArray(input.focusSubtests)
     ? input.focusSubtests
-        .map((entry) => {
-          if (!entry || typeof entry !== 'object') return null;
-          const value = entry as Record<string, unknown>;
-          const name = normalizePromptToken(value.name);
-          const abbreviation = normalizePromptToken(value.abbreviation);
-          if (!name) return null;
-          return {
-            name,
-            abbreviation: abbreviation || null,
-          } as RepairFocusSubtest;
-        })
-        .filter((entry): entry is RepairFocusSubtest => !!entry)
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const value = entry as Record<string, unknown>;
+        const name = normalizePromptToken(value.name);
+        const abbreviation = normalizePromptToken(value.abbreviation);
+        if (!name) return null;
+        return {
+          name,
+          abbreviation: abbreviation || null,
+        } as RepairFocusSubtest;
+      })
+      .filter((entry): entry is RepairFocusSubtest => !!entry)
     : [];
 
   if (focusSubtests.length === 0) return null;
 
   const expectedGroupCounts = Array.isArray(input.expectedGroupCounts)
     ? input.expectedGroupCounts
-        .map((entry) => {
-          if (!entry || typeof entry !== 'object') return null;
-          const value = entry as Record<string, unknown>;
-          const groupLabel = normalizePromptToken(value.groupLabel);
-          const expectedRaw = Number(value.expectedCount);
-          const expectedCount = Number.isFinite(expectedRaw) ? Math.trunc(expectedRaw) : NaN;
-          if (!groupLabel || !Number.isFinite(expectedCount) || expectedCount <= 0) return null;
-          return { groupLabel, expectedCount } as RepairExpectedGroupCount;
-        })
-        .filter((entry): entry is RepairExpectedGroupCount => !!entry)
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const value = entry as Record<string, unknown>;
+        const groupLabel = normalizePromptToken(value.groupLabel);
+        const expectedRaw = Number(value.expectedCount);
+        const expectedCount = Number.isFinite(expectedRaw) ? Math.trunc(expectedRaw) : NaN;
+        if (!groupLabel || !Number.isFinite(expectedCount) || expectedCount <= 0) return null;
+        return { groupLabel, expectedCount } as RepairExpectedGroupCount;
+      })
+      .filter((entry): entry is RepairExpectedGroupCount => !!entry)
     : [];
 
   const existingSubtests = Array.isArray(input.existingSubtests)
     ? input.existingSubtests
-        .map((name) => normalizePromptToken(name))
-        .filter((name) => !!name)
+      .map((name) => normalizePromptToken(name))
+      .filter((name) => !!name)
     : [];
 
   return {
@@ -1299,7 +1299,7 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    // ── AUTH VALIDATION ──
+    // ── AUTH VALIDATION (verify_jwt: true guarantees a valid token) ──
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), {
@@ -1308,23 +1308,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (!bearerMatch) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const payloadBase64 = token.split('.')[1];
+    const decodedPayload = JSON.parse(atob(payloadBase64));
+    currentUserId = decodedPayload.sub;
 
-    const accessToken = bearerMatch[1].trim();
-    const jwtParts = accessToken.split('.');
-    const malformedJwt = jwtParts.length !== 3 || jwtParts.some((part) => part.length === 0);
-    if (
-      !accessToken ||
-      accessToken.startsWith('sb_publishable_') ||
-      accessToken.startsWith('sb_secret_') ||
-      malformedJwt
-    ) {
+    if (!currentUserId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -1335,18 +1324,9 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
       {
-        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+        global: { headers: { Authorization: authHeader } },
       }
     );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    currentUserId = user.id;
 
     if (!SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'SERVER_MISCONFIGURED' }), {

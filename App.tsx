@@ -20,6 +20,7 @@ import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types'; 
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -83,6 +84,10 @@ const AppRouter = () => {
         isLoadingMore: false
     });
     const [demoConversion, setDemoConversion] = useState<{ show: boolean; action: string }>({ show: false, action: '' });
+    const [loginCaptchaToken, setLoginCaptchaToken] = useState('');
+    const [loginCaptchaNonce, setLoginCaptchaNonce] = useState(0);
+    const turnstileSiteKey = (import.meta.env.VITE_SUPABASE_TURNSTILE_SITE_KEY || import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+    const shouldUseCaptcha = turnstileSiteKey.length > 0;
 
     // --- Extracted domain hooks ---
     const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, setDraftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, orgKey, orgId, authState, practitioner, isDemoMode });
@@ -157,14 +162,29 @@ const AppRouter = () => {
 
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => {
+        if (shouldUseCaptcha && !loginCaptchaToken) {
+            toast.error("Veuillez compléter le CAPTCHA.");
+            return;
+        }
+
         const normalizedEmail = email.trim().toLowerCase();
         setIsLoggingIn(true);
-        const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: pass });
+        
+        const signInPayload = shouldUseCaptcha 
+            ? { email: normalizedEmail, password: pass, options: { captchaToken: loginCaptchaToken } }
+            : { email: normalizedEmail, password: pass };
+
+        const { error } = await supabase.auth.signInWithPassword(signInPayload);
+        
         if (error) {
             if (/email not confirmed/i.test(error.message)) {
                 setPendingConfirmationEmail(normalizedEmail);
                 setAuthMode('confirm_email');
             } else {
+                if (shouldUseCaptcha) {
+                    setLoginCaptchaToken('');
+                    setLoginCaptchaNonce(prev => prev + 1);
+                }
                 toast.error(error.message);
             }
             setIsLoggingIn(false);
@@ -286,6 +306,7 @@ const AppRouter = () => {
                             }
                             setAuthMode('login');
                             setPendingConfirmationEmail('');
+                            setLoginCaptchaToken('');
                             setShowAuthModal(true);
                         }} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
                             Accès Praticien <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
@@ -303,14 +324,27 @@ const AppRouter = () => {
                     <div className="fixed inset-0 z-50 bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                         {authMode === 'login' && authState !== 'registering' ? (
                             <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
-                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); setLoginCaptchaToken(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
                                 <div className="text-center mb-8"><h2 className="text-3xl font-serif font-bold text-[var(--text-main)]">Connexion</h2><p className="text-[var(--text-light)] text-sm font-medium mt-1">Heureux de vous revoir.</p></div>
                                 <form onSubmit={(e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get('email') as string, fd.get('pass') as string); }} className="space-y-5">
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Email</label><input name="email" type="email" placeholder="votre@email.com" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Mot de passe</label><input name="pass" type="password" placeholder="••••••••" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
+                                    
+                                    {shouldUseCaptcha && (
+                                        <div className="mt-4 flex justify-center">
+                                            <Turnstile
+                                                key={`turnstile-${loginCaptchaNonce}`}
+                                                siteKey={turnstileSiteKey}
+                                                onSuccess={(token) => setLoginCaptchaToken(token)}
+                                                onError={() => setLoginCaptchaToken('')}
+                                                onExpire={() => setLoginCaptchaToken('')}
+                                            />
+                                        </div>
+                                    )}
+
                                     <button type="submit" disabled={isLoggingIn} className="w-full py-4 bg-[#3D405B] text-white rounded-2xl font-bold text-lg shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] hover:shadow-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-4">{isLoggingIn ? <Loader2 size={24} className="animate-spin" /> : "Se connecter"}</button>
                                 </form>
-                                <div className="mt-8 text-center pt-6 border-t border-[var(--border-color)]"><p className="text-xs text-[var(--text-light)] font-medium mb-2">Pas encore de compte ?</p><button onClick={() => { setAuthMode('register'); setPendingConfirmationEmail(''); }} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
+                                <div className="mt-8 text-center pt-6 border-t border-[var(--border-color)]"><p className="text-xs text-[var(--text-light)] font-medium mb-2">Pas encore de compte ?</p><button onClick={() => { setAuthMode('register'); setPendingConfirmationEmail(''); setLoginCaptchaToken(''); }} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
                             </div>
                         ) : authMode === 'confirm_email' && authState !== 'registering' ? (
                             <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">

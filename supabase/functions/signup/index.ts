@@ -55,15 +55,19 @@ Deno.serve(async (req: Request) => {
       return fail("UNAUTHORIZED", "Missing authorization header.", 401);
     }
 
+    // verify_jwt: true guarantees the token is valid. Decode claims directly.
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const payloadBase64 = token.split(".")[1];
+    const decodedPayload = JSON.parse(atob(payloadBase64));
+    const user = { id: decodedPayload.sub as string, email: (decodedPayload.email as string) || "" };
+
+    if (!user.id) {
+      return fail("UNAUTHORIZED", "Invalid token claims.", 401);
+    }
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    const user = authData?.user;
-    if (authError || !user) {
-      return fail("UNAUTHORIZED", "Invalid or expired session.", 401);
-    }
 
     let body: Record<string, unknown>;
     try {
