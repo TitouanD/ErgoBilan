@@ -344,7 +344,9 @@ export type ReviewFlagCode =
     | 'GROUP_ROW_COUNT_MISMATCH'
     | 'PARAMETRIC_REQUIRED_FIELD_MISSING'
     | 'AGE_RANGE_MISSING_OR_INVALID'
-    | 'LOOKUP_ZERO_Z_PLATEAU';
+    | 'LOOKUP_ZERO_Z_PLATEAU'
+    | 'LOOKUP_NON_INTEGER_SCORE'
+    | 'SUBTEST_CONTENT_DUPLICATE';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
@@ -642,7 +644,7 @@ export interface NormQualityFlag {
     details: string;
 }
 
-export type FittingScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+export type FittingScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
 export type FittingStructure = 'LOOKUP' | 'PARAMETRIC';
 export type FittingIssueSeverity = 'blocking' | 'warning' | 'info';
 export type FittingSuggestionKind = 'score_type' | 'value_fix';
@@ -653,6 +655,7 @@ export type FittingIssueCode =
     | 'FIT_LOOKUP_STEP_OUTLIER'
     | 'FIT_LOOKUP_VALUE_INCONSISTENT'
     | 'FIT_LOOKUP_VALUE_OUT_OF_RANGE'
+    | 'FIT_LOOKUP_NON_INTEGER_SCORE'
     | 'FIT_PARAMETRIC_MEAN_SD_DRIFT';
 
 export interface FittingRow {

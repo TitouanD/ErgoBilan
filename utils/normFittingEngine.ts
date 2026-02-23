@@ -55,6 +55,7 @@ const FIT_SCALE_TARGETS: Record<FitScaleType, { mean: number; sd: number }> = {
   scaled: { mean: 10, sd: 3 },
   't-score': { mean: 50, sd: 10 },
   sten: { mean: 5.5, sd: 2 },
+  stanine: { mean: 5, sd: 2 },
 };
 
 const isStandardizedScoreType = (value: FittingScoreType | null): value is FitScaleType => (
@@ -64,6 +65,7 @@ const isStandardizedScoreType = (value: FittingScoreType | null): value is FitSc
 const LOOKUP_FIT_CANDIDATES: LookupFitCandidate[] = [
   { type: 'percentile' },
   { type: 'sten', ...FIT_SCALE_TARGETS.sten, softMin: 1, softMax: 10, hardMin: 0, hardMax: 12 },
+  { type: 'stanine', ...FIT_SCALE_TARGETS.stanine, softMin: 1, softMax: 9, hardMin: 1, hardMax: 10 },
   { type: 'scaled', ...FIT_SCALE_TARGETS.scaled, softMin: 1, softMax: 19, hardMin: 0, hardMax: 30 },
   { type: 't-score', ...FIT_SCALE_TARGETS['t-score'], softMin: 20, softMax: 80, hardMin: 10, hardMax: 90 },
   { type: 'standard', ...FIT_SCALE_TARGETS.standard, softMin: 55, softMax: 145, hardMin: 20, hardMax: 200 },
@@ -256,6 +258,7 @@ export const normalizeScoreTypeToken = (value?: string | null): FittingScoreType
   if (raw === 'scaled') return 'scaled';
   if (raw === 'percentile') return 'percentile';
   if (raw === 'sten') return 'sten';
+  if (raw === 'stanine') return 'stanine';
   if (raw === 'none') return 'none';
   if (raw === 't-score' || raw === 't_score' || raw === 't score' || raw === 'tscore') return 't-score';
   return null;
@@ -742,6 +745,20 @@ const buildLookupIssues = (
           + `Ex: score ${first.entry.standard} => pct attendu ~${first.expectedPercentile}, recu ${first.entry.percentile}.`,
         confidence: 0.95,
         normId: first.entry.row.normId || null,
+      });
+    }
+
+    const nonInteger = ordered.filter((entry) => (
+      entry.standard !== null && !Number.isInteger(entry.standard)
+    ));
+    if (nonInteger.length > 0) {
+      issues.push({
+        id: makeIssueId('FIT_LOOKUP_NON_INTEGER_SCORE', nonInteger[0].row.normId, nonInteger.length),
+        code: 'FIT_LOOKUP_NON_INTEGER_SCORE',
+        severity: 'warning',
+        message: `${nonInteger.length} valeur(s) non entiere(s) detectee(s) pour un score de type ${scaleForConsistency}.`,
+        confidence: 0.9,
+        normId: nonInteger[0].row.normId || null,
       });
     }
   }

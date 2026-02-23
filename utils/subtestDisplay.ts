@@ -16,14 +16,49 @@ export interface SubtestDisplayMeta {
   isHiddenInvalidAmbiguous: boolean;
 }
 
+export const cleanSubtestName = (value?: string | null): string => {
+  let name = String(value || '').trim();
+  if (!name) return '';
+
+  // 1. Remove common LLM headers/prefixes
+  name = name
+    .replace(/^(?:Sous-test|Subtest|Table|Tableau|Column|Colonne)\s*[:#-]?\s*/i, '')
+    // 2. Remove numeric prefixes like "1.", "1)", "01."
+    .replace(/^\d+[\s.)-]+\s*/, '')
+    // 3. Remove excess whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return name;
+};
+
 export const normalizeSubtestAbbreviationTag = (value?: string | null): string => {
   const trimmed = String(value || '').trim();
   if (!trimmed) return '';
-  return trimmed
+
+  // 1. Remove accents and convert to uppercase
+  const normalized = trimmed
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/\s+/g, ' ');
+    .toUpperCase();
+
+  // 2. Keep only valid characters: A-Z, 0-9, &, /, -, space
+  // We remove anything else (punctuation, symbols like %)
+  const cleaned = normalized.replace(/[^A-Z0-9&/ -]/g, ' ');
+
+  // 3. Trim and collapse spaces
+  const result = cleaned.trim().replace(/\s+/g, ' ');
+
+  // 4. Must start with A-Z or 0-9 according to constraint
+  if (!/^[A-Z0-9]/.test(result)) {
+    // If it starts with an invalid char, we try to find the first valid one
+    const shifted = result.replace(/^[^A-Z0-9]+/, '');
+    if (!shifted) return '';
+    return shifted.slice(0, 20).trim();
+  }
+
+  // 5. Truncate to match DB constraint (max 20 chars)
+  return result.slice(0, 20).trim();
 };
 
 export const splitTrailingTag = (name: string): { baseName: string; trailingTag?: string } => {
