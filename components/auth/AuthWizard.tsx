@@ -9,6 +9,51 @@ import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+const SIGNUP_DRAFT_STORAGE_KEY = 'ergobilan.signupDraft';
+
+type SignupDraft = {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    siret: string;
+    address: string;
+};
+
+const readSignupDraft = (): SignupDraft | null => {
+    try {
+        const raw = window.localStorage.getItem(SIGNUP_DRAFT_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<SignupDraft>;
+        return {
+            firstName: typeof parsed.firstName === 'string' ? parsed.firstName : '',
+            lastName: typeof parsed.lastName === 'string' ? parsed.lastName : '',
+            email: typeof parsed.email === 'string' ? parsed.email : '',
+            phone: typeof parsed.phone === 'string' ? parsed.phone : '',
+            siret: typeof parsed.siret === 'string' ? parsed.siret : '',
+            address: typeof parsed.address === 'string' ? parsed.address : '',
+        };
+    } catch {
+        return null;
+    }
+};
+
+const writeSignupDraft = (draft: SignupDraft) => {
+    try {
+        window.localStorage.setItem(SIGNUP_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
+const clearSignupDraft = () => {
+    try {
+        window.localStorage.removeItem(SIGNUP_DRAFT_STORAGE_KEY);
+    } catch {
+        // Ignore storage failures.
+    }
+};
+
 interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
     onCancel: () => void;
@@ -41,6 +86,49 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     useEffect(() => {
         if (initialEmail) setFormData(prev => ({ ...prev, email: initialEmail }));
     }, [initialEmail]);
+
+    useEffect(() => {
+        const draft = readSignupDraft();
+        if (!draft) return;
+
+        const initialEmailNormalized = initialEmail.trim().toLowerCase();
+        const draftEmailNormalized = draft.email.trim().toLowerCase();
+        const emailMatches = !initialEmailNormalized || !draftEmailNormalized || initialEmailNormalized === draftEmailNormalized;
+
+        if (!emailMatches) return;
+
+        setFormData(prev => ({
+            ...prev,
+            firstName: draft.firstName || prev.firstName,
+            lastName: draft.lastName || prev.lastName,
+            email: initialEmail || draft.email || prev.email,
+            phone: draft.phone || prev.phone,
+            siret: draft.siret || prev.siret,
+            address: draft.address || prev.address,
+        }));
+    }, [initialEmail]);
+
+    useEffect(() => {
+        const hasAnyProfessionalField = [
+            formData.firstName,
+            formData.lastName,
+            formData.email,
+            formData.phone,
+            formData.siret,
+            formData.address,
+        ].some((value) => value.trim().length > 0);
+
+        if (!hasAnyProfessionalField) return;
+
+        writeSignupDraft({
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            phone: formData.phone,
+            siret: formData.siret,
+            address: formData.address,
+        });
+    }, [formData.firstName, formData.lastName, formData.email, formData.phone, formData.siret, formData.address]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -241,6 +329,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 encryptionValidator: validator
             };
 
+            clearSignupDraft();
             onComplete(newPractitioner, masterKey);
 
         } catch (e: unknown) {
