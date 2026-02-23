@@ -65,6 +65,9 @@ type StrictGradeRule = {
 };
 
 const STRICT_GRADE_RULES: StrictGradeRule[] = [
+    { label: 'PS', minMonths: 36, pattern: /\bPS\b/ },
+    { label: 'MS', minMonths: 48, pattern: /\bMS\b/ },
+    { label: 'GS', minMonths: 60, pattern: /\bGS\b/ },
     { label: 'CP', minMonths: 72, pattern: /\bCP\b/ },
     { label: 'CE1', minMonths: 84, pattern: /\bCE1\b/ },
     { label: 'CE2', minMonths: 96, pattern: /\bCE2\b/ },
@@ -1247,6 +1250,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const rowsBySubtest = groupRowsBySubtest(includedRows);
         return Object.entries(rowsBySubtest)
             .filter(([, rows]) => {
+                // 1. Check for explicit label/age mismatch (most reliable)
+                const hasLabelMismatch = rows.some((r) => {
+                    const label = (r.hidden_group_label || '').toUpperCase();
+                    const age = r.hidden_age_min;
+                    if (!age) return false;
+                    if (label === '6E' && age === 72) return true;
+                    if (label === '4E' && age === 48) return true;
+                    if (label === '2NDE' && age === 24) return true;
+                    return false;
+                });
+                if (hasLabelMismatch) return true;
                 const ageStarts = rows
                     .map((r) => r.hidden_age_min)
                     .filter((v): v is number => typeof v === 'number')
@@ -1255,10 +1269,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 if (ageStarts.length < 3) return false;
 
                 const hasPrimarySchoolBand = ageStarts.some((m) => m >= 84 && m <= 131);
-                const hasSecondaryParsedAsYears = ageStarts.some((m) => m === 24 || m === 48 || m === 72);
                 const hasTeenBand = ageStarts.some((m) => m >= 132);
 
-                return hasPrimarySchoolBand && hasSecondaryParsedAsYears && !hasTeenBand;
+                // Identify ages that are typically associated with secondary grades if misparsed
+                // but are also valid primary/maternelle ages (CP, MS, etc).
+                const hasSuspiciousGaps = ageStarts.some((m) => {
+                    if (m === 72) {
+                        // 72m is 6 years. Suspicious if not labeled "CP".
+                        return !rows.some(r => (r.hidden_group_label || '').toUpperCase() === 'CP');
+                    }
+                    if (m === 48) {
+                        // 48m is 4 years. Suspicious if not labeled "MS" or similar.
+                        return !rows.some(r => ['MS', 'MS/GS', 'MOYENNE SECTION'].includes((r.hidden_group_label || '').toUpperCase()));
+                    }
+                    if (m === 24) {
+                        // 24m is 2 years. Suspicious if not labeled as a young child age.
+                        return !rows.some(r => (r.hidden_group_label || '').toUpperCase().includes('2 ANS'));
+                    }
+                    return false;
+                });
+
+                return hasPrimarySchoolBand && hasSuspiciousGaps && !hasTeenBand;
             })
             .map(([subtestName]) => subtestName);
     }, [includedRows, tableStructure]);
@@ -1655,27 +1686,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             // PARALLEL PROCESSING: Extract all files at once for much faster processing
             Logger.info('ADMIN', `Starting parallel extraction of ${inputFiles.length} file(s)`);
-            
+
             const extractionPromises = inputFiles.map(async (file, i) => {
                 try {
                     setCurrentFileIndex(i);
                     const result = await processSingleExtraction(file, knownSubtestNames.length > 0 ? knownSubtestNames : undefined);
-                    
+
                     // Collect unique subtest names from this page
                     const pageSubtests = new Set(result.rows.map(r => r.subtest).filter(Boolean));
                     pageSubtests.forEach(name => {
                         if (!knownSubtestNames.includes(name)) knownSubtestNames.push(name);
                     });
-                    
+
                     return { result, index: i, success: true };
                 } catch (error) {
                     Logger.error('ADMIN', `Failed to extract ${file.name}`, error);
                     return { result: null, index: i, success: false, error };
                 }
             });
-            
+
             const results = await Promise.all(extractionPromises);
-            
+
             // Collect all duplicated sids from across pages
             const allDuplicatedSids = new Set<string>();
             results.forEach(({ result }) => {
@@ -1693,12 +1724,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             // Process results in order — save draft progressively so no data is lost
             for (let i = 0; i < results.length; i += 1) {
                 const { result, success, error } = results[i];
-                
+
                 if (!success || !result) {
                     toast.error(`Erreur sur la page ${i + 1}: ${error instanceof Error ? error.message : 'Extraction échouée'}`);
                     continue;
                 }
-                
+
                 if (resolvedStructure === 'UNKNOWN') {
                     resolvedStructure = result.detectedStructure;
                 } else if (result.detectedStructure !== resolvedStructure) {
@@ -3001,8 +3032,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             key={cat.id}
                                             onClick={() => setSelectedCategory(cat.id)}
                                             className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedCategory === cat.id
-                                                    ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
-                                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
+                                                ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
+                                                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
                                                 }`}
                                         >
                                             {cat.label}
@@ -3182,13 +3213,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             {currentPage.flags.map((flag) => (
                                                 <div
                                                     key={flag.id}
-                                                    className={`rounded-lg border px-3 py-2 text-xs ${
-                                                        flag.severity === 'blocking'
-                                                            ? 'bg-rose-50 border-rose-200 text-rose-800'
-                                                            : flag.severity === 'warning'
-                                                                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                                                : 'bg-sky-50 border-sky-200 text-sky-800'
-                                                    }`}
+                                                    className={`rounded-lg border px-3 py-2 text-xs ${flag.severity === 'blocking'
+                                                        ? 'bg-rose-50 border-rose-200 text-rose-800'
+                                                        : flag.severity === 'warning'
+                                                            ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                            : 'bg-sky-50 border-sky-200 text-sky-800'
+                                                        }`}
                                                 >
                                                     <div className="flex items-center justify-between gap-2">
                                                         <span className="font-bold">{flag.code}</span>
@@ -3230,151 +3260,149 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             {currentGroupedEntries.map(([subtest, subRows]) => {
                                 const isVariant = VARIANT_PATTERN.test(subtest);
                                 return (
-                                <div key={subtest} className={`bg-[var(--card-bg)] rounded-2xl border shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 ${isVariant ? 'border-amber-400 ring-2 ring-amber-200' : 'border-[var(--border-color)]'}`}>
-                                    <div className="bg-[var(--hover-bg)] px-4 py-3 border-b border-[var(--border-color)] flex justify-between items-center">
-                                        <div className="flex items-center gap-2 flex-1">
-                                            {isVariant ? <AlertTriangle size={14} className="text-amber-500" /> : <Layers size={14} className="text-[var(--text-secondary)]" />}
-                                            <input
-                                                value={subtest}
-                                                onChange={(e) => handleSubtestNameChange(subtest, e.target.value)}
-                                                className={`bg-transparent font-bold text-sm w-full outline-none focus:bg-[var(--input-bg)] rounded px-1 transition-all ${isVariant ? 'text-amber-700' : 'text-[var(--text-heading)]'}`}
-                                                placeholder={isVariant ? 'Renommez ce sous-test...' : undefined}
-                                            />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{subRows.length} entrées</span>
-                                    </div>
-
-                                    <div className="p-2">
-                                        {/* HEADERS CONDITIONNELS */}
-                                        {tableStructure === 'PARAMETRIC' && (
-                                            <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-3">
-                                                <div className="col-span-3">Âge / Classe</div>
-                                                <div className="col-span-4 text-center" title="Moyenne Statistique">Moyenne (M)</div>
-                                                <div className="col-span-4 text-center" title="Ecart-Type Statistique">Ecart-Type (SD)</div>
-                                                <div className="col-span-1"></div>
+                                    <div key={subtest} className={`bg-[var(--card-bg)] rounded-2xl border shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 ${isVariant ? 'border-amber-400 ring-2 ring-amber-200' : 'border-[var(--border-color)]'}`}>
+                                        <div className="bg-[var(--hover-bg)] px-4 py-3 border-b border-[var(--border-color)] flex justify-between items-center">
+                                            <div className="flex items-center gap-2 flex-1">
+                                                {isVariant ? <AlertTriangle size={14} className="text-amber-500" /> : <Layers size={14} className="text-[var(--text-secondary)]" />}
+                                                <input
+                                                    value={subtest}
+                                                    onChange={(e) => handleSubtestNameChange(subtest, e.target.value)}
+                                                    className={`bg-transparent font-bold text-sm w-full outline-none focus:bg-[var(--input-bg)] rounded px-1 transition-all ${isVariant ? 'text-amber-700' : 'text-[var(--text-heading)]'}`}
+                                                    placeholder={isVariant ? 'Renommez ce sous-test...' : undefined}
+                                                />
                                             </div>
-                                        )}
+                                            <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{subRows.length} entrées</span>
+                                        </div>
 
-                                        {/* MODE 1 : LOOKUP BATCHED (REGROUPÉ PAR ÂGE) */}
-                                        {tableStructure === 'LOOKUP' ? (
-                                            <div className="space-y-4">
-                                                {Array.from(
-                                                    subRows.reduce((entryMap, e) => {
-                                                        // Group by age: use label (auto-computed from age) or age fields directly
-                                                        const l = e.label || formatAgeLabel(e.hidden_age_min, e.hidden_age_max) || "N/A";
-                                                        if (!entryMap.has(l)) entryMap.set(l, []);
-                                                        entryMap.get(l)!.push(e);
-                                                        return entryMap;
-                                                    }, new Map<string, ExtractedRow[]>())
-                                                ).map(([label, batchRows], batchIdx) => (
-                                                    <div key={`${subtest}-${batchIdx}`} className="bg-[var(--hover-bg)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm">
+                                        <div className="p-2">
+                                            {/* HEADERS CONDITIONNELS */}
+                                            {tableStructure === 'PARAMETRIC' && (
+                                                <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-3">
+                                                    <div className="col-span-3">Âge / Classe</div>
+                                                    <div className="col-span-4 text-center" title="Moyenne Statistique">Moyenne (M)</div>
+                                                    <div className="col-span-4 text-center" title="Ecart-Type Statistique">Ecart-Type (SD)</div>
+                                                    <div className="col-span-1"></div>
+                                                </div>
+                                            )}
 
-                                                        {/* BATCH HEADER (L'ÂGE EST ICI UNE SEULE FOIS) */}
-                                                        <div className="bg-[var(--card-bg-raised)] px-4 py-2 border-b border-[var(--border-color)] flex items-center justify-between group/header hover:bg-[var(--hover-bg)] transition-colors">
-                                                            <div className="flex items-center gap-3 flex-1">
-                                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider shrink-0">Groupe :</span>
-                                                                <input
-                                                                    value={label}
-                                                                    onChange={(e) => handleBatchLabelChange(subtest, label, e.target.value)}
-                                                                    className="font-bold text-[var(--text-heading)] text-sm bg-transparent outline-none focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
-                                                                    placeholder="Ex: 4;0 à 4;5 ans"
-                                                                />
+                                            {/* MODE 1 : LOOKUP BATCHED (REGROUPÉ PAR ÂGE) */}
+                                            {tableStructure === 'LOOKUP' ? (
+                                                <div className="space-y-4">
+                                                    {Array.from(
+                                                        subRows.reduce((entryMap, e) => {
+                                                            // Group by age: use label (auto-computed from age) or age fields directly
+                                                            const l = e.label || formatAgeLabel(e.hidden_age_min, e.hidden_age_max) || "N/A";
+                                                            if (!entryMap.has(l)) entryMap.set(l, []);
+                                                            entryMap.get(l)!.push(e);
+                                                            return entryMap;
+                                                        }, new Map<string, ExtractedRow[]>())
+                                                    ).map(([label, batchRows], batchIdx) => (
+                                                        <div key={`${subtest}-${batchIdx}`} className="bg-[var(--hover-bg)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm">
+
+                                                            {/* BATCH HEADER (L'ÂGE EST ICI UNE SEULE FOIS) */}
+                                                            <div className="bg-[var(--card-bg-raised)] px-4 py-2 border-b border-[var(--border-color)] flex items-center justify-between group/header hover:bg-[var(--hover-bg)] transition-colors">
+                                                                <div className="flex items-center gap-3 flex-1">
+                                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider shrink-0">Groupe :</span>
+                                                                    <input
+                                                                        value={label}
+                                                                        onChange={(e) => handleBatchLabelChange(subtest, label, e.target.value)}
+                                                                        className="font-bold text-[var(--text-heading)] text-sm bg-transparent outline-none focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
+                                                                        placeholder="Ex: 4;0 à 4;5 ans"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider bg-[var(--card-bg)] px-2 py-0.5 rounded border border-[var(--border-color)]">{batchRows.length} lignes</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider bg-[var(--card-bg)] px-2 py-0.5 rounded border border-[var(--border-color)]">{batchRows.length} lignes</span>
-                                                            </div>
-                                                        </div>
 
-                                                        {/* BATCH ROWS (JUSTE LES SCORES) */}
-                                                        <div className="p-2 bg-[var(--card-bg)]">
-                                                            <div className="grid grid-cols-9 gap-2 text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-2 text-center bg-[var(--hover-bg)] py-1 rounded-lg mx-1">
-                                                                <div className="col-span-2">Brut</div>
-                                                                <div className="col-span-2">NS</div>
-                                                                <div className="col-span-2">ET / Z</div>
-                                                                <div className="col-span-2">%</div>
-                                                                <div className="col-span-1"></div>
-                                                            </div>
+                                                            {/* BATCH ROWS (JUSTE LES SCORES) */}
+                                                            <div className="p-2 bg-[var(--card-bg)]">
+                                                                <div className="grid grid-cols-9 gap-2 text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 px-2 text-center bg-[var(--hover-bg)] py-1 rounded-lg mx-1">
+                                                                    <div className="col-span-2">Brut</div>
+                                                                    <div className="col-span-2">NS</div>
+                                                                    <div className="col-span-2">ET / Z</div>
+                                                                    <div className="col-span-2">%</div>
+                                                                    <div className="col-span-1"></div>
+                                                                </div>
 
-                                                            {batchRows.map((row) => {
-                                                                const isConsistent = checkConsistency(row);
-                                                                const hasFlag = rowFlagsMap.has(row.id);
-                                                                const isFocused = focusedRowId === row.id;
-                                                                return (
-                                                                    <div
-                                                                        key={row.id}
-                                                                        data-row-id={row.id}
-                                                                        className={`grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row rounded-lg p-1 transition-colors ${
-                                                                            isFocused
+                                                                {batchRows.map((row) => {
+                                                                    const isConsistent = checkConsistency(row);
+                                                                    const hasFlag = rowFlagsMap.has(row.id);
+                                                                    const isFocused = focusedRowId === row.id;
+                                                                    return (
+                                                                        <div
+                                                                            key={row.id}
+                                                                            data-row-id={row.id}
+                                                                            className={`grid grid-cols-9 gap-2 items-center mb-1 px-1 group/row rounded-lg p-1 transition-colors ${isFocused
                                                                                 ? 'ring-2 ring-[#E07A5F] bg-orange-50'
                                                                                 : hasFlag
                                                                                     ? 'bg-rose-50/40 hover:bg-rose-50'
                                                                                     : 'hover:bg-[var(--hover-bg)]'
-                                                                        }`}
-                                                                    >
-                                                                        <div className="col-span-2">
-                                                                            <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
+                                                                                }`}
+                                                                        >
+                                                                            <div className="col-span-2">
+                                                                                <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
+                                                                            </div>
+                                                                            <div className="col-span-2">
+                                                                                <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[var(--text-heading)] transition-all" />
+                                                                            </div>
+                                                                            <div className="col-span-2">
+                                                                                <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
+                                                                            </div>
+                                                                            <div className="col-span-2">
+                                                                                <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
+                                                                            </div>
+                                                                            <div className="col-span-1 text-center">
+                                                                                <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="col-span-2">
-                                                                            <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[var(--text-heading)] transition-all" />
-                                                                        </div>
-                                                                        <div className="col-span-2">
-                                                                            <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
-                                                                        </div>
-                                                                        <div className="col-span-2">
-                                                                            <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
-                                                                        </div>
-                                                                        <div className="col-span-1 text-center">
-                                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
+                                                                    );
+                                                                })}
 
-                                                            <button onClick={() => handleAddRowToBatch(subtest, label)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
-                                                                <Plus size={12} /> Ajouter une ligne à ce groupe
-                                                            </button>
+                                                                <button onClick={() => handleAddRowToBatch(subtest, label)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
+                                                                    <Plus size={12} /> Ajouter une ligne à ce groupe
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            // MODE 2 : PARAMETRIC (LISTE PLATE CLASSIQUE)
-                                            <>
-                                                {subRows.map((row) => (
-                                                    <div
-                                                        key={row.id}
-                                                        data-row-id={row.id}
-                                                        className={`grid grid-cols-12 gap-2 items-center group mb-1 p-1 rounded-lg transition-colors ${
-                                                            focusedRowId === row.id
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                // MODE 2 : PARAMETRIC (LISTE PLATE CLASSIQUE)
+                                                <>
+                                                    {subRows.map((row) => (
+                                                        <div
+                                                            key={row.id}
+                                                            data-row-id={row.id}
+                                                            className={`grid grid-cols-12 gap-2 items-center group mb-1 p-1 rounded-lg transition-colors ${focusedRowId === row.id
                                                                 ? 'ring-2 ring-[#E07A5F] bg-orange-50'
                                                                 : rowFlagsMap.has(row.id)
                                                                     ? 'bg-rose-50/40 hover:bg-rose-50'
                                                                     : 'hover:bg-[var(--hover-bg)]'
-                                                        }`}
-                                                    >
-                                                        <div className="col-span-3">
-                                                            <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
+                                                                }`}
+                                                        >
+                                                            <div className="col-span-3">
+                                                                <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
+                                                            </div>
+                                                            <div className="col-span-4">
+                                                                <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
+                                                            </div>
+                                                            <div className="col-span-4">
+                                                                <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
+                                                            </div>
+                                                            <div className="col-span-1 text-center">
+                                                                <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
+                                                            </div>
                                                         </div>
-                                                        <div className="col-span-4">
-                                                            <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
-                                                        </div>
-                                                        <div className="col-span-4">
-                                                            <input value={row.sd || ''} onChange={(e) => handleRowChange(row.id, 'sd', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="SD" />
-                                                        </div>
-                                                        <div className="col-span-1 text-center">
-                                                            <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-2 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                                                    ))}
 
-                                                <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
-                                                    <Plus size={12} /> Ajouter une ligne
-                                                </button>
-                                            </>
-                                        )}
+                                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
+                                                        <Plus size={12} /> Ajouter une ligne
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            );
+                                );
                             })}
 
                             <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-secondary)] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
