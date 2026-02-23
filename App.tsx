@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
-import { CatalogProvider, useCatalog } from './contexts/CatalogContext'; 
+import { CatalogProvider, useCatalog } from './contexts/CatalogContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Dashboard } from './components/dashboard/Dashboard';
@@ -18,7 +18,7 @@ import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types'; 
+import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
@@ -34,7 +34,7 @@ import { usePendingProcessor } from './hooks/usePendingProcessor';
 // --- LAZY IMPORTS ---
 const Step2Tests = React.lazy(() => import('./components/assessment/Step2Tests').then(module => ({ default: module.Step2Tests })));
 // Step 3 Observations est supprimé du flux principal (fusionné dans Step 2)
-const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step3BisDiagnostic').then(module => ({ default: module.Step3BisDiagnostic }))); 
+const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step3BisDiagnostic').then(module => ({ default: module.Step3BisDiagnostic })));
 const Step4Validation = React.lazy(() => import('./components/assessment/Step4Validation').then(module => ({ default: module.Step4Validation })));
 const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
 
@@ -61,10 +61,10 @@ const AppLoader = () => (
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
-    const { catalog } = useCatalog(); 
+    const { catalog } = useCatalog();
     const assessment = useAssessment();
     const toast = useToast();
-    
+
     // --- UI mode / navigation ---
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
     const [showAuthModal, setShowAuthModal] = useState(false);
@@ -105,10 +105,19 @@ const AppRouter = () => {
     });
 
     // --- Auth state → mode sync ---
-    useEffect(() => { const params = new URLSearchParams(window.location.search); if (params.get('q_id') && window.location.hash.includes('key=')) { Logger.info('UI', 'Redirecting to Family Portal via URL'); setMode('portal'); } }, []);
+    // Capture the full URL for auto-login in PatientPortal (before any hash/param stripping)
+    const [portalInitialUrl] = useState<string | undefined>(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('q_id') && window.location.hash.includes('key=')) {
+            return window.location.href;
+        }
+        return undefined;
+    });
+    useEffect(() => { if (portalInitialUrl) { Logger.info('UI', 'Redirecting to Family Portal via URL'); setMode('portal'); } }, []);
     useEffect(() => {
         if (authState === 'unauthenticated') {
-            setMode('landing');
+            // Don't override mode='portal' if the user arrived via a family link
+            if (!portalInitialUrl) setMode('landing');
             setIsLoggingIn(false);
         } else if (authState === 'locked') {
             setShowAuthModal(false);
@@ -169,13 +178,13 @@ const AppRouter = () => {
 
         const normalizedEmail = email.trim().toLowerCase();
         setIsLoggingIn(true);
-        
-        const signInPayload = shouldUseCaptcha 
+
+        const signInPayload = shouldUseCaptcha
             ? { email: normalizedEmail, password: pass, options: { captchaToken: loginCaptchaToken } }
             : { email: normalizedEmail, password: pass };
 
         const { error } = await supabase.auth.signInWithPassword(signInPayload);
-        
+
         if (error) {
             if (/email not confirmed/i.test(error.message)) {
                 setPendingConfirmationEmail(normalizedEmail);
@@ -275,10 +284,16 @@ const AppRouter = () => {
         .join('') || 'AB';
 
     // --- RENDUS ---
+    // Family portal links are public — bypass loading/PIN screens immediately.
+    // portalInitialUrl is set synchronously (useState initializer), so this works on first render
+    // before the mode='portal' effect has fired.
+    if (portalInitialUrl) {
+        return <PatientPortal onBack={() => setMode('landing')} initialUrl={portalInitialUrl} />;
+    }
     if (isLoading || authState === 'authenticating') return <AppLoader />;
     if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
     if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={handleUnlock} onLogout={logout} />;
-    
+
     // LANDING
     if (mode === 'landing') {
         return (
@@ -309,10 +324,10 @@ const AppRouter = () => {
                             setLoginCaptchaToken('');
                             setShowAuthModal(true);
                         }} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
-                            Accès Praticien <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                            Accès Praticien <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                         </button>
                         <button onClick={() => setMode('portal')} className="bg-[var(--card-bg)] text-[var(--text-main)] px-10 py-4 rounded-2xl font-bold shadow-md hover:shadow-lg border border-[var(--border-color)] hover:border-[#E07A5F]/30 transition-all flex items-center justify-center gap-2">
-                            Espace Famille <User size={20}/>
+                            Espace Famille <User size={20} />
                         </button>
                     </div>
                     <div className="mt-8 animate-in slide-in-from-bottom-8 fade-in duration-700 delay-500">
@@ -324,12 +339,12 @@ const AppRouter = () => {
                     <div className="fixed inset-0 z-50 bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                         {authMode === 'login' && authState !== 'registering' ? (
                             <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
-                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); setLoginCaptchaToken(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); setLoginCaptchaToken(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20} /></button>
                                 <div className="text-center mb-8"><h2 className="text-3xl font-serif font-bold text-[var(--text-main)]">Connexion</h2><p className="text-[var(--text-light)] text-sm font-medium mt-1">Heureux de vous revoir.</p></div>
                                 <form onSubmit={(e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get('email') as string, fd.get('pass') as string); }} className="space-y-5">
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Email</label><input name="email" type="email" placeholder="votre@email.com" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Mot de passe</label><input name="pass" type="password" placeholder="••••••••" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
-                                    
+
                                     {shouldUseCaptcha && (
                                         <div className="mt-4 flex justify-center">
                                             <Turnstile
@@ -348,7 +363,7 @@ const AppRouter = () => {
                             </div>
                         ) : authMode === 'confirm_email' && authState !== 'registering' ? (
                             <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
-                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20} /></button>
                                 <div className="w-16 h-16 rounded-full bg-[#E07A5F]/10 text-[#E07A5F] flex items-center justify-center mx-auto mb-6">
                                     <Mail size={30} />
                                 </div>
@@ -393,19 +408,19 @@ const AppRouter = () => {
     return (
         <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
             <header className="relative z-40 bg-[var(--card-bg)]/90 backdrop-blur-md border-b border-[var(--border-color)] px-6 h-20 flex items-center justify-between no-print shadow-sm">
-                <div className="font-serif font-bold text-xl text-[var(--text-main)] cursor-pointer flex items-center gap-2" onClick={() => { if(mode !== 'assessment') setMode('dashboard'); }}>
+                <div className="font-serif font-bold text-xl text-[var(--text-main)] cursor-pointer flex items-center gap-2" onClick={() => { if (mode !== 'assessment') setMode('dashboard'); }}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> ErgoBilan.
                 </div>
                 <div className="flex items-center gap-3">
                     <ThemeToggle />
                     {mode === 'assessment' ? (
                         <>
-                            {assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg mr-2"><Loader2 size={12} className="animate-spin"/> Sauvegarde...</div>}
+                            {assessment.isAutoSaving && <div className="text-xs text-amber-600 font-bold flex gap-1 items-center bg-amber-50 px-2 py-1 rounded-lg mr-2"><Loader2 size={12} className="animate-spin" /> Sauvegarde...</div>}
                             <button onClick={onSaveAndQuit} className="flex items-center gap-2 px-4 py-2 bg-[var(--btn-secondary-bg)] hover:bg-rose-50 text-[var(--btn-secondary-text)] hover:text-rose-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-all border border-[var(--border-color)] hover:border-rose-200"><Save size={16} /> <span className="hidden md:inline">Sauvegarder &amp; Quitter</span></button>
                         </>
                     ) : (
                         <>
-                            <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14}/> {userProfile.credits} Crédits</button>
+                            <button onClick={() => setPricingModalMode('plans')} className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"><Crown size={14} /> {userProfile.credits} Crédits</button>
                             <div className="h-8 w-px bg-[var(--border-color)] mx-1"></div>
 
                             <div className="relative z-50" ref={accountMenuRef} onMouseDown={(event) => event.stopPropagation()}>
@@ -538,9 +553,9 @@ const AppRouter = () => {
                         />
                     )}
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
-                    {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} />}
-                    {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => {}} />}
-                    
+                    {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} initialUrl={portalInitialUrl} />}
+                    {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => { }} />}
+
                     {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW 5 ÉTAPES) --- */}
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">
@@ -549,39 +564,39 @@ const AppRouter = () => {
 
                             {/* Step 1: Admin */}
                             {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
-                            
+
                             {/* Step 2: Tests & Observations (FUSIONNÉ) */}
                             {assessment.step === 2 && (
-                                <Step2Tests 
-                                    patient={assessment.patient} 
-                                    tests={assessment.tests} 
-                                    updateTests={assessment.updateTests} 
-                                    observations={assessment.observations} 
-                                    updateObservations={assessment.updateObservations} 
+                                <Step2Tests
+                                    patient={assessment.patient}
+                                    tests={assessment.tests}
+                                    updateTests={assessment.updateTests}
+                                    observations={assessment.observations}
+                                    updateObservations={assessment.updateObservations}
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
-                                    onBack={() => assessment.setStep(1)} 
-                                    onContribute={handleContributionAccess} 
-                                    userProfile={userProfile} 
+                                    onBack={() => assessment.setStep(1)}
+                                    onContribute={handleContributionAccess}
+                                    userProfile={userProfile}
                                 />
                             )}
-                            
+
                             {/* Step 3: Synthèse & Projet (Ex Step 4) */}
                             {assessment.step === 3 && (
-                                <Step3BisDiagnostic 
-                                    synthesis={assessment.synthesis} 
-                                    updateSynthesis={assessment.updateSynthesis} 
-                                    tests={assessment.tests} 
+                                <Step3BisDiagnostic
+                                    synthesis={assessment.synthesis}
+                                    updateSynthesis={assessment.updateSynthesis}
+                                    tests={assessment.tests}
                                     observations={assessment.observations}
                                     patient={assessment.patient}
-                                    onNext={() => { if(userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }} 
-                                    onBack={() => assessment.setStep(2)} 
-                                    isGenerating={isGenerating} 
+                                    onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
+                                    onBack={() => assessment.setStep(2)}
+                                    isGenerating={isGenerating}
                                 />
                             )}
-                            
+
                             {/* Step 4: Validation */}
                             {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
-                            
+
                             {/* Step 5: Export */}
                             {assessment.step === 5 && (
                                 <Step5Export
@@ -603,13 +618,13 @@ const AppRouter = () => {
                     )}
 
                     {pricingModalMode && <PricingModal onClose={() => { if (pricingModalMode === 'paywall' && authState === 'subscription_locked') { logout(); } else { setPricingModalMode(null); } }} onSelectPlan={() => toast.info("Stripe à venir")} onUnlockOneOff={() => toast.info("Stripe à venir")} isPaywallMode={pricingModalMode === 'paywall'} />}
-                    {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if(selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments||[])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
+                    {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
                 </Suspense>
             </GlobalErrorBoundary>
-            
+
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && generationError !== 'CREDIT_INSUFFICIENT' && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); onTriggerGeneration(); }} onClose={() => setGenerationError(null)} />}
-            
+
             {/* POPUP CONFIRMATION IA */}
             {showConfirmGeneration && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
