@@ -1,6 +1,7 @@
 ﻿
 import React, { useState, useEffect } from 'react';
 import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
 import type { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
@@ -12,13 +13,16 @@ interface Props {
     onComplete: (profile: PractitionerProfile, key: CryptoKey) => void;
     onCancel: () => void;
     isProfileCompletion?: boolean; 
-    initialEmail?: string;         
+    initialEmail?: string;
+    onEmailConfirmationRequired?: (email: string) => void;
 }
 
-export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '' }) => {
+export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCompletion = false, initialEmail = '', onEmailConfirmationRequired }) => {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const toast = useToast();
     const { setWizardActive } = useAuth();
+    const turnstileSiteKey = (import.meta.env.VITE_SUPABASE_TURNSTILE_SITE_KEY || import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+    const shouldUseCaptcha = !isProfileCompletion && turnstileSiteKey.length > 0;
     
     // Form Data
     const [formData, setFormData] = useState({
@@ -31,6 +35,8 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
     const [showPassword, setShowPassword] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [statusMessage, setStatusMessage] = useState("");
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [captchaResetNonce, setCaptchaResetNonce] = useState(0);
 
     useEffect(() => {
         if (initialEmail) setFormData(prev => ({ ...prev, email: initialEmail }));
@@ -72,11 +78,27 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
         setStep(3);
     };
 
+    const parseInvokeErrorMessage = (invokeError: unknown, fallback: string) => {
+        const errorWithContext = invokeError as { message?: string; context?: { body?: unknown } };
+        const contextBody = errorWithContext?.context?.body;
+        if (contextBody) {
+            try {
+                const parsed = typeof contextBody === 'string' ? JSON.parse(contextBody) : contextBody;
+                const parsedMessage = (parsed as { message?: string; error?: string })?.message
+                    || (parsed as { message?: string; error?: string })?.error;
+                if (parsedMessage) return parsedMessage;
+            } catch {
+                if (typeof contextBody === 'string') return contextBody;
+            }
+        }
+        return errorWithContext?.message || fallback;
+    };
+
     /**
-     * SÉCURISATION MAXIMALE DE L'INSCRIPTION (Optimistic Update Loop)
-     * 1. On crée le user Auth.
-     * 2. On génère les clés locales.
-     * 3. On tente de mettre à jour la ligne 'practitioners' en boucle jusqu'à ce que le Trigger l'ait créée.
+     * Flow:
+     * 1. Supabase Auth signUp/signIn context.
+     * 2. Local PIN/key generation.
+     * 3. Authenticated signup edge onboarding (practitioner/org/subscription setup).
      */
     const handleFinalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -88,13 +110,18 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             toast.error("Les codes PIN ne correspondent pas.");
             return;
         }
+        if (shouldUseCaptcha && !captchaToken) {
+            toast.error("Veuillez compléter le CAPTCHA avant de continuer.");
+            return;
+        }
 
         setIsSubmitting(true);
         setStatusMessage("Initialisation sécurisée...");
-        Logger.info('AUTH', "Starting Robust Registration Process");
+        Logger.info('AUTH', "Starting registration/onboarding process");
 
         try {
             let userId = '';
+            const professionalEmail = formData.email.trim().toLowerCase();
 
             // --- ÉTAPE 1 : AUTHENTIFICATION ---
             if (isProfileCompletion) {
@@ -103,58 +130,60 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                 userId = user.id;
             } else {
                 setStatusMessage("Création du compte utilisateur...");
-                const { data: signupData, error: signupError } = await supabase.functions.invoke('signup', {
-                    body: { email: formData.email, password: formData.password }
-                });
+                // CRITICAL: activer le lock AVANT signUp pour éviter onAuthStateChange
+                // pendant que le profil/PIN n'est pas encore initialisé.
+                setWizardActive(true);
 
-                if (signupError) {
-                    Logger.error('AUTH', 'Signup edge error', signupError);
-                    let errorMessage = "Erreur d'inscription. Veuillez réessayer.";
-                    const contextBody = (signupError as { context?: { body?: unknown } })?.context?.body;
-                    if (contextBody) {
-                        try {
-                            const parsed = typeof contextBody === 'string' ? JSON.parse(contextBody) : contextBody;
-                            const parsedMessage = (parsed as { message?: string; error?: string })?.message
-                                || (parsed as { message?: string; error?: string })?.error;
-                            if (parsedMessage) errorMessage = parsedMessage;
-                        } catch {
-                            if (typeof contextBody === 'string') errorMessage = contextBody;
-                        }
-                    } else if (signupError.message) {
-                        errorMessage = signupError.message;
+                const signUpPayload = shouldUseCaptcha
+                    ? {
+                        email: formData.email.trim(),
+                        password: formData.password,
+                        options: { captchaToken }
                     }
-                    throw new Error(errorMessage);
-                }
-                if (signupData?.ok === false) {
-                    throw new Error(signupData.message || "Inscription impossible.");
+                    : {
+                        email: formData.email.trim(),
+                        password: formData.password
+                    };
+
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp(signUpPayload);
+
+                if (signUpError) {
+                    const signUpMessage = signUpError.message || "Erreur d'inscription. Veuillez réessayer.";
+                    if (!shouldUseCaptcha && /captcha|turnstile|hcaptcha/i.test(signUpMessage)) {
+                        throw new Error("Le CAPTCHA Supabase semble activé. Configurez VITE_SUPABASE_TURNSTILE_SITE_KEY côté frontend.");
+                    }
+                    if (shouldUseCaptcha) {
+                        setCaptchaToken('');
+                        setCaptchaResetNonce(prev => prev + 1);
+                    }
+                    throw new Error(signUpMessage);
                 }
 
-                const payload = signupData?.data || signupData;
-                if (!payload?.user) throw new Error("Échec de création du compte Auth.");
+                if (!signUpData?.user) {
+                    throw new Error("Échec de création du compte Auth.");
+                }
 
-                const accessToken = payload.session?.access_token || payload.access_token;
-                const refreshToken = payload.session?.refresh_token || payload.refresh_token;
+                userId = signUpData.user.id;
 
                 // If email confirmation is required, no tokens are returned.
                 // Stop here and ask the user to confirm before continuing.
-                if (!accessToken || !refreshToken) {
+                if (!signUpData.session) {
                     Logger.warn('AUTH', 'Sign-up completed without session. Awaiting email confirmation.');
-                    toast.info("Compte créé. Vérifiez votre email pour confirmer, puis reconnectez-vous.");
-                    onCancel();
+                    setWizardActive(false);
+                    if (onEmailConfirmationRequired) {
+                        onEmailConfirmationRequired(professionalEmail);
+                    } else {
+                        toast.info("Compte créé. Vérifiez votre email pour confirmer, puis reconnectez-vous.");
+                        onCancel();
+                    }
                     return;
                 }
 
-                // CRITICAL: Activer le lock AVANT setSession pour empêcher
-                // onAuthStateChange → loadUser de trouver encryption_salt='pending'
-                // et de basculer en 'registering' (ce qui démonterait ce wizard)
-                setWizardActive(true);
-
-                await supabase.auth.setSession({
-                    access_token: accessToken,
-                    refresh_token: refreshToken
+                const { error: sessionError } = await supabase.auth.setSession({
+                    access_token: signUpData.session.access_token,
+                    refresh_token: signUpData.session.refresh_token
                 });
-
-                userId = payload.user.id;
+                if (sessionError) throw sessionError;
             }
 
             // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
@@ -164,73 +193,36 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             const wrappedOrgKey = await wrapKey(orgKey, masterKey);
             const wrappedOrgKeyStr = `${wrappedOrgKey.iv}:${wrappedOrgKey.content}`;
 
-            // --- ÉTAPE 3 : CRÉATION / MISE À JOUR ROBUSTE (Profil Praticien) ---
-            setStatusMessage("Synchronisation avec la base de données...");
+            // --- ÉTAPE 3 : ONBOARDING CÔTÉ EDGE (profil + org + subscription) ---
+            setStatusMessage("Configuration du compte praticien...");
 
-            const { error: bootstrapPractitionerError } = await supabase
-                .rpc('bootstrap_practitioner_for_user', { p_user_id: userId, p_email: formData.email });
-            if (bootstrapPractitionerError) {
-                Logger.warn('AUTH', 'bootstrap_practitioner_for_user failed before profile update', bootstrapPractitionerError.message);
-            }
-
-            const practitionerPayload = {
-                email: formData.email,
-                first_name: formData.firstName,
-                last_name: formData.lastName,
-                phone_pro: formData.phone || '',
-                siret: formData.siret || '',
-                address_pro: formData.address || '',
-                encryption_salt: salt,
-                encryption_validator: validator
-            };
-
-            let profileUpdated = false;
-            for (let i = 0; i < 5; i++) {
-                const { data, error } = await supabase
-                    .from('practitioners')
-                    .update(practitionerPayload)
-                    .eq('id', userId)
-                    .select('id');
-
-                if (error) {
-                    Logger.warn('AUTH', `Tentative Update Practitioner ${i + 1}/5 échouée:`, error.message);
-                } else if (data && data.length > 0) {
-                    profileUpdated = true;
-                    Logger.info('AUTH', "Practitioner profile updated successfully.");
-                    break;
+            const { data: onboardingData, error: onboardingError } = await supabase.functions.invoke('signup', {
+                body: {
+                    email: professionalEmail,
+                    firstName: formData.firstName.trim(),
+                    lastName: formData.lastName.trim(),
+                    phone: formData.phone.trim(),
+                    siret: formData.siret.trim(),
+                    address: formData.address.trim(),
+                    encryptionSalt: salt,
+                    encryptionValidator: validator,
+                    encryptedOrgKey: wrappedOrgKeyStr,
+                    orgName: 'Mon Cabinet'
                 }
+            });
 
-                await new Promise(r => setTimeout(r, 1000));
+            if (onboardingError) {
+                Logger.error('AUTH', 'Signup onboarding edge error', onboardingError);
+                throw new Error(parseInvokeErrorMessage(onboardingError, "Erreur d'initialisation du compte."));
             }
 
-            if (!profileUpdated) {
-                throw new Error("Délai d'attente dépassé : La création ou mise à jour du profil a échoué. Veuillez contacter le support.");
+            if (onboardingData?.ok === false) {
+                throw new Error(onboardingData.message || "Initialisation du compte impossible.");
             }
 
-            // --- ÉTAPE 4 : CRÉATION / MISE À JOUR ROBUSTE (Membre Organisation + Subscription) ---
-            setStatusMessage("Configuration des clés du cabinet...");
-
-            // Always call bootstrap to ensure org + membership + subscription exist
-            const { data: bootstrappedOrgId, error: bootstrapError } = await supabase
-                .rpc('bootstrap_org_for_user', { p_user_id: userId, p_org_name: 'Mon Cabinet' });
-
-            if (bootstrapError) {
-                Logger.warn('AUTH', 'Bootstrap RPC failed, trying fallback...', bootstrapError.message);
-            }
-
-            const orgId = bootstrappedOrgId || null;
-
-            if (!orgId) {
-                throw new Error('Failed to create or retrieve organization.');
-            }
-
-            {
-                const { error: memberUpdateError } = await supabase
-                    .from('organization_members')
-                    .update({ encrypted_org_key: wrappedOrgKeyStr })
-                    .eq('user_id', userId);
-
-                if (memberUpdateError) throw memberUpdateError;
+            const onboardingPayload = onboardingData?.data || onboardingData;
+            if (!onboardingPayload?.organization_id) {
+                Logger.warn('AUTH', 'Onboarding completed without organization_id in payload.');
             }
 
             // --- SUCCÈS ---
@@ -239,7 +231,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             
             const newPractitioner: PractitionerProfile = {
                 id: userId, 
-                email: formData.email,
+                email: professionalEmail,
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 phonePro: formData.phone,
@@ -316,8 +308,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                             name="email" 
                                             value={formData.email} 
                                             onChange={handleChange} 
-                                            disabled={isProfileCompletion} 
-                                            className={`w-full pl-12 p-4 rounded-2xl border outline-none font-bold text-[var(--text-main)] transition-all ${isProfileCompletion ? 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed' : 'bg-[var(--input-bg)] border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10'}`} 
+                                            className="w-full pl-12 p-4 rounded-2xl border outline-none font-bold text-[var(--text-main)] transition-all bg-[var(--input-bg)] border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10"
                                     />
                                 </div>
                             </div>
@@ -367,7 +358,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                             {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                         </button>
                                     </div>
-                                    <p className="text-[10px] text-[var(--text-secondary)] ml-2 mt-1">Minimum 6 caractères.</p>
+                                    <p className="text-[10px] text-[var(--text-secondary)] ml-2 mt-1">Minimum 8 caractères.</p>
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-2 tracking-wider">Confirmer Mot de passe</label>
@@ -392,6 +383,21 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                     Définissez un code PIN à 6 chiffres. Ce code servira de clé unique pour lire vos dossiers.
                                 </p>
                             </div>
+
+                            {shouldUseCaptcha && (
+                                <div className="bg-[var(--card-bg-raised)] p-6 rounded-2xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+                                        Vérification de sécurité
+                                    </p>
+                                    <Turnstile
+                                        key={`turnstile-${captchaResetNonce}`}
+                                        siteKey={turnstileSiteKey}
+                                        onSuccess={(token) => setCaptchaToken(token)}
+                                        onError={() => setCaptchaToken('')}
+                                        onExpire={() => setCaptchaToken('')}
+                                    />
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-6">
                                 <div>

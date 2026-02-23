@@ -21,6 +21,7 @@
     "@fontsource/playfair-display": "^5.2.8",
     "@fontsource/quicksand": "^5.2.10",
     "@fontsource/roboto": "^5.2.10",
+    "@marsidev/react-turnstile": "^1.4.2",
     "@react-pdf/renderer": "^4.3.2",
     "@supabase/supabase-js": "2.39.7",
     "lucide-react": "^0.563.0",
