@@ -19,7 +19,7 @@ import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types'; 
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail } from 'lucide-react';
 import { Logger } from './utils/logger';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -67,7 +67,8 @@ const AppRouter = () => {
     // --- UI mode / navigation ---
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
     const [showAuthModal, setShowAuthModal] = useState(false);
-    const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+    const [authMode, setAuthMode] = useState<'login' | 'register' | 'confirm_email'>('login');
+    const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('');
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
@@ -155,12 +156,27 @@ const AppRouter = () => {
     }, [mode]);
 
     // --- Simple action handlers ---
-    const handleLogin = async (email: string, pass: string) => { setIsLoggingIn(true); const { error } = await supabase.auth.signInWithPassword({ email, password: pass }); if (error) { toast.error(error.message); setIsLoggingIn(false); } };
+    const handleLogin = async (email: string, pass: string) => {
+        const normalizedEmail = email.trim().toLowerCase();
+        setIsLoggingIn(true);
+        const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: pass });
+        if (error) {
+            if (/email not confirmed/i.test(error.message)) {
+                setPendingConfirmationEmail(normalizedEmail);
+                setAuthMode('confirm_email');
+            } else {
+                toast.error(error.message);
+            }
+            setIsLoggingIn(false);
+        }
+    };
     const handleUnlock = (key: CryptoKey) => { unlockSession(key); };
     const handleWizardComplete = async (_p: PractitionerProfile, key: CryptoKey) => {
         // Fermer le modal AVANT reload pour éviter le flash du AuthWizard
         // quand authState passe brièvement par 'authenticating'
         setShowAuthModal(false);
+        setAuthMode('login');
+        setPendingConfirmationEmail('');
         setShowOnboarding(true);
         setSessionKey(key);
 
@@ -168,6 +184,10 @@ const AppRouter = () => {
         if (nextState === 'locked') {
             await unlockSession(key);
         }
+    };
+    const handleEmailConfirmationRequired = (email: string) => {
+        setPendingConfirmationEmail(email.trim().toLowerCase());
+        setAuthMode('confirm_email');
     };
     const handleStartDemo = async () => { await startDemo(); setShowOnboarding(true); };
     const handleAdminAccess = async () => { const allowed = await verifyAdminAccess(); if (allowed) setMode('admin'); else toast.error("Accès refusé par le serveur."); };
@@ -259,7 +279,15 @@ const AppRouter = () => {
                         <p className="text-lg text-[var(--text-light)] font-medium">L'assistant clinique intelligent pour Ergothérapeutes.</p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-4 mt-8 justify-center">
-                        <button onClick={() => { if(authState==='locked') setMode('dashboard'); else setShowAuthModal(true); }} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
+                        <button onClick={() => {
+                            if (authState === 'locked') {
+                                setMode('dashboard');
+                                return;
+                            }
+                            setAuthMode('login');
+                            setPendingConfirmationEmail('');
+                            setShowAuthModal(true);
+                        }} className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
                             Accès Praticien <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                         </button>
                         <button onClick={() => setMode('portal')} className="bg-[var(--card-bg)] text-[var(--text-main)] px-10 py-4 rounded-2xl font-bold shadow-md hover:shadow-lg border border-[var(--border-color)] hover:border-[#E07A5F]/30 transition-all flex items-center justify-center gap-2">
@@ -275,17 +303,43 @@ const AppRouter = () => {
                     <div className="fixed inset-0 z-50 bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                         {authMode === 'login' && authState !== 'registering' ? (
                             <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
-                                <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
                                 <div className="text-center mb-8"><h2 className="text-3xl font-serif font-bold text-[var(--text-main)]">Connexion</h2><p className="text-[var(--text-light)] text-sm font-medium mt-1">Heureux de vous revoir.</p></div>
                                 <form onSubmit={(e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get('email') as string, fd.get('pass') as string); }} className="space-y-5">
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Email</label><input name="email" type="email" placeholder="votre@email.com" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
                                     <div className="space-y-1"><label className="text-[10px] font-bold text-[var(--text-light)] uppercase tracking-wider ml-2">Mot de passe</label><input name="pass" type="password" placeholder="••••••••" className="w-full p-4 bg-[var(--input-bg)] border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 rounded-2xl outline-none font-bold text-[var(--text-main)] transition-all" required /></div>
                                     <button type="submit" disabled={isLoggingIn} className="w-full py-4 bg-[#3D405B] text-white rounded-2xl font-bold text-lg shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] hover:shadow-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-4">{isLoggingIn ? <Loader2 size={24} className="animate-spin" /> : "Se connecter"}</button>
                                 </form>
-                                <div className="mt-8 text-center pt-6 border-t border-[var(--border-color)]"><p className="text-xs text-[var(--text-light)] font-medium mb-2">Pas encore de compte ?</p><button onClick={() => setAuthMode('register')} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
+                                <div className="mt-8 text-center pt-6 border-t border-[var(--border-color)]"><p className="text-xs text-[var(--text-light)] font-medium mb-2">Pas encore de compte ?</p><button onClick={() => { setAuthMode('register'); setPendingConfirmationEmail(''); }} className="text-[#E07A5F] font-bold hover:underline">Créer un compte praticien</button></div>
+                            </div>
+                        ) : authMode === 'confirm_email' && authState !== 'registering' ? (
+                            <div className="bg-[var(--card-bg)] p-10 rounded-[40px] w-full max-w-md relative shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
+                                <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="absolute top-6 right-6 p-2 bg-[var(--hover-bg)] rounded-full hover:bg-[var(--border-color)] text-[var(--text-light)] transition-colors"><X size={20}/></button>
+                                <div className="w-16 h-16 rounded-full bg-[#E07A5F]/10 text-[#E07A5F] flex items-center justify-center mx-auto mb-6">
+                                    <Mail size={30} />
+                                </div>
+                                <div className="text-center space-y-3">
+                                    <h2 className="text-3xl font-serif font-bold text-[var(--text-main)]">Confirmer le mail</h2>
+                                    <p className="text-sm text-[var(--text-light)] font-medium">
+                                        Confirmez votre adresse email puis reconnectez-vous.
+                                    </p>
+                                    {pendingConfirmationEmail && (
+                                        <p className="text-xs text-[var(--text-secondary)] bg-[var(--card-bg-raised)] border border-[var(--border-color)] rounded-xl px-3 py-2">
+                                            Adresse: <span className="font-bold text-[var(--text-main)]">{pendingConfirmationEmail}</span>
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="mt-8 flex flex-col gap-3">
+                                    <button onClick={() => setAuthMode('login')} className="w-full py-3 bg-[#3D405B] text-white rounded-2xl font-bold shadow-xl shadow-[#3D405B]/20 hover:bg-[#2c2e42] transition-all">
+                                        J'ai confirmé, me connecter
+                                    </button>
+                                    <button onClick={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} className="w-full py-3 rounded-2xl font-bold text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-all">
+                                        Retour à l'accueil
+                                    </button>
+                                </div>
                             </div>
                         ) : (
-                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); }} onComplete={handleWizardComplete} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} />
+                            <AuthWizard onCancel={() => { setShowAuthModal(false); setAuthMode('login'); setPendingConfirmationEmail(''); }} onComplete={handleWizardComplete} isProfileCompletion={authState === 'registering'} initialEmail={tempEmail || ''} onEmailConfirmationRequired={handleEmailConfirmationRequired} />
                         )}
                     </div>
                 )}
