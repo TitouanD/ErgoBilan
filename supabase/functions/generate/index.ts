@@ -440,27 +440,18 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (!bearerMatch) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const payloadBase64 = token.split('.')[1];
+    const decodedPayload = JSON.parse(atob(payloadBase64));
+    userId = decodedPayload.sub;
 
-    const accessToken = bearerMatch[1].trim();
-    const jwtParts = accessToken.split('.');
-    const malformedJwt = jwtParts.length !== 3 || jwtParts.some((part) => part.length === 0);
-    if (!accessToken || accessToken.startsWith('sb_publishable_') || accessToken.startsWith('sb_secret_') || malformedJwt) {
+    if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      global: { headers: { Authorization: authHeader } },
     });
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-    userId = user.id;
 
     if (!SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'SERVER_MISCONFIGURED' }), {
@@ -471,7 +462,7 @@ Deno.serve(async (req: Request) => {
 
     adminSupabase = createClient(Deno.env.get('SUPABASE_URL')!, SUPABASE_SERVICE_ROLE_KEY);
 
-    const withinLimit = await checkRateLimit(supabase, adminSupabase!, user.id);
+    const withinLimit = await checkRateLimit(supabase, adminSupabase!, userId);
     if (!withinLimit) {
       return new Response(JSON.stringify({ error: 'RATE_LIMITED', message: 'Trop de requetes. Reessayez plus tard.' }), {
         status: 429,
@@ -532,7 +523,7 @@ Deno.serve(async (req: Request) => {
         .from('generation_log')
         .select('id, error_code')
         .eq('id', providedGenId)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'pending')
         .gte('created_at', windowStart)
         .single();
@@ -544,7 +535,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const claimed = await claimGenerationSession(adminSupabase!, providedGenId, user.id);
+      const claimed = await claimGenerationSession(adminSupabase!, providedGenId, userId);
       if (!claimed) {
         return new Response(JSON.stringify({ error: 'GENERATION_SESSION_BUSY' }), {
           status: 409,
@@ -554,7 +545,7 @@ Deno.serve(async (req: Request) => {
 
       generationId = providedGenId;
     } else {
-      const genId = await consumeCredit(supabase, adminSupabase!, user.id);
+      const genId = await consumeCredit(supabase, adminSupabase!, userId);
       if (!genId) {
         return new Response(JSON.stringify({ error: 'CREDIT_INSUFFICIENT', message: 'Credits insuffisants.' }), {
           status: 402,

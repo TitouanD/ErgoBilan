@@ -319,7 +319,7 @@ export const inferScoreTypeForLookup = (
         }
 
         const monotonicPoints = normalized
-          .filter((item): item is { seriesKey: string; rawOrder: number; percentile: number | null; derivedPercentile: number | null } =>
+          .filter((item): item is { seriesKey: string; standardScore: number | null; percentile: number | null; derivedPercentile: number | null; rawOrder: number } =>
             item.rawOrder !== null)
           .map((item) => ({ seriesKey: item.seriesKey, order: item.rawOrder, metric: item.percentile ?? item.derivedPercentile }))
           .filter((item): item is { seriesKey: string; order: number; metric: number } => item.metric !== null);
@@ -347,7 +347,7 @@ export const inferScoreTypeForLookup = (
         }
 
         const percentilePairs = normalized
-          .filter((item): item is { standardScore: number; percentile: number } =>
+          .filter((item): item is { seriesKey: string; standardScore: number; percentile: number; derivedPercentile: number | null; rawOrder: number | null } =>
             item.standardScore !== null && item.percentile !== null);
         if (percentilePairs.length > 0) {
           const mae = average(percentilePairs.map((pair) => {
@@ -358,7 +358,7 @@ export const inferScoreTypeForLookup = (
         }
 
         const monotonicPoints = normalized
-          .filter((item): item is { seriesKey: string; rawOrder: number; standardScore: number } =>
+          .filter((item): item is { seriesKey: string; standardScore: number; percentile: number | null; derivedPercentile: number | null; rawOrder: number } =>
             item.rawOrder !== null && item.standardScore !== null)
           .map((item) => ({ seriesKey: item.seriesKey, order: item.rawOrder, metric: item.standardScore }));
         score += monotonicPenaltyBySeries(monotonicPoints, 0.25, Math.max(1, sd));
@@ -608,8 +608,8 @@ const buildLookupIssues = (
     const confidence = Number(
       clamp(
         0.72
-          + (avgDirectionConfidence * 0.18)
-          + Math.min(0.08, maxAbsDelta / Math.max(1, tolerance * 10)),
+        + (avgDirectionConfidence * 0.18)
+        + Math.min(0.08, maxAbsDelta / Math.max(1, tolerance * 10)),
         0.7,
         0.96,
       ).toFixed(2),

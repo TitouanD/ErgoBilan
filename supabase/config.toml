@@ -1,8 +1,8 @@
 [functions.signup]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate]
-verify_jwt = false
+verify_jwt = true
 
 [functions.extract-norms]
-verify_jwt = false
+verify_jwt = true

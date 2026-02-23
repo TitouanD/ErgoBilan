@@ -428,7 +428,7 @@ const PdfRadarChart: React.FC<{
     const data = Object.values(stats)
         .filter(s => s.count > 0)
         .map(s => ({
-            label: s.displayName || s.name,
+            label: s.name,
             value: parseFloat((s.sum / s.count).toFixed(2)),
         }));
 
