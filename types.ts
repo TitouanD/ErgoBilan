@@ -346,7 +346,8 @@ export type ReviewFlagCode =
     | 'AGE_RANGE_MISSING_OR_INVALID'
     | 'LOOKUP_ZERO_Z_PLATEAU'
     | 'LOOKUP_NON_INTEGER_SCORE'
-    | 'SUBTEST_CONTENT_DUPLICATE';
+    | 'SUBTEST_CONTENT_DUPLICATE'
+    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 

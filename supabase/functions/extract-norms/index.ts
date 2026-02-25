@@ -319,8 +319,8 @@ const EXTRACTION_RULES = `
 --- STEP 1: CLASSIFICATION (st) ---
 A) "PARAMETRIC": Contains statistical constants per group (Mean/Moyenne/M AND SD/Ecart-Type/Sigma).
    The table does NOT map raw scores to percentiles directly. It gives the formula constants.
-   PARAMETRIC HARD RULE: "Moyenne"/"M"/"ET"/"SD"/"Sigma" are statistical columns, never subtests.
-   PARAMETRIC HARD RULE: one valid row must contain both "m" and "s"; if one is missing, skip the row.
+   PARAMETRIC HARD RULE: Statistical headers (Moyenne, M, ET, SD, Sigma, N, Nombre de sujets, %) are VALUES or METADATA, never subtest names (sid).
+   PARAMETRIC HARD RULE: If you see statistical headers, you MUST look at the table title or surrounding context to find the CLINICAL subtest name (e.g. "Automatisation de la frappe").
 B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, Scaled) or Percentiles.
 
 --- STEP 2: EXTRACTION RULES ---
@@ -347,9 +347,10 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - When you genuinely cannot determine the full name, use the abbreviation followed by the domain in parentheses (e.g. "DR (Langage)") as a last resort.
    - DISAMBIGUATION POLICY BY STRUCTURE:
      PARAMETRIC:
-       - Statistical headers ("Moyenne", "M", "ET", "SD", "Sigma") MUST stay inside row values, never in sid.
+       - Statistical headers ("Moyenne", "M", "ET", "SD", "Sigma", "N", "Nombre de sujets") are strictly mapped to row values (m, s) or ignored (N). They MUST NOT appear in "sid".
+       - One clinical subtest = ONE sid. If a table only has stat headers, derive the sid from the table title/text above.
        - Do not output separate sid entries such as "Copie (ET)" or "Copie (MOYENNE)".
-       - Each sid must represent the clinical subtest only (e.g. "Copie", "Dictée", "Répétition").
+       - Each sid must represent the clinical subtest only (e.g. "Copie", "Dictée", "Répétition", "Automatisation de la frappe").
      LOOKUP:
        - ABSOLUTE RULE: each data column on the page = 1 unique sid.
        - PRE-WRITING COLUMN COUNT (MANDATORY): count the exact number of data columns before output. "tables" must match that count exactly.
