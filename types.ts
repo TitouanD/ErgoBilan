@@ -651,6 +651,7 @@ export type FittingIssueSeverity = 'blocking' | 'warning' | 'info';
 export type FittingSuggestionKind = 'score_type' | 'value_fix';
 export type FittingIssueCode =
     | 'FIT_SCORE_TYPE_MISMATCH'
+    | 'FIT_SCORE_TYPE_NONE_WITH_DATA'
     | 'FIT_LOW_CONFIDENCE'
     | 'FIT_LOOKUP_NON_MONOTONIC'
     | 'FIT_LOOKUP_STEP_OUTLIER'
