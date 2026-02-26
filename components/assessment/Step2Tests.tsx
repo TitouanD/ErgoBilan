@@ -48,6 +48,7 @@ interface Props {
 }
 
 type Metric = 'raw' | 'standard' | 'z' | 'percentile';
+type ConversionMode = 'auto' | 'manual';
 
 type NormsStatus = {
   hasNorms: boolean;
@@ -58,6 +59,50 @@ type NormsStatus = {
 const parseNum = (value: string): number | null => {
   const n = parseFloat(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
+};
+
+const isManualOnlyScoreType = (scoreType?: ScoreType | string): boolean => (
+  String(scoreType || '').toLowerCase() === 'none'
+);
+
+const isStandardizedMetric = (metric: Metric): metric is 'standard' | 'z' | 'percentile' => (
+  metric === 'standard' || metric === 'z' || metric === 'percentile'
+);
+
+const resolveConversionMode = (result: Partial<ScoreResult>, scoreType?: ScoreType): ConversionMode => (
+  isManualOnlyScoreType(scoreType) ? 'manual' : (result.conversionMode === 'manual' ? 'manual' : 'auto')
+);
+
+const hasStandardizedValue = (
+  result: Partial<ScoreResult>,
+  metric: 'standard' | 'z' | 'percentile',
+): boolean => {
+  if (metric === 'z') {
+    return typeof result.zScore === 'number' && Number.isFinite(result.zScore);
+  }
+  const raw = metric === 'standard' ? result.standard : result.percentile;
+  return parseNum(String(raw || '').trim()) !== null;
+};
+
+const shouldSwitchToManualMode = (
+  result: ScoreResult,
+  nextMetric: Metric,
+  scoreType?: ScoreType,
+): boolean => {
+  if (resolveConversionMode(result, scoreType) === 'manual') return false;
+  if (!isStandardizedMetric(nextMetric)) return false;
+  const previousMetric = result.entryMetric;
+  if (previousMetric === 'standard' || previousMetric === 'z' || previousMetric === 'percentile') {
+    return previousMetric !== nextMetric;
+  }
+
+  // Legacy rows or asynchronous updates may miss entryMetric.
+  // If another standardized metric already has a value, switch to manual
+  // to prevent destructive cross-reconversion when user overrides fields.
+  if (nextMetric !== 'standard' && hasStandardizedValue(result, 'standard')) return true;
+  if (nextMetric !== 'z' && hasStandardizedValue(result, 'z')) return true;
+  if (nextMetric !== 'percentile' && hasStandardizedValue(result, 'percentile')) return true;
+  return false;
 };
 
 const SCALE_LABELS: Record<string, string> = {
@@ -146,7 +191,7 @@ const getPreferredMetric = (subtest: SubtestDef): 'standard' | 'z' => {
   if (dm === 'standard' || dm === 'z') return dm;
   // Infer from scoreType: most clinical scales prefer NS
   const st = subtest.scoreType || 'standard';
-  if (st === 'scaled' || st === 'standard' || st === 't-score' || st === 'sten') return 'standard';
+  if (st === 'scaled' || st === 'standard' || st === 't-score' || st === 'sten' || st === 'stanine' || st === 'none') return 'standard';
   return 'z';
 };
 
@@ -202,6 +247,7 @@ const emptyScore = (): ScoreResult => ({
   percentile: '',
   status: 'empty',
   entryMetric: 'raw',
+  conversionMode: 'auto',
   reviewState: 'not_reviewed',
 });
 
@@ -353,18 +399,30 @@ const NumericRow: React.FC<{
     const [warn, setWarn] = useState<string | null>(null);
     const [localZText, setLocalZText] = useState<string | null>(null);
     const preferred = getPreferredMetric(subtest);
+    const scoreType = subtest.scoreType || 'standard';
+    const conversionMode = resolveConversionMode(result, subtest.scoreType);
+    const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
+    const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
+    const hasAutoNorms = Boolean(hasNorms) && canAutoConvert;
     // The "active entry" metric — which field is the source of truth
-    const entryMetric = result.entryMetric || (hasNorms ? 'raw' : preferred);
+    const entryMetric = result.entryMetric || (hasAutoNorms ? 'raw' : preferred);
 
     const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
 
     const computeRaw = async (raw: string, value: number) => {
+      if (!canAutoConvert) {
+        setWarn(conversionLocked
+          ? 'Type de score non défini: calcul et conversion auto désactivés.'
+          : 'Mode manuel actif: calcul et conversion auto désactivés.');
+        setPatch({ raw, derived: { source: 'manual' } });
+        return;
+      }
       if ((subtest.computationMode || 'LOOKUP') === 'NONE') {
         setWarn('Pas de calcul automatique pour cette épreuve.');
         setPatch({ raw, derived: { source: 'manual' } });
         return;
       }
-      if (!hasNorms) {
+      if (!hasAutoNorms) {
         const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
         setWarn(statusWarn);
         setPatch({ raw, derived: { source: 'manual' } });
@@ -388,7 +446,7 @@ const NumericRow: React.FC<{
 
         if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
           zToUse = -zToUse;
-          const recalculated = calculateFromZ(zToUse, subtest.scoreType || 'standard');
+          const recalculated = calculateFromZ(zToUse, scoreType);
           standardToUse = recalculated.standard ?? '';
           percentileToUse = recalculated.percentile ?? '';
         }
@@ -411,6 +469,7 @@ const NumericRow: React.FC<{
             source: 'auto',
           },
           scoreSource: 'auto',
+          conversionMode: 'auto',
         });
       } catch (e) {
         setWarn('Erreur lors du calcul automatique.');
@@ -423,34 +482,75 @@ const NumericRow: React.FC<{
 
     const onMetricInput = async (metric: Metric, text: string) => {
       if (readOnly) return;
+
+      const autoSwitchToManual = shouldSwitchToManualMode(result, metric, subtest.scoreType);
+      const nextManualMode = conversionLocked || conversionMode === 'manual' || autoSwitchToManual;
+      const conversionPatch: Partial<ScoreResult> = nextManualMode
+        ? { conversionMode: 'manual' }
+        : { conversionMode: 'auto' };
+
+      if (autoSwitchToManual) {
+        setWarn('Mode manuel activé: vos champs NS/ET/% ne seront plus reconvertis.');
+      }
+
       if (metric === 'z') {
         setLocalZText(text);
         const n = parseNum(text);
         if (n === null) {
           if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
-          setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+          setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
           return;
         }
-        const c = calculateFromZ(n, subtest.scoreType || 'standard');
-        setWarn(null);
-        setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et' });
+        if (!nextManualMode) {
+          const c = calculateFromZ(n, scoreType);
+          setWarn(null);
+          setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
+          return;
+        }
+        setPatch({ entryMetric: 'z', zScore: n, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
         return;
       }
       setLocalZText(null);
       const n = parseNum(text);
       if (metric === 'raw') {
-        setPatch({ entryMetric: 'raw', raw: text });
+        setPatch({ entryMetric: 'raw', raw: text, ...conversionPatch });
         if (n !== null) await computeRaw(text, n);
         return;
       }
       if (metric === 'standard') {
         if (n === null) {
-          setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns' });
+          setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
           return;
         }
-        const c = calculateFromStandard(n, subtest.scoreType || 'standard');
-        setWarn(null);
-        setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns' });
+        if (!nextManualMode) {
+          const c = calculateFromStandard(n, scoreType);
+          setWarn(null);
+          setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
+          return;
+        }
+        setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
+        return;
+      }
+      if (metric === 'percentile') {
+        if (n === null) {
+          setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
+          return;
+        }
+        if (!nextManualMode) {
+          const c = calculateFromPercentile(n, scoreType);
+          setWarn(null);
+          setPatch({
+            entryMetric: 'percentile',
+            percentile: text,
+            standard: c.standard,
+            zScore: c.zScore,
+            derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' },
+            scoreSource: 'manual_pct',
+            ...conversionPatch,
+          });
+          return;
+        }
+        setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
         return;
       }
     };
@@ -468,13 +568,13 @@ const NumericRow: React.FC<{
     };
 
     let visualZ: number | null = hasZ ? result.zScore! : null;
-    if (visualZ === null && result.standard) {
+    if (visualZ === null && !conversionLocked && result.standard) {
       const s = parseNum(result.standard);
-      if (s !== null) visualZ = calculateFromStandard(s, subtest.scoreType || 'standard').zScore;
+      if (s !== null) visualZ = calculateFromStandard(s, scoreType).zScore;
     }
-    if (visualZ === null && result.percentile) {
+    if (visualZ === null && !conversionLocked && result.percentile) {
       const p = parseNum(result.percentile);
-      if (p !== null) visualZ = calculateFromPercentile(p, subtest.scoreType || 'standard').zScore;
+      if (p !== null) visualZ = calculateFromPercentile(p, scoreType).zScore;
     }
 
     // Decide which fields are editable inputs vs display-only
@@ -494,7 +594,9 @@ const NumericRow: React.FC<{
     };
 
     const statusMessage = getNormStatusMessage(normsStatusCode);
-    const showDirectionControl = (subtest.computationMode || 'LOOKUP') === 'PARAMETRIC'
+    const percentileEditable = !canAutoConvert;
+    const showDirectionControl = canAutoConvert
+      && (subtest.computationMode || 'LOOKUP') === 'PARAMETRIC'
       && subtest.scoreType !== 'none';
 
     return (
@@ -511,12 +613,12 @@ const NumericRow: React.FC<{
                     {getScaleLabel(subtest.scoreType)}
                   </span>
                 )}
-                {hasNorms && (
+                {hasAutoNorms && (
                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
                     Normes
                   </span>
                 )}
-                {!hasNorms && statusMessage && (
+                {!hasAutoNorms && statusMessage && (
                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                     {normsStatusCode === 'no_norms' && '0 norme'}
                     {normsStatusCode === 'no_applicable_age_gender' && 'Normes non applicables'}
@@ -524,6 +626,24 @@ const NumericRow: React.FC<{
                     {normsStatusCode === 'access_restricted' && 'Accès restreint'}
                   </span>
                 )}
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPatch({ conversionMode: 'auto' })}
+                    disabled={readOnly || conversionLocked}
+                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[#3D405B] text-white' : 'text-[var(--text-secondary)]'} ${(readOnly || conversionLocked) ? 'cursor-not-allowed opacity-60' : ''}`}
+                  >
+                    Auto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPatch({ conversionMode: 'manual' })}
+                    disabled={readOnly}
+                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[#E07A5F] text-white' : 'text-[var(--text-secondary)]'} ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
+                  >
+                    Manuel
+                  </button>
+                </span>
                 {showDirectionControl && (
                   <DirectionBadge
                     direction={effectiveDirection}
@@ -539,7 +659,7 @@ const NumericRow: React.FC<{
           </div>
 
           {/* === Inline score inputs === */}
-          {hasNorms ? (
+          {hasAutoNorms ? (
             /* Regime A: Norms available — Brut (primary) + NS + ET editable + % display */
             <div className="space-y-2">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
@@ -592,7 +712,7 @@ const NumericRow: React.FC<{
                     onBlur={() => {
                       if (localZText !== null) {
                         const n = parseNum(localZText);
-                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(result, subtest.scoreType) === 'manual' ? 'manual' : undefined });
                         setLocalZText(null);
                       }
                     }}
@@ -611,7 +731,7 @@ const NumericRow: React.FC<{
               </div>
             </div>
           ) : (
-            /* Regime B: No norms — NS + ET editable (preferred highlighted) + % display */
+            /* Regime B: No auto norms — NS + ET editable (preferred highlighted) + % display/edit depending on mode */
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-3 items-end">
                 {/* NS — editable */}
@@ -648,7 +768,7 @@ const NumericRow: React.FC<{
                     onBlur={() => {
                       if (localZText !== null) {
                         const n = parseNum(localZText);
-                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(result, subtest.scoreType) === 'manual' ? 'manual' : undefined });
                         setLocalZText(null);
                       }
                     }}
@@ -657,16 +777,29 @@ const NumericRow: React.FC<{
                     aria-label={`Écart-type pour ${getSubtestDisplayName(subtest)}`}
                   />
                 </div>
-                {/* Percentile — display only */}
+                {/* Percentile — editable in manual mode */}
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">%</label>
-                  <div className="w-full text-center text-lg font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
-                    {metricValue('percentile') ? `${metricValue('percentile')}` : '–'}
-                  </div>
+                  {percentileEditable ? (
+                    <input
+                      value={metricValue('percentile')}
+                      disabled={readOnly}
+                      inputMode="decimal"
+                      onFocus={() => onFocus?.()}
+                      onChange={(e) => void onMetricInput('percentile', e.target.value)}
+                      className={inputStyles('percentile', entryMetric === 'percentile')}
+                      placeholder="–"
+                      aria-label={`Percentile pour ${getSubtestDisplayName(subtest)}`}
+                    />
+                  ) : (
+                    <div className="w-full text-center text-lg font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
+                      {metricValue('percentile') ? `${metricValue('percentile')}` : '–'}
+                    </div>
+                  )}
                 </div>
               </div>
               {/* Optional raw field for manual note */}
-              {result.raw && (
+              {result.raw && !conversionLocked && (
                 <div className="max-w-[140px]">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">BRUT</label>
                   <input
@@ -684,10 +817,16 @@ const NumericRow: React.FC<{
             </div>
           )}
 
-          {!hasNorms && statusMessage && (
+          {!hasAutoNorms && statusMessage && (
             <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
               <AlertTriangle size={12} />
               {statusMessage}
+            </div>
+          )}
+          {conversionLocked && (
+            <div className="mt-2 rounded-lg border border-[#3D405B]/20 bg-[#3D405B]/5 px-3 py-1.5 text-[11px] font-medium text-[#3D405B] inline-flex items-center gap-1.5">
+              <AlertTriangle size={12} />
+              score_type = none: saisie manuelle NS/ET/%, conversion auto désactivée.
             </div>
           )}
           {hasPendingDirectionOverride && (
@@ -827,7 +966,7 @@ const FlexibleSubtestRow = React.memo((props: {
 }) => {
   const model = props.subtest.inputModel || 'numeric_4mode';
   if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
-  if (model === 'raw_only' || props.subtest.scoreType === 'none') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
+  if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   return (
     <NumericRow
       testId={props.testId}
@@ -900,6 +1039,15 @@ const TableView: React.FC<{
 
   const handleInput = async (subId: string, metric: Metric, text: string, subtest: SubtestDef) => {
     const current = getResult(subId);
+    const scoreType = subtest.scoreType || 'standard';
+    const conversionMode = resolveConversionMode(current, subtest.scoreType);
+    const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
+    const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
+    const autoSwitchToManual = shouldSwitchToManualMode(current, metric, subtest.scoreType);
+    const nextManualMode = conversionLocked || conversionMode === 'manual' || autoSwitchToManual;
+    const conversionPatch: Partial<ScoreResult> = nextManualMode
+      ? { conversionMode: 'manual' }
+      : { conversionMode: 'auto' };
     const setPatch = (patch: Partial<ScoreResult>) => updateSubtest(testId, subId, mergePatch(current, patch));
 
     if (metric === 'z') {
@@ -907,22 +1055,26 @@ const TableView: React.FC<{
       const n = parseNum(text);
       if (n === null) {
         if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
-        setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' });
+        setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
         return;
       }
-      const c = calculateFromZ(n, subtest.scoreType || 'standard');
-      setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et' });
+      if (!nextManualMode) {
+        const c = calculateFromZ(n, scoreType);
+        setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
+        return;
+      }
+      setPatch({ entryMetric: 'z', zScore: n, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
       return;
     }
     setLocalZ(prev => { const next = { ...prev }; delete next[subId]; return next; });
     const n = parseNum(text);
 
     if (metric === 'raw') {
-      setPatch({ entryMetric: 'raw', raw: text });
+      setPatch({ entryMetric: 'raw', raw: text, ...conversionPatch });
       const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
       const status = normsStatusMap[dbSubtestId];
       const canCompute = status?.statusCode === 'ok';
-      if (n !== null && (subtest.computationMode || 'LOOKUP') !== 'NONE' && canCompute) {
+      if (n !== null && canAutoConvert && (subtest.computationMode || 'LOOKUP') !== 'NONE' && canCompute) {
         try {
           const out = await ScoringEngine.compute(dbSubtestId, n, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
           if (out?.normFound) {
@@ -933,7 +1085,7 @@ const TableView: React.FC<{
             const effectiveDirection = directionByDbSubtestId[dbSubtestId] || baseDirection;
             if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
               zToUse = -zToUse;
-              const recalculated = calculateFromZ(zToUse, subtest.scoreType || 'standard');
+              const recalculated = calculateFromZ(zToUse, scoreType);
               standardToUse = recalculated.standard ?? '';
               percentileToUse = recalculated.percentile ?? '';
             }
@@ -942,6 +1094,7 @@ const TableView: React.FC<{
               zScore: zToUse ?? undefined,
               derived: { standard: standardToUse || undefined, percentile: percentileToUse || undefined, zScore: zToUse ?? undefined, source: 'auto' },
               scoreSource: 'auto',
+              conversionMode: 'auto',
             });
           }
         } catch { /* silent */ }
@@ -949,9 +1102,31 @@ const TableView: React.FC<{
       return;
     }
     if (metric === 'standard') {
-      if (n === null) { setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns' }); return; }
-      const c = calculateFromStandard(n, subtest.scoreType || 'standard');
-      setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns' });
+      if (n === null) { setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch }); return; }
+      if (!nextManualMode) {
+        const c = calculateFromStandard(n, scoreType);
+        setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
+        return;
+      }
+      setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
+      return;
+    }
+    if (metric === 'percentile') {
+      if (n === null) { setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch }); return; }
+      if (!nextManualMode) {
+        const c = calculateFromPercentile(n, scoreType);
+        setPatch({
+          entryMetric: 'percentile',
+          percentile: text,
+          standard: c.standard,
+          zScore: c.zScore,
+          derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' },
+          scoreSource: 'manual_pct',
+          ...conversionPatch,
+        });
+        return;
+      }
+      setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
     }
   };
 
@@ -977,10 +1152,14 @@ const TableView: React.FC<{
             const res = getResult(st.id);
             const dbSubId = st.id.includes('_') ? st.id : `${testId}_${st.id}`;
             const stStatus = normsStatusMap[dbSubId];
-            const stHasNorms = stStatus?.statusCode === 'ok';
+            const conversionMode = resolveConversionMode(res, st.scoreType);
+            const conversionLocked = isManualOnlyScoreType(st.scoreType);
+            const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
+            const stHasNorms = stStatus?.statusCode === 'ok' && canAutoConvert;
             const pref = getPreferredMetric(st);
             const isQual = st.inputModel === 'qualitative_category';
-            const isRawOnly = st.inputModel === 'raw_only' || st.scoreType === 'none';
+            const isRawOnly = st.inputModel === 'raw_only';
+            const percentileEditable = !canAutoConvert;
             const isRev = reviewed(res);
             const hasData = hasValue(res);
             const hasZ = typeof res.zScore === 'number' && Number.isFinite(res.zScore);
@@ -1027,12 +1206,31 @@ const TableView: React.FC<{
               <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''}`}>
                 <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
                   <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
-                  {st.computationMode === 'PARAMETRIC' && (
+                  {canAutoConvert && st.computationMode === 'PARAMETRIC' && (
                     <span className="mt-1 inline-flex">
                       <DirectionBadge
                         direction={directionByDbSubtestId[dbSubId] || resolveEffectiveDirection(st.rawDirection, st.name)}
                       />
                     </span>
+                  )}
+                  {!isRawOnly && (
+                    <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] p-0.5">
+                      <button
+                        type="button"
+                        disabled={conversionLocked}
+                        onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'auto' }))}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[#3D405B] text-white' : 'text-[var(--text-secondary)]'} ${conversionLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                      >
+                        A
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'manual' }))}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[#E07A5F] text-white' : 'text-[var(--text-secondary)]'}`}
+                      >
+                        M
+                      </button>
+                    </div>
                   )}
                 </td>
                 {/* Brut — disabled/greyed when no norms */}
@@ -1076,7 +1274,7 @@ const TableView: React.FC<{
                         if (localZ[st.id] !== undefined) {
                           const n = parseNum(localZ[st.id]);
                           if (n === null) {
-                            updateSubtest(testId, st.id, mergePatch(res, { entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et' }));
+                            updateSubtest(testId, st.id, mergePatch(res, { entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(res, st.scoreType) === 'manual' ? 'manual' : undefined }));
                           }
                           setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
                         }
@@ -1086,9 +1284,21 @@ const TableView: React.FC<{
                     />
                   )}
                 </td>
-                {/* % — always display-only */}
+                {/* % — editable in manual mode */}
                 <td className="py-1 px-1">
-                  <div className={cellDisplay}>{res.percentile || '–'}</div>
+                  {isRawOnly ? (
+                    <div className={cellDisplay}>–</div>
+                  ) : percentileEditable ? (
+                    <input
+                      value={res.percentile || ''}
+                      inputMode="decimal"
+                      onChange={(e) => void handleInput(st.id, 'percentile', e.target.value, st)}
+                      className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[#E07A5F]' : ''}`}
+                      placeholder="–"
+                    />
+                  ) : (
+                    <div className={cellDisplay}>{res.percentile || '–'}</div>
+                  )}
                 </td>
                 {/* Observation — inline text input */}
                 <td className="py-1 px-2">
@@ -1559,6 +1769,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
 
     const scoreType = subtest.scoreType || 'standard';
+    if (scoreType === 'none') return;
     let touched = false;
     const nextTests: TestData = { ...tests };
 
@@ -1694,7 +1905,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
           name: subId,
           unit: 'pts',
           scoreType: 'none',
-          inputModel: 'raw_only',
+          inputModel: 'numeric_4mode',
         }));
         groups.autre.push({ id: testId, name: testId, subtests: fallbackSubtests });
         return;

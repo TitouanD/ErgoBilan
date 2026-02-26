@@ -89,7 +89,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
   const handleSubtestChange = (testId: string, subId: string, res: Partial<ScoreResult>) => {
     const currentTestResults = allResults[testId] || {};
     const currentSubResult =
-      currentTestResults[subId] || { raw: '', standard: '', percentile: '', status: 'empty' as const, entryMetric: 'raw' as const, reviewState: 'not_reviewed' as const };
+      currentTestResults[subId] || { raw: '', standard: '', percentile: '', status: 'empty' as const, entryMetric: 'raw' as const, conversionMode: 'auto' as const, reviewState: 'not_reviewed' as const };
 
     setAllResults({
       ...allResults,
@@ -122,6 +122,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
           certifiedAt: res.certifiedAt,
           scoreSource: res.scoreSource,
           entryMetric: res.entryMetric,
+          conversionMode: res.conversionMode,
           reviewState: res.reviewState,
           reviewedAt: res.reviewedAt,
           qualitativeCode: res.qualitativeCode,
@@ -228,7 +229,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
 
                     <div>
                       {test.subtests.map((st) => {
-                        const res = allResults[test.id]?.[st.id] || { raw: '', standard: '', percentile: '', status: 'empty' as const };
+                        const res = allResults[test.id]?.[st.id] || { raw: '', standard: '', percentile: '', status: 'empty' as const, entryMetric: 'raw' as const, conversionMode: 'auto' as const, reviewState: 'not_reviewed' as const };
                         const uniqueId = `${test.id}-${st.id}`;
                         return (
                           <SubtestRowCheck

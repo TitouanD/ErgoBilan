@@ -90,10 +90,12 @@ export interface ScoreResult {
     validatedAt?: string;
     /** ISO timestamp when the practitioner certified this score */
     certifiedAt?: string;
-    /** How the score was obtained: auto (norms table), manual_ns (practitioner edited NS), manual_et (practitioner edited ET) */
-    scoreSource?: 'auto' | 'manual_ns' | 'manual_et';
+    /** How the score was obtained: auto (norms table), manual_ns (practitioner edited NS), manual_et (practitioner edited ET), manual_pct (practitioner edited percentile) */
+    scoreSource?: 'auto' | 'manual_ns' | 'manual_et' | 'manual_pct';
     /** Input metric selected by practitioner for numeric entry */
     entryMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+    /** Score conversion mode in Step2 */
+    conversionMode?: 'auto' | 'manual';
     /** UI-only practitioner review state (non legal trace) */
     reviewState?: 'not_reviewed' | 'reviewed';
     /** ISO timestamp of the review action */
