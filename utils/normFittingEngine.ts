@@ -59,7 +59,7 @@ const FIT_SCALE_TARGETS: Record<FitScaleType, { mean: number; sd: number }> = {
 };
 
 const isStandardizedScoreType = (value: FittingScoreType | null): value is FitScaleType => (
-  value === 'standard' || value === 'scaled' || value === 't-score' || value === 'sten'
+  value === 'standard' || value === 'scaled' || value === 't-score' || value === 'sten' || value === 'stanine'
 );
 
 const LOOKUP_FIT_CANDIDATES: LookupFitCandidate[] = [
@@ -484,6 +484,10 @@ const inferNoneForParametricRows = (
   const rawLikeByRange = meanMedian < 35 || meanMedian > 145 || sdMedian > 18;
   const severeForCurrent = meanDrift >= 2.2 || sdDrift >= 1.8;
   const globallyBadFit = !Number.isFinite(bestScore) || bestScore >= 2.8;
+
+  // Scales with small standard deviation like scaled (sd=3), sten (sd=2) or stanine (sd=2)
+  // are very prone to false-positive parametric rejection under these strict rules.
+  if (target.sd <= 3 && !rawLikeByRange) return null;
 
   if (!rawLikeByRange && !severeForCurrent) return null;
   if (!globallyBadFit && !(rawLikeByRange && severeForCurrent)) return null;
@@ -975,7 +979,28 @@ export const analyzeFitting = (input: AnalyzeFittingInput): FittingResult => {
       : 0
   );
 
-  if (suggestedScoreType && currentScoreType !== 'none' && suggestedScoreType !== currentScoreType) {
+  // --- score_type = 'none' but numerical norms exist → blocking ---
+  if (currentScoreType === 'none') {
+    const hasNumericData = input.rows.some((r) =>
+      (typeof r.standardScore === 'number' && Number.isFinite(r.standardScore)) ||
+      (typeof r.mean === 'number' && Number.isFinite(r.mean)),
+    );
+    if (hasNumericData) {
+      issues.unshift({
+        id: makeIssueId('FIT_SCORE_TYPE_NONE_WITH_DATA', null, 0),
+        code: 'FIT_SCORE_TYPE_NONE_WITH_DATA',
+        severity: 'blocking',
+        message: suggestedScoreType && suggestedScoreType !== 'none'
+          ? `score_type est "none" mais des normes numériques existent. Type suggéré : ${suggestedScoreType}.`
+          : `score_type est "none" mais des normes numériques existent. Vérifier le type de score.`,
+        confidence: suggestedScoreType && suggestedScoreType !== 'none' ? confidence : 0.85,
+        normId: null,
+      });
+    }
+  }
+
+  // --- mismatch detection (works for ALL currentScoreTypes now, including 'none') ---
+  if (suggestedScoreType && suggestedScoreType !== 'none' && suggestedScoreType !== currentScoreType) {
     issues.unshift({
       id: makeIssueId('FIT_SCORE_TYPE_MISMATCH', null, 0),
       code: 'FIT_SCORE_TYPE_MISMATCH',

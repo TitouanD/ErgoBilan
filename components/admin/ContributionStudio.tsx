@@ -1084,14 +1084,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         let standardScore = parseSingleNumericCell(row.standard);
         let percentile = parsePercentileCell(row.percentile);
 
-        const collapsedFromStandard = inferCollapsedPercentileBand(normalizeDashChars(String(row.standard || '')));
-        if (collapsedFromStandard) {
-            if (percentile === null) percentile = collapsedFromStandard.min;
+        if (standardScore !== null && standardScore > 200) {
             standardScore = null;
         }
 
-        if (standardScore !== null && standardScore > 200) {
-            standardScore = null;
+        const normalizedStandard = normalizeDashChars(String(row.standard || '')).replace(/\s+/g, '');
+        if (percentile === null && standardScore === null && normalizedStandard.length >= 4) {
+            const collapsedFromStandard = inferCollapsedPercentileBand(normalizedStandard);
+            if (collapsedFromStandard) {
+                percentile = collapsedFromStandard.min;
+            }
         }
 
         return { standardScore, percentile };
@@ -1130,10 +1132,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         source: 'heuristic' | 'manual' | 'admin_override';
     } => {
         const canonicalType = normalizeScoreTypeToken(entry.scoreType);
-        if (canonicalType) {
-            return { scoreType: canonicalType, confidence: 1, source: 'manual' };
-        }
-
         const fittingRows = toFittingRows(entry.rows);
         const structure = tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP';
         const fitted = analyzeFitting({
@@ -1144,8 +1142,20 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
         const threshold = structure === 'PARAMETRIC' ? 0.85 : 0.8;
         const suggested = fitted.suggestedScoreType || 'none';
+        const confidentSuggestion = suggested !== 'none' && fitted.confidence >= threshold;
 
-        if (suggested !== 'none' && fitted.confidence >= threshold) {
+        if (canonicalType) {
+            if (confidentSuggestion && suggested !== canonicalType) {
+                return {
+                    scoreType: suggested,
+                    confidence: fitted.confidence,
+                    source: 'heuristic',
+                };
+            }
+            return { scoreType: canonicalType, confidence: 1, source: 'manual' };
+        }
+
+        if (confidentSuggestion) {
             return {
                 scoreType: suggested,
                 confidence: fitted.confidence,
@@ -2608,7 +2618,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 unit: 'pts',
                 score_type: scoreType,
                 computation_mode: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP',
-                input_model: scoreType === 'none' ? 'raw_only' : 'numeric_4mode',
+                input_model: 'numeric_4mode',
                 input_config: {
                     score_type_detection_confidence: scoreTypeDetection.confidence,
                     score_type_detection_source: scoreTypeDetection.source,
@@ -3622,4 +3632,3 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         </div>
     );
 };
-

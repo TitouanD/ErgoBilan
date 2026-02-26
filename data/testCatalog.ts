@@ -17,7 +17,7 @@ export const ICON_MAP: Record<string, any> = {
   'User': User
 };
 
-export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'none';
+export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
 export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
 export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only';
 export type RawDirection = 'auto' | 'higher_better' | 'lower_better';

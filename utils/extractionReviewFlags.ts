@@ -198,6 +198,21 @@ const isLikelyAgeQualifierToken = (value: unknown): boolean => {
   return false;
 };
 
+const isLikelyStatToken = (value: unknown): boolean => {
+  const token = normalizeAgeToken(value);
+  if (!token) return false;
+
+  // 1. Exact matches for common short headers
+  if (/^(?:N|M|SD|NS|ET|SIGMA|MEAN|SD|\d+)$/.test(token)) return true;
+
+  // 2. French statistical terminology
+  if (/\b(?:MOYENNE|ECART|TYPE|EFFECTIF|NOMBRE|SUJETS?|RESULTATS?|PERCENTILES?|FREQUENCES?|QUARTILES?)\b/.test(token)) {
+    return true;
+  }
+
+  return false;
+};
+
 const isSubtestAgeHeaderCaptured = (subtest: string): boolean => {
   const trimmed = cleanText(subtest);
   if (!trimmed) return false;
@@ -417,6 +432,20 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       subtest,
       groupLabel: cleanGroupLabel(subtestRows[0]),
       confidence: severity === 'blocking' ? 0.99 : 0.9,
+    }));
+  }
+
+  // Detect subtest names that look like statistical headers (N, Moyenne, etc.)
+  for (const [subtest, subtestRows] of rowsBySubtest.entries()) {
+    if (!isLikelyStatToken(subtest)) continue;
+
+    flags.push(makeFlag({
+      code: 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED',
+      severity: 'blocking',
+      message: `Nom de sous-test correspond a une entete statistique probable: "${subtest}" (${subtestRows.length} ligne(s)).`,
+      subtest,
+      groupLabel: cleanGroupLabel(subtestRows[0]),
+      confidence: 0.98,
     }));
   }
 

@@ -629,7 +629,7 @@ export const AdminLibrary: React.FC<Props> = ({
         name: stripDuplicateTrailingTag(s.name, normalizedAbbreviation),
         abbreviation: normalizedAbbreviation || null,
         unit: s.unit || 'pts',
-        score_type: s.score_type || 'scaled',
+        score_type: s.score_type || 'none',
         computation_mode: s.computation_mode || 'LOOKUP',
         input_model: s.input_model || 'numeric_4mode',
         input_config: s.input_config || {},
@@ -640,19 +640,71 @@ export const AdminLibrary: React.FC<Props> = ({
       };
     });
 
-    const norms = raw.norms.map(n => ({
-      subtest_id: n.subtest_id,
-      organization_id: n.organization_id || test.organization_id || null,
-      age_min_months: toNumber(n.age_min_months),
-      age_max_months: toNumber(n.age_max_months),
-      gender: n.gender || 'Mixed',
-      raw_min: toNumber(n.raw_min),
-      raw_max: toNumber(n.raw_max),
-      mean: toNumber(n.mean),
-      sd: toNumber(n.sd),
-      standard_score: toNumber(n.standard_score),
-      percentile: toNumber(n.percentile)
-    }));
+    const subtestById = new Map(subtests.map((s) => [s.id, s]));
+    const seenNormKeys = new Set<string>();
+    const norms = raw.norms.reduce<AdminNormRecord[]>((acc, n) => {
+      const subtestId = String(n.subtest_id || '');
+      if (!subtestId) return acc;
+      if (!subtestById.has(subtestId)) return acc;
+
+      const ageMin = toNumber(n.age_min_months);
+      const ageMax = toNumber(n.age_max_months);
+      const rawMin = toNumber(n.raw_min);
+      const rawMax = toNumber(n.raw_max);
+      const mean = toNumber(n.mean);
+      const sd = toNumber(n.sd);
+      const standardScore = toNumber(n.standard_score);
+      const percentile = toNumber(n.percentile);
+
+      if (ageMin === null || ageMax === null || ageMin > ageMax) return acc;
+      if ((rawMin === null) !== (rawMax === null)) return acc;
+      if (rawMin !== null && rawMax !== null && rawMin > rawMax) return acc;
+      if (percentile !== null && (percentile < 0 || percentile > 100)) return acc;
+      if ((mean === null) !== (sd === null)) return acc;
+      if (sd !== null && sd <= 0) return acc;
+
+      const subtest = subtestById.get(subtestId)!;
+      const computationMode = String(subtest.computation_mode || 'LOOKUP').toUpperCase();
+      const inputModel = String(subtest.input_model || 'numeric_4mode').toLowerCase();
+      if (computationMode === 'PARAMETRIC') {
+        if (mean === null || sd === null) return acc;
+      } else if (inputModel === 'numeric_4mode' && standardScore === null && percentile === null) {
+        return acc;
+      }
+
+      const normalized: AdminNormRecord = {
+        subtest_id: subtestId,
+        organization_id: n.organization_id || test.organization_id || null,
+        age_min_months: ageMin,
+        age_max_months: ageMax,
+        gender: n.gender || 'Mixed',
+        raw_min: rawMin,
+        raw_max: rawMax,
+        mean,
+        sd,
+        standard_score: standardScore,
+        percentile,
+      };
+
+      const dedupKey = [
+        normalized.subtest_id,
+        normalized.organization_id ?? '',
+        normalized.age_min_months ?? '',
+        normalized.age_max_months ?? '',
+        normalized.gender ?? '',
+        normalized.raw_min ?? '',
+        normalized.raw_max ?? '',
+        normalized.mean ?? '',
+        normalized.sd ?? '',
+        normalized.standard_score ?? '',
+        normalized.percentile ?? '',
+      ].join('|');
+
+      if (seenNormKeys.has(dedupKey)) return acc;
+      seenNormKeys.add(dedupKey);
+      acc.push(normalized);
+      return acc;
+    }, []);
 
     return { test, subtests, norms };
   };
@@ -1116,13 +1168,13 @@ export const AdminLibrary: React.FC<Props> = ({
     if (!bundle) return;
     const targetSubtests = bulkScoreTargetSubtests.filter((subtest) => (
       String(subtest.score_type || 'none').toLowerCase() !== 'none'
-      || String(subtest.input_model || 'numeric_4mode').toLowerCase() !== 'raw_only'
+      || String(subtest.input_model || 'numeric_4mode').toLowerCase() !== 'numeric_4mode'
     ));
     if (targetSubtests.length === 0) {
       toast.info('Aucun sous-test cible a passer en none.');
       return;
     }
-    if (!confirm(`Passer ${targetSubtests.length} sous-test(s) en score_type=none + raw_only (${bulkScoreScopeLabel}) ?`)) return;
+    if (!confirm(`Passer ${targetSubtests.length} sous-test(s) en score_type=none + numeric_4mode (${bulkScoreScopeLabel}) ?`)) return;
 
     setIsApplyingBulkNone(true);
     try {
@@ -1134,7 +1186,7 @@ export const AdminLibrary: React.FC<Props> = ({
           return {
             ...subtest,
             score_type: 'none',
-            input_model: 'raw_only',
+            input_model: 'numeric_4mode',
             input_config: {
               ...(subtest.input_config || {}),
               score_type_detection_source: 'admin_override',

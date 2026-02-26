@@ -98,7 +98,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           if (['scaled', 'ns', 'note_standard', 'note standard', 'scaled_score'].includes(normalized)) return 'scaled';
           if (['t-score', 'tscore', 't score', 't'].includes(normalized)) return 't-score';
           if (['percentile', 'pct', 'percentile_rank', 'percentile rank'].includes(normalized)) return 'percentile';
-          if (['sten', 'stennine', 'stanine'].includes(normalized)) return 'sten';
+          if (['sten'].includes(normalized)) return 'sten';
+          if (['stanine', 'stennine'].includes(normalized)) return 'stanine';
           if (['none', 'raw', 'raw-only', 'raw_only', 'na', 'n/a', 'no-score', 'no score'].includes(normalized)) return 'none';
           return 'standard';
         };

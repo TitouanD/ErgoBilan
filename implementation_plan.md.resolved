@@ -1,0 +1,227 @@
+# Plan d'Implémentation — Pipeline Résultats de Tests
+
+## Objectif
+
+Résoudre les 16+ issues identifiées dans l'audit, assurer la couverture de 80%+ des tests d'ergothérapie standards, corriger les méthodes de fitting, et fiabiliser la propagation d'attributs lors du rattachement de normes.
+
+---
+
+## Résultat de l'Analyse Approfondie
+
+### Méthodes de Fitting — Résumé de la Vérification
+
+Le fitting engine ([normFittingEngine.ts](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts)) utilise **deux algorithmes distincts** :
+
+**LOOKUP** ([inferScoreTypeForLookup](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#267-398)) :
+- Compare les `standard_score` extraits contre 5 candidats (percentile, sten, stanine, t-score, standard) définis dans `LOOKUP_FIT_CANDIDATES`
+- Score de fit = pénalité de range + drift mean/sd + MAE percentile + pénalité de monotonie
+- Seuils: `bestScore > 2.6` → rejet, `gap < 0.22` → ambigu → `null`
+
+**PARAMETRIC** ([inferScoreTypeForParametric](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#399-461)) :
+- Compare les `mean`/`sd` extraits contre `FIT_SCALE_TARGETS` (standard=100/15, scaled=10/3, t-score=50/10, sten=5.5/2)
+- Score = centerPenalty + spreadPenalty + avgPenalty + rowPenalty
+- Seuils: `bestScore > 3.2` → rejet, `gap < 0.2` → ambigu
+- Fallback [inferNoneForParametricRows](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#462-504) : si mean <35 ou >145 ou sd>18 → probablement des données brutes, pas un score standardisé → `score_type = 'none'`
+
+> [!IMPORTANT]
+> **Issues de fitting identifiées :**
+> 1. `stanine` est inféré par l'engine ET a un candidat LOOKUP dédié (softMin=1, softMax=9), mais **aucun support UI** (pas dans `SCALE_LABELS`) et **pas dans `compute_score_core` SQL** — serait ignoré côté serveur
+> 2. [isStandardizedScoreType](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#61-64) exclut `stanine` — ce qui fait que [inferNoneForParametricRows](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#462-504) ne considère pas stanine comme un type standardisé valide
+> 3. [inferNoneForParametricRows](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#462-504) n'émet pas de suggestion de fix (juste confidence), donc un test PARAMETRIC avec bruts élevés (ex: BHK temps=120s, sd=30s) serait marqué `none` à tort si le seuil `meanMedian < 35` est passé
+> 4. `LOOKUP_FIT_CANDIDATES` a 6 candidats bien définis : percentile, sten (1-10), stanine (1-9), scaled (1-19), t-score (20-80), standard (55-145) — le fitting est **complet** côté engine
+
+### `compute_score_core` — Résumé de la Vérification
+
+Le RPC SQL gère :
+- **PARAMETRIC** : `z = (raw - mean) / sd` (ou inversé si `lower_better`), puis calcule NS via la formule du score type
+  - ✅ Supporte : `standard` (100±15), `scaled` (10±3), [sten](file:///C:/Users/Titouan/Desktop/AutoBilan/components/admin/ContributionStudio.tsx#2393-2403) (5.5±2), `t-score` (50±10)
+  - ⚠️ [percentile](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/scoring.ts#31-87) → retourne `v_standard = NULL` (ok conceptuellement mais pas de NS)
+  - ⚠️ Auto-détection direction : regex sur les noms [(temps|erreur|qualité...)](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/extractionReviewFlags.ts#235-240) → `lower_better`
+- **LOOKUP** : correspondance `raw_min ≤ raw ≤ raw_max` + fallback floor si raw < plus petite raw_min
+  - ⚠️ **Ne calcule PAS de zScore** — retourne uniquement `standard_score` et [percentile](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/scoring.ts#31-87) depuis la table
+  - Le client-side ([Step2Tests.tsx](file:///C:/Users/Titouan/Desktop/AutoBilan/components/assessment/Step2Tests.tsx) L463-471) déduit un z-score visuel à partir du `standard` retourné via [calculateFromStandard](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/scoring.ts#99-113)
+
+### Propagation d'Attributs — Résumé de la Vérification
+
+Quand on rattache des normes à un sous-test existant via `attach_subtests_to_test` :
+1. [buildTestPayload()](file:///C:/Users/Titouan/Desktop/AutoBilan/components/admin/ContributionStudio.tsx#2595-2620) crée un payload avec `score_type`, `computation_mode`, `input_model`, `input_config` par sous-test
+2. Le RPC compare via name+abbreviation (fuzzy) pour identifier les sous-tests existants
+3. **⚠️ Si le sous-test existe déjà : seules les normes sont ajoutées, les attributs (`score_type`, `computation_mode`, `input_model`) ne sont PAS mis à jour**
+4. Pour les override clones (direction), tous les attributs SONT copiés depuis la source ([name](file:///C:/Users/Titouan/Desktop/AutoBilan/components/admin/ContributionStudio.tsx#155-210), `unit`, `score_type`, `computation_mode`, `input_model`, `input_config`, `abbreviation`)
+
+---
+
+## Couverture des Tests d'Ergothérapie — 80% Target
+
+### Tests déjà dans le catalogue (40)
+
+Les 40 tests actuels couvrent déjà la majorité. Parmi les plus utilisés en pratique clinique :
+
+| Domaine | Tests couverts | Tests manquants (prioritaires) |
+|---|---|---|
+| Coordination motrice | MABC-2, BOT-2, NP-MOT, PDMS-2 | MAP (Miller), Charlop-Atwell (présent) |
+| Visuomotricité | Beery VMI, DTVP-2/3/A, FROSTIG | — |
+| Écriture | BHK, BHK Ado, L'Espargot, EVIC | — |
+| Perception | MVPT-4, Fig. Rey | — |
+| Neuropsycho | NEPSY-2, WISC-V, TEA-Ch | — |
+| Fonctions exécutives | BRIEF-2 | — |
+| Vie quotidienne | AMPS, COPM, PEDI-CAT | **Vineland-3** (existant), **GOAL**, **MCREO** |
+| Sensoriel | Profil Sensoriel 2 (Dunn), SPM | — |
+| Screening | MMSE, MoCA, DCDQ-F | — |
+| Attention | Test des Cloches, Barrage des H | **d2-R**, **TEA** |
+
+### Couverture par type de score
+
+| Type de score | Tests concernés | Supporté | Action |
+|---|---|---|---|
+| NS (scaled, 10±3) | NEPSY-2, MABC-2, DTVP, BOT-2… | ✅ | — |
+| QI (standard, 100±15) | Beery VMI, WISC-V, Vineland-3 | ✅ | — |
+| T-score (50±10) | BRIEF-2, SPM | ✅ | — |
+| Sten (5.5±2) | Profil Sensoriel 2 | ⚠️ Fitting ok, UI non | Ajouter `SCALE_LABELS.sten` |
+| Percentile direct | MABC-2 Total, EGP | ⚠️ Partiel | Clarifier le label UI |
+| Cut-off | MMSE, MoCA, DCDQ-F | ❌ | Nouveau `input_model` |
+| Score brut seul | Barrage des H, COPM, QuickDASH | ✅ (RawOnlyRow) | — |
+| Qualitatif catégoriel | Profil Sensoriel 2 | ✅ (QualitativeRow) | — |
+
+---
+
+## User Review Required
+
+> [!WARNING]
+> **Choix de design à valider :**
+> 1. Pour les tests screening (MMSE, MoCA, DCDQ-F), doit-on créer un nouveau `input_model: 'cutoff_score'` avec interprétation automatique (normal/suspect/pathologique), ou est-ce que la simple [RawOnlyRow](file:///C:/Users/Titouan/Desktop/AutoBilan/components/assessment/Step2Tests.tsx#775-802) avec un badge d'interprétation suffit ?
+> 2. Pour les scores composites (MABC-2 Total, Beery VMI Composite), veut-on un calcul automatique côté client, ou est-ce hors scope pour l'instant ?
+> 3. Pour les z-scores manquants en mode LOOKUP, veut-on que le RPC `compute_score_core` calcule un z à partir du standard_score retourné, ou est-ce que la déduction client-side actuelle est suffisante ?
+
+---
+
+## Proposed Changes
+
+### Composant 1 : Fixing Fitting Engine
+
+#### [MODIFY] [normFittingEngine.ts](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts)
+
+1. **`FIT_SCALE_TARGETS` et `LOOKUP_FIT_CANDIDATES`** — ✅ Déjà complets (stanine inclus). Rien à changer.
+2. **Ajouter `stanine` dans [isStandardizedScoreType](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#61-64)** (L61-63) — Permet à [inferNoneForParametricRows](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#462-504) de ne pas ignorer stanine comme type valide :
+   ```diff
+   -  value === 'standard' || value === 'scaled' || value === 't-score' || value === 'sten'
+   +  value === 'standard' || value === 'scaled' || value === 't-score' || value === 'sten' || value === 'stanine'
+   ```
+3. **Améliorer [inferNoneForParametricRows](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/normFittingEngine.ts#462-504)** — Le seuil `meanMedian < 35` est trop agressif pour le mode `scaled` (mean=10). Pour un `currentScoreType = 'scaled'`, si `meanMedian` est entre 5 et 20 et `sdMedian` entre 1 et 8, ne PAS déclencher le fallback `none`
+4. **Documenter les seuils** — Ajouter des commentaires JSDoc sur les magic numbers (`2.6`, `0.22`, `3.2`, `0.2`)
+
+---
+
+### Composant 2 : UI Score Labels & Affichage
+
+#### [MODIFY] [Step2Tests.tsx](file:///C:/Users/Titouan/Desktop/AutoBilan/components/assessment/Step2Tests.tsx)
+
+1. **Ajouter [sten](file:///C:/Users/Titouan/Desktop/AutoBilan/components/admin/ContributionStudio.tsx#2393-2403) dans `SCALE_LABELS`** (L63-67) :
+   ```diff
+   +  sten: 'Sten (m=5.5, σ=2)',
+   ```
+
+2. **Ajouter `stanine` dans `SCALE_LABELS`** (si le type est officiellement supporté) :
+   ```diff
+   +  stanine: 'Stanine (m=5, σ=2)',
+   ```
+
+3. **Adapter le label "NS" quand `score_type = 'percentile'`** (L558-560) — Afficher "Percentile" au lieu de "NS" pour éviter la confusion UX
+
+4. **Rendre le champ percentile éditable** (L597-603) — Permettre la saisie directe d'un percentile avec déduction inverse de NS/ET via [calculateFromPercentile](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/scoring.ts#128-141)
+
+5. **Ajouter un z-score calculé pour le mode LOOKUP** — Quand `compute_score_core` retourne un `standard_score` sans z-score, calculer `z = (standard - mean) / sd` côté client (déjà fait partiellement L463-471)
+
+---
+
+### Composant 3 : Propagation d'Attributs au Merge/Attach
+
+#### [MODIFY] RPC `attach_subtests_to_test` (Supabase migration)
+
+Quand un sous-test existant est identifié par name+abbreviation et que le payload contient un attribut différent :
+- **Si `score_type` du payload ≠ existant ET l'existant est `none`** → mettre à jour vers le nouveau `score_type`
+- **Si `computation_mode` du payload ≠ existant** → mettre à jour si l'existant est `NULL` ou `'NONE'`
+- **Si `input_model` du payload ≠ existant** → mettre à jour si l'existant est `'numeric_4mode'` et le nouveau est plus spécifique
+
+Ceci sera fait dans une nouvelle migration SQL.
+
+#### [NEW] Migration SQL `update_subtest_attributes_on_attach`
+
+```sql
+-- Dans la logique d'attach, après identification du sous-test existant:
+UPDATE official_subtests
+SET 
+  score_type = CASE 
+    WHEN score_type = 'none' AND p_score_type != 'none' THEN p_score_type
+    ELSE score_type 
+  END,
+  computation_mode = CASE
+    WHEN computation_mode IS NULL OR computation_mode = 'NONE' THEN p_computation_mode
+    ELSE computation_mode
+  END
+WHERE id = v_existing_subtest_id;
+```
+
+---
+
+### Composant 4 : compute_score_core Améliorations
+
+#### [MODIFY] Migration SQL `compute_score_core`
+
+1. **Retourner un z-score pour LOOKUP** — Quand le standard_score est trouvé et le `score_type` est connu, calculer :
+   ```sql
+   v_z := (v_norm.standard_score - v_scale_mean) / v_scale_sd;
+   ```
+   Et l'inclure dans le JSON retourné
+
+2. **Supporter `stanine`** dans le switch (L615-627) :
+   ```sql
+   ELSIF v_subtest.score_type = 'stanine' THEN
+     v_standard := 5 + (v_z * 2);
+   ```
+
+---
+
+### Composant 5 : Admin Panel — Dashboard Couverture Normes
+
+#### [MODIFY] Issue Backlog existant
+
+L'issue backlog (`admin_list_issue_backlog`) détecte déjà `zero_norm_subtests_count`. Vérifier que c'est visible dans l'AdminPanel et qu'un résumé "Tests sans norme" est affiché.
+
+---
+
+### Composant 6 : Tests Manquants du Catalogue
+
+Aucun changement de code. Les tests manquants (GOAL, MCREO, d2-R, TEA) devront être ajoutés via le ContributionStudio par l'utilisateur. Le code supporte déjà l'ajout de tout test via le Studio.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+Il n'y a **pas de suite de tests unitaires** dans le projet AutoBilan (pas de `jest`, `vitest`, ou fichiers [.test.ts](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/textSanitizer.test.ts) en dehors de `node_modules`). Les vérifications sont donc manuelles et code-review.
+
+### Manual Verification
+
+1. **SCALE_LABELS** : Après ajout de [sten](file:///C:/Users/Titouan/Desktop/AutoBilan/components/admin/ContributionStudio.tsx#2393-2403)/`stanine`, vérifier visuellement dans Step 2 qu'un sous-test avec `score_type: 'sten'` affiche bien le badge "Sten (m=5.5, σ=2)"
+
+2. **Percentile éditable** : Dans Step 2, tester la saisie d'un percentile (ex: 25) et vérifier que NS et ET se calculent automatiquement
+
+3. **Propagation d'attributs** : 
+   - Créer un test avec `score_type: 'none'` via le Studio
+   - Rattacher des normes avec `score_type: 'scaled'` via l'attach
+   - Vérifier que le sous-test passe bien de `none` à `scaled`
+
+4. **compute_score_core LOOKUP + z-score** :
+   - Tester via Supabase SQL :
+     ```sql
+     SELECT compute_score_core('beery-vmi_VMI', 15, 72, 'Mixed');
+     ```
+   - Vérifier que le JSON retourné contient un [zScore](file:///C:/Users/Titouan/Desktop/AutoBilan/utils/scoring.ts#21-30) non-null
+
+5. **Fitting engine** :
+   - Vérifier que le fitting d'un test PARAMETRIC avec mean~120, sd~30 (type données brutes) n'est plus faussement marqué `none` si le `currentScoreType` est `scaled`
+
+> [!TIP]
+> Pour les tests 3 et 4, il serait idéal de créer un script SQL de vérification dans `supabase/` qui teste les cas limites automatiquement. Je propose de créer `supabase/verify_implementation_plan.sql`.
