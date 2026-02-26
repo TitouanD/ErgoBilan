@@ -622,6 +622,20 @@ const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
 
     if (sourceIndexBySubtest.size === 0) return;
 
+    // Build a map from sourceKey → full column name extracted from source_column_key.
+    // source_column_key format: "Full Column Name::ABBREVIATION::index"
+    // When the extracted full names differ between columns, use them directly as
+    // subtest names instead of the generic "- Colonne N" suffix.
+    const fullNameBySourceKey = new Map<string, string>();
+    pages.forEach((page) => {
+        page.rows.forEach((row) => {
+            const sourceKey = (row.source_column_key || '').trim();
+            if (!sourceKey || fullNameBySourceKey.has(sourceKey)) return;
+            const fullName = sourceKey.split('::')[0].trim();
+            if (fullName) fullNameBySourceKey.set(sourceKey, fullName);
+        });
+    });
+
     pages.forEach((page) => {
         page.rows.forEach((row) => {
             if (isLikelyAgeQualifier(row.source_abbreviation)) return;
@@ -632,7 +646,25 @@ const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
             if (!perSourceIndex) return;
             const columnIndex = perSourceIndex.get(sourceKey);
             if (!columnIndex) return;
-            row.subtest = withSourceColumnSuffix(baseSubtest, columnIndex);
+
+            // Prefer using the full column name from source_column_key when it provides
+            // a meaningful distinction (e.g. "meilleure main" vs "autre main"),
+            // rather than the opaque "- Colonne N" suffix.
+            const extractedFullName = fullNameBySourceKey.get(sourceKey) || '';
+            const normalizedExtracted = extractedFullName.toLowerCase().trim();
+            const normalizedBase = baseSubtest.toLowerCase().trim();
+            const isMoreInformative = extractedFullName.length > 0
+                && normalizedExtracted !== normalizedBase
+                && !normalizedExtracted.startsWith(normalizedBase.slice(0, 6))  // not just leading few chars
+                && extractedFullName.length <= baseSubtest.length + 40;           // don't use excessively long keys
+
+            if (isMoreInformative) {
+                // Use the full name from source_column_key, preserving the abbreviation tag.
+                const parsed = splitSubtestDisplayName(baseSubtest);
+                row.subtest = formatSubtestDisplayName(extractedFullName, parsed.abbreviation || row.source_abbreviation, true);
+            } else {
+                row.subtest = withSourceColumnSuffix(baseSubtest, columnIndex);
+            }
         });
     });
 };

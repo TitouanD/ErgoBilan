@@ -310,6 +310,37 @@ const sortFlags = (flags: ReviewFlag[]): ReviewFlag[] => {
   });
 };
 
+/**
+ * Detect the dominant monotonic direction of a lookup scale.
+ * For error-count / time-based tests, standard scores DECREASE as raw increases (e.g. Trajet 3).
+ * Returns 'decreasing' if the majority of numeric transitions go downward,
+ * 'increasing' if upward, or 'ambiguous' when evenly split.
+ */
+const detectDominantScoreDirection = (
+  entries: OrderedLookupEntry[],
+  metric: 'standard' | 'percentile',
+): 'increasing' | 'decreasing' | 'ambiguous' => {
+  let increases = 0;
+  let decreases = 0;
+  for (let i = 1; i < entries.length; i += 1) {
+    const prev = entries[i - 1];
+    const curr = entries[i];
+    if (!prev.rawBounds || !curr.rawBounds) continue;
+    if (curr.rawBounds.min < prev.rawBounds.min) continue; // raw not increasing
+    const prevVal = metric === 'standard' ? prev.standardValue : prev.percentileValue;
+    const currVal = metric === 'standard' ? curr.standardValue : curr.percentileValue;
+    if (prevVal === null || currVal === null) continue;
+    if (currVal > prevVal + 0.5) increases += 1;
+    else if (currVal < prevVal - 0.5) decreases += 1;
+  }
+  if (increases === 0 && decreases === 0) return 'ambiguous';
+  // Require at least 60 % dominance to call a direction
+  const total = increases + decreases;
+  if (decreases / total >= 0.6) return 'decreasing';
+  if (increases / total >= 0.6) return 'increasing';
+  return 'ambiguous';
+};
+
 const buildOrderedLookupEntries = (bucketRows: ExtractedRow[]): OrderedLookupEntry[] => {
   const entries = bucketRows.map((row, index) => {
     const standardValue = toFiniteNumber(cleanText(row.standard));
@@ -622,6 +653,11 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     const standardSteps: NumericStep[] = [];
     const percentileSteps: NumericStep[] = [];
 
+    // Detect dominant direction BEFORE flagging monotonicity.
+    // Error-count / time-based tests have decreasing NS as raw increases — this is correct.
+    const standardDirection = detectDominantScoreDirection(orderedScored, 'standard');
+    const percentileDirection = detectDominantScoreDirection(orderedScored, 'percentile');
+
     for (let i = 1; i < orderedScored.length; i += 1) {
       const prev = orderedScored[i - 1];
       const curr = orderedScored[i];
@@ -639,28 +675,44 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
         }));
       }
 
-      if (prev.standardValue !== null && curr.standardValue !== null && curr.standardValue + 0.5 < prev.standardValue) {
-        flags.push(makeFlag({
-          code: 'LOOKUP_STANDARD_NON_MONOTONIC',
-          severity: 'warning',
-          message: `NS non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${prev.standardValue} -> ${curr.standardValue} alors que le brut augmente.`,
-          subtest: bucket.subtest,
-          groupLabel: bucket.groupLabel,
-          rowId: curr.row.id,
-          confidence: 0.95,
-        }));
+      if (prev.standardValue !== null && curr.standardValue !== null) {
+        // For a decreasing-direction scale (higher raw = worse, e.g. error counts),
+        // a decrease in NS is completely normal — only flag an unexpected INCREASE.
+        // For an increasing-direction or ambiguous scale, flag unexpected decreases (original behaviour).
+        const standardViolation = standardDirection === 'decreasing'
+          ? curr.standardValue > prev.standardValue + 0.5    // unexpected increase on inverse scale
+          : curr.standardValue + 0.5 < prev.standardValue;   // unexpected decrease on normal scale
+        if (standardViolation) {
+          const dirHint = standardDirection === 'decreasing'
+            ? ' (echelle inverse: le NS devrait diminuer quand le brut augmente)'
+            : '';
+          flags.push(makeFlag({
+            code: 'LOOKUP_STANDARD_NON_MONOTONIC',
+            severity: 'warning',
+            message: `NS non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${prev.standardValue} -> ${curr.standardValue} alors que le brut augmente.${dirHint}`,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.95,
+          }));
+        }
       }
 
-      if (prev.percentileValue !== null && curr.percentileValue !== null && curr.percentileValue + 1 < prev.percentileValue) {
-        flags.push(makeFlag({
-          code: 'LOOKUP_PERCENTILE_NON_MONOTONIC',
-          severity: 'warning',
-          message: `Percentile non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${prev.percentileValue} -> ${curr.percentileValue} alors que le brut augmente.`,
-          subtest: bucket.subtest,
-          groupLabel: bucket.groupLabel,
-          rowId: curr.row.id,
-          confidence: 0.93,
-        }));
+      if (prev.percentileValue !== null && curr.percentileValue !== null) {
+        const percentileViolation = percentileDirection === 'decreasing'
+          ? curr.percentileValue > prev.percentileValue + 1
+          : curr.percentileValue + 1 < prev.percentileValue;
+        if (percentileViolation) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_PERCENTILE_NON_MONOTONIC',
+            severity: 'warning',
+            message: `Percentile non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${prev.percentileValue} -> ${curr.percentileValue} alors que le brut augmente.`,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.93,
+          }));
+        }
       }
 
       const deltaRaw = curr.rawBounds.min - prev.rawBounds.min;
@@ -773,13 +825,18 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     const expected = expectedCountForGroup(entries);
     const mismatch = entries.filter((entry) => entry.count !== expected);
     mismatch.forEach((entry) => {
+      // Small differences (≤ 3 rows) are common when some NS levels are marked
+      // as unreachable ("-"/"-") and not retained by extraction. Flag as warning
+      // only; reserve blocking for large gaps that suggest wholesale row loss.
+      const missing = Math.max(0, expected - entry.count);
+      const severity: ReviewSeverity = missing > 3 ? 'blocking' : 'warning';
       flags.push(makeFlag({
         code: 'GROUP_ROW_COUNT_MISMATCH',
-        severity: 'blocking',
+        severity,
         message: `Nombre de lignes incoherent pour "${entry.subtest}" dans "${groupLabel}" (${entry.count} au lieu de ${expected}).`,
         subtest: entry.subtest,
         groupLabel,
-        confidence: 1,
+        confidence: severity === 'blocking' ? 1 : 0.85,
       }));
     });
   }
