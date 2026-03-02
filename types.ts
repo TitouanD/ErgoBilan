@@ -472,12 +472,13 @@ export interface AdminSubtestRecord {
         defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
         score_type_detection_confidence?: number | string;
         score_type_detection_source?: string;
-        rawDirectionHint?: 'auto' | 'higher_better' | 'lower_better';
     };
     organization_id?: string | null;
     raw_direction?: 'auto' | 'higher_better' | 'lower_better' | null;
     source_subtest_id?: string | null;
     is_override_clone?: boolean;
+    always_show_raw?: boolean;
+    raw_display_decimals?: number | null;
 }
 
 export interface AdminNormRecord {

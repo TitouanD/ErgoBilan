@@ -150,16 +150,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const defaultMetric = ['raw', 'standard', 'z', 'percentile'].includes(defaultMetricRaw)
             ? (defaultMetricRaw as 'raw' | 'standard' | 'z' | 'percentile')
             : undefined;
-          const rawDirectionHintRaw = typeof raw.rawDirectionHint === 'string' ? raw.rawDirectionHint.trim() : '';
-          const rawDirectionHint = ['auto', 'higher_better', 'lower_better'].includes(rawDirectionHintRaw)
-            ? (rawDirectionHintRaw as 'auto' | 'higher_better' | 'lower_better')
-            : undefined;
-
-          if ((!options || options.length === 0) && !defaultMetric && !rawDirectionHint) return undefined;
+          if ((!options || options.length === 0) && !defaultMetric) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
             ...(defaultMetric ? { defaultMetric } : {}),
-            ...(rawDirectionHint ? { rawDirectionHint } : {}),
           };
         };
 

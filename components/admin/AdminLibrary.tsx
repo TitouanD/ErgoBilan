@@ -492,6 +492,8 @@ export const AdminLibrary: React.FC<Props> = ({
       raw_direction: 'auto',
       source_subtest_id: null,
       is_override_clone: false,
+      always_show_raw: false,
+      raw_display_decimals: null,
       isNew: true
     };
     setBundle(prev => prev ? ({ ...prev, subtests: [...prev.subtests, newSub] }) : prev);
@@ -637,6 +639,8 @@ export const AdminLibrary: React.FC<Props> = ({
         raw_direction: s.raw_direction || 'auto',
         source_subtest_id: s.source_subtest_id || null,
         is_override_clone: s.is_override_clone === true,
+        always_show_raw: s.always_show_raw === true,
+        raw_display_decimals: typeof s.raw_display_decimals === 'number' ? s.raw_display_decimals : null,
       };
     });
 
@@ -1685,6 +1689,42 @@ export const AdminLibrary: React.FC<Props> = ({
                             <option value="qualitative_category" className="bg-[#23252F] text-stone-200">qualitative_category</option>
                             <option value="raw_only" className="bg-[#23252F] text-stone-200">raw_only</option>
                           </select>
+                        </div>
+                        <div className="col-span-4">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Direction du brut</label>
+                          <select
+                            value={activeSubtest.raw_direction || 'auto'}
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'raw_direction', e.target.value as 'auto' | 'higher_better' | 'lower_better')}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          >
+                            <option value="auto" className="bg-[#23252F] text-stone-200">auto (déduire)</option>
+                            <option value="higher_better" className="bg-[#23252F] text-stone-200">higher_better ↑</option>
+                            <option value="lower_better" className="bg-[#23252F] text-stone-200">lower_better ↓</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2 flex flex-col justify-end">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase mb-1">Toujours brut</label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={activeSubtest.always_show_raw === true}
+                              onChange={(e) => updateSubtestField(activeSubtest.id, 'always_show_raw', e.target.checked)}
+                              className="rounded"
+                            />
+                            <span className="text-xs text-stone-400">Afficher brut</span>
+                          </label>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Décimales brut</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={4}
+                            value={activeSubtest.raw_display_decimals ?? ''}
+                            placeholder="—"
+                            onChange={(e) => updateSubtestField(activeSubtest.id, 'raw_display_decimals', e.target.value === '' ? null : Number(e.target.value))}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
                         </div>
                         <div className="col-span-12">
                           <div className="flex items-center justify-between gap-2">
