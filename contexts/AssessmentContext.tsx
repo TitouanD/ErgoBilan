@@ -215,7 +215,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } finally {
         endAutoSave();
       }
-    }, 2500);
+    }, 1000);
 
     return () => {
       if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);

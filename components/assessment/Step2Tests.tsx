@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../types';
-import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef } from '../../data/testCatalog';
+import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel } from '../../data/testCatalog';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { calculateFromPercentile, calculateFromStandard, calculateFromZ } from '../../utils/scoring';
 import { getNormStatusMessage, resolveEffectiveDirection, type EffectiveDirection, type NormsStatusCode } from '../../utils/scoreDirection';
@@ -17,11 +20,13 @@ import {
   ArrowUp,
   CheckCheck,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Circle,
   CircleCheck,
   FilePlus,
+  GripVertical,
   Layers,
   Loader2,
   MessageSquare,
@@ -322,13 +327,16 @@ const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<Sc
         }
         onChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: hasValue(result) ? 'validated' : 'empty', certifiedAt: undefined });
       }}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${isReviewed
-          ? 'bg-emerald-50 text-emerald-600'
-          : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--hover-bg)]'
-        } ${!canReview ? 'cursor-not-allowed opacity-40' : ''}`}
+      className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${
+        isReviewed
+          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
+          : canReview
+            ? 'bg-[#E07A5F] text-white hover:brightness-105 shadow-sm'
+            : 'opacity-40 cursor-not-allowed bg-[var(--hover-bg)] text-[var(--text-secondary)] border border-[var(--border-color)]'
+      }`}
     >
-      {isReviewed ? <CircleCheck size={12} /> : <Circle size={12} />}
-      {isReviewed ? 'Revu' : 'Valider'}
+      {isReviewed ? <CircleCheck size={14} /> : <Circle size={14} />}
+      {isReviewed ? `Revu${reviewedAtText ? ` à ${reviewedAtText}` : ''}` : 'Valider'}
     </button>
   );
 };
@@ -606,7 +614,7 @@ const NumericRow: React.FC<{
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
               <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center flex-wrap gap-1.5 mt-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
                 {getScaleLabel(subtest.scoreType) && (
                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
@@ -615,12 +623,12 @@ const NumericRow: React.FC<{
                 )}
                 {hasAutoNorms && (
                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
-                    Normes
+                    Normes ✓
                   </span>
                 )}
                 {!hasAutoNorms && statusMessage && (
                   <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    {normsStatusCode === 'no_norms' && '0 norme'}
+                    {normsStatusCode === 'no_norms' && 'Pas de normes'}
                     {normsStatusCode === 'no_applicable_age_gender' && 'Normes non applicables'}
                     {normsStatusCode === 'onboarding_required' && 'Onboarding requis'}
                     {normsStatusCode === 'access_restricted' && 'Accès restreint'}
@@ -798,8 +806,8 @@ const NumericRow: React.FC<{
                   )}
                 </div>
               </div>
-              {/* Optional raw field for manual note */}
-              {result.raw && !conversionLocked && (
+              {/* Optional raw field for manual note — always shown when alwaysShowRaw is set */}
+              {(result.raw || subtest.alwaysShowRaw) && !conversionLocked && (
                 <div className="max-w-[140px]">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">BRUT</label>
                   <input
@@ -851,7 +859,7 @@ const NumericRow: React.FC<{
           <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
 
           {/* Review toggle */}
-          <div className="mt-2 flex items-center justify-end">
+          <div className="mt-3">
             <ReviewButton result={result} onChange={onChange} />
           </div>
         </div>
@@ -911,7 +919,7 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
 
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
 
-        <div className="mt-2 flex items-center justify-end">
+        <div className="mt-3">
           <ReviewButton result={result} onChange={onChange} />
         </div>
       </div>
@@ -939,7 +947,51 @@ const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange:
         />
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
 
-        <div className="mt-2 flex items-center justify-end">
+        <div className="mt-3">
+          <ReviewButton result={result} onChange={onChange} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ─── Custom Text Row (Bilan écologique / Observation personnalisée) ─── */
+const CustomTextRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+}> = ({ result, onChange, readOnly, onFocus }) => {
+  const setPatch = (patch: Partial<ScoreResult>) => onChange({ ...result, ...patch });
+
+  return (
+    <div className="bg-[var(--card-bg)]">
+      <div className="p-4 md:p-5 space-y-3">
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
+          <input
+            value={result.customLabel || ''}
+            onChange={(e) => setPatch({ customLabel: e.target.value })}
+            onFocus={onFocus}
+            disabled={readOnly}
+            placeholder="Ex : Observation en classe, Bilan écologique..."
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm font-semibold text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors placeholder:text-[var(--text-disabled)] placeholder:font-normal"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Notes libres</label>
+          <textarea
+            value={result.observation || ''}
+            onChange={(e) => !readOnly && setPatch({ observation: e.target.value, raw: e.target.value.slice(0, 1) || '' })}
+            onFocus={onFocus}
+            disabled={readOnly}
+            placeholder="Décrivez vos observations..."
+            rows={5}
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
+          />
+        </div>
+        <div className="mt-3">
           <ReviewButton result={result} onChange={onChange} />
         </div>
       </div>
@@ -965,6 +1017,7 @@ const FlexibleSubtestRow = React.memo((props: {
   hasPendingDirectionOverride?: boolean;
 }) => {
   const model = props.subtest.inputModel || 'numeric_4mode';
+  if (model === 'custom_text') return <CustomTextRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   return (
@@ -990,7 +1043,8 @@ const CompactSubtestRow: React.FC<{
   subtest: SubtestDef;
   result: ScoreResult;
   onClick: () => void;
-}> = ({ subtest, result, onClick }) => {
+  onDelete?: () => void;
+}> = ({ subtest, result, onClick, onDelete }) => {
   const isReviewed = reviewed(result);
   const hasData = hasValue(result);
   const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
@@ -1001,25 +1055,47 @@ const CompactSubtestRow: React.FC<{
   if (hasZ) parts.push(`ET ${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`);
   if (result.percentile) parts.push(`${result.percentile}\u202F%`);
   if (result.qualitativeLabel) parts.push(result.qualitativeLabel);
-  if (result.raw && parts.length === 0 && result.raw.trim()) parts.push(`Brut\u00a0: ${result.raw}`);
+  if (result.raw && parts.length === 0 && result.raw.trim()) {
+    const rawNum = parseFloat(result.raw);
+    const formattedRaw = !isNaN(rawNum) && subtest.rawDisplayDecimals != null
+      ? rawNum.toFixed(subtest.rawDisplayDecimals)
+      : result.raw;
+    parts.push(`Brut\u00a0: ${formattedRaw}`);
+  }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors group"
-    >
-      <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] transition-colors shrink-0" />
-      <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">{getSubtestDisplayName(subtest)}</span>
-      {hasData && parts.length > 0 && (
-        <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-[var(--text-secondary)]'
-          }`}>
-          {parts.join(' \u00b7 ')}
+    <div className="w-full flex items-center group">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex-1 flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors min-w-0"
+      >
+        <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] transition-colors shrink-0" />
+        <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">
+          {subtest.inputModel === 'custom_text'
+            ? (result.customLabel || 'Observation personnalisée')
+            : getSubtestDisplayName(subtest)}
         </span>
+        {hasData && parts.length > 0 && (
+          <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-[var(--text-secondary)]'
+            }`}>
+            {parts.join(' \u00b7 ')}
+          </span>
+        )}
+        <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
+          }`} />
+      </button>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="shrink-0 mr-2 p-1.5 rounded-lg bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
+          title="Supprimer ce sous-test"
+        >
+          <Trash2 size={12} />
+        </button>
       )}
-      <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
-        }`} />
-    </button>
+    </div>
   );
 };
 
@@ -1465,15 +1541,27 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               <X size={20} />
             </button>
           </div>
-          <div className="mt-4 relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-            <input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Rechercher un test..."
-              className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
-              autoFocus
-            />
+          <div className="mt-4 flex items-center gap-2">
+            {searchTerm.trim() && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-[var(--hover-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] text-sm font-bold hover:border-[#3D405B] hover:text-[var(--text-heading)] transition-colors"
+              >
+                <ChevronLeft size={16} />
+                Catégories
+              </button>
+            )}
+            <div className="flex-1 relative">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Rechercher un test..."
+                className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
+                autoFocus
+              />
+            </div>
           </div>
           {!searchTerm.trim() && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1584,6 +1672,23 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
             </div>
             {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-heading)] hover:border-[#3D405B]">Contribuer</button>}
           </div>
+
+          <div className="mt-3 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><MessageSquare size={16} className="text-[#E07A5F]" /> Observation personnalisée</h3>
+              <p className="text-xs text-[var(--text-secondary)]">Zone de texte libre avec titre modifiable (bilan écologique, questionnaire...).</p>
+            </div>
+            <button
+              onClick={() => {
+                const customId = `custom_${Date.now()}`;
+                onAddTests({ custom_observations: [customId] });
+                onClose();
+              }}
+              className="shrink-0 px-4 py-2 bg-[#E07A5F] text-white border border-[#E07A5F] rounded-xl text-xs font-bold hover:brightness-105 transition-colors"
+            >
+              + Ajouter
+            </button>
+          </div>
         </div>
 
         <div className="p-4 border-t border-[var(--border-color)] bg-[var(--card-bg)] flex flex-wrap justify-between items-center gap-3">
@@ -1608,6 +1713,27 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
   );
 };
 
+type DragListeners = ReturnType<typeof useSortable>['listeners'];
+
+const SortableTestWrapper: React.FC<{
+  id: string;
+  children: (dragListeners: DragListeners) => React.ReactNode;
+}> = ({ id, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    position: 'relative',
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children(listeners)}
+    </div>
+  );
+};
+
 export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack, onContribute }) => {
   const toast = useToast();
   const { catalog, ensureCatalogLoaded } = useCatalog();
@@ -1622,7 +1748,52 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const [pendingDirectionOverrides, setPendingDirectionOverrides] = useState<Record<string, EffectiveDirection>>({});
   const [isPersistingDirectionOverrides, setIsPersistingDirectionOverrides] = useState(false);
   const [viewMode, setViewMode] = useState<Record<string, 'accordion' | 'table'>>({});
+  const [testOrder, setTestOrder] = useState<string[]>(() => Object.keys(tests));
   const normsLoadedRef = useRef<string>('');
+  const prevExpandedTestIdRef = useRef<string | null>(null);
+
+  // Keep testOrder in sync when tests keys change externally (e.g. initial load)
+  useEffect(() => {
+    setTestOrder((prev) => {
+      const currentKeys = Object.keys(tests);
+      // Remove IDs that no longer exist
+      const filtered = prev.filter((id) => currentKeys.includes(id));
+      // Append new IDs that aren't tracked yet
+      const missing = currentKeys.filter((id) => !filtered.includes(id));
+      if (missing.length === 0 && filtered.length === prev.length) return prev;
+      return [...filtered, ...missing];
+    });
+  }, [tests]);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setTestOrder((prev) => {
+        const oldIndex = prev.indexOf(String(active.id));
+        const newIndex = prev.indexOf(String(over.id));
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    }
+  }, []);
+
+  // Auto-collapse the previously active test when the user opens a subtest in a different test
+  useEffect(() => {
+    if (!expandedSubKey) {
+      prevExpandedTestIdRef.current = null;
+      return;
+    }
+    const currentTestId = expandedSubKey.split('__')[0];
+    const prevTestId = prevExpandedTestIdRef.current;
+    if (prevTestId && prevTestId !== currentTestId) {
+      setCollapsedTests((prev) => ({ ...prev, [prevTestId]: true }));
+    }
+    prevExpandedTestIdRef.current = currentTestId;
+  }, [expandedSubKey]);
 
   useEffect(() => {
     ensureCatalogLoaded();
@@ -1850,18 +2021,26 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
   const addTests = useCallback((selection: Record<string, string[]>) => {
     const next = { ...tests };
+    const newTestIds: string[] = [];
     Object.entries(selection).forEach(([testId, subtestIds]) => {
-      if (!next[testId]) next[testId] = {};
+      if (!next[testId]) {
+        next[testId] = {};
+        newTestIds.push(testId);
+      }
       subtestIds.forEach((id) => {
         if (!next[testId][id]) next[testId][id] = emptyScore();
       });
     });
+    if (newTestIds.length > 0) {
+      setTestOrder((prev) => [...prev, ...newTestIds.filter((id) => !prev.includes(id))]);
+    }
     updateTests(next);
   }, [tests, updateTests]);
 
   const removeTest = useCallback((testId: string) => {
     const next = { ...tests };
     delete next[testId];
+    setTestOrder((prev) => prev.filter((id) => id !== testId));
     updateTests(next);
   }, [tests, updateTests]);
 
@@ -1902,12 +2081,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         if (!groups.autre) groups.autre = [];
         const fallbackSubtests: SubtestDef[] = Object.keys(tests[testId] || {}).map((subId) => ({
           id: subId,
-          name: subId,
+          name: subId.startsWith('custom_') ? 'Observation personnalisée' : subId,
           unit: 'pts',
-          scoreType: 'none',
-          inputModel: 'numeric_4mode',
+          scoreType: 'none' as ScoreType,
+          inputModel: (subId.startsWith('custom_') ? 'custom_text' : 'numeric_4mode') as SubtestInputModel,
         }));
-        groups.autre.push({ id: testId, name: testId, subtests: fallbackSubtests });
+        groups.autre.push({ id: testId, name: testId === 'custom_observations' ? 'Observations personnalisées' : testId, subtests: fallbackSubtests });
         return;
       }
       if (!groups[cat.id]) groups[cat.id] = [];
@@ -1916,6 +2095,16 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
     return groups;
   }, [tests, catalog]);
+
+  const testDefMap = useMemo(() => {
+    type CatDef = (typeof catalog)[number];
+    const map: Record<string, { cat: CatDef | undefined; def: TestDef }> = {};
+    (Object.entries(grouped) as [string, TestDef[]][]).forEach(([catId, defs]) => {
+      const cat = catalog.find((c) => c.id === catId);
+      defs.forEach((def) => { map[def.id] = { cat, def }; });
+    });
+    return map;
+  }, [grouped, catalog]);
 
   const directionByDbSubtestId = useMemo(() => {
     const map: Record<string, EffectiveDirection> = {};
@@ -2001,35 +2190,43 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
             </div>
           )}
 
-          {(Object.entries(grouped) as [string, TestDef[]][]).map(([catId, defs]) => {
-            const cat = catalog.find((c) => c.id === catId);
-            const CatIcon = ICON_MAP[cat?.iconKey || 'Box'];
-            return (
-              <section key={catId}>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2 shadow-sm">
-                  <CatIcon size={16} className="text-[var(--text-heading)]" />
-                  <h3 className="font-bold text-[var(--text-main)] uppercase text-xs tracking-[0.14em]">{cat?.name || 'Autres'}</h3>
-                </div>
-                {defs.map((test) => {
-                  const collapsed = collapsedTests[test.id];
-                  const editing = editMode[test.id];
-                  const selectedIds = Object.keys(tests[test.id] || {});
-                  const visibleSubtests = test.subtests.filter((st) => selectedIds.includes(st.id));
-                  const subtestQuery = (subtestFilters[test.id] || '').trim().toLowerCase();
-                  const filteredSubtests = subtestQuery
-                    ? visibleSubtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestQuery))
-                    : visibleSubtests;
-                  const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
-                  const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
-                  return (
-                    <div key={test.id} className="mb-6 overflow-hidden rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={testOrder} strategy={verticalListSortingStrategy}>
+              {testOrder.map((testId) => {
+                const entry = testDefMap[testId];
+                if (!entry) return null;
+                const { cat, def: test } = entry;
+                const CatIcon = ICON_MAP[cat?.iconKey || 'Box'];
+                const collapsed = collapsedTests[test.id];
+                const editing = editMode[test.id];
+                const selectedIds = Object.keys(tests[test.id] || {});
+                const visibleSubtests = test.subtests.filter((st) => selectedIds.includes(st.id));
+                const subtestQuery = (subtestFilters[test.id] || '').trim().toLowerCase();
+                const filteredSubtests = subtestQuery
+                  ? visibleSubtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestQuery))
+                  : visibleSubtests;
+                const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
+                const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
+                return (
+                  <SortableTestWrapper key={testId} id={testId}>
+                    {(dragListeners) => (
+                    <div className="mb-6 overflow-hidden rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
                       <div className="px-5 py-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)]">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0 flex items-center gap-3">
+                            <button {...dragListeners} className="cursor-grab active:cursor-grabbing touch-none text-[var(--text-secondary)] rounded-xl p-1.5 hover:bg-[var(--card-bg)] hover:shadow-sm transition-all" title="Réordonner" aria-label="Réordonner">
+                              <GripVertical size={16} />
+                            </button>
                             <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-[var(--text-secondary)] rounded-xl p-1.5 hover:bg-[var(--card-bg)] hover:shadow-sm transition-all">
                               {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
                             </button>
                             <div className="min-w-0">
+                              {cat && (
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <CatIcon size={10} className="text-[var(--text-secondary)]" />
+                                  <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">{cat.name}</span>
+                                </div>
+                              )}
                               <h4 className="font-bold text-[var(--text-heading)] truncate">{test.name}</h4>
                               <p className="text-[11px] text-[var(--text-secondary)]">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s) · {testReviewedCount} revue(s)</p>
                             </div>
@@ -2119,7 +2316,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                         onFocus={() => setExpandedSubKey(subKey)}
                                       />
                                     ) : (
-                                      <CompactSubtestRow subtest={st} result={res} onClick={() => setExpandedSubKey(subKey)} />
+                                      <CompactSubtestRow
+                                    subtest={st}
+                                    result={res}
+                                    onClick={() => setExpandedSubKey(subKey)}
+                                    onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
+                                  />
                                     )}
                                     {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
                                   </div>
@@ -2130,11 +2332,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </section>
-            );
-          })}
+                    )}
+                  </SortableTestWrapper>
+                );
+              })}
+            </SortableContext>
+          </DndContext>
         </div>
 
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}

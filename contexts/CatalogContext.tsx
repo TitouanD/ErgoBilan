@@ -11,7 +11,6 @@ import type {
   SubtestInputModel,
 } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
-import { buildSubtestDisplayMetaMap } from '../utils/subtestDisplay';
 
 interface CatalogContextType {
   catalog: CategoryDef[];
@@ -73,13 +72,13 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         let subError: any = null;
         ({ data: subtestsData, error: subError } = await supabase
           .from('view_unified_subtests')
-          .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone'));
+          .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone, always_show_raw, raw_display_decimals'));
 
         if (subError && String(subError.code || '') === '42703') {
-          // Backward-compat: allow older DB schema before raw_direction rollout.
+          // Backward-compat: allow older DB schema before new columns.
           ({ data: subtestsData, error: subError } = await supabase
             .from('view_unified_subtests')
-            .select('id, test_id, name, abbreviation, unit, score_type, computation_mode, input_model, input_config'));
+            .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone'));
         }
 
         if (subError) {
@@ -184,7 +183,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const sub: SubtestDef = {
             id: s.id,
             name: s.name,
-            abbreviation: s.abbreviation || null,
             unit: s.unit || 'pts',
             scoreType: normalizeScoreType(s.score_type),
             lowerIsBetter: false,
@@ -194,6 +192,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             computationMode: normalizeComputationMode(s.computation_mode),
             inputModel,
             inputConfig,
+            alwaysShowRaw: s.always_show_raw === true,
+            rawDisplayDecimals: typeof s.raw_display_decimals === 'number' ? s.raw_display_decimals : undefined,
           };
 
           if (!subtestsByTestId[s.test_id]) {
@@ -201,40 +201,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
           subtestsByTestId[s.test_id].push(sub);
         });
-
-        const hiddenInvalidAmbiguous: Array<{ testId: string; subtestId: string; name: string; abbreviation: string | null }> = [];
-        Object.entries(subtestsByTestId).forEach(([testId, subtests]) => {
-          const metaMap = buildSubtestDisplayMetaMap(subtests);
-          subtestsByTestId[testId] = subtests
-            .map((subtest) => {
-              const meta = metaMap.get(subtest.id);
-              if (!meta) return subtest;
-              return {
-                ...subtest,
-                abbreviation: meta.normalizedAbbreviation || null,
-                displayName: meta.displayName,
-                isAmbiguous: meta.isAmbiguous,
-                isHiddenInvalidAmbiguous: meta.isHiddenInvalidAmbiguous,
-              };
-            })
-            .filter((subtest) => {
-              if (!subtest.isHiddenInvalidAmbiguous) return true;
-              hiddenInvalidAmbiguous.push({
-                testId,
-                subtestId: subtest.id,
-                name: subtest.name,
-                abbreviation: subtest.abbreviation || null,
-              });
-              return false;
-            });
-        });
-
-        if (hiddenInvalidAmbiguous.length > 0) {
-          Logger.warn('DB', 'Hidden ambiguous subtests without abbreviation from catalog', {
-            count: hiddenInvalidAmbiguous.length,
-            samples: hiddenInvalidAmbiguous.slice(0, 10),
-          });
-        }
 
         viewRows?.forEach((row: any) => {
           if (!categoryMap[row.category_id]) {
@@ -281,12 +247,31 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const searchTests = (query: string): TestDef[] => {
     if (!query.trim()) return [];
     if (!hasLoaded) return [];
-    const lowerQ = query.toLowerCase();
-    return flatTests.filter(
-      (t) =>
-        t.name.toLowerCase().includes(lowerQ)
-        || t.subtests.some((s) => (s.displayName || s.name).toLowerCase().includes(lowerQ)),
-    );
+    const lowerQ = query.toLowerCase().trim();
+    // Escape regex special chars so queries like 'C+1' don't throw
+    const safeQ = lowerQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wordStartRe = new RegExp('\\b' + safeQ, 'i');
+
+    const scoreTest = (name: string): number => {
+      const lname = name.toLowerCase();
+      if (lname.startsWith(lowerQ)) return 4;
+      if (wordStartRe.test(name)) return 3;
+      if (lname.includes(lowerQ)) return 2;
+      return 0;
+    };
+
+    const scored = flatTests
+      .map((t) => {
+        const testScore = scoreTest(t.name);
+        const subtestScore = t.subtests.reduce((best, s) => Math.max(best, scoreTest(s.name)), 0);
+        // Subtests matches rank slightly below direct test matches
+        const total = testScore > 0 ? testScore : subtestScore > 0 ? subtestScore - 0.5 : 0;
+        return { test: t, score: total };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    return scored.map((x) => x.test);
   };
 
   return <CatalogContext.Provider value={{ catalog, loading, hasLoaded, ensureCatalogLoaded, searchTests }}>{children}</CatalogContext.Provider>;

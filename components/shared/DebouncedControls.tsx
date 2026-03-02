@@ -68,10 +68,19 @@ export const DebouncedTextarea: React.FC<DebouncedTextareaProps> = ({
     ...props 
 }) => {
     const [localValue, setLocalValue] = useState<string>(initialValue);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         setLocalValue(initialValue);
     }, [initialValue]);
+
+    // Auto-resize on value change
+    useEffect(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    }, [localValue]);
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -96,10 +105,12 @@ export const DebouncedTextarea: React.FC<DebouncedTextareaProps> = ({
 
     return (
         <textarea 
-            {...props} 
+            {...props}
+            ref={textareaRef}
             value={localValue} 
             onChange={handleChange} 
-            onBlur={handleBlur} 
+            onBlur={handleBlur}
+            style={{ overflow: 'hidden', ...props.style }}
         />
     );
 };

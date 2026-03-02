@@ -7,6 +7,8 @@ export interface ParamedicalTracking {
     since: string;
     contact: string;
     reason: string;
+    endDate?: string;
+    sessionCount?: string;
 }
 
 export interface Sibling {
@@ -14,6 +16,7 @@ export interface Sibling {
     age: string;
     relation: string;
     livesWithChild: boolean;
+    livesPartially?: boolean;
 }
 
 export interface Patient {
@@ -29,6 +32,7 @@ export interface Patient {
     parentEmail: string;
     guardArrangement: string;
     guardMode?: string;
+    guardExclusiveOther?: string;
     siblings: Sibling[];
     school: string;
     classLevel: string;
@@ -39,6 +43,7 @@ export interface Patient {
     avsHours?: string;
     avsMissions?: string;
     prescribingDoctor: string;
+    treatingDoctor?: string;
     medicalDiagnosis: string;
     medicalTreatments: string;
     medicalFollowup: string;
@@ -70,7 +75,10 @@ export interface Patient {
     toolUsage: string;
     toolScissors?: string;
     handDominance?: string;
+    writingOther?: string;
     schoolAccommodations: string;
+    schoolDifficulties?: string;
+    schoolDifficultiesOther?: string;
     remarks: string;
     priorities: string;
     goals?: string[];
@@ -111,6 +119,8 @@ export interface ScoreResult {
         zScore?: number;
         source: 'auto' | 'assisted' | 'manual';
     };
+    /** Custom label for 'custom_text' input model (bilan écologique / observation personnalisée) */
+    customLabel?: string;
 }
 
 export interface TestData {

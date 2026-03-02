@@ -15,6 +15,9 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,css,md}\""
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@fontsource/lato": "^5.2.7",
     "@fontsource/merriweather": "^5.2.11",
     "@fontsource/open-sans": "^5.2.7",

@@ -13,7 +13,7 @@ import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
 import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
-import { DisambiguationModal } from './DisambiguationModal';
+import { DisambiguationModal, SKIP_SENTINEL } from './DisambiguationModal';
 import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
 import { analyzeFitting, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
 import {
@@ -2303,15 +2303,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     /** Apply user-supplied renames from DisambiguationModal to all rows across all pages. */
     const handleDisambiguationConfirm = useCallback((renames: Record<string, string>) => {
+        // Split SKIP_SENTINEL entries from actual renames
+        const skipNames = new Set(
+            Object.entries(renames)
+                .filter(([, v]) => v === SKIP_SENTINEL)
+                .map(([k]) => k),
+        );
+        const effectiveRenames: Record<string, string> = {};
+        Object.entries(renames).forEach(([k, v]) => {
+            if (v !== SKIP_SENTINEL) effectiveRenames[k] = v;
+        });
+
         setPages(prev => prev.map(page => ({
             ...withPageReview({
                 ...page,
-                rows: applyManualRenamesWithMerge(page.rows, renames),
+                rows: applyManualRenamesWithMerge(
+                    skipNames.size > 0
+                        ? page.rows.filter((r) => !skipNames.has((r.subtest || '').trim()))
+                        : page.rows,
+                    effectiveRenames,
+                ),
             }),
         })));
         setDuplicatedSids([]);
         setShowDisambiguationModal(false);
-        toast.success('Sous-tests renommés/fusionnés avec succès.');
+        const skippedMsg = skipNames.size > 0 ? ` · ${skipNames.size} colonne(s) ignorée(s).` : '';
+        toast.success(`Sous-tests mis à jour avec succès.${skippedMsg}`);
     }, [toast, withPageReview]);
 
     const handleValidateCurrentPage = () => {
@@ -3657,6 +3674,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             {showDisambiguationModal && (
                 <DisambiguationModal
                     pages={pages}
+                    officialSubtests={canonicalSubtests}
                     onConfirm={handleDisambiguationConfirm}
                     onClose={() => setShowDisambiguationModal(false)}
                 />

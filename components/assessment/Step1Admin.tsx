@@ -91,14 +91,14 @@ const LABEL_MAP: Record<string, string> = {
     seul: 'Mange seul', aide: 'A besoin d\'aide', couverts_ok: 'Bonne utilisation couverts',
     doigts: 'Mange avec les doigts', selectif: 'Très sélectif', salit: 'Salit beaucoup',
     // Clothing
-    acquis: 'Facile', difficile: 'Difficile', aide_totale: 'Impossible',
+    acquis: 'Acquis', difficile: 'Difficile', aide_totale: 'Impossible',
     // Scissors
     hache: 'Hache le papier', tenue_incorrecte: 'Tenue incorrecte',
     ne_sait_pas: 'Ne sait pas utiliser', refuse: 'Refuse',
     // Writing pain
     oui_long: 'Sur longues tâches', oui_vite: 'Au bout de 5 min', oui_constante: 'Immédiate',
     // Hand
-    Droitier: 'Droitier', Gaucher: 'Gaucher', 'Indeterminé': 'Change encore',
+    Droitier: 'Droitier', Gaucher: 'Gaucher', 'Indeterminé': 'Non latéralisé',
     // Gender
     M: 'Garçon', F: 'Fille',
 };
@@ -221,26 +221,30 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Parents', value: data.parentNames }, { label: 'Téléphone', value: data.parentPhone },
           { label: 'Email', value: data.parentEmail },
           { label: 'Garde', value: humanize(data.guardMode) || data.guardArrangement },
-          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans${s.livesWithChild ? ', au domicile' : ''})`).join(' · ') : undefined },
+          { label: 'Garde (autre)', value: data.guardExclusiveOther },
+          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans${s.livesWithChild ? ', domicile' : ''}${s.livesPartially ? ', partiel' : ''})`).join(' · ') : undefined },
+      ]},
+      { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
+          { label: 'Médecin prescripteur', value: data.prescribingDoctor },
+          { label: 'Médecin traitant', value: data.treatingDoctor },
+          { label: 'Diagnostic', value: data.medicalDiagnosis },
+          { label: 'Traitements', value: data.medicalTreatments },
+          { label: 'Suivis', value: data.medicalTracking?.length ? data.medicalTracking.map(t => `${t.type}${t.name ? ` (${t.name})` : ''} — ${t.frequency}${t.reason ? `, motif: ${t.reason}` : ''}${t.endDate ? `, terminé le ${t.endDate}` : ''}${t.sessionCount ? `, ${t.sessionCount} séances` : ''}`).join(' · ') : undefined },
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
           { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel },
           { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
           { label: 'AVS/AESH', value: data.avs === 'OUI' ? `Oui — ${data.avsHours || '?'}h (${data.avsMissions || '?'})` : data.avs === 'NON' ? 'Non' : undefined },
-          { label: 'Attention', value: data.schoolAttention },
+          { label: 'Avis', value: data.schoolAttention },
           { label: 'Comportement social', value: data.socialBehavior },
+          { label: 'Difficultés scolaires', value: humanize(data.schoolDifficulties) },
+          { label: 'Difficultés (autre)', value: data.schoolDifficultiesOther },
           { label: 'Aménagements', value: data.schoolAccommodations },
-      ]},
-      { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
-          { label: 'Médecin', value: data.prescribingDoctor }, { label: 'Diagnostic', value: data.medicalDiagnosis },
-          { label: 'Traitements', value: data.medicalTreatments },
-          { label: 'Suivis', value: data.medicalTracking?.length ? data.medicalTracking.map(t => `${t.type}${t.name ? ` (${t.name})` : ''} — ${t.frequency}${t.reason ? `, motif: ${t.reason}` : ''}`).join(' · ') : undefined },
       ]},
       { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth), fields: [
           { label: 'Grossesse', value: data.pregnancyBirth },
           { label: 'Marche', value: data.walkingAge }, { label: '4 pattes', value: humanize(data.crawling) },
           { label: 'Motricité', value: data.developmentMotor },
-          { label: 'Propreté', value: humanize(data.cleanliness) },
           { label: 'Langage', value: humanize(data.languageStatus) || data.developmentLanguage },
           { label: 'Langage (détails)', value: data.developmentLanguage && data.languageStatus ? data.developmentLanguage : undefined },
           { label: 'Sommeil', value: humanize(data.sleepStatus) },
@@ -257,16 +261,15 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Hygiène', value: data.continence },
           { label: 'Temps/Espace', value: data.timeSpace },
           { label: 'Latéralité', value: humanize(data.handDominance) },
-          { label: 'Ciseaux', value: humanize(data.toolScissors) },
           { label: 'Outils', value: data.toolUsage },
           { label: 'Écriture', value: data.writingIssues },
           { label: 'Douleur écriture', value: humanize(data.writingPain) },
+          { label: 'Autre (trousse)', value: data.writingOther },
           { label: 'Écrans', value: data.screenTime },
           { label: 'Émotions', value: data.emotionalRegulation },
       ]},
-      { title: 'Motif & Priorités', filled: !!(data.reason || data.familyExpectations || (data.goals?.length ?? 0) > 0 || data.remarks), fields: [
+      { title: 'Motif & Priorités', filled: !!(data.reason || (data.goals?.length ?? 0) > 0 || data.remarks), fields: [
           { label: 'Motif', value: data.reason },
-          { label: 'Attentes', value: data.familyExpectations },
           { label: 'Objectifs', value: data.goals?.length ? data.goals.map((g, i) => `${i + 1}. ${g}`).join(' · ') : undefined },
           { label: 'Remarques', value: data.remarks },
       ]},

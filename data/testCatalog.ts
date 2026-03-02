@@ -19,7 +19,7 @@ export const ICON_MAP: Record<string, any> = {
 
 export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
 export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
-export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only';
+export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
 export type RawDirection = 'auto' | 'higher_better' | 'lower_better';
 
 export interface SubtestInputOption {
@@ -42,7 +42,7 @@ export interface SubtestDef {
   abbreviation?: string | null;
   isAmbiguous?: boolean;
   isHiddenInvalidAmbiguous?: boolean;
-  unit: string; 
+  unit: string;
   lowerIsBetter?: boolean;
   rawDirection?: RawDirection;
   sourceSubtestId?: string | null;
@@ -51,6 +51,10 @@ export interface SubtestDef {
   computationMode?: ComputationMode;
   inputModel: SubtestInputModel;
   inputConfig?: SubtestInputConfig;
+  /** Always show raw score input even when no norms are available (Regime B) */
+  alwaysShowRaw?: boolean;
+  /** Number of decimal places to display for raw score (e.g. 1 for BHK) */
+  rawDisplayDecimals?: number;
 }
 
 export interface TestDef {

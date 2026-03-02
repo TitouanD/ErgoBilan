@@ -16,8 +16,8 @@ type SectionKey = 'identity' | 'parents' | 'school' | 'medical' | 'dev' | 'daily
 const SECTIONS_CONFIG: { id: SectionKey; title: string; icon: any }[] = [
     { id: 'identity', title: "Identité de l'enfant", icon: User },
     { id: 'parents', title: "Situation Familiale", icon: Users },
-    { id: 'school', title: "Scolarité & AVS", icon: GraduationCap },
     { id: 'medical', title: "Suivi Médical", icon: Stethoscope },
+    { id: 'school', title: "Scolarité & AVS", icon: GraduationCap },
     { id: 'dev', title: "Développement", icon: Baby },
     { id: 'daily', title: "Vie Quotidienne", icon: Coffee },
     { id: 'reason', title: "Priorités & Objectifs", icon: MessageSquare },
@@ -300,8 +300,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             <h4 className="text-xs font-bold uppercase tracking-wider">État Civil</h4>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
-                                            <div><label className={labelClass}>Nom</label><DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" /></div>
                                             <div><label className={labelClass}>Prénom</label><DebouncedInput name="firstName" value={data.firstName || ''} onChange={(v) => handleFieldChange('firstName', v)} className={inputClass} placeholder="Prénom" /></div>
+                                            <div><label className={labelClass}>Nom</label><DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" /></div>
                                             <div><label className={labelClass}>Date de naissance</label><input type="date" name="dob" value={data.dob || ''} onChange={handleChange} className={inputClass} /></div>
                                             <div>
                                                 <label className={labelClass}>Genre</label>
@@ -366,9 +366,16 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     />
                                                 </div>
                                                 {(data.guardMode || '').startsWith('exclusive') && (
-                                                    <div className="flex gap-4 mt-3 ml-1 animate-in slide-in-from-top-2">
+                                                    <div className="flex flex-wrap gap-4 mt-3 ml-1 animate-in slide-in-from-top-2">
                                                         <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]"><input type="radio" name="exclusiveParent" value="exclusive_mere" checked={data.guardMode === 'exclusive_mere'} onChange={() => handleFieldChange('guardMode', 'exclusive_mere')} className="accent-[#E07A5F] w-4 h-4"/> Chez la mère</label>
                                                         <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]"><input type="radio" name="exclusiveParent" value="exclusive_pere" checked={data.guardMode === 'exclusive_pere'} onChange={() => handleFieldChange('guardMode', 'exclusive_pere')} className="accent-[#E07A5F] w-4 h-4"/> Chez le père</label>
+                                                        <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]"><input type="radio" name="exclusiveParent" value="exclusive_autre" checked={data.guardMode === 'exclusive_autre'} onChange={() => handleFieldChange('guardMode', 'exclusive_autre')} className="accent-[#E07A5F] w-4 h-4"/> Autre</label>
+                                                    </div>
+                                                )}
+                                                {data.guardMode === 'exclusive_autre' && (
+                                                    <div className="mt-2 animate-in slide-in-from-top-2">
+                                                        <label className={labelClass}>Préciser (famille d&apos;accueil, tuteur...)</label>
+                                                        <DebouncedInput name="guardExclusiveOther" value={data.guardExclusiveOther || ''} onChange={(v) => handleFieldChange('guardExclusiveOther', v)} className={inputClass} placeholder="Ex : famille d'accueil, grands-parents..." />
                                                     </div>
                                                 )}
                                             </div>
@@ -418,6 +425,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         title={sib.livesWithChild ? "Vit au domicile" : "Ne vit pas au domicile"}
                                                     >
                                                         <Home size={16} />
+                                                    </button>
+
+                                                    {/* BOUTON VIT PARTIELLEMENT (garde alternée) */}
+                                                    <button 
+                                                        onClick={() => updateSibling(idx, 'livesPartially', !sib.livesPartially)}
+                                                        className={`p-2 rounded-lg border transition-all text-xs font-bold ${sib.livesPartially ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700/30 text-amber-600 dark:text-amber-400' : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'}`}
+                                                        title={sib.livesPartially ? "Vit partiellement au domicile (garde alternée)" : "Résidence habituelle"}
+                                                    >
+                                                        ½
                                                     </button>
 
                                                     <button onClick={() => removeSibling(idx)} className="p-2 text-[var(--text-disabled)] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"><Trash2 size={16}/></button>
@@ -490,26 +506,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         />
                                     </div>
 
-                                    {/* COMPORTEMENT SCOLAIRE (Page 4 PDF) */}
-                                    <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] mt-6 space-y-4">
-                                        <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Book size={14}/> Vie Scolaire & Sociale</h4>
-                                        
-                                        <div>
-                                            <label className={labelClass}>Attention & Participation (En classe)</label>
-                                            <DebouncedInput name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} placeholder="Attentif, rêveur, participe..." />
-                                        </div>
-                                        
-                                        <div>
-                                            <label className={labelClass}>Relations avec les camarades</label>
-                                            <DebouncedInput name="socialBehavior" value={data.socialBehavior || ''} onChange={(v) => handleFieldChange('socialBehavior', v)} className={inputClass} placeholder="Copains, récréation, conflits..." />
-                                        </div>
-
-                                        <div>
-                                            <label className={labelClass}>Aménagements classe (hors AVS)</label>
-                                            <DebouncedTextarea name="schoolAccommodations" value={data.schoolAccommodations || ''} onChange={(v) => handleFieldChange('schoolAccommodations', v)} className={inputClass} placeholder="Tiers-temps, photocopies, placement devant..." rows={2} />
-                                        </div>
-                                    </div>
-
                                     <FamilyNextButton sectionId={section.id} />
                                 </div>
                             )}
@@ -521,7 +517,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     {/* HAUT DE PAGE 3 PDF */}
                                     <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--border-color)] mb-4 space-y-4">
                                         <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Stethoscope size={14}/> Cadre Médical</h4>
-                                        <div><label className={labelClass}>Médecin prescripteur</label><DebouncedInput name="prescribingDoctor" value={data.prescribingDoctor || ''} onChange={(v) => handleFieldChange('prescribingDoctor', v)} className={inputClass} placeholder="Nom du médecin" /></div>
+                                        <div><label className={labelClass}>Médecin prescripteur</label><DebouncedInput name="prescribingDoctor" value={data.prescribingDoctor || ''} onChange={(v) => handleFieldChange('prescribingDoctor', v)} className={inputClass} placeholder="Nom du médecin prescripteur" /></div>
+                                        <div><label className={labelClass}>Médecin traitant</label><DebouncedInput name="treatingDoctor" value={data.treatingDoctor || ''} onChange={(v) => handleFieldChange('treatingDoctor', v)} className={inputClass} placeholder="Nom du médecin traitant" /></div>
                                         <div><label className={labelClass}>Diagnostics médicaux</label><DebouncedInput name="medicalDiagnosis" value={data.medicalDiagnosis || ''} onChange={(v) => handleFieldChange('medicalDiagnosis', v)} className={inputClass} placeholder="Si connu (ex: TDAH, Dys...)" /></div>
                                         <div><label className={labelClass}>Traitements en cours</label><DebouncedInput name="medicalTreatments" value={data.medicalTreatments || ''} onChange={(v) => handleFieldChange('medicalTreatments', v)} className={inputClass} placeholder="Médicaments, lunettes..." /></div>
                                     </div>
@@ -534,22 +531,34 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         </div>
                                         <div className="space-y-3">
                                             {(data.medicalTracking || []).map((track, idx) => (
-                                                <div key={track.id || idx} className="bg-[var(--card-bg)] p-3 rounded-xl border border-emerald-500/20 shadow-sm flex flex-col md:flex-row gap-3 items-start md:items-center">
-                                                    <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-2 w-full">
-                                                        <select value={track.type} onChange={(e) => updateMedicalTracking(idx, 'type', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold text-[var(--text-heading)] border border-[var(--input-border)] outline-none">
-                                                            <option>Orthophoniste</option><option>Psychomotricien</option><option>Psychologue</option><option>Neuropsychologue</option><option>Kiné</option><option>Orthoptiste</option><option>Ergothérapeute</option><option>Pédopsychiatre</option><option>Neuropédiatre</option><option>Ophtalmologue</option><option>Podologue</option><option>ORL</option><option>Autre</option>
-                                                        </select>
-                                                        <input 
-                                                            placeholder="Nom" 
-                                                            value={track.name} 
-                                                            onChange={(e) => updateMedicalTracking(idx, 'name', e.target.value)} 
-                                                            className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" 
-                                                        />
-                                                        <input placeholder="Motif..." value={track.reason || ''} onChange={(e) => updateMedicalTracking(idx, 'reason', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none md:col-span-1 text-[var(--text-heading)]" />
-                                                        <input placeholder="Fréquence" value={track.frequency} onChange={(e) => updateMedicalTracking(idx, 'frequency', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
-                                                        <input placeholder="Depuis..." value={track.since} onChange={(e) => updateMedicalTracking(idx, 'since', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                <div key={track.id || idx} className="bg-[var(--card-bg)] p-3 rounded-xl border border-emerald-500/20 shadow-sm flex flex-col gap-2">
+                                                    <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+                                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-2 w-full">
+                                                            <select value={track.type} onChange={(e) => updateMedicalTracking(idx, 'type', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold text-[var(--text-heading)] border border-[var(--input-border)] outline-none">
+                                                                <option>Orthophoniste</option><option>Psychomotricien</option><option>Psychologue</option><option>Neuropsychologue</option><option>Kiné</option><option>Orthoptiste</option><option>Ergothérapeute</option><option>Pédopsychiatre</option><option>Neuropediatre</option><option>Ophtalmologue</option><option>Podologue</option><option>ORL</option><option>Autre</option>
+                                                            </select>
+                                                            <input 
+                                                                placeholder="Nom" 
+                                                                value={track.name} 
+                                                                onChange={(e) => updateMedicalTracking(idx, 'name', e.target.value)} 
+                                                                className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" 
+                                                            />
+                                                            <input placeholder="Motif..." value={track.reason || ''} onChange={(e) => updateMedicalTracking(idx, 'reason', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none md:col-span-1 text-[var(--text-heading)]" />
+                                                            <input placeholder="Fréquence" value={track.frequency} onChange={(e) => updateMedicalTracking(idx, 'frequency', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                            <input placeholder="Depuis..." value={track.since} onChange={(e) => updateMedicalTracking(idx, 'since', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                        </div>
+                                                        <button onClick={() => removeMedicalTracking(idx)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 size={16}/></button>
                                                     </div>
-                                                    <button onClick={() => removeMedicalTracking(idx)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 size={16}/></button>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1 mb-0.5 block">Terminé le</label>
+                                                            <input type="date" value={track.endDate || ''} onChange={(e) => updateMedicalTracking(idx, 'endDate', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1 mb-0.5 block">Nb de séances effectuées</label>
+                                                            <input type="number" min="0" placeholder="Ex: 24" value={track.sessionCount || ''} onChange={(e) => updateMedicalTracking(idx, 'sessionCount', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ))}
                                             {(!data.medicalTracking || data.medicalTracking.length === 0) && <p className="text-xs text-[var(--text-secondary)] italic text-center">Aucun suivi renseigné.</p>}
@@ -590,16 +599,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div>
                                         <label className={labelClass}>Développement moteur</label>
                                         <DebouncedTextarea name="developmentMotor" value={data.developmentMotor || ''} onChange={(v) => handleFieldChange('developmentMotor', v)} className={inputClass} placeholder="Marcher, courir, grimper, sauter, pédaler, équilibre..." rows={2} />
-                                    </div>
-
-                                    {/* Propreté */}
-                                    <div>
-                                        <label className={labelClass}>Propreté</label>
-                                        <ChipGroup 
-                                            options={[{value: 'acquise', label: 'Acquise jour/nuit'}, {value: 'jour_seul', label: 'Jour uniquement'}, {value: 'en_cours', label: 'En cours'}, {value: 'accidents', label: 'Accidents fréquents'}, {value: 'enuresie', label: 'Énurésie nocturne'}]}
-                                            value={data.cleanliness} 
-                                            onChange={(v) => handleFieldChange('cleanliness', v)} 
-                                        />
                                     </div>
 
                                     {/* Langage */}
@@ -678,7 +677,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                             <label key={opt} className="cursor-pointer">
                                                                 <input type="radio" name={item.key} value={opt} checked={(data as any)[item.key] === opt} onChange={handleChange} className="peer sr-only"/>
                                                                 <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
-                                                                    {opt === 'acquis' ? 'Facile' : opt === 'difficile' ? 'Difficile' : 'Impossible'}
+                                                                    {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : 'Impossible'}
                                                                 </div>
                                                             </label>
                                                         ))}
@@ -712,27 +711,63 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     {/* OUTILS SCOLAIRES */}
                                     <div className="bg-[#f0f9ff] dark:bg-sky-950/20 border border-sky-100 dark:border-sky-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-sky-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Scissors size={14}/> Trousse & Écriture</h4>
-                                        
+
+                                        {/* VIE SCOLAIRE & SOCIALE */}
+                                        <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] mb-4 space-y-4">
+                                            <h5 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Book size={14}/> Vie Scolaire & Sociale</h5>
+                                            <div>
+                                                <label className={labelClass}>Attention & Participation (En classe)</label>
+                                                <DebouncedInput name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} placeholder="Attentif, rêveuse, participe..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Relations avec les camarades</label>
+                                                <DebouncedInput name="socialBehavior" value={data.socialBehavior || ''} onChange={(v) => handleFieldChange('socialBehavior', v)} className={inputClass} placeholder="Copains, récréation, conflits..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Difficultés observées (plusieurs choix possibles)</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        {value: 'ecriture', label: 'Écriture'},
+                                                        {value: 'outils', label: 'Outils scolaires'},
+                                                        {value: 'autre', label: 'Autre'},
+                                                    ]}
+                                                    value={data.schoolDifficulties}
+                                                    onChange={(v) => handleFieldChange('schoolDifficulties', v)}
+                                                    multi
+                                                />
+                                            </div>
+                                            {(data.schoolDifficulties || '').includes('autre') && (
+                                                <div className="animate-in slide-in-from-top-2">
+                                                    <label className={labelClass}>Préciser « Autre »</label>
+                                                    <DebouncedTextarea name="schoolDifficultiesOther" value={data.schoolDifficultiesOther || ''} onChange={(v) => handleFieldChange('schoolDifficultiesOther', v)} className={inputClass} rows={2} placeholder="Décrivez les difficultés..." />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <label className={labelClass}>Aménagements classe (hors AVS)</label>
+                                                <DebouncedTextarea name="schoolAccommodations" value={data.schoolAccommodations || ''} onChange={(v) => handleFieldChange('schoolAccommodations', v)} className={inputClass} placeholder="Tiers-temps, photocopies, placement devant..." rows={2} />
+                                            </div>
+                                        </div>
+
                                         <div className="space-y-4">
                                             <div>
                                                 <label className={labelClass}>Main dominante</label>
-                                                <ChipGroup options={[{value: 'Droitier', label: 'Droitier'}, {value: 'Gaucher', label: 'Gaucher'}, {value: 'Indeterminé', label: 'Change encore'}]} value={data.handDominance} onChange={(v) => handleFieldChange('handDominance', v)} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Découpage (Ciseaux)</label>
-                                                <ChipGroup options={[{value: 'ok', label: 'Suit la ligne'}, {value: 'hache', label: 'Hache le papier'}, {value: 'tenue_incorrecte', label: 'Tenue incorrecte'}, {value: 'ne_sait_pas', label: 'Ne sait pas utiliser'}, {value: 'refuse', label: 'Refuse'}]} value={data.toolScissors} onChange={(v) => handleFieldChange('toolScissors', v)} />
+                                                <ChipGroup options={[{value: 'Droitier', label: 'Droitier'}, {value: 'Gaucher', label: 'Gaucher'}, {value: 'Indeterminé', label: 'Non latéralisé'}]} value={data.handDominance} onChange={(v) => handleFieldChange('handDominance', v)} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Autres outils scolaires (compas, règle, gomme...)</label>
                                                 <DebouncedTextarea name="toolUsage" value={data.toolUsage || ''} onChange={(v) => handleFieldChange('toolUsage', v)} className={inputClass} placeholder="Utilise-t-il le compas, la règle, la gomme correctement ?" rows={2} />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Difficultés d’écriture</label>
+                                                <label className={labelClass}>Difficultés d'écriture</label>
                                                 <DebouncedTextarea name="writingIssues" value={data.writingIssues || ''} onChange={(v) => handleFieldChange('writingIssues', v)} className={inputClass} placeholder="Lettres en miroir, saut de lignes, lisibilité, tenue du crayon, lenteur..." rows={2} />
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Douleur en écrivant ?</label>
                                                 <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_long', label: 'Sur longues tâches'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Autre (remarques complémentaires trousse & écriture)</label>
+                                                <DebouncedTextarea name="writingOther" value={data.writingOther || ''} onChange={(v) => handleFieldChange('writingOther', v)} className={inputClass} rows={2} placeholder="Tout autre élément relatif à la trousse ou à l'écriture..." />
                                             </div>
                                         </div>
                                     </div>
@@ -765,10 +800,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <div>
                                             <label className={labelClass}>Pourquoi consultez-vous en ergothérapie ?</label>
                                             <DebouncedTextarea name="reason" value={data.reason || ''} onChange={(v) => handleFieldChange('reason', v)} className={inputClass} placeholder="Décrivez ce qui vous amène à consulter (difficultés scolaires, motrices, comportementales...)" rows={3} />
-                                        </div>
-                                        <div>
-                                            <label className={labelClass}>Attentes de la famille</label>
-                                            <DebouncedTextarea name="familyExpectations" value={data.familyExpectations || ''} onChange={(v) => handleFieldChange('familyExpectations', v)} className={inputClass} placeholder="Qu’attendez-vous de ce bilan ? Quels changements espérez-vous ?" rows={2} />
                                         </div>
                                     </div>
 
