@@ -3,7 +3,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../types';
-import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel } from '../../data/testCatalog';
+import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel, type SubtestItem, type ItemsAggregation } from '../../data/testCatalog';
 import { ScoringEngine } from '../../services/scoringEngine';
 import { calculateFromPercentile, calculateFromStandard, calculateFromZ } from '../../utils/scoring';
 import { getNormStatusMessage, resolveEffectiveDirection, type EffectiveDirection, type NormsStatusCode } from '../../utils/scoreDirection';
@@ -999,6 +999,403 @@ const CustomTextRow: React.FC<{
   );
 };
 
+/* ─── Helpers for computed_items aggregation ─── */
+const computeAggregate = (
+  items: SubtestItem[],
+  values: Record<string, number>,
+  aggregation: ItemsAggregation,
+  direction: EffectiveDirection,
+): number | null => {
+  const defined = items
+    .filter(it => !it.isMaster && values[it.id] !== undefined && Number.isFinite(values[it.id]))
+    .map(it => values[it.id]);
+
+  if (defined.length === 0) return null;
+
+  if (aggregation === 'sum') {
+    return defined.reduce((a, b) => a + b, 0);
+  }
+  if (aggregation === 'best_of') {
+    return direction === 'lower_better' ? Math.min(...defined) : Math.max(...defined);
+  }
+  if (aggregation === 'mean') {
+    return defined.reduce((a, b) => a + b, 0) / defined.length;
+  }
+  // 'custom' — caller must provide brut directly
+  return null;
+};
+
+/* ─── CompositeItemsRow ─── */
+const CompositeItemsRow: React.FC<{
+  testId: string;
+  patient: Patient;
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  hasNorms?: boolean;
+  normsStatusCode?: NormsStatusCode;
+  effectiveDirection: EffectiveDirection;
+  baseDirection: EffectiveDirection;
+  onToggleDirection?: () => void;
+  hasPendingDirectionOverride?: boolean;
+}> = ({
+  testId,
+  patient,
+  subtest,
+  result,
+  onChange,
+  readOnly,
+  onFocus,
+  hasNorms,
+  normsStatusCode,
+  effectiveDirection,
+  baseDirection,
+  onToggleDirection,
+  hasPendingDirectionOverride,
+}) => {
+  const cfg = subtest.inputConfig ?? {};
+  const items: SubtestItem[] = cfg.items ?? [];
+  const aggregation: ItemsAggregation = cfg.itemsAggregation ?? 'sum';
+  const isCustomAgg = aggregation === 'custom';
+  const scoreType = subtest.scoreType || 'standard';
+  const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
+  const canAutoConvert = !conversionLocked;
+  const hasAutoNorms = Boolean(hasNorms) && canAutoConvert;
+
+  const [isComputing, setIsComputing] = useState(false);
+  const [warn, setWarn] = useState<string | null>(null);
+  const [itemsExpanded, setItemsExpanded] = useState(true);
+  const [directMode, setDirectMode] = useState(isCustomAgg);
+
+  /** Local state mirrors result.rawItems for immediate UI reactivity */
+  const [localItemValues, setLocalItemValues] = useState<Record<string, number>>(
+    result.rawItems ?? {},
+  );
+
+  // Sync localItemValues when result.rawItems changes externally (e.g. load from DB)
+  useEffect(() => {
+    setLocalItemValues(result.rawItems ?? {});
+  }, [result.rawItems]);
+
+  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
+
+  /** Run the scoring RPC with the given raw string value */
+  const fireScoring = useCallback(async (rawStr: string, rawVal: number) => {
+    if (!canAutoConvert || !hasAutoNorms) {
+      setPatch({ raw: rawStr, derived: { source: 'manual' } });
+      return;
+    }
+    setIsComputing(true);
+    try {
+      const dbSubtestId = subtest.id.includes('_') ? subtest.id : `${testId}_${subtest.id}`;
+      const out = await ScoringEngine.compute(
+        dbSubtestId,
+        rawVal,
+        ageMonths(patient.dob),
+        patient.gender === 'F' ? 'F' : 'M',
+        patient.classLevel,
+      );
+      if (!out || !out.normFound) {
+        const msg = getNormStatusMessage(normsStatusCode) || 'Normes introuvables — saisie manuelle.';
+        setWarn(msg);
+        setPatch({ raw: rawStr, derived: { source: 'manual' } });
+        return;
+      }
+      let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
+      let standardToUse = out.standard ?? '';
+      let percentileToUse = out.percentile ?? '';
+      if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
+        zToUse = -zToUse;
+        const r = calculateFromZ(zToUse, scoreType);
+        standardToUse = r.standard ?? '';
+        percentileToUse = r.percentile ?? '';
+      }
+      const warningList = out.warnings.map(humanizeComputeWarning);
+      if (effectiveDirection !== baseDirection) warningList.push('Sens brut inversé localement.');
+      setWarn(warningList.length > 0 ? warningList.join(' | ') : null);
+      setPatch({
+        raw: rawStr,
+        standard: standardToUse,
+        percentile: percentileToUse,
+        zScore: zToUse ?? undefined,
+        derived: { standard: standardToUse || undefined, percentile: percentileToUse || undefined, zScore: zToUse ?? undefined, source: 'auto' },
+        scoreSource: 'auto',
+        conversionMode: 'auto',
+      });
+    } catch {
+      setWarn('Erreur lors du calcul automatique.');
+      setPatch({ raw: rawStr, derived: { source: 'manual' } });
+    } finally {
+      setIsComputing(false);
+    }
+  }, [subtest.id, testId, patient, hasAutoNorms, canAutoConvert, effectiveDirection, baseDirection, scoreType, normsStatusCode]);
+
+  /** Called whenever an item value changes */
+  const handleItemChange = useCallback((itemId: string, raw: string) => {
+    if (readOnly) return;
+    const n = parseNum(raw);
+    const nextValues = { ...localItemValues };
+    if (n !== null) nextValues[itemId] = n;
+    else delete nextValues[itemId];
+
+    setLocalItemValues(nextValues);
+
+    const agg = computeAggregate(items, nextValues, aggregation, effectiveDirection);
+    if (agg !== null) {
+      const decimals = subtest.rawDisplayDecimals ?? 0;
+      const aggStr = decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg));
+      // Persist both rawItems and the aggregate raw
+      onChange(mergePatch(result, { rawItems: nextValues, raw: aggStr, derived: { source: 'manual' } }));
+      void fireScoring(aggStr, agg);
+    } else {
+      onChange(mergePatch(result, { rawItems: nextValues }));
+    }
+  }, [localItemValues, items, aggregation, effectiveDirection, result, subtest.rawDisplayDecimals, readOnly, fireScoring, onChange]);
+
+  const handleDirectRaw = useCallback(async (text: string) => {
+    if (readOnly) return;
+    setPatch({ raw: text, rawItems: {} });
+    setLocalItemValues({});
+    const n = parseNum(text);
+    if (n !== null) void fireScoring(text, n);
+  }, [readOnly, fireScoring]);
+
+  const agg = computeAggregate(items, localItemValues, aggregation, effectiveDirection);
+  const decimals = subtest.rawDisplayDecimals ?? 0;
+  const aggDisplay = agg !== null
+    ? (decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg)))
+    : null;
+  const displayedRaw = aggDisplay ?? (result.raw || null);
+
+  const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
+  let visualZ: number | null = hasZ ? result.zScore! : null;
+  if (visualZ === null && !conversionLocked && result.standard) {
+    const s = parseNum(result.standard);
+    if (s !== null) visualZ = calculateFromStandard(s, scoreType).zScore;
+  }
+
+  const filledCount = items.filter(it => localItemValues[it.id] !== undefined).length;
+  const allFilled = filledCount > 0 && filledCount >= items.filter(it => !it.isMaster).length;
+
+  const displayGroup = cfg.displayGroup ?? 'column';
+  const gridClass = displayGroup === 'grid_2' ? 'grid grid-cols-2 gap-2' :
+    displayGroup === 'grid_3' ? 'grid grid-cols-3 gap-2' :
+    displayGroup === 'table' ? 'divide-y divide-[var(--border-color)]' :
+    'space-y-2';
+
+  return (
+    <div className="bg-[var(--card-bg)]">
+      <div className="p-4 md:p-5">
+
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
+            <div className="flex items-center flex-wrap gap-1.5 mt-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
+              {getScaleLabel(subtest.scoreType) && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
+                  {getScaleLabel(subtest.scoreType)}
+                </span>
+              )}
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300">
+                <Layers size={9} className="inline mr-0.5" />Items
+              </span>
+              {hasAutoNorms && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Normes ✓</span>
+              )}
+              {!hasAutoNorms && normsStatusCode && normsStatusCode !== 'ok' && (
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">Pas de normes</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isComputing && <Loader2 size={14} className="animate-spin text-[#E07A5F]" />}
+          </div>
+        </div>
+
+        {/* ── Items section ── */}
+        {!directMode && items.length > 0 && (
+          <div className="mb-4 rounded-xl border border-[var(--border-color)] overflow-hidden">
+            {/* Items header */}
+            <button
+              type="button"
+              onClick={() => setItemsExpanded(e => !e)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-[var(--hover-bg)] text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Layers size={11} />
+                Items
+                <span className="rounded-full bg-[var(--border-color)] px-1.5 py-0.5 text-[9px] font-medium">
+                  {filledCount}/{items.filter(it => !it.isMaster).length}
+                </span>
+              </span>
+              {itemsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+
+            {itemsExpanded && (
+              <div className={`p-3 ${gridClass}`}>
+                {items.map((item) => {
+                  const val = localItemValues[item.id];
+                  const strVal = val !== undefined ? String(val) : '';
+                  if (item.type === 'boolean') {
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-2 py-1.5">
+                        <span className="text-xs text-[var(--text-main)] font-medium">{item.label}</span>
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          onClick={() => handleItemChange(item.id, String(val === 1 ? 0 : 1))}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${val === 1 ? 'bg-emerald-500 text-white border-emerald-500' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
+                        >
+                          {val === 1 ? 'Oui' : 'Non'}
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={item.id} className={`flex items-center gap-2 ${item.wide ? 'col-span-full' : ''}`}>
+                      <label className="text-xs text-[var(--text-main)] font-medium flex-1 min-w-0 truncate">
+                        {item.label}
+                      </label>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <input
+                          type="number"
+                          value={strVal}
+                          min={item.min}
+                          max={item.max}
+                          step={item.decimals !== undefined ? Math.pow(10, -item.decimals) : 1}
+                          disabled={readOnly || item.isMaster}
+                          onFocus={() => onFocus?.()}
+                          onChange={(e) => handleItemChange(item.id, e.target.value)}
+                          placeholder="–"
+                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          aria-label={item.label}
+                        />
+                        {item.unit && (
+                          <span className="text-[10px] text-[var(--text-secondary)] font-medium w-8">{item.unit}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Brut agrégé ── */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+              {isCustomAgg || directMode ? 'Brut' : 'Brut calculé'}
+              {cfg.aggregationHint && !directMode && (
+                <span className="ml-1.5 text-[9px] font-normal text-[var(--text-disabled)] normal-case">
+                  ({cfg.aggregationHint})
+                </span>
+              )}
+            </span>
+            {/* Toggle direct/items mode */}
+            {items.length > 0 && !isCustomAgg && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDirectMode(d => !d);
+                  if (!directMode) { setLocalItemValues({}); setPatch({ rawItems: {} }); }
+                }}
+                className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[#E07A5F] transition-colors"
+              >
+                {directMode ? '← Saisir par items' : 'Saisie directe →'}
+              </button>
+            )}
+          </div>
+
+          {directMode || isCustomAgg ? (
+            <input
+              value={result.raw || ''}
+              disabled={readOnly}
+              inputMode="decimal"
+              onFocus={() => onFocus?.()}
+              onChange={(e) => void handleDirectRaw(e.target.value)}
+              placeholder="–"
+              className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[#E07A5F] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
+            />
+          ) : (
+            <div className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 ${displayedRaw !== null ? 'bg-[#3D405B]/8 border border-[#3D405B]/15' : 'border border-dashed border-[var(--border-color)]'}`}>
+              <span className={`text-3xl font-bold tabular-nums ${displayedRaw !== null ? 'text-[var(--text-heading)]' : 'text-[var(--text-disabled)]'}`}>
+                {displayedRaw ?? '–'}
+              </span>
+              {subtest.unit && displayedRaw !== null && (
+                <span className="text-xs text-[var(--text-secondary)] font-medium">{subtest.unit}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Standardised scores (if not score_type=none) ── */}
+        {!conversionLocked && (
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                {getMetricDisplayLabel('standard', subtest.scoreType)}
+              </label>
+              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-heading)] tabular-nums border-b border-[var(--border-color)]">
+                {result.standard || '–'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">ET</label>
+              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-heading)] tabular-nums border-b border-[var(--border-color)]">
+                {hasZ ? `${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}` : '–'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">%</label>
+              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
+                {result.percentile || '–'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Direction badge ── */}
+        {canAutoConvert && subtest.scoreType !== 'none' && (
+          <div className="flex items-center gap-2 mb-2">
+            <DirectionBadge
+              direction={effectiveDirection}
+              pending={hasPendingDirectionOverride}
+              interactive
+              disabled={readOnly || !onToggleDirection}
+              onClick={onToggleDirection}
+            />
+            <span className="text-[10px] text-[var(--text-disabled)]">
+              {effectiveDirection === 'lower_better' ? 'Score décroissant avec le brut' : 'Score croissant avec le brut'}
+            </span>
+          </div>
+        )}
+
+        <GaussBand z={visualZ} />
+
+        {warn && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
+            <AlertTriangle size={12} />{warn}
+          </div>
+        )}
+        {hasPendingDirectionOverride && (
+          <div className="mt-2 rounded-lg border border-[#E07A5F]/30 bg-[#E07A5F]/10 px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
+            <AlertTriangle size={12} />Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
+          </div>
+        )}
+
+        <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
+        <div className="mt-3"><ReviewButton result={result} onChange={onChange} /></div>
+      </div>
+    </div>
+  );
+};
+
 const FlexibleSubtestRow = React.memo((props: {
   testId: string;
   patient: Patient;
@@ -1020,6 +1417,23 @@ const FlexibleSubtestRow = React.memo((props: {
   if (model === 'custom_text') return <CustomTextRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
   if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
+  if (model === 'computed_items') return (
+    <CompositeItemsRow
+      testId={props.testId}
+      patient={props.patient}
+      subtest={props.subtest}
+      result={props.result}
+      onChange={props.onChange}
+      readOnly={props.readOnly}
+      onFocus={props.onFocus}
+      hasNorms={props.hasNorms}
+      normsStatusCode={props.normsStatusCode}
+      effectiveDirection={props.effectiveDirection}
+      baseDirection={props.baseDirection}
+      onToggleDirection={props.onToggleDirection}
+      hasPendingDirectionOverride={props.hasPendingDirectionOverride}
+    />
+  );
   return (
     <NumericRow
       testId={props.testId}

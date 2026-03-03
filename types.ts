@@ -121,6 +121,12 @@ export interface ScoreResult {
     };
     /** Custom label for 'custom_text' input model (bilan écologique / observation personnalisée) */
     customLabel?: string;
+    /**
+     * Per-item raw values for 'computed_items' input model.
+     * Key = SubtestItem.id, Value = the numeric value entered by the practitioner.
+     * Persisted alongside the aggregate `raw` score.
+     */
+    rawItems?: Record<string, number>;
 }
 
 export interface TestData {

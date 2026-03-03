@@ -11,10 +11,16 @@ interface BioResponse {
   profil_occupationnel?: string;
 }
 
+interface ReformulatedObsEntry {
+  subtestId: string;
+  text: string;
+}
+
 interface DiagResponse {
   synthese_diagnostic?: string;
   recommandations?: string;
   objectifs_generaux?: string;
+  reformulated_observations?: ReformulatedObsEntry[];
 }
 
 export interface GenerationPayload {
@@ -25,6 +31,12 @@ export interface GenerationPayload {
   synthesis: ClinicalSynthesis;
 }
 
+export interface GenerationResult {
+  sections: GeneratedReportSection[];
+  /** subtestId → reformulated clinical observation text (for PDF annex) */
+  reformulatedObservations: Record<string, string>;
+}
+
 const getAgeYears = (ageStr: string): number => {
   const match = ageStr.match(/(\d+)\s*(?:ans|yrs|years)?/i);
   if (ageStr.toLowerCase().includes('mois') && !ageStr.toLowerCase().includes('ans')) return 0;
@@ -32,7 +44,7 @@ const getAgeYears = (ageStr: string): number => {
 };
 
 export const AIService = {
-  generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<GeneratedReportSection[]> => {
+  generateFullReport: async (payload: GenerationPayload, patient: Patient): Promise<GenerationResult> => {
     Logger.info('AI', 'Starting report generation process', { patientId: patient.id });
 
     const ageYears = getAgeYears(patient.age);
@@ -57,6 +69,7 @@ export const AIService = {
         task: 'report_diagnostic',
         payload: {
           profile,
+          childContext: payload.childContext,
           profilContext: jsonBio?.profil_occupationnel || 'Non disponible',
           safeObservations: payload.safeObservations,
           scoresEvidence: payload.scoresEvidence,
@@ -66,6 +79,16 @@ export const AIService = {
       });
 
       const jsonDiag = cleanAndParseJson(diagResponse.text) as DiagResponse | null;
+
+      // Build reformulated observations map (subtestId → reformulated text)
+      const reformulatedObservations: Record<string, string> = {};
+      if (Array.isArray(jsonDiag?.reformulated_observations)) {
+        for (const entry of jsonDiag.reformulated_observations) {
+          if (entry?.subtestId && entry?.text) {
+            reformulatedObservations[entry.subtestId] = entry.text;
+          }
+        }
+      }
 
       const sections: GeneratedReportSection[] = [
         {
@@ -97,22 +120,22 @@ export const AIService = {
           isAiGenerated: true,
         },
         {
-          id: 'recommandations',
-          title: profile === 'adult' ? 'Pr\u00e9conisations' : 'Recommandations',
-          content: sanitizeReportText(hydrateReport(jsonDiag?.recommandations || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
-          status: 'draft',
-          isAiGenerated: true,
-        },
-        {
           id: 'objectifs',
           title: 'Les objectifs g\u00e9n\u00e9raux',
           content: sanitizeReportText(hydrateReport(jsonDiag?.objectifs_generaux || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },
+        {
+          id: 'recommandations',
+          title: profile === 'adult' ? 'Pr\u00e9conisations' : 'Recommandations',
+          content: sanitizeReportText(hydrateReport(jsonDiag?.recommandations || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
+          status: 'draft',
+          isAiGenerated: true,
+        },
       ];
 
-      return sections;
+      return { sections, reformulatedObservations };
     } catch (e: unknown) {
       Logger.error('AI', 'Generation failed', e);
       throw e;

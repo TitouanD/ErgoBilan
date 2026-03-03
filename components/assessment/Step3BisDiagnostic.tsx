@@ -63,58 +63,75 @@ const VoiceArea: React.FC<{
     );
 };
 
-// --- TEST SUMMARY PANEL (replaces Points d'appel) ---
+// --- TEST SUMMARY PANEL (grouped by clinical category) ---
 const TestSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
     const { catalog } = useCatalog();
 
-    const testScores = useMemo(() => {
-        const testNameMap: Record<string, string> = {};
+    const groupedScores = useMemo((): Record<string, { testId: string; name: string; avg: number }[]> => {
+        // Build testId → { name, categoryName } map from catalog
+        const testInfoMap: Record<string, { name: string; categoryName: string }> = {};
         catalog.forEach(cat => {
             cat.tests.forEach(t => {
-                testNameMap[t.id] = t.name;
+                testInfoMap[t.id] = { name: t.name, categoryName: cat.name };
             });
         });
 
-        const scores: { testId: string; name: string; avg: number; count: number }[] = [];
+        // Compute avg z-score per test
+        const scoresByCategory: Record<string, { testId: string; name: string; avg: number }[]> = {};
         Object.entries(tests).forEach(([testId, subtests]) => {
             const zScores: number[] = [];
             Object.values(subtests).forEach(res => {
                 if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
             });
-            if (zScores.length > 0) {
-                const avg = zScores.reduce((a, b) => a + b, 0) / zScores.length;
-                scores.push({ testId, name: testNameMap[testId] || testId, avg, count: zScores.length });
-            }
+            if (zScores.length === 0) return;
+            const avg = zScores.reduce((a, b) => a + b, 0) / zScores.length;
+            const info = testInfoMap[testId];
+            const categoryName = info?.categoryName || 'Autre';
+            const testName = info?.name || testId;
+            if (!scoresByCategory[categoryName]) scoresByCategory[categoryName] = [];
+            scoresByCategory[categoryName].push({ testId, name: testName, avg });
         });
-        return scores;
+
+        return scoresByCategory;
     }, [tests, catalog]);
 
-    if (testScores.length === 0) return null;
+    const hasScores = Object.keys(groupedScores).length > 0;
+    if (!hasScores) return null;
+
+    const ScoreBar: React.FC<{ testId: string; name: string; avg: number }> = ({ testId, name, avg }) => {
+        let color = '#81B29A';
+        if (avg <= -2) color = '#E07A5F';
+        else if (avg <= -1) color = '#F2CC8F';
+        const barWidth = Math.min(100, Math.max(5, ((avg + 3.5) / 7) * 100));
+        return (
+            <div key={testId}>
+                <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-stone-500 font-medium truncate max-w-[130px]">{name}</span>
+                    <span className="font-bold" style={{ color }}>{avg > 0 ? '+' : ''}{avg.toFixed(1)} ET</span>
+                </div>
+                <div className="h-1.5 bg-[var(--progress-bg)] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barWidth}%`, backgroundColor: color }} />
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-5 mb-6 shadow-sm">
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Activity size={14} /> Résumé par test
+                <Activity size={14} /> Résumé par domaine
             </h4>
-            <div className="space-y-2">
-                {testScores.map(({ testId, name, avg }) => {
-                    let color = '#81B29A';
-                    if (avg <= -2) color = '#E07A5F';
-                    else if (avg <= -1) color = '#F2CC8F';
-                    const barWidth = Math.min(100, Math.max(5, ((avg + 3.5) / 7) * 100));
-
-                    return (
-                        <div key={testId}>
-                            <div className="flex justify-between text-[10px] mb-1">
-                                <span className="text-stone-500 font-medium truncate max-w-[130px]">{name}</span>
-                                <span className="font-bold" style={{ color }}>{avg > 0 ? '+' : ''}{avg.toFixed(1)} ET</span>
-                            </div>
-                            <div className="h-1.5 bg-[var(--progress-bg)] rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barWidth}%`, backgroundColor: color }} />
-                            </div>
+            <div className="space-y-4">
+                {(Object.entries(groupedScores) as [string, { testId: string; name: string; avg: number }[]][]).map(([categoryName, scores]) => (
+                    <div key={categoryName}>
+                        <p className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest mb-2 border-b border-[var(--border-color)] pb-1">
+                            {categoryName}
+                        </p>
+                        <div className="space-y-2">
+                            {scores.map(({ testId, name, avg }) => <ScoreBar key={testId} testId={testId} name={name} avg={avg} />)}
                         </div>
-                    );
-                })}
+                    </div>
+                ))}
             </div>
         </div>
     );

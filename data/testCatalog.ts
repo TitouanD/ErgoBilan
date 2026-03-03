@@ -19,8 +19,53 @@ export const ICON_MAP: Record<string, any> = {
 
 export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
 export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
-export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
+/**
+ * Input model for a subtest:
+ * - numeric_4mode      : standard 4-field input (brut / NS / ET / %)
+ * - qualitative_category : button-grid of labelled options
+ * - raw_only           : single raw score field, no standardization
+ * - custom_text        : free-text observation (bilan écologique)
+ * - computed_items     : sub-items whose values are aggregated into a brut score
+ *                        before hitting the standard scoring pipeline
+ */
+export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text' | 'computed_items';
 export type RawDirection = 'auto' | 'higher_better' | 'lower_better';
+
+/** How the sub-items of a computed_items subtest are combined into the raw score. */
+export type ItemsAggregation =
+  | 'sum'          // Σ of all items (e.g. FigRey: sum of 18 element scores)
+  | 'best_of'      // best trial wins — max if higher_better, min if lower_better
+  | 'mean'         // arithmetic mean
+  | 'custom';      // formula defined in aggregationHint; brut editable manually
+
+/** Visual layout for the sub-items form. */
+export type ItemsDisplayGroup = 'column' | 'grid_2' | 'grid_3' | 'table';
+
+/** One sub-item inside a computed_items subtest. */
+export interface SubtestItem {
+  /** Stable identifier (e.g. "trial_1", "element_7", "correct"). */
+  id: string;
+  /** Label shown to the practitioner. */
+  label: string;
+  /** Optional unit shown after the input (pts, sec, cm…). */
+  unit?: string;
+  /** Input type — numeric field (default), integer counter, or yes/no toggle. */
+  type?: 'number' | 'count' | 'boolean';
+  /** Minimum accepted value (for validation). */
+  min?: number;
+  /** Maximum accepted value (for validation). */
+  max?: number;
+  /** Decimal places for display/step (e.g. 1 for chrono). */
+  decimals?: number;
+  /**
+   * When true, this item IS the brut score — no aggregation needed.
+   * Used when only one significant item exists but we still want the
+   * structured label+unit UI (e.g. BHK speed: a single derived value).
+   */
+  isMaster?: boolean;
+  /** Visual weight: wide fields span the full row width. */
+  wide?: boolean;
+}
 
 export interface SubtestInputOption {
   code: string;
@@ -30,9 +75,23 @@ export interface SubtestInputOption {
 }
 
 export interface SubtestInputConfig {
+  /** For qualitative_category: the list of selectable options. */
   options?: SubtestInputOption[];
+  /** Preferred primary metric shown to the practitioner. */
   defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+  /** @deprecated — use the `raw_direction` DB column instead. */
   rawDirectionHint?: RawDirection;
+  /** For computed_items: the list of sub-items to present. */
+  items?: SubtestItem[];
+  /** For computed_items: how sub-items are combined into the raw score. */
+  itemsAggregation?: ItemsAggregation;
+  /**
+   * Human-readable formula hint (displayed in the UI).
+   * E.g. "chars × 300 / seconds" for BHK speed, "Σ(essais)", "meilleur de 3".
+   */
+  aggregationHint?: string;
+  /** Visual layout for the sub-items grid. Default: 'column'. */
+  displayGroup?: ItemsDisplayGroup;
 }
 
 export interface SubtestDef {

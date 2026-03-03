@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Info, CheckCheck } from 'lucide-react';
+import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck } from 'lucide-react';
 import { sanitizeReportText } from '../../utils/textSanitizer';
+import { useTextHistory } from '../../hooks/useTextHistory';
 
 interface Props {
   sections: ReportSection[];
@@ -49,11 +50,18 @@ const renderMarkdown = (text: string) => {
 };
 
 // --- COMPOSANT TOOLBAR (NOUVEAU) ---
-const EditorToolbar = ({ onAction }: { onAction: (action: string) => void }) => {
-    const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white";
+const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: string) => void; canUndo: boolean; canRedo: boolean }) => {
+    const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed";
     
     return (
         <div className="flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 absolute -top-12 left-0 animate-in slide-in-from-bottom-2 fade-in duration-200 z-10">
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('undo'); }} className={btnClass} title="Annuler (Ctrl+Z)" disabled={!canUndo}>
+                <Undo size={16} />
+            </button>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('redo'); }} className={btnClass} title="Rétablir (Ctrl+Y)" disabled={!canRedo}>
+                <Redo size={16} />
+            </button>
+            <div className="w-px h-4 bg-white/20 mx-1"></div>
             <button onMouseDown={(e) => { e.preventDefault(); onAction('bold'); }} className={btnClass} title="Gras">
                 <Bold size={16} strokeWidth={3} />
             </button>
@@ -78,21 +86,37 @@ const SectionCard: React.FC<{
     onValidate: (id: string, content?: string) => void;
 }> = ({ section, onValidate }) => {
     const [isEditing, setIsEditing] = useState(false);
-    const [editContent, setEditContent] = useState(sanitizeReportText(section.content));
+    const history = useTextHistory(sanitizeReportText(section.content));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+    // Sync history when section content changes externally (e.g. after AI regen)
+    useEffect(() => {
+        if (!isEditing) {
+            history.reset(sanitizeReportText(section.content));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [section.content]);
+
     const handleSave = () => {
-        onValidate(section.id, sanitizeReportText(editContent));
+        onValidate(section.id, sanitizeReportText(history.value));
         setIsEditing(false);
     };
 
-    // Logique d'insertion Markdown intelligente
+    const handleCancel = () => {
+        history.reset(sanitizeReportText(section.content));
+        setIsEditing(false);
+    };
+
+    // Logique d'insertion Markdown intelligente + undo/redo
     const handleFormat = (type: string) => {
+        if (type === 'undo') { history.undo(); return; }
+        if (type === 'redo') { history.redo(); return; }
+
         if (!textareaRef.current) return;
         const field = textareaRef.current;
         const start = field.selectionStart;
         const end = field.selectionEnd;
-        const text = editContent;
+        const text = history.value;
         const selection = text.substring(start, end);
         
         let newText = text;
@@ -100,23 +124,21 @@ const SectionCard: React.FC<{
 
         if (type === 'bold') {
             newText = text.substring(0, start) + `**${selection}**` + text.substring(end);
-            newCursor = end + 4; // ** + **
+            newCursor = end + 4;
         } else if (type === 'italic') {
             newText = text.substring(0, start) + `*${selection}*` + text.substring(end);
-            newCursor = end + 2; // * + *
+            newCursor = end + 2;
         } else if (type === 'h3') {
-            // Ajoute ### au début de la ligne courante
             const lineStart = text.lastIndexOf('\n', start - 1) + 1;
             newText = text.substring(0, lineStart) + "### " + text.substring(lineStart);
             newCursor = end + 4;
         } else if (type === 'list') {
-            // Ajoute - au début de la ligne courante
             const lineStart = text.lastIndexOf('\n', start - 1) + 1;
             newText = text.substring(0, lineStart) + "- " + text.substring(lineStart);
             newCursor = end + 2;
         }
 
-        setEditContent(newText);
+        history.set(newText);
         
         // Restore focus
         setTimeout(() => {
@@ -155,12 +177,21 @@ const SectionCard: React.FC<{
                 <div className="space-y-6 relative">
                     {/* Toolbar flottante au-dessus */}
                     <div className="relative">
-                        <EditorToolbar onAction={handleFormat} />
+                        <EditorToolbar onAction={handleFormat} canUndo={history.canUndo} canRedo={history.canRedo} />
                         <textarea 
                             ref={textareaRef}
                             className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
-                            value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
+                            value={history.value}
+                            onChange={(e) => history.set(e.target.value)}
+                            onKeyDown={(e) => {
+                                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+                                    e.preventDefault();
+                                    history.undo();
+                                } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+                                    e.preventDefault();
+                                    history.redo();
+                                }
+                            }}
                             placeholder="Rédigez votre contenu ici..."
                         />
                     </div>
@@ -173,7 +204,7 @@ const SectionCard: React.FC<{
                     </div>
 
                     <div className="flex justify-end gap-3 pt-2">
-                        <button onClick={() => setIsEditing(false)} className="px-5 py-2 text-stone-400 dark:text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider hover:text-stone-700 dark:hover:text-[var(--text-heading)]">Annuler</button>
+                        <button onClick={handleCancel} className="px-5 py-2 text-stone-400 dark:text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider hover:text-stone-700 dark:hover:text-[var(--text-heading)]">Annuler</button>
                         <button onClick={handleSave} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-colors shadow-md flex items-center gap-2">
                             <Check size={16} /> Enregistrer
                         </button>

@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { AIService, type GenerationPayload } from '../services/ai';
+import { AIService, type GenerationPayload, type GenerationResult } from '../services/ai';
 import { StorageService } from '../services/storage';
 import { AdminService } from '../services/admin';
 import { ensureFreshSession } from '../services/db';
@@ -152,59 +152,7 @@ export const useAssessmentFlow = ({
       const p = assessment.patient;
       const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
 
-      const tracking =
-        p.medicalTracking?.map((t) => `- ${t.type} (${t.name}): ${t.frequency} depuis ${t.since}`).join('\n') ||
-        'Aucun suivi renseigné';
-      const clothing = `Boutons: ${p.clothingButtons || '?'}, Lacets: ${p.clothingLaces || '?'}, Zippers: ${p.clothingZippers || '?'}`;
-      const dev = `Marche: ${p.walkingAge || '?'}, Propreté: ${p.cleanliness || '?'}, Latéralité: ${p.handDominance || '?'}`;
-      const behavior = `Temps écran: ${p.screenTime || '?'}, Emotions: ${p.emotionalRegulation || '?'}, Social: ${p.socialBehavior || '?'}`;
-      const sensory = `Profil sensoriel: ${p.sensory || '?'}, Sommeil: ${p.sleepStatus || p.sleep || '?'}`;
-      const writing = `Écriture: ${p.writingIssues || '?'}, Douleur: ${p.writingPain || '?'}, Outils/Ciseaux: ${p.toolScissors || '?'}`;
-      const school = `Attention scolaire: ${p.schoolAttention || '?'}, Aménagements: ${p.schoolAccommodations || '?'}`;
-      const goals = p.goals?.length ? `Priorités famille: ${p.goals.join(', ')}` : '';
-      const avs = p.avs === 'OUI' ? `AVS: ${p.avsHours || '?'}h, Missions: ${p.avsMissions || '?'}` : '';
-      const medical = `Diagnostic médical: ${p.medicalDiagnosis || 'Aucun'}, Traitements: ${p.medicalTreatments || 'Aucun'}`;
-
-      const schoolStr = p.school && p.classLevel && p.school.toLowerCase().includes(p.classLevel.toLowerCase())
-        ? p.school
-        : `${p.school} ${p.classLevel}`;
-      const rawQ = `
-Motif: ${p.reason}
-Scolarit\u00e9: ${schoolStr} (Plan: ${p.carePlan})
-${school}
-${avs}
-Vie Quotidienne: ${p.meals} ${p.dressing} ${p.continence}
-Autonomie Habillage: ${clothing}
-${writing}
-${sensory}
-${medical}
-Suivi Paramédical: ${tracking}
-Développement: ${dev}
-Comportement: ${behavior}
-${goals}
-Attentes: ${p.familyExpectations}
-`;
-
-      // Build observations from: 1) Clinical interview notes (interviewNotes), 2) Per-subtest observations, 3) Legacy domain observations
-      const clinicalNotes = p.interviewNotes || '';
-      const legacyObs = [assessment.observations.anamnese, assessment.observations.motricite, assessment.observations.graphique].filter(Boolean).join('\n');
-      
-      // Extract per-subtest observations for the AI
-      const subtestObs: string[] = [];
-      Object.entries(assessment.tests).forEach(([, subtests]) => {
-          Object.entries(subtests).forEach(([subId, res]) => {
-              if (res.observation?.trim()) {
-                  subtestObs.push(`[${subId}] ${res.observation.trim()}`);
-              }
-          });
-      });
-      
-      const rawObs = [
-          clinicalNotes ? `Notes cliniques d'entretien:\n${clinicalNotes}` : '',
-          legacyObs ? `Observations générales: ${legacyObs}` : '',
-          subtestObs.length > 0 ? `Observations par épreuve:\n${subtestObs.join('\n')}` : '',
-      ].filter(Boolean).join('\n\n') || 'RAS';
-
+      // ── Build catalog lookup maps FIRST (needed for readable subtest observation labels) ──
       const testNameById = new Map<string, string>();
       const subtestNameByTestAndId = new Map<string, string>();
       catalog.forEach((category) => {
@@ -215,6 +163,120 @@ Attentes: ${p.familyExpectations}
           });
         });
       });
+
+      // ── Helper: only include line if value is meaningful ──
+      const line = (label: string, value: string | undefined | null): string => {
+        const v = (value || '').trim();
+        return v && v !== '?' && v !== '-' ? `${label}: ${v}` : '';
+      };
+
+      const tracking =
+        p.medicalTracking?.map((t) => {
+          let entry = `- ${t.type} (${t.name}): ${t.frequency} depuis ${t.since}`;
+          if (t.sessionCount?.trim()) entry += `, ${t.sessionCount} séances`;
+          if (t.endDate?.trim()) entry += ` (fin: ${t.endDate})`;
+          if (t.reason?.trim()) entry += `. Objectif: ${t.reason}`;
+          return entry;
+        }).join('\n') ||
+        'Aucun suivi renseigné';
+
+      const schoolStr = p.school && p.classLevel && p.school.toLowerCase().includes(p.classLevel.toLowerCase())
+        ? p.school
+        : `${p.school || ''} ${p.classLevel || ''}`.trim();
+
+      const siblingsStr = p.siblings?.length ? `${p.siblings.length} enfant(s) dans la fratrie` : '';
+
+      const rawQ = [
+        line('Motif de consultation', p.reason),
+        line('Attentes de la famille', p.familyExpectations),
+        line('Priorités thérapeutiques', p.priorities),
+        '',
+        '--- SCOLARITÉ ---',
+        line('École / Classe', schoolStr),
+        line('Plan de soin scolaire', p.carePlan),
+        line('Attention scolaire', p.schoolAttention),
+        line('Aménagements en place', p.schoolAccommodations),
+        line('Difficultés scolaires', p.schoolDifficulties),
+        line('Précisions difficultés scolaires', p.schoolDifficultiesOther),
+        p.avs === 'OUI' ? [
+          line('AVS', `${p.avsHours || '?'}h`),
+          line('Missions AVS', p.avsMissions),
+          line('Détail AVS', p.avsDetails),
+        ].filter(Boolean).join('\n') : '',
+        '',
+        '--- MÉDICAL ---',
+        line('Médecin prescripteur', p.prescribingDoctor),
+        line('Médecin traitant', p.treatingDoctor),
+        line('Diagnostic médical', p.medicalDiagnosis),
+        line('Traitements', p.medicalTreatments),
+        line('Suivi médical', p.medicalFollowup),
+        `Suivi paramédical:\n${tracking}`,
+        '',
+        '--- DÉVELOPPEMENT ---',
+        line('Grossesse / Naissance', p.pregnancyBirth),
+        line('Développement moteur', p.developmentMotor),
+        line('Âge de marche', p.walkingAge),
+        line('Quatre pattes', p.crawling),
+        line('Développement du langage', p.developmentLanguage),
+        line('Statut langage actuel', p.languageStatus),
+        line('Propreté', p.cleanliness),
+        line('Latéralité', p.handDominance),
+        '',
+        '--- VIE QUOTIDIENNE & AUTONOMIE ---',
+        line('Repas', p.meals),
+        line('Habitudes alimentaires', p.eatingHabits),
+        line('Habillage', p.dressing),
+        line('Boutons', p.clothingButtons),
+        line('Lacets', p.clothingLaces),
+        line('Zippers/fermetures', p.clothingZippers),
+        line('Continence', p.continence),
+        line('Orientation temps/espace', p.timeSpace),
+        '',
+        '--- ÉCRITURE & OUTILS ---',
+        line('Difficultés d\'écriture', p.writingIssues),
+        line('Douleur à l\'écriture', p.writingPain),
+        line('Utilisation des outils', p.toolUsage),
+        line('Outils / ciseaux', p.toolScissors),
+        line('Observations écriture autres', p.writingOther),
+        '',
+        '--- COMPORTEMENT & SOCIAL ---',
+        line('Profil sensoriel', p.sensory),
+        line('Sommeil', p.sleepStatus || p.sleep),
+        line('Temps d\'écran', p.screenTime),
+        line('Régulation émotionnelle', p.emotionalRegulation),
+        line('Comportement social', p.socialBehavior),
+        '',
+        '--- CONTEXTE FAMILIAL ---',
+        line('Garde', `${p.guardArrangement || ''} ${p.guardMode || ''}`.trim()),
+        siblingsStr ? line('Fratrie', siblingsStr) : '',
+        '',
+        '--- NOTES LIBRES ---',
+        line('Remarques', p.remarks),
+        line('Notes d\'entretien', p.interviewNotes),
+        p.goals?.length ? `Objectifs exprimés par la famille: ${p.goals.join(', ')}` : '',
+      ].filter(Boolean).join('\n');
+
+      // ── Build observations (clinical notes + legacy + per-subtest with readable labels) ──
+      const clinicalNotes = p.interviewNotes || '';
+      const legacyObs = [assessment.observations.anamnese, assessment.observations.motricite, assessment.observations.graphique]
+        .filter(Boolean).join('\n');
+
+      const subtestObs: string[] = [];
+      Object.entries(assessment.tests).forEach(([testId, subtests]) => {
+        Object.entries(subtests).forEach(([subId, res]) => {
+          if (res.observation?.trim()) {
+            const subtestName = subtestNameByTestAndId.get(`${testId}:${subId}`) || subId;
+            const testName = testNameById.get(testId) || testId;
+            subtestObs.push(`[${subtestName} — ${testName}] (id:${subId}) ${res.observation.trim()}`);
+          }
+        });
+      });
+
+      const rawObs = [
+        clinicalNotes ? `Notes cliniques d'entretien:\n${clinicalNotes}` : '',
+        legacyObs ? `Observations générales: ${legacyObs}` : '',
+        subtestObs.length > 0 ? `Observations par épreuve:\n${subtestObs.join('\n')}` : '',
+      ].filter(Boolean).join('\n\n') || 'RAS';
 
       const scoresEvidence = Object.entries(assessment.tests).flatMap(([testId, subtests]) =>
         Object.entries(subtests).map(([subtestId, res]) => {
@@ -250,7 +312,23 @@ Attentes: ${p.familyExpectations}
         synthesis: assessment.synthesis,
       };
 
-      const sections = await AIService.generateFullReport(payload, assessment.patient);
+      const { sections, reformulatedObservations }: GenerationResult =
+        await AIService.generateFullReport(payload, assessment.patient);
+
+      // Patch subtest observations with AI-reformulated versions (for PDF annex table)
+      if (Object.keys(reformulatedObservations).length > 0) {
+        const updatedTests: TestData = {};
+        Object.entries(assessment.tests).forEach(([testId, subtests]) => {
+          updatedTests[testId] = {};
+          Object.entries(subtests).forEach(([subId, result]) => {
+            updatedTests[testId][subId] = reformulatedObservations[subId]
+              ? { ...result, observation: reformulatedObservations[subId] }
+              : result;
+          });
+        });
+        assessment.setTests(updatedTests);
+      }
+
       assessment.setSections(sections as ReportSection[]);
       assessment.setStep(4);
       refreshProfile();

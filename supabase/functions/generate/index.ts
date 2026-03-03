@@ -185,6 +185,7 @@ REGLES NON NEGOCIABLES :
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique (PPH, CIF, MCRO...) ni de protocole d'evaluation dans le rapport. Le rapport est centre sur l'enfant.
 11. **Scores atypiques** : Si un z-score depasse +4 ou -4, signale-le comme "score atypique necessitant verification" au lieu de l'interpreter comme un resultat clinique valide.
 12. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires (ex: "évaluation", "résultats", "compétences", "supérieures", "à", "où", "ça"). Ne rends jamais un texte volontairement sans accents.
+13. **Reformulation des observations brutes** : Les observations par epreuve peuvent contenir des notes prises rapidement, en style telegraphique ou abrege (ex: "prise crayon tendue", "bon contact bcp bavarde"). Integre-les toujours en les reformulant en phrases cliniques completes et formelles dans la synthese. Ne reproduis jamais le style brut.
 
 EXEMPLES DE BON STYLE :
 - "Sur le plan moteur fin et praxique, {{PATIENT_PRENOM}} presente des fragilites en motricite fine, particulierement dans les taches requerant de la precision."
@@ -207,16 +208,17 @@ REGLES NON NEGOCIABLES :
 9. **Ton clinique factuel** : PAS de metaphores ni de guillemets dramatisants. PAS d'interpretation causale. Decris le constat.
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique (PPH, CIF, MCRO...) dans le rapport.
 11. **Scores atypiques** : Si un z-score depasse +4 ou -4, signale-le comme "score atypique necessitant verification".
-12. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires (ex: "évaluation", "résultats", "compétences", "supérieures", "à", "où", "ça"). Ne rends jamais un texte volontairement sans accents.`;
+12. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires (ex: "évaluation", "résultats", "compétences", "supérieures", "à", "où", "ça"). Ne rends jamais un texte volontairement sans accents.
+13. **Reformulation des observations brutes** : Les observations par epreuve peuvent contenir des notes prises rapidement, en style telegraphique ou abrege. Integre-les toujours en les reformulant en phrases cliniques completes et formelles. Ne reproduis jamais le style brut.`;
 
 // ── JSON Schemas for Gemini responseSchema constraint ──────────────────────
 
 const BIO_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
-    mandat_referencement: { type: 'STRING' as const, description: 'Qui adresse et pourquoi, 2-4 phrases factuelles (30-80 mots). Markdown.' },
-    mandat_evaluation: { type: 'STRING' as const, description: 'Difficultes concretes vecues par l\'enfant au quotidien, PAS la methodologie (40-100 mots). Markdown.' },
-    profil_occupationnel: { type: 'STRING' as const, description: 'Profil factuel sans interpretation : developpement, autonomie, scolarite, loisirs, comportement (100-200 mots). Ne rien inventer. Markdown.' },
+    mandat_referencement: { type: 'STRING' as const, description: 'Qui adresse et pourquoi, 2-4 phrases factuelles (30-80 mots). Nomme explicitement le medecin via {{MEDECIN}} dans la phrase d\'ouverture. Markdown.' },
+    mandat_evaluation: { type: 'STRING' as const, description: 'Difficultes concretes vecues par l\'enfant, exprimees en tournures attribuees : "Les parents rapportent que", "{{PATIENT_PRENOM}} dit avoir". PAS de fait objectif brut ni de methodologie (40-100 mots). Markdown.' },
+    profil_occupationnel: { type: 'STRING' as const, description: 'Profil rapporte sans interpretation : developpement, autonomie, scolarite, loisirs, comportement. Utilise des formulations attribuees : "Selon les parents", "{{PATIENT_PRENOM}} mentionne". Ne rien inventer (100-200 mots). Markdown.' },
   },
   required: ['mandat_referencement', 'mandat_evaluation', 'profil_occupationnel'],
 };
@@ -227,8 +229,20 @@ const DIAG_RESPONSE_SCHEMA = {
     synthese_diagnostic: { type: 'STRING' as const, description: 'Diagnostique : 1 tiret par domaine fonctionnel, 2-4 phrases chacun, scores exacts cites (100-250 mots). Ton factuel, pas de metaphore. Markdown.' },
     recommandations: { type: 'STRING' as const, description: '3-6 tirets concrets et actionnables, pas de paragraphe introductif (50-150 mots). Markdown.' },
     objectifs_generaux: { type: 'STRING' as const, description: '3-5 objectifs en tirets simples sans timeline, ou mention explicite que le suivi n\'est pas preconise (30-100 mots). Markdown.' },
+    reformulated_observations: {
+      type: 'ARRAY' as const,
+      description: 'Pour chaque epreuve ayant une observation non vide, retourne une reformulation clinique complete.',
+      items: {
+        type: 'OBJECT' as const,
+        properties: {
+          subtestId: { type: 'STRING' as const, description: 'Valeur exacte du champ subtestId fourni dans les resultats.' },
+          text: { type: 'STRING' as const, description: 'Observation reformulee en une phrase clinique complete et formelle (15-50 mots).' },
+        },
+        required: ['subtestId', 'text'],
+      },
+    },
   },
-  required: ['synthese_diagnostic', 'recommandations', 'objectifs_generaux'],
+  required: ['synthese_diagnostic', 'recommandations', 'objectifs_generaux', 'reformulated_observations'],
 };
 
 const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
@@ -249,25 +263,30 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     '1. "mandat_referencement" (2-4 phrases, 30-80 mots) :',
     '   Qui adresse l\'enfant et pourquoi, de maniere factuelle.',
+    '   OBLIGATOIRE : Si {{MEDECIN}} est present dans les donnees, nomme-le EXPLICITEMENT dans la phrase d\'ouverture : \'Sur referencement du Dr {{MEDECIN}}, ...\' ou \'A la demande du Dr {{MEDECIN}}, ...\'.',
+    '   Si {{MEDECIN}} est absent des donnees, ne pas inventer de nom.',
     '   EXEMPLES DE STYLE :',
-    '   - "[PRENOM] est recu(e) en consultation d\'ergotherapie a la demande du Dr X, afin d\'evaluer Y."',
-    '   - "[PRENOM] est recu(e) a la demande de Mme X, coordinatrice du parcours PCO, de bilanter la motricite globale et fine."',
+    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie sur referencement du Dr {{MEDECIN}}, afin d\'evaluer Y."',
+    '   - "{{PATIENT_PRENOM}} est recu(e) a la demande du Dr {{MEDECIN}} pour bilanter la motricite globale et fine."',
     '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase.',
     '',
     '2. "mandat_evaluation" (40-100 mots) :',
-    '   Decris les DIFFICULTES CONCRETES de l\'enfant qui motivent le bilan.',
+    '   Decris les DIFFICULTES CONCRETES de l\'enfant qui motivent le bilan, en utilisant des TOURNURES ATTRIBUEES a la source.',
+    '   OBLIGATOIRE : Chaque difficulte doit etre attribuee : "Les parents rapportent que {{PATIENT_PRENOM}} a des difficultes a...", "{{PATIENT_PRENOM}} dit avoir du mal a...", "Selon les parents, ...", "L\'enseignant signale que ...".',
+    '   NE PAS presenter un fait objectif : on rapporte un avis ou une declaration, pas un constat etabli.',
     '   INTERDIT : Ne decris PAS le protocole, les outils, les modeles theoriques (PPH, CIF...), ni les objectifs du bilan.',
-    '   Decris ce que l\'enfant VIT au quotidien : problemes scolaires, d\'ecriture, sensoriels, attentionnels, etc.',
     '   NE REPETE PAS les informations deja dans le mandat de referencement.',
     '   EXEMPLES DE STYLE :',
-    '   - "{{PATIENT_PRENOM}} presente des difficultes sur le plan sensoriel. Elle est particulierement sensible aux sons, qui la fatigue rapidement."',
-    '   - "{{PATIENT_PRENOM}} rencontre des difficultes dans son environnement scolaire. Il presente des difficultes a ecrire de maniere lisible."',
-    '   - "A ce jour, {{PATIENT_PRENOM}} presente une restriction de participation dans son role d\'eleve au niveau de l\'ecriture."',
+    '   - "Les parents rapportent que {{PATIENT_PRENOM}} a des difficultes sur le plan sensoriel. Selon eux, elle est particulierement sensible aux sons, qui la fatigue rapidement."',
+    '   - "{{PATIENT_PRENOM}} dit avoir du mal a ecrire de maniere lisible. Ses parents mentionnent egalement des difficultes dans son environnement scolaire."',
     '',
     '3. "profil_occupationnel" (100-200 mots) :',
-    '   Synthese factuelle du profil de l\'enfant : developpement moteur, langage, autonomie (repas, habillage, hygiene), sommeil, scolarite (matiere aimee/non aimee, aides en place), loisirs, comportement social et emotionnel.',
-    '   Rapporte les faits sans interpreter. Pas de jugement clinique ici.',
-    '   N\'invente AUCUN detail absent des donnees (pas de contexte, lieu ou situation non mentionnes).',
+    '   Synthese du profil de l\'enfant : developpement moteur, langage, autonomie (repas, habillage, hygiene), sommeil, scolarite (matiere aimee/non aimee, aides en place), loisirs, comportement social et emotionnel.',
+    '   OBLIGATOIRE : Utilise des formulations ATTRIBUEES. Chaque element rapporte doit indiquer sa source :',
+    '   "Selon les parents, {{PATIENT_PRENOM}} presente...", "{{PATIENT_PRENOM}} mentionne aimer...", "Les parents decrivent...", "D\'apres la famille, ...".',
+    '   Cite les details SPECIFIQUES presents dans les donnees (frequence de suivi, nom d\'amenagement, sport pratique, ecole, etc.). Prefere toujours le fait precis a la formulation generique.',
+    '   N\'invente AUCUN detail absent des donnees. Si une section du questionnaire est vide ou "-", ne la mentionne pas.',
+    '   INTERDIT : Ne presente pas les informations comme des faits etablis ou des observations cliniques directes. Tu rapportes ce que la famille/l\'enfant dit.',
     '',
     'CONSIGNES DE STYLE :',
     '- Ton clinique mais accessible.',
@@ -288,6 +307,7 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
 
 const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   const profile = String(payload.profile || 'pediatric');
+  const childContext = String(payload.childContext || '');
   const profilContext = JSON.stringify(payload.profilContext || 'Non disponible');
   const safeObservations = String(payload.safeObservations || 'RAS');
   const scoresEvidence = JSON.stringify(payload.scoresEvidence || [], null, 2);
@@ -327,13 +347,18 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   }
 
   const subjectLabel = profile === 'adult' ? 'la personne' : "l'enfant";
+  const introSentence = profile === 'pediatric'
+    ? `"{{PATIENT_PRENOM}} (${childContext}) est adresse(e) en bilan d'ergotherapie pour..."`
+    : `"Le/La patient(e) (${childContext}) est adresse(e) en ergotherapie pour..."`;
 
   const userPrompt = [
     SECURITY_INSTRUCTION,
     '',
     `PROFIL OCCUPATIONNEL DEJA ETABLI :\n${profilContext}`,
     '',
-    `OBSERVATIONS CLINIQUES :\n${safeObservations}`,
+    `OBSERVATIONS CLINIQUES :`,
+    `⚠️ Les observations par epreuve ci-dessous peuvent contenir des notes prises rapidement en style telegraphique ou abrege. Dans la synthese ET dans les reformulations, reformule-les systematiquement en phrases cliniques completes et formelles.`,
+    `${safeObservations}`,
     '',
     `RESULTATS DES TESTS (scores standardises) :\n${scoresEvidence}`,
     '',
@@ -341,10 +366,10 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     `DIRECTIVE RECOMMANDATIONS :\n${recommendationsDirective}`,
     '',
-    'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) :',
+    'TACHE : Redige un JSON avec 4 champs :',
     '',
     '1. "synthese_diagnostic" (100-250 mots) :',
-    `   Commence par une phrase d'introduction : "${profile === 'pediatric' ? "{{PATIENT_PRENOM}}, age(e) de X ans et Y mois, est adresse(e) en bilan d'ergotherapie pour..." : "Le/La patient(e) est adresse(e) en ergotherapie pour..."}"`,
+    `   Commence par une phrase d'introduction : ${introSentence}`,
     '   Puis : "L\'entretien realise ainsi que les resultats des evaluations mettent en evidence plusieurs elements cles :"',
     '',
     '   Ensuite, organise par DOMAINE avec des tirets "-". Chaque domaine = 1 tiret avec 2-4 phrases MAXIMUM :',
@@ -355,6 +380,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   - "Sur le plan sensoriel, ..." (si donnees disponibles)',
     '',
     '   REGLES CRITIQUES pour cette section :',
+    '   - Cite les details SPECIFIQUES fournis dans les observations. Ne generalise pas si le fait precis est disponible.',
     '   - Cite CHAQUE test/epreuve present dans les scores. N\'en oublie aucun.',
     '   - Cite les scores EXACTEMENT comme fournis : "NS = 7", "ET = -1.2", "performance = +0.6 ET".',
     '   - NE CONVERTIS JAMAIS : si le score est en NS, ne calcule pas de z-score. Si c\'est en ET, ne calcule pas de NS.',
@@ -385,6 +411,19 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     `   Si le suivi n'est PAS recommande :`,
     `   - Dis-le clairement : "Un accompagnement en ergotherapie n'est pas preconise pour {{PATIENT_PRENOM}}."`,
     `   - Propose tout de meme des pistes d'adaptations si pertinent.`,
+    '',
+    '4. "reformulated_observations" (tableau) :',
+    '   Pour chaque epreuve des resultats des tests qui possede un champ "observation" non vide, retourne une version reformulee.',
+    '   Format : tableau d\'objets [{ "subtestId": "<valeur exacte du champ subtestId>", "text": "<phrase reformulee>" }]',
+    '   REGLES ABSOLUES :',
+    '   - Utilise EXACTEMENT la valeur du champ "subtestId" fournie dans les resultats (ne la modifie jamais).',
+    '   - Reformule en 1 phrase complete, clinique, formelle (15-50 mots). PAS de style telegraphique.',
+    '   - Si l\'observation est deja une phrase complete et clinique, tu peux la conserver telle quelle.',
+    '   - Si observation est vide ou null, n\'inclus PAS l\'epreuve dans le tableau.',
+    '   EXEMPLES DE REFORMULATION :',
+    '   - "prise crayon tendue" → "La prise du crayon est sous-optimale, avec une tension importante des doigts et une flexion excessive du poignet."',
+    '   - "bon contact, bavarde bcp" → "L\'enfant etablit un bon contact relationnel, bien qu\'elle tende a engager des echanges verbaux frequents en parallele des epreuves."',
+    '   - "fatigue fin seance, agitation" → "Une fatigue notable est observee en fin de seance, entrainant une augmentation de l\'agitation motrice et une baisse de la concentration."',
     '',
     'CONSIGNES DE STYLE :',
     '- Paragraphes aeres (double saut de ligne entre chaque domaine).',
