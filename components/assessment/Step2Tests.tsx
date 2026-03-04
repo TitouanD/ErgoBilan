@@ -439,8 +439,8 @@ const NumericRow: React.FC<{
 
       setIsComputing(true);
       try {
-        const dbSubtestId = subtest.id.includes('_') ? subtest.id : `${testId}_${subtest.id}`;
-        const out = await ScoringEngine.compute(dbSubtestId, value, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
+        const dbSubtestId = subtest.id;
+        const out = await ScoringEngine.compute(dbSubtestId, value, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed', patient.classLevel);
         if (!out || !out.normFound) {
           const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
           setWarn(statusWarn);
@@ -808,18 +808,36 @@ const NumericRow: React.FC<{
               </div>
               {/* Optional raw field for manual note — always shown when alwaysShowRaw is set */}
               {(result.raw || subtest.alwaysShowRaw) && !conversionLocked && (
-                <div className="max-w-[140px]">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">BRUT</label>
-                  <input
-                    value={metricValue('raw')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onChange={(e) => setPatch({ raw: e.target.value })}
-                    onFocus={() => onFocus?.()}
-                    className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
-                    placeholder="(optionnel)"
-                    aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
-                  />
+                <div className="max-w-[200px]">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">
+                    {subtest.inputConfig?.rawValueLabel ?? 'BRUT'}
+                  </label>
+                  {subtest.inputConfig?.showRawFraction && subtest.inputConfig?.maxRawScore ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        value={metricValue('raw')}
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        onChange={(e) => setPatch({ raw: e.target.value })}
+                        onFocus={() => onFocus?.()}
+                        className="w-16 text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
+                        placeholder="–"
+                        aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
+                      />
+                      <span className="text-sm text-[var(--text-disabled)] font-medium">/ {subtest.inputConfig.maxRawScore}</span>
+                    </div>
+                  ) : (
+                    <input
+                      value={metricValue('raw')}
+                      disabled={readOnly}
+                      inputMode="decimal"
+                      onChange={(e) => setPatch({ raw: e.target.value })}
+                      onFocus={() => onFocus?.()}
+                      className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
+                      placeholder="(optionnel)"
+                      aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1089,12 +1107,12 @@ const CompositeItemsRow: React.FC<{
     }
     setIsComputing(true);
     try {
-      const dbSubtestId = subtest.id.includes('_') ? subtest.id : `${testId}_${subtest.id}`;
+      const dbSubtestId = subtest.id;
       const out = await ScoringEngine.compute(
         dbSubtestId,
         rawVal,
         ageMonths(patient.dob),
-        patient.gender === 'F' ? 'F' : 'M',
+        patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed',
         patient.classLevel,
       );
       if (!out || !out.normFound) {
@@ -1561,12 +1579,12 @@ const TableView: React.FC<{
 
     if (metric === 'raw') {
       setPatch({ entryMetric: 'raw', raw: text, ...conversionPatch });
-      const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
+      const dbSubtestId = subId;
       const status = normsStatusMap[dbSubtestId];
       const canCompute = status?.statusCode === 'ok';
       if (n !== null && canAutoConvert && (subtest.computationMode || 'LOOKUP') !== 'NONE' && canCompute) {
         try {
-          const out = await ScoringEngine.compute(dbSubtestId, n, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : 'M', patient.classLevel);
+          const out = await ScoringEngine.compute(dbSubtestId, n, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed', patient.classLevel);
           if (out?.normFound) {
             let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
             let standardToUse = out.standard ?? '';
@@ -1640,7 +1658,7 @@ const TableView: React.FC<{
         <tbody>
           {subtests.map(st => {
             const res = getResult(st.id);
-            const dbSubId = st.id.includes('_') ? st.id : `${testId}_${st.id}`;
+            const dbSubId = st.id;
             const stStatus = normsStatusMap[dbSubId];
             const conversionMode = resolveConversionMode(res, st.scoreType);
             const conversionLocked = isManualOnlyScoreType(st.scoreType);
@@ -2218,13 +2236,13 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     const allSubtestIds: string[] = [];
     Object.entries(tests).forEach(([testId, subtests]) => {
       Object.keys(subtests).forEach((subId) => {
-        const dbId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        const dbId = subId;
         allSubtestIds.push(dbId);
       });
     });
     const uniqueIds = Array.from(new Set(allSubtestIds));
     const age = ageMonths(patient.dob);
-    const gender = patient.gender === 'F' ? 'F' : 'M';
+    const gender = patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed';
     const key = `${age}|${gender}|${uniqueIds.sort().join(',')}`;
     if (!key || key === normsLoadedRef.current) return;
     normsLoadedRef.current = key;
@@ -2310,7 +2328,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     const currentDbIds = new Set<string>();
     Object.entries(tests).forEach(([testId, subtests]) => {
       Object.keys(subtests).forEach((subId) => {
-        currentDbIds.add(subId.includes('_') ? subId : `${testId}_${subId}`);
+        currentDbIds.add(subId);
       });
     });
     setPendingDirectionOverrides((prev) => {
@@ -2325,10 +2343,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const getSubtestDefByDbSubtestId = useCallback((dbSubtestId: string): SubtestDef | null => {
     for (const category of catalog) {
       for (const test of category.tests) {
-        const match = test.subtests.find((subtest) => {
-          const candidate = subtest.id.includes('_') ? subtest.id : `${test.id}_${subtest.id}`;
-          return candidate === dbSubtestId;
-        });
+        const match = test.subtests.find((subtest) => subtest.id === dbSubtestId);
         if (match) return match;
       }
     }
@@ -2360,7 +2375,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
     Object.entries(tests).forEach(([testId, subtests]) => {
       Object.entries(subtests).forEach(([subId, result]) => {
-        const candidateDbId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        const candidateDbId = subId;
         if (candidateDbId !== dbSubtestId) return;
 
         let zToFlip: number | null = null;
@@ -2524,7 +2539,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     const map: Record<string, EffectiveDirection> = {};
     Object.entries(tests).forEach(([testId, subtests]) => {
       Object.keys(subtests).forEach((subId) => {
-        const dbSubtestId = subId.includes('_') ? subId : `${testId}_${subId}`;
+        const dbSubtestId = subId;
         const subtestDef = getSubtestDefByDbSubtestId(dbSubtestId);
         const baseDirection = subtestDef ? resolveEffectiveDirection(subtestDef.rawDirection, subtestDef.name) : 'higher_better';
         map[dbSubtestId] = pendingDirectionOverrides[dbSubtestId] || baseDirection;
@@ -2695,7 +2710,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                               {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
                               {filteredSubtests.map((st) => {
                                 const res = tests[test.id]?.[st.id] || emptyScore();
-                                const dbSubId = st.id.includes('_') ? st.id : `${test.id}_${st.id}`;
+                                const dbSubId = st.id;
                                 const normsStatus = normsStatusMap[dbSubId];
                                 const hasApplicableNorms = normsStatus?.statusCode === 'ok';
                                 const baseDirection = resolveBaseDirectionForDbSubtest(dbSubId, st);

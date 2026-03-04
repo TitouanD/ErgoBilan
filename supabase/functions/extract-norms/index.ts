@@ -172,7 +172,7 @@ const callGemini = async (
     generationConfig: {
       responseMimeType,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: { thinkingBudget: 512 },
     },
   };
 
@@ -236,6 +236,25 @@ The following subtest names have already been extracted from earlier pages of th
 YOU MUST REUSE these exact names when you encounter the same subtests on this page (even if the table header phrasing differs slightly).
 Known names: ${JSON.stringify(knownSubtestNames)}
 Only create a NEW subtest name if the subtest is genuinely different from all of the above.
+`;
+};
+
+const buildScoreTypeHintBlock = (scoreTypeHint: string | undefined): string => {
+  if (!scoreTypeHint) return '';
+  const descriptions: Record<string, string> = {
+    scaled: 'Scaled scores (NS/Note Standard), range 1-19, mean 10, SD 3.',
+    standard: 'Standard scores (QI/Score Standard), range 40-160, mean 100, SD 15.',
+    percentile: 'Percentile ranks, range 0-100.',
+    't-score': 'T-scores, range 20-80, mean 50, SD 10.',
+    stanine: 'Stanine scores, range 1-9, mean 5, SD 2.',
+    sten: 'Sten scores, range 1-10, mean 5.5, SD 2.',
+  };
+  const desc = descriptions[scoreTypeHint] ?? scoreTypeHint;
+  return `
+--- SCORE TYPE HINT ---
+The subtests in this test are expected to use: ${scoreTypeHint.toUpperCase()} (${desc})
+Use this to validate your classification. If the column values match this range, classify accordingly.
+Do NOT override this hint unless the data clearly contradicts it (e.g. values far outside the expected range).
 `;
 };
 
@@ -426,12 +445,13 @@ const buildFullExtractionTask = (payload: Record<string, unknown>) => {
   const filename = String(payload.filename || 'document');
   const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
   const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
   const imagePart = payload.imagePart;
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
 IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
 TASK: Analyze the image, CLASSIFY the table structure, then EXTRACT and NORMALIZE ALL data from ALL tables on this page.
 
 CRITICAL: This page may contain MULTIPLE tables or sections (e.g. upper table + lower table). You MUST extract data from ALL of them, not just the first one.
@@ -497,12 +517,13 @@ const buildFocusedExtractionTask = (
   const filename = String(payload.filename || 'document');
   const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
   const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
   const imagePart = payload.imagePart;
 
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
 IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
 FOCUS CONSTRAINT: Extract data ONLY for these specific subtest columns: ${JSON.stringify(focusSubtests)}
 These belong to the domain section: "${domainHint}".
 IGNORE all other columns entirely. Only output data for the listed subtests.
@@ -525,6 +546,7 @@ const buildRepairExtractionTask = (
   const filename = String(payload.filename || 'document');
   const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
   const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
   const imagePart = payload.imagePart;
 
   const focusList = repairRequest.focusSubtests.map((entry) => ({
@@ -545,7 +567,7 @@ ${repairRequest.expectedGroupCounts.map((entry) => `- "${entry.groupLabel}" => $
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
 IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
 REPAIR MODE: targeted re-extraction after quality issues.
 TARGET SUBTESTS (extract these first, exhaustively): ${JSON.stringify(focusList)}
 ${expectedCountsBlock}

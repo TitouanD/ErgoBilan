@@ -9,6 +9,10 @@ import type {
   RawDirection,
   SubtestInputConfig,
   SubtestInputModel,
+  SubtestItem,
+  ItemsAggregation,
+  ItemsDisplayGroup,
+  RawSection,
 } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
 
@@ -116,6 +120,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const normalized = value.toLowerCase().trim();
           if (normalized === 'qualitative_category') return 'qualitative_category';
           if (normalized === 'raw_only') return 'raw_only';
+          if (normalized === 'computed_items') return 'computed_items';
+          if (normalized === 'custom_text') return 'custom_text';
           return 'numeric_4mode';
         };
 
@@ -150,10 +156,43 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const defaultMetric = ['raw', 'standard', 'z', 'percentile'].includes(defaultMetricRaw)
             ? (defaultMetricRaw as 'raw' | 'standard' | 'z' | 'percentile')
             : undefined;
-          if ((!options || options.length === 0) && !defaultMetric) return undefined;
+
+          // items for computed_items model
+          const items = Array.isArray(raw.items) ? (raw.items as SubtestItem[]) : undefined;
+          const itemsAggregation = typeof raw.itemsAggregation === 'string' ? (raw.itemsAggregation as ItemsAggregation) : undefined;
+          const aggregationHint = typeof raw.aggregationHint === 'string' ? raw.aggregationHint : undefined;
+          const displayGroup = typeof raw.displayGroup === 'string' ? (raw.displayGroup as ItemsDisplayGroup) : undefined;
+          const maxRawScore = typeof raw.maxRawScore === 'number' ? raw.maxRawScore : undefined;
+          const rawValueLabel = typeof raw.rawValueLabel === 'string' ? raw.rawValueLabel : undefined;
+          const showRawFraction = raw.showRawFraction === true;
+          const rawSections = Array.isArray(raw.rawSections) ? (raw.rawSections as RawSection[]) : undefined;
+          const qualitativeLayout = typeof raw.qualitativeLayout === 'string' ? (raw.qualitativeLayout as 'radio' | 'select' | 'toggle') : undefined;
+
+          if (
+            (!options || options.length === 0) &&
+            !defaultMetric &&
+            !items &&
+            !itemsAggregation &&
+            !aggregationHint &&
+            !displayGroup &&
+            !maxRawScore &&
+            !rawValueLabel &&
+            !showRawFraction &&
+            !rawSections &&
+            !qualitativeLayout
+          ) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
             ...(defaultMetric ? { defaultMetric } : {}),
+            ...(items ? { items } : {}),
+            ...(itemsAggregation ? { itemsAggregation } : {}),
+            ...(aggregationHint ? { aggregationHint } : {}),
+            ...(displayGroup ? { displayGroup } : {}),
+            ...(maxRawScore !== undefined ? { maxRawScore } : {}),
+            ...(rawValueLabel ? { rawValueLabel } : {}),
+            ...(showRawFraction ? { showRawFraction } : {}),
+            ...(rawSections ? { rawSections } : {}),
+            ...(qualitativeLayout ? { qualitativeLayout } : {}),
           };
         };
 

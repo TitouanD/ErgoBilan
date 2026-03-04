@@ -108,7 +108,8 @@ expected_auth_rpcs as (
       ('public.admin_list_norm_fitting_dataset(text, text, text)'),
       ('public.admin_list_norm_fitting_issue_overrides(text, text)'),
       ('public.admin_set_norm_fitting_issue_dismissed(text, text, text, text, boolean, text)'),
-      ('public.admin_insight_extreme_alerts(integer, real)')
+      ('public.admin_insight_extreme_alerts(integer, real)'),
+      ('public.admin_get_ai_health_stats()')
   ) as v(fn_signature)
 ),
 missing_auth_rpcs as (
@@ -119,17 +120,36 @@ missing_auth_rpcs as (
 ),
 guardrail_checks as (
   select
-    'no_direct_select_official_subtests_for_authenticated'::text as check_name,
-    not has_table_privilege('authenticated', 'public.official_subtests', 'SELECT') as ok
+    'no_direct_select_official_norms_for_authenticated'::text as check_name,
+    not has_table_privilege('authenticated', 'public.official_norms', 'SELECT') as ok
+  union all
+  select
+    'no_direct_select_official_norms_for_anon',
+    not has_table_privilege('anon', 'public.official_norms', 'SELECT')
+  union all
+  select
+    'no_direct_select_official_subtests_for_authenticated',
+    not has_table_privilege('authenticated', 'public.official_subtests', 'SELECT')
+  union all
+  select
+    'no_direct_select_official_subtests_for_anon',
+    not has_table_privilege('anon', 'public.official_subtests', 'SELECT')
   union all
   select
     'no_direct_select_official_tests_for_authenticated',
     not has_table_privilege('authenticated', 'public.official_tests', 'SELECT')
   union all
   select
-    'catalog_view_security_invoker_false',
-    coalesce(
-      (select reloptions @> array['security_invoker=false']
+    'no_direct_select_official_tests_for_anon',
+    not has_table_privilege('anon', 'public.official_tests', 'SELECT')
+  union all
+  select
+    'catalog_view_security_invoker_off',
+    -- security_invoker=off is the default; when off, the option is not stored
+    -- in reloptions at all (NULL or absent). Check that security_invoker=on
+    -- is NOT present.
+    NOT coalesce(
+      (select reloptions @> array['security_invoker=on']
        from pg_class c
        join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relname = 'view_unified_catalog'),
@@ -137,9 +157,9 @@ guardrail_checks as (
     )
   union all
   select
-    'subtests_view_security_invoker_false',
-    coalesce(
-      (select reloptions @> array['security_invoker=false']
+    'subtests_view_security_invoker_off',
+    NOT coalesce(
+      (select reloptions @> array['security_invoker=on']
        from pg_class c
        join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relname = 'view_unified_subtests'),

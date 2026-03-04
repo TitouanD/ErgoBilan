@@ -44,12 +44,12 @@ type NumericStepOutlier = {
 // Versioned thresholds for low-false-positive behavior.
 const LOOKUP_MIN_SCORED_ROWS_FOR_CORE = 3;
 const LOOKUP_INTERNAL_GAP_BLOCKING_MIN_COUNT = 4;
-const LOOKUP_INTERNAL_GAP_BLOCKING_RATIO = 0.35;
+const LOOKUP_INTERNAL_GAP_BLOCKING_RATIO = 0.20;
 const LOOKUP_BOUNDARY_UNSCORED_MIN_COUNT = 2;
 const LOOKUP_STEP_MIN_SAMPLES = 5;
-const LOOKUP_STANDARD_STEP_OUTLIER_MIN_DELTA = 8;
+const LOOKUP_STANDARD_STEP_OUTLIER_MIN_DELTA = 6;
 const LOOKUP_STANDARD_STEP_OUTLIER_FLOOR = 4;
-const LOOKUP_PERCENTILE_STEP_OUTLIER_MIN_DELTA = 20;
+const LOOKUP_PERCENTILE_STEP_OUTLIER_MIN_DELTA = 15;
 const LOOKUP_PERCENTILE_STEP_OUTLIER_FLOOR = 8;
 const LOOKUP_STEP_OUTLIER_MAD_MULTIPLIER = 3;
 const LOOKUP_AGE_CAPTURE_BLOCKING_ROW_RATIO = 0.5;
@@ -658,6 +658,11 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     const standardDirection = detectDominantScoreDirection(orderedScored, 'standard');
     const percentileDirection = detectDominantScoreDirection(orderedScored, 'percentile');
 
+    let standardViolationCount = 0;
+    let totalStandardChecks = 0;
+    let percentileViolationCount = 0;
+    let totalPercentileChecks = 0;
+
     for (let i = 1; i < orderedScored.length; i += 1) {
       const prev = orderedScored[i - 1];
       const curr = orderedScored[i];
@@ -682,7 +687,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
         const standardViolation = standardDirection === 'decreasing'
           ? curr.standardValue > prev.standardValue + 0.5    // unexpected increase on inverse scale
           : curr.standardValue + 0.5 < prev.standardValue;   // unexpected decrease on normal scale
+        totalStandardChecks++;
         if (standardViolation) {
+          standardViolationCount++;
           const dirHint = standardDirection === 'decreasing'
             ? ' (echelle inverse: le NS devrait diminuer quand le brut augmente)'
             : '';
@@ -702,7 +709,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
         const percentileViolation = percentileDirection === 'decreasing'
           ? curr.percentileValue > prev.percentileValue + 1
           : curr.percentileValue + 1 < prev.percentileValue;
+        totalPercentileChecks++;
         if (percentileViolation) {
+          percentileViolationCount++;
           flags.push(makeFlag({
             code: 'LOOKUP_PERCENTILE_NON_MONOTONIC',
             severity: 'warning',
@@ -739,6 +748,32 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
           normalized: Math.abs(deltaValue) / Math.max(1, deltaRaw),
         });
       }
+    }
+
+    // Elevate to blocking when > 25% of transitions violate monotonicity — indicates wholesale extraction failure
+    const NON_MONOTONIC_BLOCKING_RATIO = 0.25;
+    const NON_MONOTONIC_MIN_TRANSITIONS = 4;
+    if (totalStandardChecks >= NON_MONOTONIC_MIN_TRANSITIONS &&
+      standardViolationCount / totalStandardChecks > NON_MONOTONIC_BLOCKING_RATIO) {
+      flags.push(makeFlag({
+        code: 'LOOKUP_STANDARD_NON_MONOTONIC',
+        severity: 'blocking',
+        message: `NS massivement non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${standardViolationCount}/${totalStandardChecks} transitions invalides (${Math.round(standardViolationCount / totalStandardChecks * 100)}%). Extraction probablement erronee.`,
+        subtest: bucket.subtest,
+        groupLabel: bucket.groupLabel,
+        confidence: 0.97,
+      }));
+    }
+    if (totalPercentileChecks >= NON_MONOTONIC_MIN_TRANSITIONS &&
+      percentileViolationCount / totalPercentileChecks > NON_MONOTONIC_BLOCKING_RATIO) {
+      flags.push(makeFlag({
+        code: 'LOOKUP_PERCENTILE_NON_MONOTONIC',
+        severity: 'blocking',
+        message: `Percentile massivement non monotone pour "${bucket.subtest}" (${bucket.groupLabel}): ${percentileViolationCount}/${totalPercentileChecks} transitions invalides (${Math.round(percentileViolationCount / totalPercentileChecks * 100)}%). Extraction probablement erronee.`,
+        subtest: bucket.subtest,
+        groupLabel: bucket.groupLabel,
+        confidence: 0.97,
+      }));
     }
 
     // Check for non-integer scores on integer-based scales

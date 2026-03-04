@@ -768,6 +768,26 @@ export interface AdminNormFittingSubtestAudit {
     suggestions: FittingSuggestion[];
 }
 
+/**
+ * Subtest-level direction quality issue returned by `admin_list_direction_issues()`.
+ *
+ * Flag codes:
+ *  - `DIRECTION_AUTO_WITH_NORMS`  — raw_direction='auto' but norms exist → will use
+ *    name-regex fallback at score time. Must be fixed before going live.
+ *  - `DIRECTION_NAME_MISMATCH`    — DB says higher_better but subtest name contains a
+ *    "lower-is-better" keyword. May be intentional; review and confirm or correct.
+ */
+export interface SubtestDirectionIssue {
+    subtest_id: string;
+    subtest_name: string;
+    test_id: string;
+    test_name: string;
+    current_direction: string;
+    issue_code: 'DIRECTION_AUTO_WITH_NORMS' | 'DIRECTION_NAME_MISMATCH';
+    issue_label: string;
+    details: string;
+}
+
 /** Aggregated cross-test issue backlog row */
 export interface AdminIssueBacklogItem {
     test_id: string;

@@ -74,6 +74,22 @@ export interface SubtestInputOption {
   reportText?: string;
 }
 
+/**
+ * One additive section within a raw score entry.
+ * Used when a raw score is split across named sub-parts that sum to a total
+ * (e.g. Purdue Pegboard: main droite, main gauche, deux mains, assemblage).
+ */
+export interface RawSection {
+  /** Stable key (e.g. "right", "left", "bimanual"). */
+  key: string;
+  /** Label shown next to the input field. */
+  label: string;
+  /** Optional unit override (falls back to the subtest unit). */
+  unit?: string;
+  /** Maximum accepted value for this section. */
+  max?: number;
+}
+
 export interface SubtestInputConfig {
   /** For qualitative_category: the list of selectable options. */
   options?: SubtestInputOption[];
@@ -92,6 +108,31 @@ export interface SubtestInputConfig {
   aggregationHint?: string;
   /** Visual layout for the sub-items grid. Default: 'column'. */
   displayGroup?: ItemsDisplayGroup;
+  /**
+   * Maximum possible raw score — enables fraction display "XX / maxRawScore".
+   * E.g. 35 for Test des Cloches, 180 for EVIC caractères.
+   */
+  maxRawScore?: number;
+  /**
+   * Custom label replacing the default "BRUT" label in the raw score field.
+   * E.g. "ERREURS", "CHAR.", "SEC.", "CLOCHES".
+   */
+  rawValueLabel?: string;
+  /**
+   * When true, shows the score as a fraction: "[input] / maxRawScore".
+   * Requires maxRawScore to be set.
+   */
+  showRawFraction?: boolean;
+  /**
+   * Splits the raw entry into named additive sections that auto-sum to the total.
+   * E.g. Purdue Pegboard: [main D, main G, deux mains, assemblage].
+   */
+  rawSections?: RawSection[];
+  /**
+   * Visual layout for qualitative_category options.
+   * Default: 'radio' (vertical list). 'toggle' gives a pill-button grid.
+   */
+  qualitativeLayout?: 'radio' | 'select' | 'toggle';
 }
 
 export interface SubtestDef {

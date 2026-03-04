@@ -873,6 +873,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         () => Array.from(new Set(canonicalSubtestsNormalized.map((sub) => sub.name).filter(Boolean))),
         [canonicalSubtestsNormalized]
     );
+    // Derive dominant score_type hint from canonical subtests (used to guide AI classification)
+    const scoreTypeHintDerived = useMemo<string | undefined>(() => {
+        const counts = new Map<string, number>();
+        canonicalSubtestsNormalized.forEach((sub) => {
+            if (sub.scoreType && sub.scoreType !== 'none') {
+                counts.set(sub.scoreType, (counts.get(sub.scoreType) ?? 0) + 1);
+            }
+        });
+        if (counts.size === 0) return undefined;
+        const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+        const [dominantType, dominantCount] = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0];
+        return dominantCount / total >= 0.70 ? dominantType : undefined;
+    }, [canonicalSubtestsNormalized]);
     const canonicalSubtestsByAbbreviation = useMemo(() => {
         const map = new Map<string, CanonicalSubtestEntry[]>();
         canonicalSubtestsNormalized.forEach((sub) => {
@@ -1478,6 +1491,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             imagePart,
             knownSubtestNames: knownSubtestNames || [],
             canonicalSubtestNames: canonicalNameInventory,
+            scoreTypeHint: scoreTypeHintDerived,
         });
 
         return buildRowsFromExtractionText(response.text, filename);
@@ -1656,6 +1670,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 imagePart,
                 knownSubtestNames: repairPayload.existingSubtests,
                 canonicalSubtestNames: canonicalNameInventory,
+                scoreTypeHint: scoreTypeHintDerived,
                 repairRequest: {
                     focusSubtests: repairPayload.focusSubtests,
                     expectedGroupCounts: repairPayload.expectedGroupCounts,

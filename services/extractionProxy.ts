@@ -14,6 +14,8 @@ export interface ExtractionParams {
   knownSubtestNames?: string[];
   canonicalSubtestNames?: string[];
   repairRequest?: ExtractionRepairRequest;
+  /** Expected score type for all subtests on this page (e.g. 'scaled', 'percentile', 't-score'). Injected into the AI prompt to reduce misclassification. */
+  scoreTypeHint?: string;
 }
 
 export interface ExtractionResponse {
