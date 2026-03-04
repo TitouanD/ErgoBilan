@@ -21,7 +21,28 @@ export interface NormsStatusRow {
     statusCode: NormsStatusCode;
 }
 
-// Hardcoded demo data for the bell test.
+// ============================================================
+// DEMO SUBTEST: Test des Cloches barrées (id: "cloches-barrees")
+//
+// Why hardcoded here?
+//   This subtest is bundled with every ErgoBilan demo account as a
+//   fully functional scoring example. Its norms are derived from the
+//   original published study (Albaret & Tomás, 1994) which are publicly
+//   available in the literature and therefore carry no confidentiality
+//   obligation.
+//
+// Architecture note:
+//   All other subtests are scored via `compute_score` (SECURITY DEFINER
+//   RPC). Norms never leave the backend. The demo shortcut below:
+//   - Skips the RPC entirely and runs the z-score math in the browser.
+//   - Uses class_level first, age_months as fallback, CM1 as last resort.
+//   - Returns direction higher_better (more cloches found = better).
+//
+// ⚠️  VISIBILITY WARNING: These values ship in the JavaScript bundle and
+//     are visible to anyone with DevTools. This is intentional and
+//     acceptable for public-domain demo data. DO NOT replicate this
+//     pattern for norm sets.
+// ============================================================
 const CLOCHES_NORMS: Record<string, { mean: number; sd: number }> = {
     CE1: { mean: 26.8, sd: 4.2 },
     CE2: { mean: 29.0, sd: 4.1 },

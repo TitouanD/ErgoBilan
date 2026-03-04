@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, Loader2, RefreshCw, Search, ShieldAlert, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Loader2, RefreshCw, Search, ShieldAlert, Wrench, ArrowUpDown } from 'lucide-react';
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
-import type { AdminIssueBacklogItem } from '../../types';
+import type { AdminIssueBacklogItem, SubtestDirectionIssue } from '../../types';
 import { analyzeAdminNormFittingDataset, buildFittingIssueCountByTest } from '../../utils/adminNormFittingAudit';
 
 interface Props {
@@ -18,19 +18,22 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [dedupingTestId, setDedupingTestId] = useState<string | null>(null);
   const [fittingIssueCountByTest, setFittingIssueCountByTest] = useState<Map<string, number>>(new Map());
+  const [directionIssues, setDirectionIssues] = useState<SubtestDirectionIssue[]>([]);
 
   const loadIssues = async () => {
     setIsLoading(true);
     try {
-      const [rows, dataset, overrides] = await Promise.all([
+      const [rows, dataset, overrides, dirIssues] = await Promise.all([
         AdminService.listIssueBacklog(),
         AdminService.listNormFittingDataset({ scope: 'all' }),
         AdminService.listNormFittingIssueOverrides(),
+        AdminService.listDirectionIssues(),
       ]);
       const dismissedKeys = new Set(overrides.filter((row) => row.dismissed).map((row) => row.issue_key));
       const fittingAudits = analyzeAdminNormFittingDataset(dataset, dismissedKeys);
       setFittingIssueCountByTest(buildFittingIssueCountByTest(fittingAudits));
       setIssues(rows);
+      setDirectionIssues(dirIssues);
     } catch (e) {
       Logger.error('DB', 'Failed to load global issues backlog', e);
       toast.error("Impossible de charger l'onglet Issues.");
@@ -251,6 +254,80 @@ export const AdminIssuesBoard: React.FC<Props> = ({ onOpenTest }) => {
           </table>
         </div>
       </div>
+
+      {/* Direction quality issues */}
+      {(directionIssues.length > 0 || isLoading) && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+          <div>
+            <h3 className="text-white text-base font-bold flex items-center gap-2">
+              <ArrowUpDown size={16} className="text-cyan-400" /> Direction des sous-tests
+            </h3>
+            <p className="text-[11px] text-stone-500 mt-1">
+              Sous-tests dont le sens de scoring (<em>higher/lower_better</em>) est indéfini ou suspect.
+            </p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-stone-500 text-xs py-4">
+              <Loader2 size={14} className="animate-spin" /> Chargement…
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-xl border border-white/10">
+              <table className="w-full text-xs">
+                <thead className="bg-black/20 text-stone-400 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="text-left px-3 py-2">Sous-test</th>
+                    <th className="text-left px-3 py-2">Test</th>
+                    <th className="text-left px-3 py-2">Direction DB</th>
+                    <th className="text-left px-3 py-2">Code</th>
+                    <th className="text-left px-3 py-2">Détail</th>
+                    <th className="text-right px-3 py-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {directionIssues.map((row) => {
+                    const isBlocking = row.issue_code === 'DIRECTION_AUTO_WITH_NORMS';
+                    return (
+                      <tr key={`${row.subtest_id}-${row.issue_code}`} className="border-t border-white/5">
+                        <td className="px-3 py-2">
+                          <div className="font-bold text-white">{row.subtest_name}</div>
+                          <div className="text-[10px] text-stone-500">{row.subtest_id}</div>
+                        </td>
+                        <td className="px-3 py-2 text-stone-300">{row.test_name}</td>
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-stone-300">
+                            {row.current_direction}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            isBlocking
+                              ? 'bg-rose-500/20 text-rose-300'
+                              : 'bg-amber-500/20 text-amber-300'
+                          }`}>
+                            {isBlocking ? '⛔ BLOQUANT' : '⚠ WARNING'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-stone-400 max-w-xs">
+                          <span className="line-clamp-2 text-[10px]">{row.details}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => onOpenTest(row.test_id)}
+                            className="text-[10px] text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 px-2 py-1 rounded flex items-center gap-1 ml-auto"
+                          >
+                            Ouvrir <ArrowRight size={10} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

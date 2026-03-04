@@ -19,7 +19,8 @@ import type {
     AdminUserUpdatePayload,
     InsightQualityAlert,
     AdminNormFittingDatasetRow,
-    AdminNormFittingIssueOverride
+    AdminNormFittingIssueOverride,
+    SubtestDirectionIssue
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -130,23 +131,6 @@ const isStatementTimeoutError = (error: unknown): boolean => {
     return code === '57014' || message.includes('statement timeout');
 };
 
-// Données simulées pour le Dashboard Ops
-const MOCK_AI_STATS = {
-    dailyUsage: [
-        { date: '10/01', tokens: 12500, cost: 0.04, errors: 0 },
-        { date: '11/01', tokens: 15000, cost: 0.05, errors: 1 },
-        { date: '12/01', tokens: 42000, cost: 0.14, errors: 0 },
-        { date: '13/01', tokens: 38000, cost: 0.12, errors: 2 },
-        { date: '14/01', tokens: 55000, cost: 0.18, errors: 0 },
-        { date: '15/01', tokens: 48000, cost: 0.15, errors: 0 },
-        { date: '16/01', tokens: 62000, cost: 0.21, errors: 1 },
-    ],
-    failures: [
-        { id: 'err_1', date: '2023-10-13T14:30:00Z', type: 'TIMEOUT_AI', context: 'Anamnèse très longue (> 4000 chars)', user: 'doc.martin@email.com' },
-        { id: 'err_2', date: '2023-10-13T16:15:00Z', type: 'INVALID_JSON', context: 'Structure réponse corrompue (Markdown missing)', user: 'ergo.sophie@email.com' },
-        { id: 'err_3', date: '2023-10-16T09:10:00Z', type: 'SAFETY_BLOCK', context: 'Contenu potentiellement flaggé par Google', user: 'test.user@email.com' }
-    ]
-};
 
 /**
  * Service dédié aux opérations Administrateur.
@@ -676,22 +660,35 @@ export const AdminService = {
         }));
     },
 
+    // --- DIRECTION QUALITY ---
+
+    /**
+     * Returns subtest-level direction quality issues:
+     *  - DIRECTION_AUTO_WITH_NORMS  (blocking): raw_direction='auto' but norms exist
+     *  - DIRECTION_NAME_MISMATCH    (warning):  DB says higher_better but name implies lower
+     */
+    listDirectionIssues: async (): Promise<SubtestDirectionIssue[]> => {
+        const { data, error } = await supabase.rpc('admin_list_direction_issues');
+        if (error) throw error;
+        return (data || []) as SubtestDirectionIssue[];
+    },
+
     // --- PHASE 4 : OPS & MONITORING (IA) ---
 
-    getAIHealthStats: async () => {
-        return new Promise<{daily: any[], totalCost: number, errorRate: number}>(resolve => {
-            setTimeout(() => {
-                const totalCost = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.cost, 0);
-                const totalErrors = MOCK_AI_STATS.dailyUsage.reduce((acc, d) => acc + d.errors, 0);
-                const totalRequests = 150;
-
-                resolve({
-                    daily: MOCK_AI_STATS.dailyUsage,
-                    totalCost: parseFloat(totalCost.toFixed(2)),
-                    errorRate: parseFloat(((totalErrors / totalRequests) * 100).toFixed(1))
-                });
-            }, 500);
-        });
+    getAIHealthStats: async (): Promise<{
+        daily: Array<{ date: string; requests: number; errors: number }>;
+        total_requests: number;
+        total_errors: number;
+        error_rate_pct: number;
+    }> => {
+        const { data, error } = await supabase.rpc('admin_get_ai_health_stats');
+        if (error) throw error;
+        return data as {
+            daily: Array<{ date: string; requests: number; errors: number }>;
+            total_requests: number;
+            total_errors: number;
+            error_rate_pct: number;
+        };
     }
 };
 

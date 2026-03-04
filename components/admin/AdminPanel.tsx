@@ -85,25 +85,25 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         <nav className="flex-1 p-4 space-y-2">
           <button
             onClick={() => setActiveTab('catalogue')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'catalogue' ? 'bg-[#3D405B] text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'catalogue' ? 'bg-[#3D405B] text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Layers size={18} /> Catalogue Officiel
           </button>
           <button
             onClick={() => setActiveTab('issues')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'issues' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'issues' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <ClipboardList size={18} /> Issues Globales
           </button>
           <button
             onClick={() => setActiveTab('norm_quality')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'norm_quality' ? 'bg-fuchsia-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'norm_quality' ? 'bg-fuchsia-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <FlaskConical size={18} /> Qualité Normes
           </button>
           <button
             onClick={() => setActiveTab('users')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'users' ? 'bg-cyan-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Users2 size={18} /> Utilisateurs
           </button>
@@ -112,13 +112,13 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
 
           <button
             onClick={() => setActiveTab('insights')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'insights' ? 'bg-indigo-600 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'insights' ? 'bg-indigo-600 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Activity size={18} /> Science & Insights
           </button>
           <button
             onClick={() => setActiveTab('ops')}
-            className={`w - full flex items - center gap - 3 px - 4 py - 3 rounded - xl text - sm font - bold transition - all ${activeTab === 'ops' ? 'bg-emerald-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'ops' ? 'bg-emerald-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Cpu size={18} /> Ops & Monitoring
           </button>
