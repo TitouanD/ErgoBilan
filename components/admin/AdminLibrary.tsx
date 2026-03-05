@@ -1726,6 +1726,41 @@ export const AdminLibrary: React.FC<Props> = ({
                             className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
                           />
                         </div>
+                        {/* ── Groupage visuel ─────────────────────────────── */}
+                        <div className="col-span-6">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Groupe (clé)</label>
+                          <input
+                            type="text"
+                            value={(activeSubtest.input_config as Record<string, unknown>)?.groupKey as string ?? ''}
+                            placeholder="ex: mabc2_dexterite"
+                            onChange={(e) => {
+                              const merged = { ...(activeSubtest.input_config || {}), groupKey: e.target.value || undefined };
+                              if (!e.target.value) delete (merged as Record<string, unknown>).groupKey;
+                              updateSubtestField(activeSubtest.id, 'input_config', merged);
+                              setInputConfigDraft(JSON.stringify(merged, null, 2));
+                            }}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+                          />
+                        </div>
+                        <div className="col-span-6">
+                          <label className="text-[10px] font-bold text-stone-500 uppercase">Groupe (libellé affiché)</label>
+                          <input
+                            type="text"
+                            value={(activeSubtest.input_config as Record<string, unknown>)?.groupHeaderLabel as string ?? ''}
+                            placeholder="ex: Dextérité Manuelle"
+                            onChange={(e) => {
+                              const merged = { ...(activeSubtest.input_config || {}), groupHeaderLabel: e.target.value || undefined };
+                              if (!e.target.value) delete (merged as Record<string, unknown>).groupHeaderLabel;
+                              updateSubtestField(activeSubtest.id, 'input_config', merged);
+                              setInputConfigDraft(JSON.stringify(merged, null, 2));
+                            }}
+                            className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white"
+                          />
+                        </div>
+                        <div className="col-span-12 -mt-1">
+                          <p className="text-[10px] text-stone-600 italic">Les sous-tests partageant la même clé de groupe seront regroupés visuellement dans Step2 sous un en-tête commun.</p>
+                        </div>
+                        {/* ── Input config JSON brut ───────────────────────── */}
                         <div className="col-span-12">
                           <div className="flex items-center justify-between gap-2">
                             <label className="text-[10px] font-bold text-stone-500 uppercase">Input config (JSON)</label>
