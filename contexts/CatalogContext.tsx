@@ -167,6 +167,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const showRawFraction = raw.showRawFraction === true;
           const rawSections = Array.isArray(raw.rawSections) ? (raw.rawSections as RawSection[]) : undefined;
           const qualitativeLayout = typeof raw.qualitativeLayout === 'string' ? (raw.qualitativeLayout as 'radio' | 'select' | 'toggle') : undefined;
+          const groupKey = typeof raw.groupKey === 'string' && raw.groupKey.trim() ? raw.groupKey.trim() : undefined;
+          const groupHeaderLabel = typeof raw.groupHeaderLabel === 'string' && raw.groupHeaderLabel.trim() ? raw.groupHeaderLabel.trim() : undefined;
 
           if (
             (!options || options.length === 0) &&
@@ -179,7 +181,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             !rawValueLabel &&
             !showRawFraction &&
             !rawSections &&
-            !qualitativeLayout
+            !qualitativeLayout &&
+            !groupKey &&
+            !groupHeaderLabel
           ) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
@@ -193,6 +197,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...(showRawFraction ? { showRawFraction } : {}),
             ...(rawSections ? { rawSections } : {}),
             ...(qualitativeLayout ? { qualitativeLayout } : {}),
+            ...(groupKey ? { groupKey } : {}),
+            ...(groupHeaderLabel ? { groupHeaderLabel } : {}),
           };
         };
 

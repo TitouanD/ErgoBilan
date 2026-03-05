@@ -2063,29 +2063,55 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                         </div>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
-                        {filteredSubtests.map((st) => {
-                          const already = existingTests[test.id]?.[st.id] !== undefined;
-                          const checked = already || (selected[test.id] || []).includes(st.id);
-                          return (
-                            <label
-                              key={st.id}
-                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${already
-                                  ? 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                  : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[#E07A5F]'
-                                }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={already}
-                                onChange={() => toggleSubtest(test.id, st.id)}
-                                className="accent-[#E07A5F]"
-                              />
-                              <span className="truncate">{getSubtestDisplayName(st)}</span>
-                              {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
-                            </label>
-                          );
-                        })}
+                        {(() => {
+                          const sortedSTs = [...filteredSubtests].sort((a, b) => {
+                            const ga = a.inputConfig?.groupKey ?? '\uffff';
+                            const gb = b.inputConfig?.groupKey ?? '\uffff';
+                            return ga < gb ? -1 : ga > gb ? 1 : 0;
+                          });
+                          const selItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
+                          let lastSelGKey = '';
+                          for (const st of sortedSTs) {
+                            const gKey = st.inputConfig?.groupKey;
+                            if (gKey && gKey !== lastSelGKey && !subtestSearch) {
+                              selItems.push({ type: 'header', gkey: gKey, label: st.inputConfig?.groupHeaderLabel || gKey });
+                              lastSelGKey = gKey;
+                            }
+                            selItems.push({ type: 'sub', st });
+                          }
+                          return selItems.map((item) => {
+                            if (item.type === 'header') {
+                              return (
+                                <div key={`grp-${item.gkey}`} className="col-span-full mt-2 first:mt-0 flex items-center gap-2 px-1">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#E07A5F]">{item.label}</span>
+                                  <div className="flex-1 h-px bg-[var(--border-color)]" />
+                                </div>
+                              );
+                            }
+                            const { st } = item;
+                            const already = existingTests[test.id]?.[st.id] !== undefined;
+                            const checked = already || (selected[test.id] || []).includes(st.id);
+                            return (
+                              <label
+                                key={st.id}
+                                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${already
+                                    ? 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[#E07A5F]'
+                                  }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={already}
+                                  onChange={() => toggleSubtest(test.id, st.id)}
+                                  className="accent-[#E07A5F]"
+                                />
+                                <span className="truncate">{getSubtestDisplayName(st)}</span>
+                                {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
+                              </label>
+                            );
+                          });
+                        })()}
                       </div>
                       {filteredSubtests.length === 0 && (
                         <p className="text-xs text-[var(--text-secondary)] px-1 py-2">Aucun sous-test ne correspond à la recherche.</p>
@@ -2708,54 +2734,80 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                             /* ── Accordion mode ── */
                             <>
                               {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
-                              {filteredSubtests.map((st) => {
-                                const res = tests[test.id]?.[st.id] || emptyScore();
-                                const dbSubId = st.id;
-                                const normsStatus = normsStatusMap[dbSubId];
-                                const hasApplicableNorms = normsStatus?.statusCode === 'ok';
-                                const baseDirection = resolveBaseDirectionForDbSubtest(dbSubId, st);
-                                const effectiveDirection = directionByDbSubtestId[dbSubId] || baseDirection;
-                                const subKey = `${test.id}__${st.id}`;
-                                const isSubExpanded = expandedSubKey === subKey;
-                                const isSubReviewed = reviewed(res);
-                                const hasData = hasValue(res);
-                                return (
-                                  <div
-                                    key={st.id}
-                                    className={`relative border-l-[3px] transition-all ${isSubReviewed
-                                        ? 'border-l-emerald-400'
-                                        : hasData
-                                          ? 'border-l-amber-300'
-                                          : 'border-l-transparent'
-                                      } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
-                                  >
-                                    {isSubExpanded ? (
-                                      <FlexibleSubtestRow
-                                        testId={test.id}
-                                        patient={patient}
-                                        subtest={st}
-                                        result={res}
-                                        onChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                        hasNorms={hasApplicableNorms}
-                                        normsStatusCode={normsStatus?.statusCode}
-                                        effectiveDirection={effectiveDirection}
-                                        baseDirection={baseDirection}
-                                        onToggleDirection={() => toggleSubtestDirection(dbSubId, st)}
-                                        hasPendingDirectionOverride={pendingDirectionOverrides[dbSubId] !== undefined}
-                                        onFocus={() => setExpandedSubKey(subKey)}
-                                      />
-                                    ) : (
-                                      <CompactSubtestRow
-                                    subtest={st}
-                                    result={res}
-                                    onClick={() => setExpandedSubKey(subKey)}
-                                    onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
-                                  />
-                                    )}
-                                    {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
-                                  </div>
-                                );
-                              })}
+                              {(() => {
+                                const sortedAccSTs = [...filteredSubtests].sort((a, b) => {
+                                  const ga = a.inputConfig?.groupKey ?? '\uffff';
+                                  const gb = b.inputConfig?.groupKey ?? '\uffff';
+                                  return ga < gb ? -1 : ga > gb ? 1 : 0;
+                                });
+                                const accItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
+                                let lastAccGKey = '';
+                                for (const st of sortedAccSTs) {
+                                  const gKey = st.inputConfig?.groupKey;
+                                  if (gKey && gKey !== lastAccGKey && !subtestQuery) {
+                                    accItems.push({ type: 'header', gkey: gKey, label: st.inputConfig?.groupHeaderLabel || gKey });
+                                    lastAccGKey = gKey;
+                                  }
+                                  accItems.push({ type: 'sub', st });
+                                }
+                                return accItems.map((item) => {
+                                  if (item.type === 'header') {
+                                    return (
+                                      <div key={`grp-${item.gkey}`} className="px-5 py-2 flex items-center gap-3 bg-[var(--hover-bg)] border-t border-[var(--border-color)]">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#E07A5F]">{item.label}</span>
+                                        <div className="flex-1 h-px bg-[#E07A5F]/20" />
+                                      </div>
+                                    );
+                                  }
+                                  const { st } = item;
+                                  const res = tests[test.id]?.[st.id] || emptyScore();
+                                  const dbSubId = st.id;
+                                  const normsStatus = normsStatusMap[dbSubId];
+                                  const hasApplicableNorms = normsStatus?.statusCode === 'ok';
+                                  const baseDirection = resolveBaseDirectionForDbSubtest(dbSubId, st);
+                                  const effectiveDirection = directionByDbSubtestId[dbSubId] || baseDirection;
+                                  const subKey = `${test.id}__${st.id}`;
+                                  const isSubExpanded = expandedSubKey === subKey;
+                                  const isSubReviewed = reviewed(res);
+                                  const hasData = hasValue(res);
+                                  return (
+                                    <div
+                                      key={st.id}
+                                      className={`relative border-l-[3px] transition-all ${isSubReviewed
+                                          ? 'border-l-emerald-400'
+                                          : hasData
+                                            ? 'border-l-amber-300'
+                                            : 'border-l-transparent'
+                                        } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
+                                    >
+                                      {isSubExpanded ? (
+                                        <FlexibleSubtestRow
+                                          testId={test.id}
+                                          patient={patient}
+                                          subtest={st}
+                                          result={res}
+                                          onChange={(patch) => updateSubtest(test.id, st.id, patch)}
+                                          hasNorms={hasApplicableNorms}
+                                          normsStatusCode={normsStatus?.statusCode}
+                                          effectiveDirection={effectiveDirection}
+                                          baseDirection={baseDirection}
+                                          onToggleDirection={() => toggleSubtestDirection(dbSubId, st)}
+                                          hasPendingDirectionOverride={pendingDirectionOverrides[dbSubId] !== undefined}
+                                          onFocus={() => setExpandedSubKey(subKey)}
+                                        />
+                                      ) : (
+                                        <CompactSubtestRow
+                                          subtest={st}
+                                          result={res}
+                                          onClick={() => setExpandedSubKey(subKey)}
+                                          onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
+                                        />
+                                      )}
+                                      {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </>
                           )}
                         </div>

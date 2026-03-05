@@ -1,7 +1,7 @@
 ﻿
 import React, { useState, useCallback, useMemo } from 'react';
-import type { ClinicalSynthesis, TestData, Observations, Patient } from '../../types';
-import { Sparkles, Brain, Target, ArrowRight, Lightbulb, Activity, ChevronRight, PenTool, MessageSquare, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
+import type { ClinicalSynthesis, TestData, Observations, Patient, ScoreResult } from '../../types';
+import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { useCatalog } from '../../contexts/CatalogContext';
 
@@ -63,76 +63,169 @@ const VoiceArea: React.FC<{
     );
 };
 
-// --- TEST SUMMARY PANEL (grouped by clinical category) ---
-const TestSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
+// --- SCORES & OBSERVATIONS PANEL (merged, expandable) ---
+const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
     const { catalog } = useCatalog();
+    const [notesExpanded, setNotesExpanded] = useState(false);
 
-    const groupedScores = useMemo((): Record<string, { testId: string; name: string; avg: number }[]> => {
-        // Build testId → { name, categoryName } map from catalog
+    const { testInfoMap, subtestNameMap } = useMemo(() => {
         const testInfoMap: Record<string, { name: string; categoryName: string }> = {};
+        const subtestNameMap: Record<string, string> = {};
         catalog.forEach(cat => {
             cat.tests.forEach(t => {
                 testInfoMap[t.id] = { name: t.name, categoryName: cat.name };
+                t.subtests.forEach(st => {
+                    subtestNameMap[st.id] = (st as any).displayName || st.name;
+                });
             });
         });
+        return { testInfoMap, subtestNameMap };
+    }, [catalog]);
 
-        // Compute avg z-score per test
-        const scoresByCategory: Record<string, { testId: string; name: string; avg: number }[]> = {};
-        Object.entries(tests).forEach(([testId, subtests]) => {
+    const groupedData = useMemo((): Record<string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]> => {
+        const result: Record<string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]> = {};
+        Object.entries(tests).forEach(([testId, subtestMap]) => {
             const zScores: number[] = [];
-            Object.values(subtests).forEach(res => {
+            const subtestList: { subId: string; name: string; res: ScoreResult }[] = [];
+            Object.entries(subtestMap).forEach(([subId, res]) => {
                 if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
+                const hasData = !!(res.raw?.trim() || res.standard?.trim() || res.percentile?.trim() ||
+                    Number.isFinite(res.zScore) || res.qualitativeCode?.trim() || res.qualitativeLabel?.trim());
+                if (hasData) subtestList.push({ subId, name: subtestNameMap[subId] || subId, res });
             });
-            if (zScores.length === 0) return;
-            const avg = zScores.reduce((a, b) => a + b, 0) / zScores.length;
+            if (subtestList.length === 0) return;
+            const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
             const info = testInfoMap[testId];
             const categoryName = info?.categoryName || 'Autre';
             const testName = info?.name || testId;
-            if (!scoresByCategory[categoryName]) scoresByCategory[categoryName] = [];
-            scoresByCategory[categoryName].push({ testId, name: testName, avg });
+            if (!result[categoryName]) result[categoryName] = [];
+            result[categoryName].push({ testId, name: testName, avg, subtests: subtestList });
         });
+        return result;
+    }, [tests, testInfoMap, subtestNameMap]);
 
-        return scoresByCategory;
-    }, [tests, catalog]);
-
-    const hasScores = Object.keys(groupedScores).length > 0;
-    if (!hasScores) return null;
-
-    const ScoreBar: React.FC<{ testId: string; name: string; avg: number }> = ({ testId, name, avg }) => {
-        let color = '#81B29A';
-        if (avg <= -2) color = '#E07A5F';
-        else if (avg <= -1) color = '#F2CC8F';
-        const barWidth = Math.min(100, Math.max(5, ((avg + 3.5) / 7) * 100));
-        return (
-            <div key={testId}>
-                <div className="flex justify-between text-[10px] mb-1">
-                    <span className="text-stone-500 font-medium truncate max-w-[130px]">{name}</span>
-                    <span className="font-bold" style={{ color }}>{avg > 0 ? '+' : ''}{avg.toFixed(1)} ET</span>
-                </div>
-                <div className="h-1.5 bg-[var(--progress-bg)] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barWidth}%`, backgroundColor: color }} />
-                </div>
-            </div>
-        );
+    const zColor = (z?: number | null): string => {
+        if (z == null || !Number.isFinite(z)) return '#94a3b8';
+        if (z <= -2) return '#E07A5F';
+        if (z <= -1) return '#F2CC8F';
+        return '#81B29A';
     };
 
+    const hasContent = Object.keys(groupedData).length > 0;
+    if (!hasContent && !interviewNotes) return null;
+
     return (
-        <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-5 mb-6 shadow-sm">
-            <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Activity size={14} /> Résumé par domaine
-            </h4>
-            <div className="space-y-4">
-                {(Object.entries(groupedScores) as [string, { testId: string; name: string; avg: number }[]][]).map(([categoryName, scores]) => (
-                    <div key={categoryName}>
-                        <p className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest mb-2 border-b border-[var(--border-color)] pb-1">
-                            {categoryName}
-                        </p>
-                        <div className="space-y-2">
-                            {scores.map(({ testId, name, avg }) => <ScoreBar key={testId} testId={testId} name={name} avg={avg} />)}
-                        </div>
-                    </div>
-                ))}
+        <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden">
+
+            {/* Panel header */}
+            <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center gap-2">
+                <Activity size={13} className="text-stone-400" />
+                <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scores & Observations</h4>
             </div>
+
+            {/* Interview notes */}
+            {interviewNotes && (
+                <div className="px-4 py-2.5 border-b border-[var(--border-color)] bg-amber-50/60 dark:bg-amber-950/20 flex items-start gap-2">
+                    <Quote size={10} className="text-amber-500 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                        <p className={`text-[10px] text-amber-900 dark:text-amber-200/80 italic leading-relaxed ${!notesExpanded && interviewNotes.length > 120 ? 'line-clamp-2' : ''}`}>
+                            {interviewNotes}
+                        </p>
+                        {interviewNotes.length > 120 && (
+                            <button onClick={() => setNotesExpanded(p => !p)} className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5 hover:underline">
+                                {notesExpanded ? 'Réduire' : 'Voir tout'}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Table */}
+            <table className="w-full border-collapse text-left">
+                <tbody>
+                    {(Object.entries(groupedData) as [string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]][]).map(([categoryName, testEntries]) => (
+                        <React.Fragment key={categoryName}>
+                            {/* Category row */}
+                            <tr>
+                                <td colSpan={3} className="px-4 py-1.5 bg-[var(--hover-bg)] border-y border-[var(--border-color)]">
+                                    <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest">{categoryName}</span>
+                                </td>
+                            </tr>
+
+                            {testEntries.map(({ testId, name, avg, subtests }) => {
+                                const color = zColor(avg);
+                                return (
+                                    <React.Fragment key={testId}>
+                                        {/* Test row */}
+                                        <tr className="bg-[var(--app-bg)]">
+                                            <td colSpan={2} className="px-4 pt-3 pb-1.5 flex items-center gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                                <span className="text-[11px] font-bold text-[var(--text-heading)] flex-1">{name}</span>
+                                                {avg !== null && (
+                                                    <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color }}>
+                                                        {avg > 0 ? '+' : ''}{avg.toFixed(1)} ET
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+
+                                        {/* Subtest rows */}
+                                        {subtests.map(({ subId, name: subName, res }) => {
+                                            const z = res.zScore ?? res.derived?.zScore;
+                                            const pct = res.percentile || res.derived?.percentile;
+                                            const col = zColor(z);
+                                            const hasObs = !!res.observation?.trim();
+                                            const hasZ = typeof z === 'number' && Number.isFinite(z);
+                                            const barW = hasZ ? Math.min(100, Math.max(2, ((z! + 3.5) / 7) * 100)) : null;
+
+                                            return (
+                                                <tr
+                                                    key={subId}
+                                                    className={`border-t border-[var(--border-color)]/40 ${hasObs ? 'bg-violet-50/30 dark:bg-violet-950/15' : ''}`}
+                                                >
+                                                    {/* Name + obs */}
+                                                    <td className="pl-7 pr-3 py-1.5" colSpan={2}>
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <span className="w-[2px] h-3 rounded-full shrink-0" style={{ backgroundColor: col }} />
+                                                            <span className="text-[10px] text-[var(--text-secondary)] leading-tight flex-1">{subName}</span>
+                                                            {/* qualitative label replaces bar when no z */}
+                                                            {!hasZ && res.qualitativeLabel && (
+                                                                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0" style={{ color: col, borderColor: col + '60', backgroundColor: col + '18' }}>
+                                                                    {res.qualitativeLabel}
+                                                                </span>
+                                                            )}
+                                                            {!hasZ && !res.qualitativeLabel && pct?.trim() && (
+                                                                <span className="text-[9px] text-stone-400 tabular-nums shrink-0">P{pct}</span>
+                                                            )}
+                                                        </div>
+                                                        {/* Mini ET bar */}
+                                                        {hasZ && (
+                                                            <div className="flex items-center gap-2 pl-3.5">
+                                                                <div className="flex-1 h-[3px] bg-[var(--progress-bg)] rounded-full overflow-hidden">
+                                                                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barW}%`, backgroundColor: col }} />
+                                                                </div>
+                                                                <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: col }}>
+                                                                    {z! > 0 ? '+' : ''}{z!.toFixed(1)} ET
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {hasObs && (
+                                                            <div className="mt-1 pl-3.5 flex items-start gap-1">
+                                                                <Quote size={8} className="text-violet-400 mt-0.5 shrink-0" />
+                                                                <p className="text-[9px] text-violet-600 dark:text-violet-300 italic leading-snug">{res.observation}</p>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </React.Fragment>
+                    ))}
+                </tbody>
+            </table>
         </div>
     );
 };
@@ -211,69 +304,7 @@ const ToggleChips: React.FC<{
     );
 };
 
-// --- OBSERVATION SUMMARY from per-subtest observations ---
-const ObservationsSummary: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
-    const { catalog } = useCatalog();
 
-    const observations = useMemo(() => {
-        const subtestNameMap: Record<string, string> = {};
-        catalog.forEach(cat => {
-            cat.tests.forEach(t => {
-                t.subtests.forEach(st => {
-                    subtestNameMap[st.id] = st.displayName || st.name;
-                });
-            });
-        });
-
-        const items: { subId: string; name: string; text: string }[] = [];
-        Object.entries(tests).forEach(([testId, subtests]) => {
-            Object.entries(subtests).forEach(([subId, res]) => {
-                if (res.observation && res.observation.trim()) {
-                    items.push({ subId, name: subtestNameMap[subId] || subId, text: res.observation });
-                }
-            });
-        });
-        return items;
-    }, [tests, catalog]);
-
-    if (observations.length === 0 && !interviewNotes) return null;
-
-    return (
-        <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-5 shadow-sm">
-            <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <MessageSquare size={14} /> Observations cliniques
-            </h4>
-
-            {interviewNotes && (
-                <div className="bg-[var(--hover-bg)] p-3 rounded-xl mb-3">
-                    <span className="text-[9px] font-bold text-stone-400 uppercase">Entretien</span>
-                    <p className="text-xs text-stone-600 italic leading-relaxed mt-1">
-                        {interviewNotes.length > 150 ? interviewNotes.substring(0, 150) + '…' : interviewNotes}
-                    </p>
-                </div>
-            )}
-
-            {observations.length > 0 && (
-                <div className="space-y-2">
-                    {observations.slice(0, 5).map((obs, i) => (
-                        <div key={i} className="flex gap-2 text-xs">
-                            <span className="text-stone-400 font-bold shrink-0">{obs.name}:</span>
-                            {obs.name === obs.subId && (
-                                <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded self-center">
-                                    id
-                                </span>
-                            )}
-                            <span className="text-stone-600 italic truncate">{obs.text}</span>
-                        </div>
-                    ))}
-                    {observations.length > 5 && (
-                        <span className="text-[10px] text-stone-400">+{observations.length - 5} autres…</span>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-};
 
 export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, observations, patient, onNext, onBack, isGenerating }) => {
 
@@ -385,8 +416,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
 
                 {/* RIGHT COLUMN (CONTEXT) */}
                 <div className="space-y-6">
-                    <TestSummaryPanel tests={tests} />
-                    <ObservationsSummary tests={tests} interviewNotes={patient?.interviewNotes} />
+                    <ScoresAndObservationsPanel tests={tests} interviewNotes={patient?.interviewNotes} />
 
                     <div className="bg-[#fffdf5] dark:bg-amber-950/30 border border-[#F2CC8F]/50 dark:border-amber-800/30 p-6 rounded-2xl">
                         <h4 className="font-bold text-[#d97706] dark:text-amber-400 mb-3 flex items-center gap-2 text-sm">

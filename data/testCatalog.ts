@@ -133,6 +133,17 @@ export interface SubtestInputConfig {
    * Default: 'radio' (vertical list). 'toggle' gives a pill-button grid.
    */
   qualitativeLayout?: 'radio' | 'select' | 'toggle';
+  /**
+   * Machine key shared by all sub-scores belonging to the same clinical test group.
+   * E.g. "nepsy2_copie_figures" groups all Copie de Figures sub-scores together.
+   * Used to inject a visual section header in Step2Tests when the key changes.
+   */
+  groupKey?: string;
+  /**
+   * Human-readable label shown as the visual group header in Step2Tests.
+   * E.g. "Copie de Figures". Falls back to groupKey if omitted.
+   */
+  groupHeaderLabel?: string;
 }
 
 export interface SubtestDef {
