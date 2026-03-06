@@ -921,6 +921,114 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     }
   }
 
+  // ── Cross-subtest completeness checks for dense LOOKUP pages ──
+
+  // Collect row counts and max raw per subtest for cross-comparison
+  const subtestRowCounts: { subtest: string; groupLabel: string; count: number }[] = [];
+  const subtestMaxRaw: { subtest: string; groupLabel: string; maxRaw: number; maxStandard: number }[] = [];
+  const subtestStandardValues: Map<string, Set<number>> = new Map();
+
+  for (const bucket of lookupBuckets.values()) {
+    const scoredRows = bucket.rows.filter((r) => hasLookupScoredRow(r));
+    subtestRowCounts.push({ subtest: bucket.subtest, groupLabel: bucket.groupLabel, count: scoredRows.length });
+
+    // Track standard score values per subtest
+    const standardSet = new Set<number>();
+    let maxRaw = -Infinity;
+    let maxStandard = -Infinity;
+    for (const row of scoredRows) {
+      const stdVal = toFiniteNumber(cleanText(row.standard));
+      if (stdVal !== null) {
+        standardSet.add(stdVal);
+        if (stdVal > maxStandard) maxStandard = stdVal;
+      }
+      const rawBounds = getRawBounds(row);
+      if (rawBounds) {
+        const rawMax = rawBounds.max;
+        if (rawMax > maxRaw) maxRaw = rawMax;
+      }
+    }
+    subtestStandardValues.set(`${bucket.subtest}::${bucket.groupLabel}`, standardSet);
+
+    if (Number.isFinite(maxRaw) && Number.isFinite(maxStandard)) {
+      subtestMaxRaw.push({ subtest: bucket.subtest, groupLabel: bucket.groupLabel, maxRaw, maxStandard });
+    }
+  }
+
+  // LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW: flag subtests with row count < 50% of median
+  if (subtestRowCounts.length >= 3) {
+    const counts = subtestRowCounts.map((e) => e.count).sort((a, b) => a - b);
+    const medianCount = counts[Math.floor(counts.length / 2)];
+    if (medianCount >= 4) {
+      for (const entry of subtestRowCounts) {
+        if (entry.count > 0 && entry.count < medianCount * 0.5) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW',
+            severity: 'warning',
+            message: `Nombre de lignes anormalement bas pour "${entry.subtest}" (${entry.count} vs médiane ${medianCount}). Extraction possiblement incomplète.`,
+            subtest: entry.subtest,
+            groupLabel: entry.groupLabel,
+            confidence: 0.85,
+          }));
+        }
+      }
+    }
+  }
+
+  // LOOKUP_MAX_RAW_OUTLIER: flag subtests whose max raw is far below median max raw (same age group)
+  if (subtestMaxRaw.length >= 3) {
+    const maxRaws = subtestMaxRaw.map((e) => e.maxRaw).sort((a, b) => a - b);
+    const medianMaxRaw = maxRaws[Math.floor(maxRaws.length / 2)];
+    if (medianMaxRaw > 0) {
+      for (const entry of subtestMaxRaw) {
+        // Flag if max raw is < 40% of median AND the max standard score is suspiciously low
+        if (entry.maxRaw < medianMaxRaw * 0.4 && entry.maxRaw > 0) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_MAX_RAW_OUTLIER',
+            severity: 'warning',
+            message: `Score brut maximum anormalement bas pour "${entry.subtest}" (max brut ${entry.maxRaw} vs médiane ${medianMaxRaw}). Colonne possiblement mal lue.`,
+            subtest: entry.subtest,
+            groupLabel: entry.groupLabel,
+            confidence: 0.8,
+          }));
+        }
+      }
+    }
+  }
+
+  // LOOKUP_NS_RANGE_INCOMPLETE: for pages where most subtests cover NS 1-19, flag subtests missing the upper range
+  if (subtestStandardValues.size >= 3) {
+    // Determine the most common max standard score across subtests
+    const maxStandardPerSubtest: number[] = [];
+    for (const standardSet of subtestStandardValues.values()) {
+      if (standardSet.size > 0) {
+        maxStandardPerSubtest.push(Math.max(...standardSet));
+      }
+    }
+    if (maxStandardPerSubtest.length >= 3) {
+      const sortedMax = [...maxStandardPerSubtest].sort((a, b) => a - b);
+      const expectedMaxNS = sortedMax[Math.floor(sortedMax.length * 0.75)]; // 75th percentile
+      if (expectedMaxNS >= 10) { // Only for NS-style scoring (1-19 or similar)
+        for (const [key, standardSet] of subtestStandardValues.entries()) {
+          if (standardSet.size === 0) continue;
+          const actualMax = Math.max(...standardSet);
+          const missing = expectedMaxNS - actualMax;
+          if (missing >= 3 && actualMax < expectedMaxNS * 0.8) {
+            const [subtest, groupLabel] = key.split('::');
+            flags.push(makeFlag({
+              code: 'LOOKUP_NS_RANGE_INCOMPLETE',
+              severity: 'blocking',
+              message: `Notes standard incomplètes pour "${subtest}": NS max ${actualMax} alors que les autres sous-tests atteignent NS ${expectedMaxNS}. ${missing} niveaux manquants.`,
+              subtest,
+              groupLabel: groupLabel || '',
+              confidence: 0.9,
+            }));
+          }
+        }
+      }
+    }
+  }
+
   return sortFlags(flags);
 };
 

@@ -365,7 +365,10 @@ export type ReviewFlagCode =
     | 'LOOKUP_ZERO_Z_PLATEAU'
     | 'LOOKUP_NON_INTEGER_SCORE'
     | 'SUBTEST_CONTENT_DUPLICATE'
-    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED';
+    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED'
+    | 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW'
+    | 'LOOKUP_MAX_RAW_OUTLIER'
+    | 'LOOKUP_NS_RANGE_INCOMPLETE';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
@@ -564,6 +567,8 @@ export interface AIExtractedTable {
 export interface AIExtractionResult {
     test_context?: string;
     structure_type?: 'PARAMETRIC' | 'LOOKUP';
+    page_age_min?: number | null;
+    page_age_max?: number | null;
     tables?: AIExtractedTable[];
 }
 
@@ -589,6 +594,8 @@ export interface ExtractionCallMeta {
     apiCalls: number;
     repairedSubtests?: string[];
     inventoryMode?: 'off' | 'conditional';
+    verified?: boolean;
+    verificationRepairs?: number;
 }
 
 // ── Deduplication types ──
