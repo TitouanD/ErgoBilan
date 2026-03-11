@@ -180,6 +180,8 @@ const SectionCard: React.FC<{
                         <EditorToolbar onAction={handleFormat} canUndo={history.canUndo} canRedo={history.canRedo} />
                         <textarea 
                             ref={textareaRef}
+                            spellCheck={true}
+                            lang="fr"
                             className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
                             value={history.value}
                             onChange={(e) => history.set(e.target.value)}

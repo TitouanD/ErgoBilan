@@ -4,6 +4,8 @@ import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, T
 import { useCatalog } from '../../contexts/CatalogContext';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { sanitizeReportText } from '../../utils/textSanitizer';
+import { InfoBlock } from './InfoBlock';
+import { TipTapEditor } from './TipTapEditor';
 
 interface Props {
     patient: Patient;
@@ -13,6 +15,9 @@ interface Props {
     branding?: BrandingConfig;
     scoreDisplayModes?: Record<string, 'Brut' | 'NS' | 'ET' | '%'>;
     onScoreDisplayModeChange?: (modes: Record<string, 'Brut' | 'NS' | 'ET' | '%'>) => void;
+    chartType?: 'radar' | 'bar' | 'percentile';
+    onChartTypeChange?: (type: 'radar' | 'bar' | 'percentile') => void;
+    isPerformance?: boolean;
 }
 
 // Helper pour le gras (**text**)
@@ -352,10 +357,10 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
 
             Object.values(subtests).forEach(res => {
                 if (!hasValidZ(res)) return;
-                // On clamp les valeurs extremes pour le graphique (-3 a +2)
+                // On clamp les valeurs extremes pour le graphique (-3 a +3)
                 let z = res.zScore as number;
                 if (z < -3) z = -3;
-                if (z > 2) z = 2;
+                if (z > 3) z = 3;
 
                 stats[categoryId].sum += z;
                 stats[categoryId].count += 1;
@@ -368,7 +373,7 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
             .map(s => ({
                 subject: s.name,
                 A: parseFloat((s.sum / s.count).toFixed(2)),
-                fullMark: 2 // Max visual range
+                fullMark: 3 // Max visual range
             }));
     }, [tests, catalog]);
 
@@ -386,7 +391,7 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
                 <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
                     <PolarGrid stroke="#e5e7eb" />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#3D405B', fontSize: 10, fontWeight: 700 }} />
-                    <PolarRadiusAxis angle={30} domain={[-3, 2]} tick={false} axisLine={false} />
+                    <PolarRadiusAxis angle={30} domain={[-3, 3]} tick={false} axisLine={false} />
                     <Radar
                         name="Profil"
                         dataKey="A"
@@ -405,6 +410,81 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
                 0 = Moyenne • -2 = Seuil Pathologique
             </div>
         </div>
+    );
+};
+
+// ─── Percentile horizontal bar chart (module-level) ─────────────────────
+const ProfilePercentileChart: React.FC<{ tests: TestData; branding?: BrandingConfig }> = ({ tests, branding }) => {
+    const { catalog } = useCatalog();
+    const isCustom = branding?.isEnabled;
+    const primaryColor = isCustom ? branding!.primaryColor : '#3D405B';
+    const corners = isCustom ? branding!.cornerStyle : 'rounded';
+    const roundedCls = corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl';
+    const titleCss: React.CSSProperties = { fontFamily: isCustom ? branding!.fontFamily : 'Merriweather', color: primaryColor };
+
+    const pctItems = useMemo(() => {
+        const result: Array<{ label: string; pct: number; color: string }> = [];
+        Object.entries(tests).forEach(([testId, subtests]) => {
+            const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+            Object.entries(subtests)
+                .filter(([, val]) => val.percentile !== undefined && val.percentile !== null && !isNaN(Number(val.percentile)))
+                .forEach(([subId, res]) => {
+                    const subDef = def?.subtests.find(s => s.id === subId);
+                    const pct = Number(res.percentile);
+                    let color = '#81B29A';
+                    if (pct < 2) color = '#E07A5F';
+                    else if (pct < 9) color = '#F2CC8F';
+                    result.push({ label: subDef?.displayName || subDef?.name || subId, pct, color });
+                });
+        });
+        return result;
+    }, [tests, catalog]);
+
+    if (pctItems.length === 0) return (
+        <div className="text-xs text-stone-400 italic mb-8 text-center py-8">
+            Aucune donnée de percentile disponible. Les percentiles sont calculés automatiquement lorsque des normes le permettent.
+        </div>
+    );
+
+    return (
+        <>
+            <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedCls}`}>
+                <div className="bg-stone-100 p-4 border-b border-stone-200" style={{ backgroundColor: isCustom ? primaryColor + '08' : undefined }}>
+                    <h3 className="font-bold text-sm uppercase tracking-wide" style={titleCss}>Profil des scores (Percentiles)</h3>
+                </div>
+                <div className="p-4 space-y-2">
+                    {pctItems.map((item, i) => (
+                        <div key={i} className="flex items-center gap-3 text-xs">
+                            <span className="w-36 text-right text-stone-600 font-medium truncate shrink-0" title={item.label}>{item.label}</span>
+                            <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
+                                <div className="absolute inset-y-0 left-0 w-[2%] bg-rose-200"></div>
+                                <div className="absolute inset-y-0 left-[2%] w-[7%] bg-amber-100"></div>
+                                <div className="absolute inset-y-0 left-[9%] w-[16%] bg-yellow-50"></div>
+                                <div className="absolute inset-y-0 left-[25%] right-0 bg-emerald-50"></div>
+                                <div className="absolute top-0 bottom-0 w-px bg-stone-300 left-[50%]"></div>
+                                <div className="absolute top-0.5 bottom-0.5 w-3 rounded-full shadow-sm" style={{ left: `calc(${item.pct}% - 6px)`, backgroundColor: item.color }}></div>
+                            </div>
+                            <span className="w-12 text-right font-bold shrink-0" style={{ color: item.color }}>{item.pct}%ile</span>
+                        </div>
+                    ))}
+                    <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
+                        <span className="w-36"></span>
+                        <div className="flex-1 flex justify-between px-1">
+                            <span>0</span><span>2e</span><span>9e</span><span>25e</span><span className="font-bold">50e</span><span>75e</span><span>91e</span><span>98e</span><span>100</span>
+                        </div>
+                        <span className="w-12"></span>
+                    </div>
+                </div>
+            </div>
+            <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedCls}`}>
+                <p className="font-bold mb-2">Guide de lecture (Percentiles) :</p>
+                <ul className="list-disc ml-4 space-y-1">
+                    <li><span className="font-bold text-[#81B29A]">Vert :</span> Rang percentile ≥ 9 (zone normale).</li>
+                    <li><span className="font-bold text-[#F2CC8F]">Orange :</span> Rang percentile 2–9 (norme basse).</li>
+                    <li><span className="font-bold text-[#E07A5F]">Rouge :</span> Rang percentile {"<"} 2 (zone de difficulté).</li>
+                </ul>
+            </div>
+        </>
     );
 };
 
@@ -438,7 +518,7 @@ const ScoreSelector: React.FC<{
     );
 };
 
-export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding, scoreDisplayModes = {}, onScoreDisplayModeChange }) => {
+export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding, scoreDisplayModes = {}, onScoreDisplayModeChange, chartType = 'bar', onChartTypeChange, isPerformance = false }) => {
     const { ensureCatalogLoaded } = useCatalog();
     useEffect(() => {
         ensureCatalogLoaded();
@@ -449,7 +529,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     // --- STATE DE MISE EN PAGE (PAGINATION DYNAMIQUE) ---
     const [pages, setPages] = useState<string[][]>([
         ['mandat_ref', 'mandat_eval', 'profil'], // Page 1
-        ['diagnostic', 'objectifs', 'recommandations'], // Page 2
+        ['diagnostic', 'objectifs', 'project', 'recommandations'], // Page 2
         ['annexes'] // Page 3
     ]);
 
@@ -555,7 +635,40 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     fontFamily={fontFamily}
                     editable={!!onUpdateSection}
                 />
+                {onUpdateSection && isPerformance && (
+                    <div className="mb-3 flex justify-end no-print print:hidden">
+                        <button
+                            onClick={() => {
+                                if (section.contentFormat !== 'html') {
+                                    const paras = sanitizedContent.split('\n').filter(l => l.trim());
+                                    const html = paras.map(p => `<p>${p.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`).join('');
+                                    onUpdateSection(section.id, { content: html, contentFormat: 'html' });
+                                } else {
+                                    const text = section.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                                    onUpdateSection(section.id, { content: text, contentFormat: 'plain' });
+                                }
+                            }}
+                            className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border border-stone-200 text-stone-400 hover:text-[#E07A5F] hover:border-[#E07A5F] transition-all gap-1 flex items-center"
+                        >
+                            {section.contentFormat === 'html' ? '↩ Mode Simple' : '✨ Mode Riche'}
+                        </button>
+                    </div>
+                )}
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+                {section.contentFormat === 'html' ? (
+                    onUpdateSection ? (
+                        <TipTapEditor
+                            content={section.content}
+                            onChange={(html) => onUpdateSection(section.id, { content: html, contentFormat: 'html' })}
+                            isPerformance={isPerformance}
+                        />
+                    ) : (
+                        <div
+                            className="prose prose-sm max-w-none text-stone-700 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: section.content }}
+                        />
+                    )
+                ) : (
                 <div className="space-y-1">
                     {paragraphs.map((para, idx) => {
                         const attachmentsHere = section.attachments?.filter(a => a.positionIndex === idx) || [];
@@ -633,6 +746,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         );
                     })}
                 </div>
+                )}
             </div>
         );
     };
@@ -646,10 +760,28 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <h2 className="text-xl font-bold uppercase tracking-wide" style={titleStyleCss}>Annexes : Résultats</h2>
                 </div>
 
-                {/* GRAPHIQUE GLOBAL (Radar) — self-filters if <3 categories */}
-                <ProfileRadarChart tests={tests} branding={branding} />
+                {/* GRAPHIQUES : sélecteur de type */}
+                <div className="flex gap-2 mb-6 no-print justify-center print:hidden">
+                    {(['radar', 'bar', 'percentile'] as const).map(type => (
+                        <button
+                            key={type}
+                            onClick={() => onChartTypeChange?.(type)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                                chartType === type
+                                    ? 'bg-[#3D405B] text-white border-[#3D405B]'
+                                    : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
+                            }`}
+                        >
+                            {type === 'radar' ? '🕸 Radar' : type === 'bar' ? '📊 Barres ET' : '📈 Percentiles'}
+                        </button>
+                    ))}
+                </div>
 
-                {Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
+                {/* Radar Chart */}
+                {chartType === 'radar' && <ProfileRadarChart tests={tests} branding={branding} />}
+
+                {/* ET Bar Chart */}
+                {chartType === 'bar' && Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
                 <>
                 {/* HORIZONTAL BAR CHART PROFILE */}
                 <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
@@ -704,6 +836,9 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 </div>
                 </>
                 )}
+
+                {/* Percentile Chart */}
+                {chartType === 'percentile' && <ProfilePercentileChart tests={tests} branding={branding} />}
                 <div className="space-y-12">
                     {Object.entries(tests).map(([testId, subtests]) => {
                         const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
@@ -834,6 +969,16 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     const HeaderRenderer = () => {
         const logoClass = logoSize === 'small' ? 'h-12' : logoSize === 'medium' ? 'h-20' : 'h-32';
 
+        const InfoBlockStrip = () => {
+            const pos = branding?.infoBlock?.position ?? 'right';
+            const justifyClass = pos === 'left' ? 'justify-start' : pos === 'right' ? 'justify-end' : 'justify-center';
+            return (
+                <div className={`flex w-full ${justifyClass} mt-3 pt-3 border-t border-stone-100`}>
+                    <InfoBlock branding={branding || {} as BrandingConfig} />
+                </div>
+            );
+        };
+
         // LOGIC LOGO
         const LogoBlock = () => {
             if (isCustom && branding?.logoUrl) {
@@ -898,15 +1043,18 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         // MODE CORPORATE (PDF Style) : Patient Left, Praticien Right
         if (headerTemplate === 'corporate') {
             return (
-                <header className="flex justify-between items-start mb-12 border-b-2 border-stone-100 pb-8">
-                    <div className="w-1/3 pt-4">
-                        <PatientBlock align="left" />
+                <header className="flex flex-col mb-12 border-b-2 border-stone-100 pb-8">
+                    <div className="flex justify-between items-start">
+                        <div className="w-1/3 pt-4">
+                            <PatientBlock align="left" />
+                        </div>
+                        <div className="w-1/2 text-right flex flex-col items-end">
+                            <LogoBlock />
+                            <CabinetTitle />
+                            <PractitionerDetails />
+                        </div>
                     </div>
-                    <div className="w-1/2 text-right flex flex-col items-end">
-                        <LogoBlock />
-                        <CabinetTitle />
-                        <PractitionerDetails />
-                    </div>
+                    <InfoBlockStrip />
                 </header>
             );
         }
@@ -921,21 +1069,25 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <div className="w-2/3 border-t border-stone-100 pt-6">
                         <PatientBlock align="center" />
                     </div>
+                    <InfoBlockStrip />
                 </header>
             );
         }
 
         // MODE CLASSIC (Default) : Logo/Prac Left, Patient Right
         return (
-            <header className="flex justify-between items-start mb-12 border-b-2 border-stone-100 pb-8 gap-6">
-                <div className="flex-1">
-                    <LogoBlock />
-                    <CabinetTitle />
-                    <PractitionerDetails />
+            <header className="flex flex-col mb-12 border-b-2 border-stone-100 pb-8">
+                <div className="flex justify-between items-start gap-6">
+                    <div className="flex-1">
+                        <LogoBlock />
+                        <CabinetTitle />
+                        <PractitionerDetails />
+                    </div>
+                    <div className="w-1/3 pt-2">
+                        <PatientBlock align="right" />
+                    </div>
                 </div>
-                <div className="w-1/3 pt-2">
-                    <PatientBlock align="right" />
-                </div>
+                <InfoBlockStrip />
             </header>
         );
     };

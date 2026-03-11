@@ -100,6 +100,13 @@ const DEMO_SECTIONS: ReportSection[] = [
     isAiGenerated: true,
   },
   {
+    id: 'project',
+    title: "Projet d'accompagnement",
+    content: "- Suivi en ergotherapie individualise axe sur la graphomotricite et la posture a l'ecrit.\n- Travail sur la planification motrice et la gestion de la fatigue lors des taches ecrites.\n- Collaboration avec l'equipe enseignante pour la mise en oeuvre des adaptations en classe.\n- Reevaluation des acquis a 6 mois.",
+    status: 'draft',
+    isAiGenerated: true,
+  },
+  {
     id: 'recommandations',
     title: 'Preconisations',
     content: "### A l'ecole\n- **Allegement de la trace ecrite** : photocopies, textes a trous, reduction du volume de copie.\n- **Temps majore** pour les evaluations longues.\n- **Aides visuelles** : consignes segmentees, timer discret, repere sur l'horloge.\n\n### A la maison\n- Installer des routines courtes avec pauses motrices.\n- Utiliser un minuteur pour se reperer dans le temps.\n\n### Suivi therapeutique\n- Ergotherapie axee sur la graphomotricite, la posture, et la planification motrice.",

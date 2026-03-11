@@ -22,7 +22,14 @@ const DEFAULT_BRANDING: BrandingConfig = {
     address: "",
     siret: "",
     footerText: "Document confidentiel - Bilan Ergothérapique",
-    showPageNumbers: true
+    showPageNumbers: true,
+    infoBlock: {
+        position: 'right',
+        size: 'M',
+        bgColor: '#FAFAF9',
+        borderColor: '#E7E5E4',
+        extraLines: [],
+    },
 };
 
 export const SubscriptionService = {

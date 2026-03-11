@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
+import type { Patient, ReportSection, TestData, BrandingConfig, InfoBlockExtraLine } from '../../types';
 import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User, ArrowLeft, Brush, Loader2 } from 'lucide-react';
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
@@ -369,6 +369,140 @@ const BrandingEditor: React.FC<{
                             </p>
                         </div>
 
+                        {/* --- BLOC INFOS CABINET --- */}
+                        <div className="space-y-4 pt-4 border-t border-stone-100">
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2"><Home size={14} /> Bloc Infos Cabinet</label>
+                                <span className="text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1"><Lock size={8} />Obligatoire</span>
+                            </div>
+
+                            {/* Position */}
+                            <div>
+                                <p className="text-[10px] font-bold text-stone-400 uppercase mb-2">Position dans l'en-tête</p>
+                                <div className="flex gap-2">
+                                    {(['left', 'center', 'right'] as const).map(pos => {
+                                        const ib = branding.infoBlock ?? { size: 'M' as const, bgColor: '#FAFAF9', borderColor: '#E7E5E4', extraLines: [] };
+                                        return (
+                                            <button key={pos} onClick={() => onUpdate({ ...branding, infoBlock: { ...ib, position: pos } })}
+                                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${(branding.infoBlock?.position ?? 'right') === pos ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>
+                                                {pos === 'left' ? '⬅' : pos === 'center' ? '↕' : '➡'}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Size */}
+                            <div>
+                                <p className="text-[10px] font-bold text-stone-400 uppercase mb-2">Taille</p>
+                                <div className="flex gap-2">
+                                    {(['S', 'M', 'L'] as const).map(sz => {
+                                        const ib = branding.infoBlock ?? { position: 'right' as const, bgColor: '#FAFAF9', borderColor: '#E7E5E4', extraLines: [] };
+                                        return (
+                                            <button key={sz} onClick={() => onUpdate({ ...branding, infoBlock: { ...ib, size: sz } })}
+                                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${(branding.infoBlock?.size ?? 'M') === sz ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>
+                                                {sz}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Colors */}
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <DebouncedColorInput
+                                        value={branding.infoBlock?.bgColor ?? '#FAFAF9'}
+                                        onChange={(val) => {
+                                            const ib = branding.infoBlock ?? { position: 'right' as const, size: 'M' as const, borderColor: '#E7E5E4', extraLines: [] };
+                                            onUpdate({ ...branding, infoBlock: { ...ib, bgColor: val } });
+                                        }}
+                                    />
+                                    <span className="text-[10px] text-stone-500 font-bold">Fond</span>
+                                </div>
+                                <div className="flex-1">
+                                    <DebouncedColorInput
+                                        value={branding.infoBlock?.borderColor ?? '#E7E5E4'}
+                                        onChange={(val) => {
+                                            const ib = branding.infoBlock ?? { position: 'right' as const, size: 'M' as const, bgColor: '#FAFAF9', extraLines: [] };
+                                            onUpdate({ ...branding, infoBlock: { ...ib, borderColor: val } });
+                                        }}
+                                    />
+                                    <span className="text-[10px] text-stone-500 font-bold">Bordure</span>
+                                </div>
+                            </div>
+
+                            {/* Protected info display */}
+                            <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 select-none">
+                                <div className="flex items-center gap-1 mb-2">
+                                    <Lock size={10} className="text-stone-400" />
+                                    <p className="text-[10px] font-bold text-stone-400 uppercase">Contenu protégé (non modifiable)</p>
+                                </div>
+                                <div className="text-[10px] text-stone-600 space-y-0.5">
+                                    {branding.practitionerName && <p className="font-bold">{branding.practitionerName}</p>}
+                                    {branding.phone && <p>{branding.phone}</p>}
+                                    {branding.email && <p>{branding.email}</p>}
+                                    {branding.siret && <p className="font-mono text-stone-400">SIRET : {branding.siret}</p>}
+                                    {branding.address && <p className="text-stone-400">{branding.address}</p>}
+                                </div>
+                            </div>
+
+                            {/* Extra lines */}
+                            <div>
+                                <p className="text-[10px] font-bold text-stone-400 uppercase mb-2">Lignes personnalisées</p>
+                                <div className="space-y-2">
+                                    {(branding.infoBlock?.extraLines ?? []).map((line) => (
+                                        <div key={line.id} className="flex gap-2 items-center">
+                                            <select
+                                                value={line.after}
+                                                onChange={(e) => {
+                                                    const lines = (branding.infoBlock?.extraLines ?? []).map(l => l.id === line.id ? { ...l, after: e.target.value as InfoBlockExtraLine['after'] } : l);
+                                                    onUpdate({ ...branding, infoBlock: { ...branding.infoBlock!, extraLines: lines } });
+                                                }}
+                                                className="text-[10px] border border-stone-200 rounded bg-white text-stone-600 p-1 shrink-0"
+                                            >
+                                                <option value="top">↑ Premier</option>
+                                                <option value="name">Après nom</option>
+                                                <option value="phone">Après tél.</option>
+                                                <option value="email">Après email</option>
+                                                <option value="siret">Après SIRET</option>
+                                                <option value="address">Après adresse</option>
+                                            </select>
+                                            <input
+                                                value={line.text}
+                                                onChange={(e) => {
+                                                    const lines = (branding.infoBlock?.extraLines ?? []).map(l => l.id === line.id ? { ...l, text: e.target.value } : l);
+                                                    onUpdate({ ...branding, infoBlock: { ...branding.infoBlock!, extraLines: lines } });
+                                                }}
+                                                placeholder="Texte libre..."
+                                                className="flex-1 p-1.5 text-xs border border-stone-200 rounded-lg bg-white outline-none focus:border-[#E07A5F]"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const lines = (branding.infoBlock?.extraLines ?? []).filter(l => l.id !== line.id);
+                                                    onUpdate({ ...branding, infoBlock: { ...branding.infoBlock!, extraLines: lines } });
+                                                }}
+                                                className="text-rose-400 hover:text-rose-600 p-1 shrink-0"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => {
+                                            const newLine: InfoBlockExtraLine = { id: crypto.randomUUID(), text: '', after: 'name' };
+                                            const lines = [...(branding.infoBlock?.extraLines ?? []), newLine];
+                                            const ib = branding.infoBlock ?? { position: 'right' as const, size: 'M' as const, bgColor: '#FAFAF9', borderColor: '#E7E5E4' };
+                                            onUpdate({ ...branding, infoBlock: { ...ib, extraLines: lines } });
+                                        }}
+                                        className="w-full py-2 border border-dashed border-stone-300 rounded-lg text-xs text-stone-400 hover:text-[#E07A5F] hover:border-[#E07A5F] transition-colors"
+                                    >
+                                        + Ajouter une ligne
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* --- PIED DE PAGE --- */}
                         <div className="space-y-3 pt-4 border-t border-stone-100">
                             <label className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1 block flex items-center gap-2"><MousePointerClick size={14} /> Pied de page</label>
@@ -400,6 +534,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
     const [isValidating, setIsValidating] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [scoreDisplayModes, setScoreDisplayModes] = useState<Record<string, 'Brut' | 'NS' | 'ET' | '%'>>({});
+    const [chartType, setChartType] = useState<'radar' | 'bar' | 'percentile'>('bar');
     const { toast } = useToast();
     const { catalog } = useCatalog();
 
@@ -417,6 +552,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     branding={branding}
                     catalog={catalog}
                     scoreDisplayModes={scoreDisplayModes}
+                    chartType={chartType}
                     attachmentUrls={attachmentUrls}
                 />
             ).toBlob();
@@ -476,6 +612,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     branding={branding}
                     catalog={catalog}
                     scoreDisplayModes={scoreDisplayModes}
+                    chartType={chartType}
                     attachmentUrls={attachmentUrls}
                 />
             ).toBlob();
@@ -585,6 +722,9 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     onUpdateSection={onUpdateSection}
                     scoreDisplayModes={scoreDisplayModes}
                     onScoreDisplayModeChange={setScoreDisplayModes}
+                    chartType={chartType}
+                    onChartTypeChange={setChartType}
+                    isPerformance={isPremium}
                 />
             </div>
 

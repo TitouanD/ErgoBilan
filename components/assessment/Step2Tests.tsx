@@ -509,13 +509,10 @@ const NumericRow: React.FC<{
           setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
           return;
         }
-        if (!nextManualMode) {
-          const c = calculateFromZ(n, scoreType);
-          setWarn(null);
-          setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
-          return;
-        }
-        setPatch({ entryMetric: 'z', zScore: n, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
+        // Always cross-convert ET ↔ NS ↔ %
+        const c = calculateFromZ(n, scoreType);
+        setWarn(null);
+        setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
         return;
       }
       setLocalZText(null);
@@ -530,13 +527,10 @@ const NumericRow: React.FC<{
           setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
           return;
         }
-        if (!nextManualMode) {
-          const c = calculateFromStandard(n, scoreType);
-          setWarn(null);
-          setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
-          return;
-        }
-        setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
+        // Always cross-convert NS ↔ ET ↔ % (only skip normative lookup via computeRaw)
+        const c = calculateFromStandard(n, scoreType);
+        setWarn(null);
+        setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
         return;
       }
       if (metric === 'percentile') {
@@ -544,21 +538,18 @@ const NumericRow: React.FC<{
           setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
           return;
         }
-        if (!nextManualMode) {
-          const c = calculateFromPercentile(n, scoreType);
-          setWarn(null);
-          setPatch({
-            entryMetric: 'percentile',
-            percentile: text,
-            standard: c.standard,
-            zScore: c.zScore,
-            derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' },
-            scoreSource: 'manual_pct',
-            ...conversionPatch,
-          });
-          return;
-        }
-        setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
+        // Always cross-convert % ↔ NS ↔ ET
+        const c = calculateFromPercentile(n, scoreType);
+        setWarn(null);
+        setPatch({
+          entryMetric: 'percentile',
+          percentile: text,
+          standard: c.standard,
+          zScore: c.zScore,
+          derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' },
+          scoreSource: 'manual_pct',
+          ...conversionPatch,
+        });
         return;
       }
     };
@@ -1566,12 +1557,9 @@ const TableView: React.FC<{
         setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
         return;
       }
-      if (!nextManualMode) {
-        const c = calculateFromZ(n, scoreType);
-        setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
-        return;
-      }
-      setPatch({ entryMetric: 'z', zScore: n, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
+      // Always cross-convert ET ↔ NS ↔ %
+      const c = calculateFromZ(n, scoreType);
+      setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
       return;
     }
     setLocalZ(prev => { const next = { ...prev }; delete next[subId]; return next; });
@@ -1611,30 +1599,22 @@ const TableView: React.FC<{
     }
     if (metric === 'standard') {
       if (n === null) { setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch }); return; }
-      if (!nextManualMode) {
-        const c = calculateFromStandard(n, scoreType);
-        setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
-        return;
-      }
-      setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
+      const c = calculateFromStandard(n, scoreType);
+      setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
       return;
     }
     if (metric === 'percentile') {
       if (n === null) { setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch }); return; }
-      if (!nextManualMode) {
-        const c = calculateFromPercentile(n, scoreType);
-        setPatch({
-          entryMetric: 'percentile',
-          percentile: text,
-          standard: c.standard,
-          zScore: c.zScore,
-          derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: 'assisted' },
-          scoreSource: 'manual_pct',
-          ...conversionPatch,
-        });
-        return;
-      }
-      setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
+      const c = calculateFromPercentile(n, scoreType);
+      setPatch({
+        entryMetric: 'percentile',
+        percentile: text,
+        standard: c.standard,
+        zScore: c.zScore,
+        derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' },
+        scoreSource: 'manual_pct',
+        ...conversionPatch,
+      });
     }
   };
 
@@ -2140,7 +2120,9 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               onClick={() => {
                 const customId = `custom_${Date.now()}`;
                 onAddTests({ custom_observations: [customId] });
-                onClose();
+                // Do NOT call onClose() here — closing immediately after onAddTests
+                // can interfere with the batched state updates and trigger unexpected
+                // navigation away from Step 2. The user closes the modal manually.
               }}
               className="shrink-0 px-4 py-2 bg-[#E07A5F] text-white border border-[#E07A5F] rounded-xl text-xs font-bold hover:brightness-105 transition-colors"
             >

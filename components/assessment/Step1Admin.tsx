@@ -232,7 +232,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Suivis', value: data.medicalTracking?.length ? data.medicalTracking.map(t => `${t.type}${t.name ? ` (${t.name})` : ''} — ${t.frequency}${t.reason ? `, motif: ${t.reason}` : ''}${t.endDate ? `, terminé le ${t.endDate}` : ''}${t.sessionCount ? `, ${t.sessionCount} séances` : ''}`).join(' · ') : undefined },
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
-          { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel },
+          { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel }, { label: 'Filière', value: data.schoolType },
           { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
           { label: 'AVS/AESH', value: data.avs === 'OUI' ? `Oui — ${data.avsHours || '?'}h (${data.avsMissions || '?'})` : data.avs === 'NON' ? 'Non' : undefined },
           { label: 'Avis', value: data.schoolAttention },

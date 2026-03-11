@@ -36,6 +36,7 @@ export interface Patient {
     siblings: Sibling[];
     school: string;
     classLevel: string;
+    schoolType?: string;
     teacher: string;
     carePlan: string;
     avs: string;
@@ -151,6 +152,7 @@ export interface Observations {
 
 export interface ClinicalSynthesis {
     diagnosticInput: string;
+    projectInput: string;
     recommendationsInput: string;
 }
 
@@ -166,9 +168,24 @@ export interface ReportSection {
     id: string;
     title: string;
     content: string;
+    contentFormat?: 'plain' | 'html';
     status: 'draft' | 'validated';
     isAiGenerated?: boolean;
     attachments?: ReportAttachment[];
+}
+
+export interface InfoBlockExtraLine {
+    id: string;
+    text: string;
+    after: 'top' | 'name' | 'phone' | 'email' | 'siret' | 'address';
+}
+
+export interface InfoBlock {
+    position: 'left' | 'center' | 'right';
+    size: 'S' | 'M' | 'L';
+    bgColor: string;
+    borderColor: string;
+    extraLines: InfoBlockExtraLine[];
 }
 
 export interface BrandingConfig {
@@ -194,6 +211,7 @@ export interface BrandingConfig {
     footerText: string;
     showPageNumbers: boolean;
     logoUrl?: string;
+    infoBlock?: InfoBlock;
 }
 
 export interface UserProfile {

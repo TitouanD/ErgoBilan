@@ -57,6 +57,7 @@ const initialObs: Observations = {
 
 const initialSynthesis: ClinicalSynthesis = {
   diagnosticInput: '',
+  projectInput: '',
   recommendationsInput: ''
 };
 
