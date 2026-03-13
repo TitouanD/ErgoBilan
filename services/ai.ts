@@ -18,6 +18,7 @@ interface ReformulatedObsEntry {
 
 interface DiagResponse {
   synthese_diagnostic?: string;
+  projet_accompagnement?: string;
   recommandations?: string;
   objectifs_generaux?: string;
   reformulated_observations?: ReformulatedObsEntry[];
@@ -123,6 +124,13 @@ export const AIService = {
           id: 'objectifs',
           title: 'Les objectifs g\u00e9n\u00e9raux',
           content: sanitizeReportText(hydrateReport(jsonDiag?.objectifs_generaux || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
+          status: 'draft',
+          isAiGenerated: true,
+        },
+        {
+          id: 'project',
+          title: "Projet d'accompagnement",
+          content: sanitizeReportText(hydrateReport(jsonDiag?.projet_accompagnement || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,
         },

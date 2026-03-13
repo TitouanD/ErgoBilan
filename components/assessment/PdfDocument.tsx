@@ -36,6 +36,7 @@ import {
     getLogoHeight,
 } from '../../utils/pdfStyles';
 import { sanitizeReportText } from '../../utils/textSanitizer';
+import { htmlToPdfNodes } from '../../utils/pdfRenderer';
 
 // ─── Props ───────────────────────────────────────────────────────────────
 interface PdfDocumentProps {
@@ -45,6 +46,7 @@ interface PdfDocumentProps {
     branding: BrandingConfig;
     catalog: CategoryDef[];
     scoreDisplayModes?: Record<string, 'Brut' | 'NS' | 'ET' | '%'>;
+    chartType?: 'radar' | 'bar' | 'percentile';
     /** Sections ordering: flattened from the pages state in ReportView */
     sectionOrder?: string[];
     /** Pre-converted attachment URLs (blob: → base64 data URLs) */
@@ -246,18 +248,56 @@ const PdfHeader: React.FC<{
         );
     };
 
+    // ── InfoBlock strip for PDF (rendered under all templates)
+    const PdfInfoBlockStrip = () => {
+        const cfg = branding?.infoBlock ?? { position: 'right' as const, size: 'M' as const, bgColor: '#FAFAF9', borderColor: '#E7E5E4', extraLines: [] };
+        const pos = cfg.position ?? 'right';
+        const justifyContent = pos === 'left' ? ('flex-start' as const) : pos === 'right' ? ('flex-end' as const) : ('center' as const);
+        const hasInfo = branding?.practitionerName || branding?.phone || branding?.email || branding?.siret || branding?.address;
+        if (!hasInfo) return null;
+        const paddingMap: Record<string, number> = { S: 4, M: 6, L: 8 };
+        const fontSizeMap: Record<string, number> = { S: 6, M: 7, L: 8 };
+        const pd = paddingMap[cfg.size] ?? 6;
+        const fs = fontSizeMap[cfg.size] ?? 7;
+        const extras = (anchor: string) =>
+            (cfg.extraLines ?? []).filter(l => l.after === anchor).map((l, i) => (
+                <Text key={i} style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{l.text}</Text>
+            ));
+
+        return (
+            <View style={{ flexDirection: 'row', justifyContent, marginTop: 8, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: COLORS.stone100 }}>
+                <View style={{ padding: pd, backgroundColor: cfg.bgColor, border: `0.5pt solid ${cfg.borderColor}`, borderRadius: 4, minWidth: 120 }}>
+                    {extras('top')}
+                    {branding?.practitionerName ? <Text style={{ fontSize: fs, fontWeight: 700, color: COLORS.stone800, marginBottom: 1, fontFamily }}>{branding.practitionerName}</Text> : null}
+                    {extras('name')}
+                    {branding?.phone ? <Text style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{branding.phone}</Text> : null}
+                    {extras('phone')}
+                    {branding?.email ? <Text style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{branding.email}</Text> : null}
+                    {extras('email')}
+                    {branding?.siret ? <Text style={{ fontSize: fs - 1, color: COLORS.stone400, marginBottom: 1 }}>SIRET : {branding.siret}</Text> : null}
+                    {extras('siret')}
+                    {branding?.address ? <Text style={{ fontSize: fs, color: COLORS.stone500 }}>{branding.address}</Text> : null}
+                    {extras('address')}
+                </View>
+            </View>
+        );
+    };
+
     // ── Template rendering
     if (template === 'corporate') {
         return (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, borderBottomWidth: 1.5, borderBottomColor: COLORS.stone100, paddingBottom: 20 }}>
-                <View style={{ width: '33%', paddingTop: 4 }}>
-                    <PatientBlock align="left" />
+            <View style={{ marginBottom: 32, borderBottomWidth: 1.5, borderBottomColor: COLORS.stone100, paddingBottom: 20 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ width: '33%', paddingTop: 4 }}>
+                        <PatientBlock align="left" />
+                    </View>
+                    <View style={{ width: '50%', alignItems: 'flex-end' }}>
+                        <LogoBlock />
+                        <CabinetTitle />
+                        <PractitionerDetails />
+                    </View>
                 </View>
-                <View style={{ width: '50%', alignItems: 'flex-end' }}>
-                    <LogoBlock />
-                    <CabinetTitle />
-                    <PractitionerDetails />
-                </View>
+                <PdfInfoBlockStrip />
             </View>
         );
     }
@@ -271,21 +311,25 @@ const PdfHeader: React.FC<{
                 <View style={{ width: '66%', borderTopWidth: 1, borderTopColor: COLORS.stone100, paddingTop: 12, marginTop: 12 }}>
                     <PatientBlock align="center" />
                 </View>
+                <PdfInfoBlockStrip />
             </View>
         );
     }
 
     // 'classic' (default)
     return (
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, borderBottomWidth: 1.5, borderBottomColor: COLORS.stone100, paddingBottom: 20 }}>
-            <View style={{ flexGrow: 1 }}>
-                <LogoBlock />
-                <CabinetTitle />
-                <PractitionerDetails />
+        <View style={{ marginBottom: 32, borderBottomWidth: 1.5, borderBottomColor: COLORS.stone100, paddingBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flexGrow: 1 }}>
+                    <LogoBlock />
+                    <CabinetTitle />
+                    <PractitionerDetails />
+                </View>
+                <View style={{ width: '33%', paddingTop: 4 }}>
+                    <PatientBlock align="right" />
+                </View>
             </View>
-            <View style={{ width: '33%', paddingTop: 4 }}>
-                <PatientBlock align="right" />
-            </View>
+            <PdfInfoBlockStrip />
         </View>
     );
 };
@@ -302,6 +346,16 @@ const PdfTextSection: React.FC<{
     const radius = getCornerRadius(branding?.cornerStyle);
 
     if (!section) return null;
+
+    // HTML content (from TipTap rich-text editor)
+    if (section.contentFormat === 'html') {
+        return (
+            <View style={{ marginBottom: 16 }} wrap={false}>
+                <PdfSectionTitle title={section.title} branding={branding} />
+                <View>{htmlToPdfNodes(section.content, branding, fontFamily)}</View>
+            </View>
+        );
+    }
 
     // Parse content into paragraphs
     const lines = sanitizeReportText(section.content).split('\n').filter(l => l.trim() !== '');
@@ -419,7 +473,7 @@ const PdfRadarChart: React.FC<{
             if (!hasValidZ(res)) return;
             let z = res.zScore as number;
             if (z < -3) z = -3;
-            if (z > 2) z = 2;
+            if (z > 3) z = 3;
             stats[categoryId].sum += z;
             stats[categoryId].count += 1;
         });
@@ -437,8 +491,8 @@ const PdfRadarChart: React.FC<{
     // Radar geometry
     const cx = 150, cy = 120, outerR = 85;
     const svgW = 300, svgH = 260;
-    const minVal = -3, maxVal = 2;
-    const range = maxVal - minVal; // 5
+    const minVal = -3, maxVal = 3;
+    const range = maxVal - minVal; // 6
     const n = data.length;
     const angleStep = (2 * Math.PI) / n;
 
@@ -572,8 +626,8 @@ const PdfBarChart: React.FC<{
     if (items.length === 0) return null;
 
     // SVG dimensions
-    const labelW = 100;
-    const barAreaW = 280;
+    const labelW = 130;
+    const barAreaW = 250;
     const valueW = 40;
     const totalW = labelW + barAreaW + valueW;
     const rowH = 14;
@@ -663,6 +717,118 @@ const PdfReadingGuide: React.FC<{ branding: BrandingConfig }> = ({ branding }) =
                     <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{item.desc}</Text>
                 </View>
             ))}
+        </View>
+    );
+};
+
+// ─── PERCENTILE CHART ────────────────────────────────────────────────────
+
+const PdfPercentileChart: React.FC<{
+    tests: TestData;
+    catalog: CategoryDef[];
+    branding: BrandingConfig;
+}> = ({ tests, catalog, branding }) => {
+    const radius = getCornerRadius(branding?.cornerStyle);
+    const { primary } = getColors(branding);
+    const fontFamily = getFontFamily(branding);
+
+    // Collect items with valid percentile
+    const items: Array<{ label: string; pct: number; color: string }> = [];
+    Object.entries(tests).forEach(([testId, subtests]) => {
+        const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+        Object.entries(subtests)
+            .filter(([, val]) => val.percentile !== undefined && val.percentile !== null && !isNaN(Number(val.percentile)))
+            .forEach(([subId, result]) => {
+                const subDef = def?.subtests.find(s => s.id === subId);
+                const pct = Number(result.percentile);
+                let color = COLORS.green;
+                if (pct < 2) color = COLORS.red;
+                else if (pct < 9) color = COLORS.orange;
+                items.push({ label: subDef?.displayName || subDef?.name || subId, pct, color });
+            });
+    });
+
+    if (items.length === 0) return null;
+
+    const labelW = 130;
+    const barAreaW = 250;
+    const valueW = 40;
+    const rowH = 14;
+    const svgH = items.length * rowH + 22;
+    const svgW = labelW + barAreaW + valueW;
+
+    const pctToX = (pct: number) => labelW + (Math.max(0, Math.min(100, pct)) / 100) * barAreaW;
+
+    // Zone boundaries
+    const zone2X = pctToX(2);
+    const zone9X = pctToX(9);
+    const zone25X = pctToX(25);
+    const center50X = pctToX(50);
+
+    return (
+        <View style={{ marginBottom: 20 }} wrap={false}>
+            <View style={{ backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: radius, overflow: 'hidden' }}>
+                <View style={{ padding: 8, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200 }}>
+                    <Text style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: primary, fontFamily }}>
+                        Profil des scores (Percentiles)
+                    </Text>
+                </View>
+                <View style={{ padding: 8 }}>
+                    <Svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
+                        {/* Background zones */}
+                        <Rect x={labelW} y={0} width={zone2X - labelW} height={items.length * rowH} fill={COLORS.rose100} />
+                        <Rect x={zone2X} y={0} width={zone9X - zone2X} height={items.length * rowH} fill={COLORS.amber100} />
+                        <Rect x={zone9X} y={0} width={zone25X - zone9X} height={items.length * rowH} fill="#FEFCE8" />
+                        <Rect x={zone25X} y={0} width={barAreaW - (zone25X - labelW)} height={items.length * rowH} fill={COLORS.emerald100} />
+                        {/* Center line */}
+                        <SvgLine x1={center50X} y1={0} x2={center50X} y2={items.length * rowH} stroke={COLORS.stone400} strokeWidth={0.5} strokeDasharray="2,2" />
+
+                        {/* Items */}
+                        {items.map((item, idx) => {
+                            const y = idx * rowH + rowH / 2;
+                            const dotX = pctToX(item.pct);
+                            return (
+                                <G key={idx}>
+                                    <SvgText x={labelW - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
+                                        {item.label.length > 18 ? item.label.slice(0, 17) + '…' : item.label}
+                                    </SvgText>
+                                    <Circle cx={dotX} cy={y} r={4} fill={item.color} />
+                                    <SvgText x={labelW + barAreaW + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: item.color }}>
+                                        {item.pct}%ile
+                                    </SvgText>
+                                </G>
+                            );
+                        })}
+
+                        {/* Axis legend */}
+                        {[0, 2, 9, 25, 50, 75, 91, 98, 100].map((v, i) => (
+                            <SvgText
+                                key={`leg-${i}`}
+                                x={pctToX(v)}
+                                y={items.length * rowH + 14}
+                                textAnchor="middle"
+                                style={{ fontSize: 6, fill: COLORS.stone400, fontWeight: v === 50 ? 700 : 400 }}
+                            >
+                                {v === 50 ? '50e' : `${v}`}
+                            </SvgText>
+                        ))}
+                    </Svg>
+                </View>
+            </View>
+            {/* Reading guide */}
+            <View style={{ marginTop: 8, padding: 8, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: radius }}>
+                <Text style={{ fontSize: 8, fontWeight: 700, marginBottom: 4 }}>Guide de lecture (Percentiles) :</Text>
+                {[
+                    { color: COLORS.green, label: 'Vert :', desc: 'Rang percentile ≥ 9 (zone normale).' },
+                    { color: COLORS.orange, label: 'Orange :', desc: 'Rang percentile 2–9 (norme basse).' },
+                    { color: COLORS.red, label: 'Rouge :', desc: 'Rang percentile < 2 (zone de difficulté).' },
+                ].map((item, i) => (
+                    <View key={i} style={{ flexDirection: 'row', gap: 4, marginBottom: 2 }}>
+                        <Text style={{ fontSize: 8, fontWeight: 700, color: item.color }}>{item.label}</Text>
+                        <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{item.desc}</Text>
+                    </View>
+                ))}
+            </View>
         </View>
     );
 };
@@ -812,7 +978,8 @@ const PdfAnnexes: React.FC<{
     catalog: CategoryDef[];
     branding: BrandingConfig;
     scoreDisplayModes?: Record<string, 'Brut' | 'NS' | 'ET' | '%'>;
-}> = ({ tests, catalog, branding, scoreDisplayModes }) => {
+    chartType?: 'radar' | 'bar' | 'percentile';
+}> = ({ tests, catalog, branding, scoreDisplayModes, chartType = 'bar' }) => {
     const { primary } = getColors(branding);
     const fontFamily = getFontFamily(branding);
 
@@ -828,14 +995,11 @@ const PdfAnnexes: React.FC<{
                 </Text>
             </View>
 
-            {/* Radar chart — self-filters if <3 categories */}
-            <PdfRadarChart tests={tests} catalog={catalog} branding={branding} />
-
-            {/* Horizontal bar chart — self-filters if no z-scores */}
-            <PdfBarChart tests={tests} catalog={catalog} branding={branding} />
-
-            {/* Reading guide */}
-            <PdfReadingGuide branding={branding} />
+            {/* Chart: conditionally rendered by chartType */}
+            {chartType === 'radar' && <PdfRadarChart tests={tests} catalog={catalog} branding={branding} />}
+            {chartType === 'bar' && <PdfBarChart tests={tests} catalog={catalog} branding={branding} />}
+            {chartType === 'bar' && <PdfReadingGuide branding={branding} />}
+            {chartType === 'percentile' && <PdfPercentileChart tests={tests} catalog={catalog} branding={branding} />}
 
             {/* Per-test score tables — always rendered at Step 5 */}
             {Object.entries(tests).map(([testId, subtests]) => {
@@ -899,6 +1063,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
     branding,
     catalog,
     scoreDisplayModes,
+    chartType = 'bar',
     sectionOrder,
     attachmentUrls,
 }) => {
@@ -908,7 +1073,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
     const radius = getCornerRadius(branding?.cornerStyle);
 
     // Determine section order
-    const defaultOrder = ['mandat_ref', 'mandat_eval', 'profil', 'diagnostic', 'objectifs', 'recommandations'];
+    const defaultOrder = ['mandat_ref', 'mandat_eval', 'profil', 'diagnostic', 'objectifs', 'project', 'recommandations'];
     const orderedSectionIds = sectionOrder
         ? sectionOrder.filter(id => id !== 'annexes')
         : defaultOrder;
@@ -994,6 +1159,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
                     catalog={catalog}
                     branding={branding}
                     scoreDisplayModes={scoreDisplayModes}
+                    chartType={chartType}
                 />
 
             </Page>

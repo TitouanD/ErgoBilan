@@ -18,6 +18,9 @@ const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
 const MAX_OUTPUT_TOKENS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_OUTPUT_TOKENS"), 65536);
 const CHUNKED_SUBTEST_THRESHOLD = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNKED_SUBTEST_THRESHOLD"), 8); // Trigger chunked fallback if inventory finds > N subtests
+const MAX_SUBTESTS_PER_CHUNK = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_SUBTESTS_PER_CHUNK"), 10); // Max subtests per focused extraction call
+const ENABLE_VERIFICATION_PASS = Deno.env.get("EXTRACTION_ENABLE_VERIFICATION") !== 'false'; // Lightweight verification after extraction
+const THINKING_BUDGET = parsePositiveInt(Deno.env.get("EXTRACTION_THINKING_BUDGET"), 2048); // Gemini thinking tokens
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PAYLOAD_BYTES"), 10_000_000);
 const MAX_IMAGE_PART_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_IMAGE_BYTES"), 8_000_000);
 
@@ -91,6 +94,8 @@ interface ExtractedTable {
 interface ExtractionResult {
   tc?: string;           // test_context
   st?: string;           // structure_type
+  pa0?: number | null;   // page_age_min_months
+  pa1?: number | null;   // page_age_max_months
   tables?: ExtractedTable[];
 }
 
@@ -129,11 +134,26 @@ interface ExtractionMeta {
   apiCalls: number;
   repairedSubtests?: string[];
   inventoryMode?: InventoryMode;
+  verified?: boolean;
+  verificationRepairs?: number;
 }
 
 interface ExtractionRunResult {
   text: string;
   meta: ExtractionMeta;
+}
+
+interface VerificationEntry {
+  ab: string;
+  min_n: number;
+  max_n: number;
+  min_r: string;
+  max_r: string;
+  count: number;
+}
+
+interface VerificationResult {
+  verify: VerificationEntry[];
 }
 
 // ── RETRY UTILITY ──────────────────────────────────────────────────────────
@@ -172,7 +192,7 @@ const callGemini = async (
     generationConfig: {
       responseMimeType,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
-      thinkingConfig: { thinkingBudget: 512 },
+      thinkingConfig: { thinkingBudget: THINKING_BUDGET },
     },
   };
 
@@ -344,8 +364,13 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
 
 --- STEP 2: EXTRACTION RULES ---
 1. PIVOT: If columns represent Ages/Grades and rows represent Stats (M, SD), YOU MUST PIVOT. Create ONE object per Age/Grade.
-2. INVERTED LOOKUP: Some LOOKUP tables are printed with ROWS = standard/scaled scores and COLUMNS = age groups.
-   In that case, the cell value is the raw score. You MUST still output one object per age group (column) with "r" = cell value, "n" = row header.
+2. INVERTED / TRANSPOSED LOOKUP: Some LOOKUP tables are printed TRANSPOSED — ROWS = standard/scaled scores (e.g. NS 1-19 or "Note Standard" column on the left) and COLUMNS = subtests (or age groups).
+   Detection: if the leftmost column header is "NS", "Note Standard", "Note Étalonnée", or a descending/ascending sequence of integers (1-19), the table IS inverted.
+   The cell value is the raw score (single value or range). You MUST output one "sid" table entry per DATA COLUMN, with:
+   - "r" = cell value (the raw score read from the cell)
+   - "n" = row header (the NS/standard score from the left column)
+   - One row object per non-empty cell in that column.
+   CRITICAL FOR INVERTED TABLES: Read each column independently, top to bottom. Do NOT confuse adjacent columns. Mentally trace a vertical line from the column header down to each cell to verify horizontal alignment.
 3. VALUES:
    - If Parametric: Extract "m" and "s".
    - If Parametric and a row/column has a class label (e.g. CE1, 6e, 2nde), also output "gl" with that original label.
@@ -354,6 +379,12 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - Clean units (sec, pts).
    - Keep decimals.
    - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
+4b. DENSE TABLE READING STRATEGY (CRITICAL for tables with more than 8 data columns):
+   - Read the table COLUMN BY COLUMN, not row by row.
+   - For each column: (a) identify the column header/abbreviation, (b) scan every row from top to bottom, (c) record each non-empty cell with its row header (the NS/score from the leftmost column).
+   - After extracting each column, VERIFY the count of extracted values matches the number of non-empty cells visible in that column.
+   - Common error on dense tables: reading a neighboring column's value instead of the target column. To prevent this, mentally trace a strict vertical line from the column header down to each cell.
+   - The LAST columns (rightmost) are just as important as the first. Do NOT stop reading early.
 5. SUBTEST NAMING (CRITICAL):
    - NEVER use abbreviated column headers as subtest names (e.g. "AA", "FD", "MV", "ST", "IP", "CF", "MD", "DT").
    - You MUST expand every abbreviation to its FULL FRENCH clinical name.
@@ -378,6 +409,11 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
 6. GROUPING:
    - For LOOKUP: Each "sid" entry groups all rows for ONE subtest. If the page covers a single age group (visible in the header), ALL rows under that subtest share the same a0/a1.
    - For PARAMETRIC: Each "sid" entry groups all age/grade rows for ONE subtest.
+   COMPLETENESS CHECK (LOOKUP):
+   - For inverted/transposed LOOKUP tables with NS rows (1-19 or similar), each subtest column should produce up to 19 rows (some NS levels may legitimately have an empty cell — skip those).
+   - If you extracted significantly fewer rows for one column than for its neighbors, re-scan that column before finalizing.
+   - The highest raw score for a subtest is typically at the highest NS (e.g. NS 19). Verify you did not stop reading a column early or confuse it with an adjacent column.
+   - After generating the full output, do a final spot-check: compare the LAST two columns' max raw scores with what you see in the image. If they differ, re-read those columns.
 
 --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
 You must calculate specific numeric values for the database:
@@ -389,14 +425,13 @@ You must calculate specific numeric values for the database:
    - Secondary grades: 6e=132-143, 5e=144-155, 4e=156-167, 3e=168-179, 2nde=180-191, 1ere=192-203, Terminale=204-215.
    - STRICT RULE: never interpolate missing school levels; if a class is absent in the source, keep it absent.
    - CRITICAL: labels like "6e", "4e", "2nde" are grade levels, NOT ages 6/4/2 years. Never map them to 72/48/24 months.
-   - PAGE-LEVEL AGE: When the page title, header, column heading, OR FILENAME shows an age group (e.g. "Ages 10;6-10;11", or filename "10;6-10;11.jpg", "13ans.jpg", "CE1.png"), that SINGLE age group applies to EVERY row on the entire page. You MUST propagate it to a0/a1 of ALL rows AND to pa0/pa1 at the top level. Example: "Ages 10;6-10;11" -> a0: 126, a1: 131 for every row.
-   - FILENAME AGE: If the filename contains an age hint (e.g. "5ans6mois" = 66 months, "13ans" = 156 months, "CE1" = ~84 months, "10;6-10;11" = 126-131 months), use it for pa0/pa1 and a0/a1 when no age is visible in the table headers.
-   - For LOOKUP tables, a0 and a1 must NEVER be null. The age is ALWAYS visible somewhere on the page (title, header, sub-header) or in the filename. Search for it and apply it.
-2. RAW SCORE NORMALIZATION (r0, r1):
-   - "15-16" -> r0: 15, r1: 16
-   - "7" -> r0: 7, r1: 7
-   - "<5" -> r0: 0, r1: 5
-   - ">19" or "19+" -> r0: 19, r1: 999 (use a high number for infinity)
+   - PAGE-LEVEL AGE: When the page title, header, column heading, OR FILENAME shows an age group (e.g. "Ages 10;6-10;11", or filename "10;6-10;11.jpg", "13ans.jpg", "CE1.png"), that SINGLE age group applies to EVERY row on the entire page. Set pa0/pa1 at the top level. You do NOT need to repeat a0/a1 on every row — omit a0/a1 from rows when pa0/pa1 is set.
+   - FILENAME AGE: If the filename contains an age hint (e.g. "5ans6mois" = 66 months, "13ans" = 156 months, "CE1" = ~84 months, "10;6-10;11" = 126-131 months), use it for pa0/pa1 when no age is visible in the table headers.
+   - For LOOKUP tables, age must NEVER be missing. Set it via pa0/pa1 (page-level) or a0/a1 (row-level for multi-age pages).
+   - OUTPUT TOKEN OPTIMIZATION: Do NOT output a0/a1 on rows when pa0/pa1 is set at top level (client inherits automatically). Only output row-level a0/a1 when rows have DIFFERENT ages (e.g. PARAMETRIC tables with multiple age groups).
+2. RAW SCORE FORMAT (r):
+   - Keep raw scores as display strings in "r" (e.g. "15-16", "7", "<5", ">19").
+   - Do NOT output r0 or r1 — the client parses raw bounds from "r" automatically.
 `;
 
 const JSON_SCHEMA = `
@@ -414,23 +449,21 @@ const JSON_SCHEMA = `
         {
           "m": "string (Only if PARAMETRIC: Mean)",
           "s": "string (Only if PARAMETRIC: SD)",
-          "r": "string (Only if LOOKUP: Raw Score as displayed)",
+          "r": "string (Only if LOOKUP: Raw Score as displayed, e.g. '0-3', '7', '<5')",
           "n": "string (Only if LOOKUP: Standard Score / Note Étalonnée)",
           "p": "string (Percentile if explicit)",
           "z": "string (Z-Score if explicit)",
           "gl": "string (Optional source class/grade label such as CE1, 6e, 2nde)",
-          "a0": number | null (age_min in months),
-          "a1": number | null (age_max in months),
-          "r0": number | null (raw_min),
-          "r1": number | null (raw_max)
+          "a0": number (ONLY if rows have different ages — omit when pa0/pa1 covers all rows),
+          "a1": number (ONLY if rows have different ages — omit when pa0/pa1 covers all rows)
         }
       ]
     }
   ]
 }
 
-KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, gl=group_label, a0=age_min_months, a1=age_max_months, r0=raw_min, r1=raw_max.
-CRITICAL: If the page shows a single age group in its header/title (e.g. "Ages 10;6-10;11"), you MUST set pa0 and pa1 at the top level AND copy them into every row's a0/a1.
+KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, gl=group_label, a0=age_min_months, a1=age_max_months.
+TOKEN SAVING: When pa0/pa1 is set, do NOT repeat a0/a1 on each row. Do NOT output r0/r1 — client computes them from "r".
 
 OUTPUT RULES:
 - Output valid JSON only.
@@ -651,8 +684,6 @@ const stableLookupRowKey = (row: Record<string, unknown>): string => (
   `L|${[
     stableRowValue(row.a0),
     stableRowValue(row.a1),
-    stableRowValue(row.r0),
-    stableRowValue(row.r1),
     stableRowValue(row.r),
     stableRowValue(row.n),
     stableRowValue(row.gl),
@@ -671,6 +702,16 @@ const stableMergeRowKey = (row: Record<string, unknown>): string => (
   isStableParametricRow(row) ? stableParametricRowKey(row) : stableLookupRowKey(row)
 );
 
+/** Parse the leading numeric value from a raw score string (e.g. "15-16" → 15, "<5" → 5, "7" → 7). */
+const parseLeadingRaw = (value: unknown): number => {
+  const s = stableRowValue(value);
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  const m = s.match(/(-?\d+(?:\.\d+)?)/);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+};
+
 const sortStableRows = (rows: Record<string, unknown>[]): Record<string, unknown>[] => {
   return [...rows].sort((a, b) => {
     const a0 = Number.isFinite(Number(a.a0)) ? Number(a.a0) : Number.MAX_SAFE_INTEGER;
@@ -679,12 +720,14 @@ const sortStableRows = (rows: Record<string, unknown>[]): Record<string, unknown
     const a1 = Number.isFinite(Number(a.a1)) ? Number(a.a1) : Number.MAX_SAFE_INTEGER;
     const b1 = Number.isFinite(Number(b.a1)) ? Number(b.a1) : Number.MAX_SAFE_INTEGER;
     if (a1 !== b1) return a1 - b1;
-    const ar0 = Number.isFinite(Number(a.r0)) ? Number(a.r0) : Number.MAX_SAFE_INTEGER;
-    const br0 = Number.isFinite(Number(b.r0)) ? Number(b.r0) : Number.MAX_SAFE_INTEGER;
-    if (ar0 !== br0) return ar0 - br0;
-    const ar1 = Number.isFinite(Number(a.r1)) ? Number(a.r1) : Number.MAX_SAFE_INTEGER;
-    const br1 = Number.isFinite(Number(b.r1)) ? Number(b.r1) : Number.MAX_SAFE_INTEGER;
-    if (ar1 !== br1) return ar1 - br1;
+    // Sort by raw score numerically (parsed from r string since r0/r1 are no longer in output)
+    const ar = parseLeadingRaw(a.r);
+    const br = parseLeadingRaw(b.r);
+    if (ar !== br) return ar - br;
+    // Final tiebreaker: standard score numerically
+    const an = Number.isFinite(Number(a.n)) ? Number(a.n) : Number.MAX_SAFE_INTEGER;
+    const bn = Number.isFinite(Number(b.n)) ? Number(b.n) : Number.MAX_SAFE_INTEGER;
+    if (an !== bn) return an - bn;
     return stableRowValue(a.r).localeCompare(stableRowValue(b.r));
   });
 };
@@ -693,6 +736,8 @@ const mergeExtractionResultsStable = (results: ExtractionResult[]): ExtractionRe
   const merged: ExtractionResult = {
     tc: '',
     st: 'LOOKUP',
+    pa0: null,
+    pa1: null,
     tables: [],
   };
 
@@ -702,6 +747,9 @@ const mergeExtractionResultsStable = (results: ExtractionResult[]): ExtractionRe
     if (!result) continue;
     if (result.tc && !merged.tc) merged.tc = result.tc;
     if (result.st) merged.st = result.st;
+    // Preserve page-level age (first non-null wins)
+    if (result.pa0 != null && merged.pa0 == null) merged.pa0 = result.pa0;
+    if (result.pa1 != null && merged.pa1 == null) merged.pa1 = result.pa1;
 
     if (!Array.isArray(result.tables)) continue;
     for (const table of result.tables) {
@@ -912,6 +960,10 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
     return result;
   }
 
+  // Propagate page-level age to rows that are missing a0/a1
+  const pa0 = typeof result.pa0 === 'number' && Number.isFinite(result.pa0) ? result.pa0 : null;
+  const pa1 = typeof result.pa1 === 'number' && Number.isFinite(result.pa1) ? result.pa1 : null;
+
   const tableMap = new Map<string, ParametricAccumulator>();
 
   for (const table of result.tables) {
@@ -952,8 +1004,8 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
       if (role === 'sd' && !sdVal) sdVal = pickNumericString(row.m);
 
       const mergedCandidate: MergedParametricRow = {
-        a0: pickOptionalNumber(row.a0),
-        a1: pickOptionalNumber(row.a1),
+        a0: pickOptionalNumber(row.a0) ?? (pa0 !== null ? pa0 : undefined),
+        a1: pickOptionalNumber(row.a1) ?? (pa1 !== null ? pa1 : undefined),
         gl: sanitizeGroupLabel(row.gl),
       };
 
@@ -1011,6 +1063,10 @@ const sanitizeLookupExtraction = (result: ExtractionResult): ExtractionResult =>
     return result;
   }
 
+  // Propagate page-level age to rows that are missing a0/a1
+  const pa0 = typeof result.pa0 === 'number' && Number.isFinite(result.pa0) ? result.pa0 : null;
+  const pa1 = typeof result.pa1 === 'number' && Number.isFinite(result.pa1) ? result.pa1 : null;
+
   const tableMap = new Map<string, { sid: string; ab?: string; rows: Map<string, Record<string, unknown>> }>();
 
   for (const table of result.tables) {
@@ -1038,6 +1094,9 @@ const sanitizeLookupExtraction = (result: ExtractionResult): ExtractionResult =>
     for (const rawRow of table.rows) {
       if (!rawRow || typeof rawRow !== 'object') continue;
       const row = rawRow as Record<string, unknown>;
+      // Fill in a0/a1 from pa0/pa1 if the row is missing them
+      if (row.a0 == null && pa0 !== null) row.a0 = pa0;
+      if (row.a1 == null && pa1 !== null) row.a1 = pa1;
       const rowKey = stableLookupRowKey(row);
       const existing = accumulator.rows.get(rowKey);
       if (!existing) {
@@ -1069,6 +1128,97 @@ const sanitizeExtractionResult = (result: ExtractionResult): ExtractionResult =>
   return result;
 };
 
+// ── VERIFICATION PASS ──────────────────────────────────────────────────────
+
+const buildVerificationTask = (
+  payload: Record<string, unknown>,
+  subtestsToVerify: { sid: string; ab: string }[]
+) => {
+  const imagePart = payload.imagePart;
+  const abList = subtestsToVerify.map((s) => s.ab).filter(Boolean);
+
+  const prompt = `Verify each column abbreviation in the image. For EACH, report boundary values only.
+Columns: ${JSON.stringify(abList)}
+Per column: ab, min_n (lowest NS with data), max_n (highest NS with data), min_r (raw at min_n), max_r (raw at max_n), count (non-empty cells).
+Read each column independently top-to-bottom. Do NOT confuse adjacent columns.
+JSON only, minified: {"verify":[{"ab":"XX","min_n":1,"min_r":"0-3","max_n":19,"max_r":"60-86","count":19},...]}`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
+interface VerificationMismatch {
+  sid: string;
+  ab: string;
+  reason: string;
+}
+
+const compareVerificationResults = (
+  extraction: ExtractionResult,
+  verification: VerificationResult
+): VerificationMismatch[] => {
+  if (!verification?.verify || !Array.isArray(verification.verify)) return [];
+  if (!extraction?.tables || !Array.isArray(extraction.tables)) return [];
+
+  const mismatches: VerificationMismatch[] = [];
+  const verifyMap = new Map<string, VerificationEntry>();
+  for (const entry of verification.verify) {
+    if (entry.ab) verifyMap.set(entry.ab.toUpperCase().trim(), entry);
+  }
+
+  for (const table of extraction.tables) {
+    const ab = (table.ab || '').toUpperCase().trim();
+    if (!ab) continue;
+    const verified = verifyMap.get(ab);
+    if (!verified) continue;
+
+    const rows = table.rows || [];
+    const extractedCount = rows.length;
+
+    // Check row count mismatch (tolerance of 1)
+    if (Math.abs(extractedCount - verified.count) > 1) {
+      mismatches.push({
+        sid: table.sid,
+        ab: table.ab || ab,
+        reason: `row_count: extracted=${extractedCount}, verified=${verified.count}`,
+      });
+      continue;
+    }
+
+    // Check max standard score (n) — find extracted max
+    const extractedNValues = rows
+      .map((r) => Number(r.n))
+      .filter((n) => Number.isFinite(n));
+    const extractedMaxN = extractedNValues.length > 0 ? Math.max(...extractedNValues) : null;
+
+    if (extractedMaxN !== null && verified.max_n > 0 && Math.abs(extractedMaxN - verified.max_n) > 1) {
+      mismatches.push({
+        sid: table.sid,
+        ab: table.ab || ab,
+        reason: `max_standard: extracted=${extractedMaxN}, verified=${verified.max_n}`,
+      });
+      continue;
+    }
+
+    // Check max raw score at highest NS
+    if (verified.max_r && extractedMaxN !== null) {
+      const rowAtMaxN = rows.find((r) => Number(r.n) === extractedMaxN);
+      const extractedMaxR = rowAtMaxN ? String(rowAtMaxN.r || '').trim() : '';
+      const verifiedMaxR = String(verified.max_r).trim();
+      if (extractedMaxR && verifiedMaxR && extractedMaxR !== verifiedMaxR) {
+        mismatches.push({
+          sid: table.sid,
+          ab: table.ab || ab,
+          reason: `max_raw: extracted="${extractedMaxR}", verified="${verifiedMaxR}"`,
+        });
+      }
+    }
+  }
+
+  return mismatches;
+};
+
 // ── ORCHESTRATOR: Try single call, fallback to chunked ─────────────────────
 
 const extractWithFallback = async (
@@ -1080,92 +1230,163 @@ const extractWithFallback = async (
 
   const wasTruncated = finishReason === 'MAX_TOKENS' || finishReason === 'LENGTH';
 
+  let baseResult: ExtractionRunResult;
+
   if (!wasTruncated && fullText) {
     // Single call succeeded without truncation — cheapest path
-    return { text: fullText, meta: { strategy: 'single', apiCalls: 1 } };
+    baseResult = { text: fullText, meta: { strategy: 'single', apiCalls: 1 } };
+  } else {
+    // Parse what we got (may be partial)
+    const partialResult = safeJsonParse(fullText);
+    const extractedSubtestCount = partialResult?.tables?.length ?? 0;
+
+    // If we got a reasonable number of subtests and no truncation signal, trust the result
+    if (!wasTruncated && extractedSubtestCount >= 3) {
+      baseResult = { text: fullText!, meta: { strategy: 'single', apiCalls: 1 } };
+    } else {
+      // ── PHASE 2: Inventory scan to discover all subtests ──
+      const inventoryTask = buildInventoryScanTask(payload);
+      const { text: inventoryText } = await callGemini(inventoryTask.contents);
+
+      let inventory: InventoryResult | null = null;
+      try {
+        inventory = inventoryText ? JSON.parse(inventoryText) : null;
+      } catch {
+        inventory = null;
+      }
+
+      if (!inventory || !Array.isArray(inventory.domains) || inventory.domains.length === 0) {
+        // Inventory failed — return the partial result from Phase 1 if we have anything
+        if (!wasTruncated && fullText) {
+          baseResult = { text: fullText, meta: { strategy: 'single-fallback', apiCalls: 2 } };
+        } else {
+          throw new Error('Both full extraction and inventory scan failed');
+        }
+      } else {
+        const totalSubtests = inventory.domains.reduce((sum, d) => sum + d.subtests.length, 0);
+
+        // If inventory shows few subtests, the single call should have been enough
+        if (!wasTruncated && totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
+          baseResult = { text: fullText, meta: { strategy: 'single-verified', apiCalls: 2 } };
+        } else {
+          // ── PHASE 3: Chunked extraction by domain ──
+          const chunks: { subtests: string[]; domainHint: string }[] = [];
+          let currentChunk: string[] = [];
+          let currentDomainHints: string[] = [];
+
+          for (const domain of inventory.domains) {
+            if (currentChunk.length + domain.subtests.length > MAX_SUBTESTS_PER_CHUNK && currentChunk.length > 0) {
+              chunks.push({ subtests: [...currentChunk], domainHint: currentDomainHints.join(' + ') });
+              currentChunk = [];
+              currentDomainHints = [];
+            }
+            currentChunk.push(...domain.subtests);
+            currentDomainHints.push(domain.domain);
+          }
+          if (currentChunk.length > 0) {
+            chunks.push({ subtests: currentChunk, domainHint: currentDomainHints.join(' + ') });
+          }
+
+          // Execute chunk extractions in parallel
+          const chunkResults = await Promise.all(
+            chunks.map(async (chunk) => {
+              const task = buildFocusedExtractionTask(payload, chunk.subtests, chunk.domainHint);
+              const { text: chunkText } = await callGemini(task.contents);
+              return safeJsonParse(chunkText);
+            })
+          );
+
+          const allResults: ExtractionResult[] = chunkResults.filter(Boolean) as ExtractionResult[];
+          if (partialResult && (partialResult.tables?.length ?? 0) > 0) {
+            allResults.push(partialResult);
+          }
+
+          const merged = mergeExtractionResultsStable(allResults);
+          baseResult = {
+            text: JSON.stringify(merged),
+            meta: {
+              strategy: `chunked-${chunks.length}`,
+              apiCalls: 2 + chunks.length,
+            },
+          };
+        }
+      }
+    }
   }
 
-  // Parse what we got (may be partial)
-  const partialResult = safeJsonParse(fullText);
-  const extractedSubtestCount = partialResult?.tables?.length ?? 0;
-
-  // If we got a reasonable number of subtests and no truncation signal, trust the result
-  if (!wasTruncated && extractedSubtestCount >= 3) {
-    return { text: fullText!, meta: { strategy: 'single', apiCalls: 1 } };
+  // ── PHASE 4: Verification pass (optional, LOOKUP only) ──
+  if (!ENABLE_VERIFICATION_PASS) {
+    return baseResult;
   }
 
-  // ── PHASE 2: Inventory scan to discover all subtests ──
-  const inventoryTask = buildInventoryScanTask(payload);
-  const { text: inventoryText } = await callGemini(inventoryTask.contents);
+  const parsed = safeJsonParse(baseResult.text);
+  if (!parsed || String(parsed.st || '').toUpperCase() !== 'LOOKUP' || !Array.isArray(parsed.tables) || parsed.tables.length < 2) {
+    return baseResult;
+  }
 
-  let inventory: InventoryResult | null = null;
+  // Build subtest list with abbreviations for verification
+  const subtestsToVerify = parsed.tables
+    .filter((t) => t.ab && t.rows && t.rows.length > 0)
+    .map((t) => ({ sid: t.sid, ab: t.ab! }));
+
+  if (subtestsToVerify.length < 2) {
+    return baseResult;
+  }
+
   try {
-    inventory = inventoryText ? JSON.parse(inventoryText) : null;
+    const verifyTask = buildVerificationTask(payload, subtestsToVerify);
+    const { text: verifyText } = await callGemini(verifyTask.contents);
+    baseResult.meta.apiCalls += 1;
+
+    let verifyResult: VerificationResult | null = null;
+    try {
+      verifyResult = verifyText ? JSON.parse(verifyText) : null;
+    } catch {
+      verifyResult = null;
+    }
+
+    if (!verifyResult || !Array.isArray(verifyResult.verify)) {
+      baseResult.meta.verified = false;
+      return baseResult;
+    }
+
+    const mismatches = compareVerificationResults(parsed, verifyResult);
+
+    if (mismatches.length === 0) {
+      baseResult.meta.verified = true;
+      baseResult.meta.verificationRepairs = 0;
+      return baseResult;
+    }
+
+    // Auto-repair mismatched subtests (up to 10 at once)
+    const repairTargets = mismatches.slice(0, 10);
+    const repairRequest: RepairRequestPayload = {
+      focusSubtests: repairTargets.map((m) => ({ name: m.sid, abbreviation: m.ab })),
+      expectedGroupCounts: [],
+      includeNeighborColumns: false,
+      existingSubtests: parsed.tables.map((t) => t.sid),
+    };
+
+    const repairTask = buildRepairExtractionTask(payload, repairRequest);
+    const { text: repairText } = await callGemini(repairTask.contents);
+    baseResult.meta.apiCalls += 1;
+
+    const repairedResult = safeJsonParse(repairText);
+    if (repairedResult && Array.isArray(repairedResult.tables)) {
+      // Merge repairs into the base extraction (repairs take priority)
+      const merged = mergeExtractionResultsStable([parsed, repairedResult]);
+      baseResult.text = JSON.stringify(merged);
+    }
+
+    baseResult.meta.verified = true;
+    baseResult.meta.verificationRepairs = repairTargets.length;
+    baseResult.meta.strategy += '+verified';
+    return baseResult;
   } catch {
-    inventory = null;
+    // Verification failed — return base result without verification
+    baseResult.meta.verified = false;
+    return baseResult;
   }
-
-  if (!inventory || !Array.isArray(inventory.domains) || inventory.domains.length === 0) {
-    // Inventory failed — return the partial result from Phase 1 if we have anything
-    if (!wasTruncated && fullText) {
-      return { text: fullText, meta: { strategy: 'single-fallback', apiCalls: 2 } };
-    }
-    throw new Error('Both full extraction and inventory scan failed');
-  }
-
-  const totalSubtests = inventory.domains.reduce((sum, d) => sum + d.subtests.length, 0);
-
-  // If inventory shows few subtests, the single call should have been enough
-  // The issue might be something else — return partial
-  if (!wasTruncated && totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
-    return { text: fullText, meta: { strategy: 'single-verified', apiCalls: 2 } };
-  }
-
-  // ── PHASE 3: Chunked extraction by domain ──
-  // Group domains into reasonable chunks (max ~10 subtests per call)
-  const chunks: { subtests: string[]; domainHint: string }[] = [];
-  let currentChunk: string[] = [];
-  let currentDomainHints: string[] = [];
-
-  for (const domain of inventory.domains) {
-    if (currentChunk.length + domain.subtests.length > 10 && currentChunk.length > 0) {
-      chunks.push({ subtests: [...currentChunk], domainHint: currentDomainHints.join(' + ') });
-      currentChunk = [];
-      currentDomainHints = [];
-    }
-    currentChunk.push(...domain.subtests);
-    currentDomainHints.push(domain.domain);
-  }
-  if (currentChunk.length > 0) {
-    chunks.push({ subtests: currentChunk, domainHint: currentDomainHints.join(' + ') });
-  }
-
-  // Execute chunk extractions in parallel
-  const chunkResults = await Promise.all(
-    chunks.map(async (chunk) => {
-      const task = buildFocusedExtractionTask(payload, chunk.subtests, chunk.domainHint);
-      const { text: chunkText } = await callGemini(task.contents);
-      return safeJsonParse(chunkText);
-    })
-  );
-
-  // Also include partial result from Phase 1 if it had valid data
-  const allResults: ExtractionResult[] = chunkResults.filter(Boolean) as ExtractionResult[];
-  if (partialResult && (partialResult.tables?.length ?? 0) > 0) {
-    allResults.push(partialResult);
-  }
-
-  const merged = mergeExtractionResultsStable(allResults);
-  const mergedText = JSON.stringify(merged);
-
-  // Total API calls: 1 (full) + 1 (inventory) + N (chunks)
-  return {
-    text: mergedText,
-    meta: {
-      strategy: `chunked-${chunks.length}`,
-      apiCalls: 2 + chunks.length,
-    },
-  };
 };
 
 // ── MAIN HANDLER ───────────────────────────────────────────────────────────

@@ -1358,8 +1358,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const detectedStructure: TableStructure = extractedData?.structure_type || 'LOOKUP';
 
         // Page-level age fallback: if Gemini set pa0/pa1, propagate to rows with null a0/a1
-        const pageAgeMin = (extractedData as Record<string, unknown>)?.page_age_min as number | null | undefined;
-        const pageAgeMax = (extractedData as Record<string, unknown>)?.page_age_max as number | null | undefined;
+        const pageAgeMin = extractedData?.page_age_min;
+        const pageAgeMax = extractedData?.page_age_max;
 
         // Ultimate fallback: parse age from filename if Gemini missed it entirely
         const filenameAge = parseAgeFromFilename(filename);

@@ -36,6 +36,7 @@ export interface Patient {
     siblings: Sibling[];
     school: string;
     classLevel: string;
+    schoolType?: string;
     teacher: string;
     carePlan: string;
     avs: string;
@@ -151,6 +152,7 @@ export interface Observations {
 
 export interface ClinicalSynthesis {
     diagnosticInput: string;
+    projectInput: string;
     recommendationsInput: string;
 }
 
@@ -166,9 +168,24 @@ export interface ReportSection {
     id: string;
     title: string;
     content: string;
+    contentFormat?: 'plain' | 'html';
     status: 'draft' | 'validated';
     isAiGenerated?: boolean;
     attachments?: ReportAttachment[];
+}
+
+export interface InfoBlockExtraLine {
+    id: string;
+    text: string;
+    after: 'top' | 'name' | 'phone' | 'email' | 'siret' | 'address';
+}
+
+export interface InfoBlock {
+    position: 'left' | 'center' | 'right';
+    size: 'S' | 'M' | 'L';
+    bgColor: string;
+    borderColor: string;
+    extraLines: InfoBlockExtraLine[];
 }
 
 export interface BrandingConfig {
@@ -194,6 +211,7 @@ export interface BrandingConfig {
     footerText: string;
     showPageNumbers: boolean;
     logoUrl?: string;
+    infoBlock?: InfoBlock;
 }
 
 export interface UserProfile {
@@ -365,7 +383,10 @@ export type ReviewFlagCode =
     | 'LOOKUP_ZERO_Z_PLATEAU'
     | 'LOOKUP_NON_INTEGER_SCORE'
     | 'SUBTEST_CONTENT_DUPLICATE'
-    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED';
+    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED'
+    | 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW'
+    | 'LOOKUP_MAX_RAW_OUTLIER'
+    | 'LOOKUP_NS_RANGE_INCOMPLETE';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
@@ -564,6 +585,8 @@ export interface AIExtractedTable {
 export interface AIExtractionResult {
     test_context?: string;
     structure_type?: 'PARAMETRIC' | 'LOOKUP';
+    page_age_min?: number | null;
+    page_age_max?: number | null;
     tables?: AIExtractedTable[];
 }
 
@@ -589,6 +612,8 @@ export interface ExtractionCallMeta {
     apiCalls: number;
     repairedSubtests?: string[];
     inventoryMode?: 'off' | 'conditional';
+    verified?: boolean;
+    verificationRepairs?: number;
 }
 
 // ── Deduplication types ──

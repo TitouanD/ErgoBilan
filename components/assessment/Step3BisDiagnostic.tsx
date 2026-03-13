@@ -67,6 +67,7 @@ const VoiceArea: React.FC<{
 const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
     const { catalog } = useCatalog();
     const [notesExpanded, setNotesExpanded] = useState(false);
+    const [panelExpanded, setPanelExpanded] = useState(false);
 
     const { testInfoMap, subtestNameMap } = useMemo(() => {
         const testInfoMap: Record<string, { name: string; categoryName: string }> = {};
@@ -75,7 +76,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
             cat.tests.forEach(t => {
                 testInfoMap[t.id] = { name: t.name, categoryName: cat.name };
                 t.subtests.forEach(st => {
-                    subtestNameMap[st.id] = (st as any).displayName || st.name;
+                    subtestNameMap[st.id] = (st as any).displayName || st.name || st.id;
                 });
             });
         });
@@ -91,7 +92,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                 if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
                 const hasData = !!(res.raw?.trim() || res.standard?.trim() || res.percentile?.trim() ||
                     Number.isFinite(res.zScore) || res.qualitativeCode?.trim() || res.qualitativeLabel?.trim());
-                if (hasData) subtestList.push({ subId, name: subtestNameMap[subId] || subId, res });
+                if (hasData) subtestList.push({ subId, name: subtestNameMap[subId] || subtestNameMap[subId.toLowerCase()] || subId, res });
             });
             if (subtestList.length === 0) return;
             const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
@@ -115,12 +116,88 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
     if (!hasContent && !interviewNotes) return null;
 
     return (
+        <>
+        {panelExpanded && (
+            <div
+                className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-start justify-end p-4 pt-20"
+                onClick={() => setPanelExpanded(false)}
+            >
+                <div
+                    className="w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-2xl"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Activity size={13} className="text-stone-400" />
+                            <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scores & Observations</h4>
+                        </div>
+                        <button onClick={() => setPanelExpanded(false)} className="p-1.5 rounded-lg hover:bg-[var(--hover-bg)] text-stone-400 hover:text-[var(--text-heading)] transition-colors" title="Fermer">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div className="divide-y divide-[var(--border-color)]">
+                        {Object.keys(groupedData).length === 0 && (
+                            <p className="text-center text-xs text-[var(--text-secondary)] py-8">Aucun score enregistré.</p>
+                        )}
+                        {(Object.entries(groupedData) as [string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]][]).map(([categoryName, testEntries]) => (
+                            <div key={categoryName} className="p-4">
+                                <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest mb-2 block">{categoryName}</span>
+                                {testEntries.map(({ testId, name: testName, subtests }) => (
+                                    <div key={testId} className="mt-3">
+                                        <h5 className="text-xs font-bold text-[var(--text-heading)] mb-3 leading-tight">{testName}</h5>
+                                        <div className="space-y-2">
+                                            {subtests.map(({ subId, name: subName, res }) => {
+                                                const z = res.zScore ?? res.derived?.zScore ?? null;
+                                                const color = (z !== null && Number.isFinite(z)) ? zColor(z) : '#94a3b8';
+                                                const pct = res.percentile || res.derived?.percentile;
+                                                return (
+                                                    <div key={subId}>
+                                                        <div className="flex items-center justify-between mb-0.5 gap-2">
+                                                            <span className="text-xs text-[var(--text-secondary)] truncate flex-1">{subName}</span>
+                                                            <span className="text-xs font-bold shrink-0" style={{ color }}>
+                                                                {pct ? `${pct}e` : res.standard ? `NS ${res.standard}` : '\u2014'}
+                                                            </span>
+                                                        </div>
+                                                        {res.observation && (
+                                                            <p className="text-xs text-[var(--text-secondary)] italic mt-0.5 pl-2 border-l-2 border-stone-200 dark:border-stone-700">{res.observation}</p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                    {interviewNotes && (
+                        <div className="p-4 border-t border-[var(--border-color)]">
+                            <p className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2">Notes d'entretien</p>
+                            <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed">{interviewNotes}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
         <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden">
 
             {/* Panel header */}
-            <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center gap-2">
-                <Activity size={13} className="text-stone-400" />
-                <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scores & Observations</h4>
+            <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <Activity size={13} className="text-stone-400" />
+                    <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scores & Observations</h4>
+                </div>
+                <button
+                    onClick={() => setPanelExpanded(v => !v)}
+                    className="p-1 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[#E07A5F] transition-colors"
+                    title={panelExpanded ? 'Réduire' : 'Agrandir'}
+                >
+                    {panelExpanded ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M8 3v3a2 2 0 01-2 2H3M21 8h-3a2 2 0 01-2-2V3M3 16h3a2 2 0 012 2v3M16 21v-3a2 2 0 012-2h3"/></svg>
+                    ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    )}
+                </button>
             </div>
 
             {/* Interview notes */}
@@ -227,6 +304,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                 </tbody>
             </table>
         </div>
+        </>
     );
 };
 
@@ -240,6 +318,14 @@ const DIAG_SUGGESTIONS = [
     { label: "Retard de développement psychomoteur", category: "moteur" },
     { label: "Trouble du traitement visuo-spatial", category: "cognitif" },
     { label: "Pas de trouble avéré - Fragilités isolées", category: "autre" },
+];
+
+const PROJECT_SUGGESTIONS = [
+    { label: "Suivi en ergothérapie", category: "suivi" },
+    { label: "Accompagnement parental", category: "famille" },
+    { label: "Guidance pédagogique", category: "scolaire" },
+    { label: "Coordination pluridisciplinaire", category: "suivi" },
+    { label: "Rééducation fonctionnelle", category: "suivi" },
 ];
 
 const RECO_SUGGESTIONS = [
@@ -309,6 +395,7 @@ const ToggleChips: React.FC<{
 export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, observations, patient, onNext, onBack, isGenerating }) => {
 
     const handleDiagChange = (val: string) => updateSynthesis({ diagnosticInput: val });
+    const handleProjectChange = (val: string) => updateSynthesis({ projectInput: val });
     const handleRecoChange = (val: string) => updateSynthesis({ recommendationsInput: val });
 
     const hasScoreValue = (res: any) =>
@@ -365,7 +452,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                         <div className="flex items-center gap-3 mb-4 text-[var(--text-heading)]">
                             <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl"><Brain size={24} /></div>
                             <div>
-                                <h3 className="font-bold text-xl">Conclusion Diagnostique</h3>
+                                <h3 className="font-bold text-xl">Diagnostique</h3>
                                 <p className="text-xs text-stone-400 mt-0.5">Cliquez pour ajouter/retirer · Dictée vocale · Texte libre</p>
                             </div>
                         </div>
@@ -375,7 +462,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             onChange={handleDiagChange}
                             placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
                             className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all leading-relaxed mb-4"
-                            rows={4}
+                            rows={7}
                         />
 
                         <ToggleChips
@@ -386,22 +473,50 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                         />
                     </div>
 
-                    {/* PROJECT/RECOMMENDATIONS BLOCK */}
+                    {/* PROJECT BLOCK */}
                     <div className="bg-[var(--card-bg)] p-8 rounded-[32px] border border-[var(--border-color)] shadow-sm relative group hover:border-emerald-200/50 transition-all">
                         <div className="flex items-center gap-3 mb-4 text-[var(--text-heading)]">
                             <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl"><Target size={24} /></div>
                             <div>
-                                <h3 className="font-bold text-xl">Projet & Préconisations</h3>
-                                <p className="text-xs text-stone-400 mt-0.5">Sélectionnez puis personnalisez librement</p>
+                                <h3 className="font-bold text-xl">Projet d'accompagnement</h3>
+                                <p className="text-xs text-stone-400 mt-0.5">Orientations globales du suivi</p>
+                            </div>
+                        </div>
+
+                        <VoiceArea
+                            value={synthesis.projectInput || ''}
+                            onChange={handleProjectChange}
+                            placeholder="Ex: Suivi ergo hebdomadaire. Accompagnement parental. Coordination équipe pluridisciplinaire."
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            rows={7}
+                        />
+
+                        <ToggleChips
+                            suggestions={PROJECT_SUGGESTIONS}
+                            currentValue={synthesis.projectInput || ''}
+                            onToggle={handleProjectChange}
+                            colorScheme="emerald"
+                        />
+                    </div>
+
+                    {/* RECOMMENDATIONS BLOCK */}
+                    <div className="bg-[var(--card-bg)] p-8 rounded-[32px] border border-[var(--border-color)] shadow-sm relative group hover:border-teal-200/50 transition-all">
+                        <div className="flex items-center gap-3 mb-4 text-[var(--text-heading)]">
+                            <div className="p-2 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-xl">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-xl">Préconisations</h3>
+                                <p className="text-xs text-stone-400 mt-0.5">Aménagements, aides, outils concrets</p>
                             </div>
                         </div>
 
                         <VoiceArea
                             value={synthesis.recommendationsInput}
                             onChange={handleRecoChange}
-                            placeholder="Ex: Suivi hebdo. Apprentissage du clavier caché. Mise en place tiers-temps."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all leading-relaxed mb-4"
-                            rows={4}
+                            placeholder="Ex: Tiers-temps aux examens. Mise en place du clavier caché. PAP."
+                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-teal-200 transition-all leading-relaxed mb-4"
+                            rows={7}
                         />
 
                         <ToggleChips

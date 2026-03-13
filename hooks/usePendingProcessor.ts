@@ -94,7 +94,7 @@ export const usePendingProcessor = ({
             patient: newPatient,
             tests: {},
             observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' },
-            synthesis: { diagnosticInput: '', recommendationsInput: '' },
+            synthesis: { diagnosticInput: '', projectInput: '', recommendationsInput: '' },
             sections: [],
             reportType: 'initial' as const,
             step: 1,
