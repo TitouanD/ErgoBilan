@@ -18,6 +18,8 @@ interface TipTapEditorProps {
     isPerformance?: boolean;
     /** Section title shown above the editor */
     title?: string;
+    /** When true, the editor is read-only (no toolbar, no editing). Avoids dangerouslySetInnerHTML. */
+    readOnly?: boolean;
 }
 
 const ToolbarButton: React.FC<{
@@ -49,6 +51,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     onChange,
     isPerformance = false,
     title,
+    readOnly = false,
 }) => {
     const editor = useEditor({
         extensions: [
@@ -60,12 +63,15 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
             Underline,
         ],
         content: content || '',
+        editable: !readOnly,
         onUpdate: ({ editor }) => {
-            onChange(editor.getHTML());
+            if (!readOnly) onChange(editor.getHTML());
         },
         editorProps: {
             attributes: {
-                class: 'prose prose-sm max-w-none focus:outline-none min-h-[80px] text-[var(--text-main)] p-3 leading-relaxed',
+                class: readOnly
+                    ? 'prose prose-sm max-w-none text-stone-700 leading-relaxed'
+                    : 'prose prose-sm max-w-none focus:outline-none min-h-[80px] text-[var(--text-main)] p-3 leading-relaxed',
             },
         },
     });
@@ -85,7 +91,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     if (!editor) return null;
 
     return (
-        <div className="border border-stone-200 rounded-xl overflow-hidden bg-[var(--card-bg)] shadow-sm">
+        <div className={readOnly ? '' : 'border border-stone-200 rounded-xl overflow-hidden bg-[var(--card-bg)] shadow-sm'}>
             {/* Title */}
             {title && (
                 <div className="px-4 py-2 bg-stone-50 border-b border-stone-100 text-xs font-bold text-stone-500 uppercase tracking-wider">
@@ -93,8 +99,9 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
                 </div>
             )}
 
-            {/* Toolbar */}
-            <div className="flex items-center flex-wrap gap-0.5 px-2 py-1.5 border-b border-stone-100 bg-stone-50/50 no-print print:hidden">
+            {/* Toolbar – hidden in read-only mode */}
+            {!readOnly && (
+                <div className="flex items-center flex-wrap gap-0.5 px-2 py-1.5 border-b border-stone-100 bg-stone-50/50 no-print print:hidden">
                 {/* History */}
                 <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Annuler" disabled={!editor.can().undo()}>
                     <Undo size={13} />
@@ -178,6 +185,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
                     </>
                 )}
             </div>
+            )}
 
             {/* Editor content */}
             <EditorContent editor={editor} />
