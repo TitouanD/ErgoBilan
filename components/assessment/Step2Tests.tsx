@@ -498,7 +498,7 @@ const NumericRow: React.FC<{
         : { conversionMode: 'auto' };
 
       if (autoSwitchToManual) {
-        setWarn('Mode manuel activé: vos champs NS/ET/% ne seront plus reconvertis.');
+        setWarn('Mode manuel activé: les scores bruts ne seront plus calculés automatiquement. La conversion entre NS/ET/% reste active.');
       }
 
       if (metric === 'z') {

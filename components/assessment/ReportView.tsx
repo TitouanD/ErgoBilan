@@ -7,6 +7,10 @@ import { sanitizeReportText } from '../../utils/textSanitizer';
 import { InfoBlock } from './InfoBlock';
 import { TipTapEditor } from './TipTapEditor';
 
+/** Escapes special HTML characters to prevent injection when building HTML strings from plain text. */
+const escapeHtml = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 interface Props {
     patient: Patient;
     sections: ReportSection[];
@@ -641,7 +645,11 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             onClick={() => {
                                 if (section.contentFormat !== 'html') {
                                     const paras = sanitizedContent.split('\n').filter(l => l.trim());
-                                    const html = paras.map(p => `<p>${p.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`).join('');
+                                    const html = paras.map(p => {
+                                        // Escape first so that bold replacement operates on safe text only
+                                        const escaped = escapeHtml(p);
+                                        return `<p>${escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`;
+                                    }).join('');
                                     onUpdateSection(section.id, { content: html, contentFormat: 'html' });
                                 } else {
                                     const text = section.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -663,10 +671,12 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             isPerformance={isPerformance}
                         />
                     ) : (
-                        <div
-                            className="prose prose-sm max-w-none text-stone-700 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: section.content }}
-                        />
+                    <TipTapEditor
+                        content={section.content}
+                        onChange={() => {}}
+                        readOnly
+                        isPerformance={isPerformance}
+                    />
                     )
                 ) : (
                 <div className="space-y-1">

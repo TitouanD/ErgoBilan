@@ -34,7 +34,7 @@ function extractBgColor(styleAttr: string): string | undefined {
 type PdfStyle = Record<string, unknown>;
 
 /** Recursively render a DOM node into a react-pdf Text subtree (inline content) */
-function renderInline(node: ChildNode, fontFamily: string): React.ReactNode[] {
+function renderInline(node: ChildNode, fontFamily: string, pathPrefix = ''): React.ReactNode[] {
     const results: React.ReactNode[] = [];
 
     if (node.nodeType === Node.TEXT_NODE) {
@@ -51,7 +51,7 @@ function renderInline(node: ChildNode, fontFamily: string): React.ReactNode[] {
     const color = extractColor(styleAttr);
     const bgColor = extractBgColor(styleAttr);
 
-    const children = Array.from(el.childNodes).flatMap(c => renderInline(c, fontFamily));
+    const children = Array.from(el.childNodes).flatMap((c, i) => renderInline(c, fontFamily, `${pathPrefix}-${tag}-${i}`));
 
     const style: PdfStyle = { fontFamily };
     if (color) style.color = color;
@@ -59,43 +59,43 @@ function renderInline(node: ChildNode, fontFamily: string): React.ReactNode[] {
     switch (tag) {
         case 'strong':
         case 'b':
-            results.push(<Text key={Math.random()} style={{ ...style, fontWeight: 700 }}>{children}</Text>);
+            results.push(<Text key={pathPrefix} style={{ ...style, fontWeight: 700 }}>{children}</Text>);
             break;
         case 'em':
         case 'i':
-            results.push(<Text key={Math.random()} style={{ ...style, fontStyle: 'italic' }}>{children}</Text>);
+            results.push(<Text key={pathPrefix} style={{ ...style, fontStyle: 'italic' }}>{children}</Text>);
             break;
         case 'u':
-            results.push(<Text key={Math.random()} style={{ ...style, textDecoration: 'underline' }}>{children}</Text>);
+            results.push(<Text key={pathPrefix} style={{ ...style, textDecoration: 'underline' }}>{children}</Text>);
             break;
         case 'mark':
             results.push(
-                <Text key={Math.random()} style={{ ...style, backgroundColor: bgColor || '#FEF08A' }}>{children}</Text>
+                <Text key={pathPrefix} style={{ ...style, backgroundColor: bgColor || '#FEF08A' }}>{children}</Text>
             );
             break;
         case 'span':
-            results.push(<Text key={Math.random()} style={style}>{children}</Text>);
+            results.push(<Text key={pathPrefix} style={style}>{children}</Text>);
             break;
         case 'br':
             results.push('\n');
             break;
         default:
-            results.push(...children.map((c, i) => <React.Fragment key={i}>{c}</React.Fragment>));
+            results.push(...children.map((c, i) => <React.Fragment key={`${pathPrefix}-frag-${i}`}>{c}</React.Fragment>));
     }
 
     return results;
 }
 
 /** Render a block-level element to a react-pdf View/Text */
-function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFamily: string, primary: string): React.ReactNode | null {
+function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFamily: string, primary: string, blockIndex: number): React.ReactNode | null {
     const tag = el.tagName?.toLowerCase();
     const fs = getFontSize(branding);
-    const radius = 4;
+    const blockKey = `block-${blockIndex}-${tag}`;
 
     switch (tag) {
         case 'h2':
             return (
-                <Text key={Math.random()} style={{
+                <Text key={blockKey} style={{
                     fontSize: fs + 3, fontWeight: 700, color: primary,
                     marginTop: 10, marginBottom: 4,
                     paddingBottom: 2, borderBottomWidth: 1, borderBottomColor: primary + '30',
@@ -107,7 +107,7 @@ function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFami
 
         case 'h3':
             return (
-                <Text key={Math.random()} style={{
+                <Text key={blockKey} style={{
                     fontSize: fs + 1, fontWeight: 700, color: primary,
                     marginTop: 8, marginBottom: 3, fontFamily,
                 }}>
@@ -116,10 +116,10 @@ function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFami
             );
 
         case 'p': {
-            const children = Array.from(el.childNodes).flatMap(c => renderInline(c, fontFamily));
+            const children = Array.from(el.childNodes).flatMap((c, i) => renderInline(c, fontFamily, `${blockKey}-${i}`));
             if (!children.length || el.textContent?.trim() === '') return null;
             return (
-                <Text key={Math.random()} style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, marginBottom: 4, fontFamily }}>
+                <Text key={blockKey} style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, marginBottom: 4, fontFamily }}>
                     {children}
                 </Text>
             );
@@ -127,14 +127,16 @@ function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFami
 
         case 'ul':
         case 'ol': {
-            const items = Array.from(el.querySelectorAll('li'));
+            // Only iterate direct <li> children to avoid flattening nested lists
+            const items = Array.from(el.children).filter(c => c.tagName?.toLowerCase() === 'li');
             return (
-                <View key={Math.random()} style={{ marginBottom: 4 }}>
+                <View key={blockKey} style={{ marginBottom: 4 }}>
                     {items.map((li, i) => {
-                        const children = Array.from(li.childNodes).flatMap(c => renderInline(c, fontFamily));
+                        const liKey = `${blockKey}-li-${i}`;
+                        const children = Array.from(li.childNodes).flatMap((c, ci) => renderInline(c, fontFamily, `${liKey}-${ci}`));
                         const marker = tag === 'ol' ? `${i + 1}.` : '•';
                         return (
-                            <View key={i} style={{ flexDirection: 'row', marginBottom: 2, paddingLeft: 8 }}>
+                            <View key={liKey} style={{ flexDirection: 'row', marginBottom: 2, paddingLeft: 8 }}>
                                 <Text style={{ fontSize: fs, color: STONE500, marginRight: 6, fontFamily }}>{marker}</Text>
                                 <Text style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, flex: 1, fontFamily }}>{children}</Text>
                             </View>
@@ -145,9 +147,9 @@ function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFami
         }
 
         case 'blockquote': {
-            const children = Array.from(el.childNodes).flatMap(c => renderInline(c, fontFamily));
+            const children = Array.from(el.childNodes).flatMap((c, i) => renderInline(c, fontFamily, `${blockKey}-${i}`));
             return (
-                <View key={Math.random()} style={{ borderLeftWidth: 3, borderLeftStyle: 'solid', borderLeftColor: primary, paddingLeft: 8, marginBottom: 4, backgroundColor: primary + '08' }}>
+                <View key={blockKey} style={{ borderLeftWidth: 3, borderLeftStyle: 'solid', borderLeftColor: primary, paddingLeft: 8, marginBottom: 4, backgroundColor: primary + '08' }}>
                     <Text style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, fontStyle: 'italic', fontFamily }}>{children}</Text>
                 </View>
             );
@@ -157,7 +159,7 @@ function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFami
             // Fallback: render as paragraph if has text content
             if (el.textContent?.trim()) {
                 return (
-                    <Text key={Math.random()} style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, marginBottom: 4, fontFamily }}>
+                    <Text key={blockKey} style={{ fontSize: fs, lineHeight: 1.6, color: STONE600, marginBottom: 4, fontFamily }}>
                         {el.textContent}
                     </Text>
                 );
@@ -192,8 +194,8 @@ export function htmlToPdfNodes(
     if (!container) return [];
 
     const nodes: React.ReactNode[] = [];
-    Array.from(container.children).forEach((child) => {
-        const rendered = renderBlock(child, branding, fontFamily, primary);
+    Array.from(container.children).forEach((child, index) => {
+        const rendered = renderBlock(child, branding, fontFamily, primary, index);
         if (rendered !== null) nodes.push(rendered);
     });
 
