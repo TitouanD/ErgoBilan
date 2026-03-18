@@ -88,8 +88,11 @@ const LABEL_MAP: Record<string, string> = {
     ok: 'Paisible', endormissement: 'Endormissement long', reveils: 'Réveils multiples',
     agite: 'Agité / Cauchemars', fatigue_diurne: 'Fatigue en journée',
     // Eating
-    seul: 'Mange seul', aide: 'A besoin d\'aide', couverts_ok: 'Bonne utilisation couverts',
-    doigts: 'Mange avec les doigts', selectif: 'Très sélectif', salit: 'Salit beaucoup',
+    autonomie: 'Mange en autonomie', aide_repas: 'A besoin d\'aide pour manger', agite_repas: 'Agité(e) lors des repas',
+    couverts: 'Utilisation des couverts', mains: 'Mange avec les mains', salit: 'Se salit beaucoup',
+    seul: 'Mange en autonomie', aide: 'A besoin d\'aide pour manger', couverts_ok: 'Utilisation des couverts',
+    doigts: 'Mange avec les mains', selectif: 'Très sélectif',
+    with: 'Vit au domicile', partial: 'Vit partiellement au domicile', away: 'Ne vit pas au domicile',
     // Clothing
     acquis: 'Acquis', difficile: 'Difficile', aide_totale: 'Impossible',
     // Scissors
@@ -97,6 +100,8 @@ const LABEL_MAP: Record<string, string> = {
     ne_sait_pas: 'Ne sait pas utiliser', refuse: 'Refuse',
     // Writing pain
     oui_long: 'Sur longues tâches', oui_vite: 'Au bout de 5 min', oui_constante: 'Immédiate',
+    // Writing difficulties
+    orthographe: "Fautes d'orthographe", lisibilite: 'Lisibilité des écrits', miroir: 'Lettres miroir', douleur: 'Douleur', posture: 'Mauvaise posture', lenteur: 'Lenteur',
     // Hand
     Droitier: 'Droitier', Gaucher: 'Gaucher', 'Indeterminé': 'Non latéralisé',
     // Gender
@@ -218,11 +223,13 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Âge', value: data.age }, { label: 'Adresse', value: data.address },
       ]},
       { title: 'Situation Familiale', filled: !!(data.parentNames || data.guardMode), fields: [
-          { label: 'Parents', value: data.parentNames }, { label: 'Téléphone', value: data.parentPhone },
-          { label: 'Email', value: data.parentEmail },
+          { label: 'Responsable 1', value: data.parent1Name }, { label: 'Tél. resp. 1', value: data.parent1Phone },
+          { label: 'Mail resp. 1', value: data.parent1Email },
+          { label: 'Responsable 2', value: data.parent2Name }, { label: 'Tél. resp. 2', value: data.parent2Phone },
+          { label: 'Mail resp. 2', value: data.parent2Email },
           { label: 'Garde', value: humanize(data.guardMode) || data.guardArrangement },
           { label: 'Garde (autre)', value: data.guardExclusiveOther },
-          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans${s.livesWithChild ? ', domicile' : ''}${s.livesPartially ? ', partiel' : ''})`).join(' · ') : undefined },
+          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans, ${humanize(s.residenceStatus || (s.livesPartially ? 'partial' : s.livesWithChild ? 'with' : 'away'))})`).join(' · ') : undefined },
       ]},
       { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
           { label: 'Médecin prescripteur', value: data.prescribingDoctor },
@@ -233,13 +240,24 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
           { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel }, { label: 'Filière', value: data.schoolType },
+          { label: 'Redoublement', value: humanize(data.schoolRepeatYear) },
           { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
           { label: 'AVS/AESH', value: data.avs === 'OUI' ? `Oui — ${data.avsHours || '?'}h (${data.avsMissions || '?'})` : data.avs === 'NON' ? 'Non' : undefined },
-          { label: 'Avis', value: data.schoolAttention },
-          { label: 'Comportement social', value: data.socialBehavior },
-          { label: 'Difficultés scolaires', value: humanize(data.schoolDifficulties) },
-          { label: 'Difficultés (autre)', value: data.schoolDifficultiesOther },
+          { label: 'Matières préférées', value: data.schoolFavoriteSubjects },
+          { label: 'Matières moins appréciées', value: data.schoolDislikedSubjects },
+          { label: 'Comportement en classe', value: data.classroomBehavior },
+          { label: 'Organisation', value: data.schoolOrganization },
+          { label: 'Mémorisation', value: data.schoolMemory },
+          { label: 'Attention & participation', value: data.schoolAttention },
+          { label: 'Relation avec pairs', value: data.peerRelations || data.socialBehavior },
+          { label: 'Devoirs', value: data.homeworkHabits },
           { label: 'Aménagements', value: data.schoolAccommodations },
+          { label: 'Latéralité', value: humanize(data.handDominance) },
+          { label: 'Difficultés écriture typiques', value: humanize(data.writingDifficultyTags) },
+          { label: 'Difficultés écriture (texte)', value: data.writingIssues },
+          { label: 'Douleur écriture', value: humanize(data.writingPain) },
+          { label: 'Utilisation outils scolaires', value: data.toolUsage },
+          { label: 'Autres remarques', value: data.writingOther },
       ]},
       { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth), fields: [
           { label: 'Grossesse', value: data.pregnancyBirth },
@@ -260,11 +278,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Habillage', value: data.dressing },
           { label: 'Hygiène', value: data.continence },
           { label: 'Temps/Espace', value: data.timeSpace },
-          { label: 'Latéralité', value: humanize(data.handDominance) },
-          { label: 'Outils', value: data.toolUsage },
-          { label: 'Écriture', value: data.writingIssues },
-          { label: 'Douleur écriture', value: humanize(data.writingPain) },
-          { label: 'Autre (trousse)', value: data.writingOther },
+          { label: 'Temps d\'écran', value: data.screenTime },
+      ]},
+      { title: 'Gestion des émotions', filled: !!(data.emotionalRegulation || data.screenTime), fields: [
           { label: 'Écrans', value: data.screenTime },
           { label: 'Émotions', value: data.emotionalRegulation },
       ]},

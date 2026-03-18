@@ -41,13 +41,13 @@ const AssessmentContext = createContext<AssessmentContextType | undefined>(undef
 // NOTE: L'ID doit etre undefined au depart. Pas de generation client.
 const initialPatient: Patient = {
   firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
-  parentNames: '', parentPhone: '', parentEmail: '', guardArrangement: '', siblings: [],
-  school: '', classLevel: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
+  parentNames: '', parentPhone: '', parentEmail: '', parent1Name: '', parent1Phone: '', parent1Email: '', parent2Name: '', parent2Phone: '', parent2Email: '', guardArrangement: '', siblings: [],
+  school: '', classLevel: '', schoolType: '', schoolTrack: '', schoolRepeatYear: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
   prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
   reason: '', familyExpectations: '',
   pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
   meals: '', dressing: '', continence: '', timeSpace: '',
-  schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
+  schoolAttention: '', schoolFavoriteSubjects: '', schoolDislikedSubjects: '', classroomBehavior: '', schoolOrganization: '', schoolMemory: '', schoolParticipation: '', peerRelations: '', homeworkHabits: '', writingIssues: '', writingDifficultyTags: '', toolUsage: '', schoolAccommodations: '',
   remarks: '', priorities: ''
 };
 
