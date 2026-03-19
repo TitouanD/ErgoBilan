@@ -54,7 +54,7 @@ const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: stri
     const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed";
     
     return (
-        <div className="flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 absolute -top-12 left-0 animate-in slide-in-from-bottom-2 fade-in duration-200 z-10">
+        <div className="mb-3 inline-flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 animate-in fade-in duration-200">
             <button onMouseDown={(e) => { e.preventDefault(); onAction('undo'); }} className={btnClass} title="Annuler (Ctrl+Z)" disabled={!canUndo}>
                 <Undo size={16} />
             </button>
@@ -255,7 +255,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
   return (
     <div className="max-w-4xl mx-auto pb-40 animate-in fade-in duration-500">
       
-      <div className="bg-[var(--card-bg)] sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 dark:shadow-black/20 border border-[var(--border-color)] mb-12 flex items-center justify-between ring-1 ring-[var(--card-bg)] transition-all">
+        <div className="bg-[var(--card-bg)] sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 dark:shadow-black/20 border border-[var(--border-color)] mb-12 flex items-center justify-between ring-1 ring-[var(--card-bg)]">
         <div className="space-y-1">
             <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
             <p className="text-[var(--text-secondary)] font-medium text-sm">Vérifiez et ajustez le contenu généré par l'IA.</p>

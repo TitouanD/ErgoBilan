@@ -35,5 +35,38 @@ export default defineConfig({
       // Allow CJS modules used by @react-pdf/pdfkit
       transformMixedEsModules: true,
     },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (
+              id.includes('@react-pdf/') ||
+              id.includes('pdfkit') ||
+              id.includes('fontkit') ||
+              id.includes('yoga-layout') ||
+              id.includes('pako')
+            ) {
+              return 'pdf-vendor';
+            }
+
+            if (id.includes('recharts') || id.includes('/d3-')) {
+              return 'charts-vendor';
+            }
+
+            if (id.includes('@tiptap/')) {
+              return 'editor-vendor';
+            }
+
+            if (id.includes('@supabase/')) {
+              return 'supabase-vendor';
+            }
+
+            if (id.includes('@sentry/')) {
+              return 'sentry-vendor';
+            }
+          }
+        },
+      },
+    },
   },
 });

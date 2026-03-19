@@ -251,7 +251,7 @@ const BrandingEditor: React.FC<{
                             <div className="flex items-center gap-4 mb-3">
                                 <div className="w-20 h-20 bg-stone-50 border-2 border-dashed border-stone-200 rounded-xl flex items-center justify-center overflow-hidden relative group hover:border-[#E07A5F] transition-colors cursor-pointer">
                                     {branding.logoUrl ? (
-                                        <img src={branding.logoUrl} className="w-full h-full object-contain p-1" alt="Logo" />
+                                        <img src={branding.logoUrl} className="w-full h-full object-contain p-1" alt="Logo" width={80} height={80} />
                                     ) : (
                                         <div className="text-center text-stone-300 group-hover:text-[#E07A5F]">
                                             <Upload size={20} className="mx-auto mb-1" />
@@ -542,6 +542,8 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
         setIsExporting(true);
         try {
             const { pdf } = await import('@react-pdf/renderer');
+            const { ensurePdfFontsRegistered } = await import('../../utils/pdfStyles');
+            await ensurePdfFontsRegistered();
             const { PdfDocument } = await import('./PdfDocument');
             const attachmentUrls = await convertBlobAttachments();
             const blob = await pdf(
@@ -596,6 +598,8 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
         try {
             // Dynamic imports for @react-pdf/renderer (tree-shaking friendly)
             const { pdf } = await import('@react-pdf/renderer');
+            const { ensurePdfFontsRegistered } = await import('../../utils/pdfStyles');
+            await ensurePdfFontsRegistered();
             const { PdfDocument } = await import('./PdfDocument');
 
             // Pre-convert blob attachments to base64

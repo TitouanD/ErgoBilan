@@ -42,6 +42,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
+  const yieldToMainThread = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
   const ensureCatalogLoaded = useCallback(async () => {
     if (hasLoaded) return;
     if (inFlightRef.current) return inFlightRef.current;
@@ -90,6 +92,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           Logger.warn('DB', 'Subtests view unavailable, continuing without subtests.', subError);
         }
         Logger.info('DB', 'Subtests rows', { count: subtestsData?.length || 0 });
+
+        await yieldToMainThread();
 
         const categoryMap: Record<string, CategoryDef> = {};
         const allTests: TestDef[] = [];
@@ -276,6 +280,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           categoryMap[row.category_id].tests.push(testDef);
           allTests.push(testDef);
         });
+
+        await yieldToMainThread();
 
         const finalCatalog = Object.values(categoryMap).sort((a, b) => a.sortOrder - b.sortOrder);
 

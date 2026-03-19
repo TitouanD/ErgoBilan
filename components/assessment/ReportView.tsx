@@ -525,8 +525,9 @@ const ScoreSelector: React.FC<{
 export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdateSection, branding, scoreDisplayModes = {}, onScoreDisplayModeChange, chartType = 'bar', onChartTypeChange, isPerformance = false }) => {
     const { ensureCatalogLoaded } = useCatalog();
     useEffect(() => {
+        if (Object.keys(tests || {}).length === 0) return;
         ensureCatalogLoaded();
-    }, [ensureCatalogLoaded]);
+    }, [ensureCatalogLoaded, tests]);
     const { catalog } = useCatalog();
     const getSection = (id: string) => sections.find(s => s.id === id);
 
@@ -727,10 +728,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                 {attachmentsHere.map(att => (
                                     <div key={att.id} className="relative group my-6 break-inside-avoid">
                                         {att.type === 'image-full' ? (
-                                            <img src={att.url} alt="" className={`w-full max-h-[400px] object-contain ${roundedClass} border border-stone-200 bg-stone-50 print:border-none`} />
+                                            <img src={att.url} alt="" className={`w-full aspect-[4/3] max-h-[400px] object-contain ${roundedClass} border border-stone-200 bg-stone-50 print:border-none`} loading="lazy" decoding="async" />
                                         ) : (
                                             <div className={`flex gap-6 items-start bg-stone-50 p-4 ${roundedClass} border border-stone-100 print:bg-transparent print:border-none print:p-0`}>
-                                                <img src={att.url} alt="" className={`w-1/2 h-auto shadow-sm bg-white border border-stone-100 print:border-none ${roundedClass}`} />
+                                                <img src={att.url} alt="" className={`w-1/2 aspect-[4/3] object-contain shadow-sm bg-white border border-stone-100 print:border-none ${roundedClass}`} loading="lazy" decoding="async" />
                                                 <div className="w-1/2 pt-1">{onUpdateSection ? <CaptionEditor initialValue={att.caption || ''} onSave={(val) => updateCaption(att.id, val)} /> : <p className="text-sm text-stone-600 italic text-justify">{att.caption}</p>}</div>
                                             </div>
                                         )}
@@ -977,7 +978,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     );
 
     const HeaderRenderer = () => {
-        const logoClass = logoSize === 'small' ? 'h-12' : logoSize === 'medium' ? 'h-20' : 'h-32';
+        const logoClass = logoSize === 'small' ? 'w-28 h-12' : logoSize === 'medium' ? 'w-40 h-20' : 'w-64 h-32';
 
         const InfoBlockStrip = () => {
             const pos = branding?.infoBlock?.position ?? 'right';
@@ -992,7 +993,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
         // LOGIC LOGO
         const LogoBlock = () => {
             if (isCustom && branding?.logoUrl) {
-                return <img src={branding.logoUrl} alt="Logo" className={`${logoClass} object-contain mb-2`} />;
+                return <img src={branding.logoUrl} alt="Logo" className={`${logoClass} object-contain mb-2`} loading="eager" decoding="async" />;
             }
             // Si pas de logo et pas de texte principal custom, on ne met rien pour éviter le vide
             // Ou on met un placeholder si rien n'est configuré

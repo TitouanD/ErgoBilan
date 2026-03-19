@@ -61,7 +61,7 @@ const AppLoader = () => (
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
-    const { catalog } = useCatalog();
+    const { catalog, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
     const assessment = useAssessment();
     const toast = useToast();
 
@@ -168,6 +168,17 @@ const AppRouter = () => {
     useEffect(() => {
         setShowAccountMenu(false);
     }, [mode]);
+
+    useEffect(() => {
+        if (authState !== 'authenticated' || isDemoMode || hasCatalogLoaded) return;
+        if (mode !== 'dashboard' && mode !== 'detail' && mode !== 'assessment') return;
+
+        const timer = window.setTimeout(() => {
+            void ensureCatalogLoaded();
+        }, 1200);
+
+        return () => window.clearTimeout(timer);
+    }, [authState, isDemoMode, hasCatalogLoaded, mode, ensureCatalogLoaded]);
 
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => {
@@ -463,7 +474,7 @@ const AppRouter = () => {
                 </div>
             </header>
 
-            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] py-2 px-6 sticky top-0 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
+            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] min-h-11 py-2 px-6 sticky top-0 z-30 shadow-lg flex justify-center items-center gap-4"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
 
             <GlobalErrorBoundary>
                 <OfflineIndicator />
