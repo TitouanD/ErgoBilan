@@ -94,7 +94,6 @@ const SectionCard: React.FC<{
         if (!isEditing) {
             history.reset(sanitizeReportText(section.content));
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [section.content]);
 
     const handleSave = () => {

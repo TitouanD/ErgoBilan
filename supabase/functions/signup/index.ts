@@ -5,6 +5,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { captureEdgeException } from "../_shared/sentry.ts";
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
   const parsed = Number(value);
@@ -184,6 +185,9 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (err) {
+    await captureEdgeException(err, {
+      functionName: 'signup',
+    });
     console.error("Signup onboarding edge error:", err);
     return fail("INTERNAL", "Internal server error.", 500);
   }

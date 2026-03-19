@@ -144,12 +144,24 @@ export interface SubtestInputConfig {
    * E.g. "Copie de Figures". Falls back to groupKey if omitted.
    */
   groupHeaderLabel?: string;
+  /**
+   * Optional numeric group ordering for UI rendering.
+   * Lower value appears first.
+   */
+  groupOrder?: number;
+  /**
+   * Optional numeric order inside a group for UI rendering.
+   * Lower value appears first.
+   */
+  orderIndex?: number;
 }
 
 export interface SubtestDef {
   id: string;
   name: string;
   displayName?: string;
+  displayGroupOrder?: number;
+  displayOrder?: number;
   abbreviation?: string | null;
   isAmbiguous?: boolean;
   isHiddenInvalidAmbiguous?: boolean;

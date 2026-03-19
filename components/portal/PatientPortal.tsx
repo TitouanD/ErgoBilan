@@ -6,6 +6,7 @@ import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
+import { isAdministrativeSectionReady } from '../../utils';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -45,6 +46,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
       schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
       remarks: '', priorities: ''
   });
+
+    const isAdministrativeReady = isAdministrativeSectionReady(localPatient);
 
   // Fonction de connexion unifiée
   const attemptLogin = async (urlStr: string) => {
@@ -140,8 +143,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
   };
 
   const handleSaveData = async () => {
-      if (!localPatient.lastName || !localPatient.firstName) {
-          toast.error("Merci de renseigner au moins le nom et le prénom de l'enfant.");
+      if (!isAdministrativeReady) {
+          toast.error("La partie administrative est obligatoire (identité, responsables, médical, motif) avant l'envoi.");
           return;
       }
       if (!questionnaireId || !encryptionKey) return;
@@ -318,12 +321,18 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                 <div className="flex justify-end">
                     <button 
                         onClick={handleSaveData} 
-                        className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg"
+                        disabled={!isAdministrativeReady}
+                        className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#E07A5F] disabled:hover:translate-y-0"
                     >
                         <Send size={20} /> 
                         Chiffrer et Envoyer
                     </button>
                 </div>
+                {!isAdministrativeReady && (
+                    <p className="mt-3 text-right text-xs font-medium text-[var(--text-secondary)]">
+                        Partie administrative obligatoire avant envoi: identité, responsables, médical, motif.
+                    </p>
+                )}
             </div>
 
         </main>

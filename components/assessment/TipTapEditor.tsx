@@ -86,7 +86,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
         if (incomingNormalized !== currentNormalized) {
             editor.commands.setContent(incomingNormalized);
         }
-    }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [content]);
 
     if (!editor) return null;
 

@@ -204,6 +204,92 @@ const getSubtestDisplayName = (subtest: Pick<SubtestDef, 'name' | 'displayName'>
   subtest.displayName || subtest.name
 );
 
+const parseSubtestOrderFromName = (name: string): number | undefined => {
+  const value = String(name || '').trim();
+  if (!value) return undefined;
+
+  const labeledMatch = value.match(/(?:^|\b)(?:subtest|sous[-\s]?test)\s*(\d{1,3})\b/i);
+  if (labeledMatch) {
+    const n = Number(labeledMatch[1]);
+    if (Number.isFinite(n)) return n;
+  }
+
+  const leadingNumber = value.match(/^(\d{1,3})[).\-\s]/);
+  if (leadingNumber) {
+    const n = Number(leadingNumber[1]);
+    if (Number.isFinite(n)) return n;
+  }
+
+  return undefined;
+};
+
+const inferGroupLabelFromName = (name: string): string | undefined => {
+  const value = String(name || '').trim();
+  if (!value) return undefined;
+  const dashSplit = value.split('—').map((part) => part.trim()).filter(Boolean);
+  if (dashSplit.length >= 2) return dashSplit[0];
+  const colonSplit = value.split(':').map((part) => part.trim()).filter(Boolean);
+  if (colonSplit.length >= 2) return colonSplit[0];
+  return undefined;
+};
+
+const toGroupKey = (label: string): string => (
+  label
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'default'
+);
+
+const getDisplayGroupLabel = (subtest: SubtestDef): string | undefined => (
+  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(getSubtestDisplayName(subtest))
+);
+
+const getDisplayGroupKey = (subtest: SubtestDef): string | undefined => {
+  const configured = subtest.inputConfig?.groupKey;
+  if (configured && configured.trim()) return configured;
+  const inferredLabel = getDisplayGroupLabel(subtest);
+  return inferredLabel ? toGroupKey(inferredLabel) : undefined;
+};
+
+const getDisplayGroupOrder = (subtest: SubtestDef): number => {
+  if (Number.isFinite(subtest.displayGroupOrder)) return Number(subtest.displayGroupOrder);
+  const configured = subtest.inputConfig?.groupOrder;
+  if (Number.isFinite(configured)) return Number(configured);
+  return 900;
+};
+
+const getDisplayOrderIndex = (subtest: SubtestDef): number => {
+  if (Number.isFinite(subtest.displayOrder)) return Number(subtest.displayOrder);
+  const configured = subtest.inputConfig?.orderIndex;
+  if (Number.isFinite(configured)) return Number(configured);
+  const inferred = parseSubtestOrderFromName(getSubtestDisplayName(subtest));
+  return Number.isFinite(inferred) ? Number(inferred) : 999;
+};
+
+const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
+  const goA = getDisplayGroupOrder(a);
+  const goB = getDisplayGroupOrder(b);
+  if (goA !== goB) return goA - goB;
+
+  const glA = getDisplayGroupLabel(a) ?? '\uffff';
+  const glB = getDisplayGroupLabel(b) ?? '\uffff';
+  const glCmp = glA.localeCompare(glB, 'fr', { sensitivity: 'base' });
+  if (glCmp !== 0) return glCmp;
+
+  const gkA = getDisplayGroupKey(a) ?? '\uffff';
+  const gkB = getDisplayGroupKey(b) ?? '\uffff';
+  if (gkA < gkB) return -1;
+  if (gkA > gkB) return 1;
+
+  const oiA = getDisplayOrderIndex(a);
+  const oiB = getDisplayOrderIndex(b);
+  if (oiA !== oiB) return oiA - oiB;
+
+  return getSubtestDisplayName(a).localeCompare(getSubtestDisplayName(b), 'fr', { sensitivity: 'base' });
+};
+
 const METRIC_LABEL: Record<string, string> = { raw: 'BRUT', standard: 'NS', z: 'ET', percentile: '%' };
 
 const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): string => {
@@ -1969,7 +2055,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Rechercher un test..."
+                placeholder="Rechercher un test ou un sous-test..."
                 className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
                 autoFocus
               />
@@ -2044,17 +2130,13 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
                         {(() => {
-                          const sortedSTs = [...filteredSubtests].sort((a, b) => {
-                            const ga = a.inputConfig?.groupKey ?? '\uffff';
-                            const gb = b.inputConfig?.groupKey ?? '\uffff';
-                            return ga < gb ? -1 : ga > gb ? 1 : 0;
-                          });
+                          const sortedSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
                           const selItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
                           let lastSelGKey = '';
                           for (const st of sortedSTs) {
-                            const gKey = st.inputConfig?.groupKey;
+                            const gKey = getDisplayGroupKey(st);
                             if (gKey && gKey !== lastSelGKey && !subtestSearch) {
-                              selItems.push({ type: 'header', gkey: gKey, label: st.inputConfig?.groupHeaderLabel || gKey });
+                              selItems.push({ type: 'header', gkey: gKey, label: getDisplayGroupLabel(st) || gKey });
                               lastSelGKey = gKey;
                             }
                             selItems.push({ type: 'sub', st });
@@ -2717,17 +2799,13 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                             <>
                               {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
                               {(() => {
-                                const sortedAccSTs = [...filteredSubtests].sort((a, b) => {
-                                  const ga = a.inputConfig?.groupKey ?? '\uffff';
-                                  const gb = b.inputConfig?.groupKey ?? '\uffff';
-                                  return ga < gb ? -1 : ga > gb ? 1 : 0;
-                                });
+                                const sortedAccSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
                                 const accItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
                                 let lastAccGKey = '';
                                 for (const st of sortedAccSTs) {
-                                  const gKey = st.inputConfig?.groupKey;
+                                  const gKey = getDisplayGroupKey(st);
                                   if (gKey && gKey !== lastAccGKey && !subtestQuery) {
-                                    accItems.push({ type: 'header', gkey: gKey, label: st.inputConfig?.groupHeaderLabel || gKey });
+                                    accItems.push({ type: 'header', gkey: gKey, label: getDisplayGroupLabel(st) || gKey });
                                     lastAccGKey = gKey;
                                   }
                                   accItems.push({ type: 'sub', st });

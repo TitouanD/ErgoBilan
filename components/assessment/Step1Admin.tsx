@@ -1,15 +1,13 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import type { Patient } from '../../types';
-import { calculateAge, getPatientAgeForIdentity, isPatientCreationReady } from '../../utils';
-import { User, Lock, AlertTriangle, Database, CheckCircle2, Mic, MicOff, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../utils';
+import { User, Lock, AlertTriangle, Mic, MicOff, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
-import { useAssessment } from '../../contexts/AssessmentContext';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
-import { DEMO_PATIENTS } from '../../data/demoData';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 
 interface Props {
@@ -88,8 +86,11 @@ const LABEL_MAP: Record<string, string> = {
     ok: 'Paisible', endormissement: 'Endormissement long', reveils: 'Réveils multiples',
     agite: 'Agité / Cauchemars', fatigue_diurne: 'Fatigue en journée',
     // Eating
-    seul: 'Mange seul', aide: 'A besoin d\'aide', couverts_ok: 'Bonne utilisation couverts',
-    doigts: 'Mange avec les doigts', selectif: 'Très sélectif', salit: 'Salit beaucoup',
+    autonomie: 'Mange en autonomie', aide_repas: 'A besoin d\'aide pour manger', agite_repas: 'Agité(e) lors des repas',
+    couverts: 'Utilisation des couverts', mains: 'Mange avec les mains', salit: 'Se salit beaucoup',
+    seul: 'Mange en autonomie', aide: 'A besoin d\'aide pour manger', couverts_ok: 'Utilisation des couverts',
+    doigts: 'Mange avec les mains', selectif: 'Très sélectif',
+    with: 'Vit au domicile', partial: 'Vit partiellement au domicile', away: 'Ne vit pas au domicile', other: 'Autre',
     // Clothing
     acquis: 'Acquis', difficile: 'Difficile', aide_totale: 'Impossible',
     // Scissors
@@ -97,6 +98,8 @@ const LABEL_MAP: Record<string, string> = {
     ne_sait_pas: 'Ne sait pas utiliser', refuse: 'Refuse',
     // Writing pain
     oui_long: 'Sur longues tâches', oui_vite: 'Au bout de 5 min', oui_constante: 'Immédiate',
+    // Writing difficulties
+    orthographe: "Fautes d'orthographe", lisibilite: 'Lisibilité des écrits', miroir: 'Lettres miroir', douleur: 'Douleur', posture: 'Mauvaise posture', lenteur: 'Lenteur',
     // Hand
     Droitier: 'Droitier', Gaucher: 'Gaucher', 'Indeterminé': 'Non latéralisé',
     // Gender
@@ -176,12 +179,11 @@ const SectionSummary: React.FC<{
 };
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
-  const { userProfile, orgKey } = useAuth(); 
-  const { loadFromDraft } = useAssessment();
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const { orgKey } = useAuth(); 
   const [viewMode, setViewMode] = useState<'review' | 'edit'>('review');
+    const [userSwitchedToReview, setUserSwitchedToReview] = useState(false);
   const toast = useToast();
+    const isAdministrativeReady = isAdministrativeSectionReady(data);
   
   const handleDataChange = (partialData: Partial<Patient>) => {
       if (partialData.dob) {
@@ -218,11 +220,17 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Âge', value: data.age }, { label: 'Adresse', value: data.address },
       ]},
       { title: 'Situation Familiale', filled: !!(data.parentNames || data.guardMode), fields: [
-          { label: 'Parents', value: data.parentNames }, { label: 'Téléphone', value: data.parentPhone },
-          { label: 'Email', value: data.parentEmail },
+          { label: 'Responsable 1', value: data.parent1Name }, { label: 'Tél. resp. 1', value: data.parent1Phone },
+          { label: 'Mail resp. 1', value: data.parent1Email },
+          { label: 'Responsable 2', value: data.parent2Name }, { label: 'Tél. resp. 2', value: data.parent2Phone },
+          { label: 'Mail resp. 2', value: data.parent2Email },
           { label: 'Garde', value: humanize(data.guardMode) || data.guardArrangement },
           { label: 'Garde (autre)', value: data.guardExclusiveOther },
-          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => `${s.firstName} (${s.relation}, ${s.age} ans${s.livesWithChild ? ', domicile' : ''}${s.livesPartially ? ', partiel' : ''})`).join(' · ') : undefined },
+          { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => {
+              const resStatus = s.residenceStatus || (s.livesPartially ? 'partial' : s.livesWithChild ? 'with' : 'away');
+              const resLabel = resStatus === 'other' ? s.residenceOther : humanize(resStatus);
+              return `${s.firstName} (${s.relation}, ${s.age} ans, ${resLabel})`;
+          }).join(' · ') : undefined },
       ]},
       { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
           { label: 'Médecin prescripteur', value: data.prescribingDoctor },
@@ -233,13 +241,24 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
           { label: 'École', value: data.school }, { label: 'Classe', value: data.classLevel }, { label: 'Filière', value: data.schoolType },
+          { label: 'Redoublement', value: humanize(data.schoolRepeatYear) },
           { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
           { label: 'AVS/AESH', value: data.avs === 'OUI' ? `Oui — ${data.avsHours || '?'}h (${data.avsMissions || '?'})` : data.avs === 'NON' ? 'Non' : undefined },
-          { label: 'Avis', value: data.schoolAttention },
-          { label: 'Comportement social', value: data.socialBehavior },
-          { label: 'Difficultés scolaires', value: humanize(data.schoolDifficulties) },
-          { label: 'Difficultés (autre)', value: data.schoolDifficultiesOther },
+          { label: 'Matières préférées', value: data.schoolFavoriteSubjects },
+          { label: 'Matières moins appréciées', value: data.schoolDislikedSubjects },
+          { label: 'Comportement en classe', value: data.classroomBehavior },
+          { label: 'Organisation', value: data.schoolOrganization },
+          { label: 'Mémorisation', value: data.schoolMemory },
+          { label: 'Attention & participation', value: data.schoolAttention },
+          { label: 'Relation avec pairs', value: data.peerRelations || data.socialBehavior },
+          { label: 'Devoirs', value: data.homeworkHabits },
           { label: 'Aménagements', value: data.schoolAccommodations },
+          { label: 'Latéralité', value: humanize(data.handDominance) },
+          { label: 'Difficultés écriture typiques', value: humanize(data.writingDifficultyTags) },
+          { label: 'Difficultés écriture (texte)', value: data.writingIssues },
+          { label: 'Douleur écriture', value: humanize(data.writingPain) },
+          { label: 'Utilisation outils scolaires', value: data.toolUsage },
+          { label: 'Autres remarques', value: data.writingOther },
       ]},
       { title: 'Développement', filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth), fields: [
           { label: 'Grossesse', value: data.pregnancyBirth },
@@ -260,11 +279,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           { label: 'Habillage', value: data.dressing },
           { label: 'Hygiène', value: data.continence },
           { label: 'Temps/Espace', value: data.timeSpace },
-          { label: 'Latéralité', value: humanize(data.handDominance) },
-          { label: 'Outils', value: data.toolUsage },
-          { label: 'Écriture', value: data.writingIssues },
-          { label: 'Douleur écriture', value: humanize(data.writingPain) },
-          { label: 'Autre (trousse)', value: data.writingOther },
+          { label: 'Temps d\'écran', value: data.screenTime },
+      ]},
+      { title: 'Gestion des émotions', filled: !!(data.emotionalRegulation || data.screenTime), fields: [
           { label: 'Écrans', value: data.screenTime },
           { label: 'Émotions', value: data.emotionalRegulation },
       ]},
@@ -277,6 +294,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
 
   const filledSections = sectionDefs.filter(s => s.filled).length;
   const totalSections = sectionDefs.length;
+    const isFullyCompleted = totalSections > 0 && filledSections === totalSections;
+    const shouldAutoUseCondensed = hasParentData || isFullyCompleted;
+    const isCondensedMode = viewMode === 'review' && (shouldAutoUseCondensed || userSwitchedToReview);
 
   const ensurePatientPersisted = async (): Promise<void> => {
       if (!orgKey) throw new Error('Missing org key');
@@ -297,31 +317,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       onPatientCreated();
   };
 
-  const handleFakeData = async (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-          const freshData = JSON.parse(JSON.stringify(DEMO_PATIENTS.LEO));
-          if (!freshData.patient.id) freshData.patient.id = crypto.randomUUID();
-          loadFromDraft(freshData);
-          if (orgKey) {
-              const patientId = await StorageService.ensurePatientId(freshData.patient, orgKey);
-              await StorageService.syncPatientIdentityPreview(patientId, { ...freshData.patient, id: patientId }, orgKey);
-              onPatientCreated();
-          }
-          setDataLoaded(true);
-          setFormKey(prev => prev + 1); 
-          setTimeout(() => setDataLoaded(false), 2000);
-      } catch (err) {
-          Logger.error('SYSTEM', "ERREUR INJECTION:", err);
-          toast.error("Erreur lors de l'injection des données test.");
-      }
-  };
-
   const handleNextStep = async () => {
       try {
-          if (!isPatientCreationReady(data)) {
-              toast.error("Le nom, le prénom et la date de naissance sont obligatoires.");
+          if (!isAdministrativeReady) {
+              toast.error("La partie administrative est obligatoire (identité, responsables, médical, motif) avant de continuer.");
               return;
           }
           await ensurePatientPersisted();
@@ -343,15 +342,6 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
             </p>
         </div>
         <div className="flex gap-3 items-center">
-            {userProfile.isAdmin && (
-                <button 
-                    type="button" onClick={handleFakeData}
-                    className={`relative z-50 cursor-pointer px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border transition-all active:scale-95 shadow-md ${dataLoaded ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200'}`}
-                >
-                    {dataLoaded ? <CheckCircle2 size={14}/> : <Database size={14} />} 
-                    {dataLoaded ? 'Données Injectées' : 'FAKE DATA'}
-                </button>
-            )}
             <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-emerald-100">
                 <User size={14} /> Mode Praticien
             </div>
@@ -359,7 +349,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       </div>
 
       {/* PROGRESS INDICATOR */}
-      {hasParentData && viewMode === 'review' && (
+      {isCondensedMode && (
           <div className="mb-6 bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">Complétion du dossier</span>
@@ -402,14 +392,17 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       </div>
 
       {/* QUESTIONNAIRE — Review mode (condensed) or Edit mode (full form) */}
-      {hasParentData && viewMode === 'review' ? (
+      {isCondensedMode ? (
           <div className="space-y-3 mb-8">
               <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2">
                       <Eye size={14} /> Résumé du questionnaire famille
                   </h3>
                   <button 
-                      onClick={() => setViewMode('edit')}
+                      onClick={() => {
+                          setViewMode('edit');
+                          setUserSwitchedToReview(false);
+                      }}
                       className="text-xs font-bold text-[#E07A5F] hover:underline flex items-center gap-1"
                   >
                       <Edit3 size={12} /> Tout modifier
@@ -421,16 +414,22 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
                       title={sec.title}
                       fields={sec.fields}
                       isFilled={sec.filled}
-                      onEditSection={() => setViewMode('edit')}
+                      onEditSection={() => {
+                          setViewMode('edit');
+                          setUserSwitchedToReview(false);
+                      }}
                   />
               ))}
           </div>
       ) : (
           <>
-              {viewMode === 'edit' && hasParentData && (
+              {viewMode === 'edit' && shouldAutoUseCondensed && (
                   <div className="mb-4 flex justify-end">
                       <button 
-                          onClick={() => setViewMode('review')}
+                          onClick={() => {
+                              setViewMode('review');
+                              setUserSwitchedToReview(true);
+                          }}
                       className="text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-[var(--hover-bg)] transition-colors"
                       >
                           <Check size={12} /> Retour à la vue résumée
@@ -438,7 +437,6 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
                   </div>
               )}
               <SharedQuestionnaire 
-                  key={formKey} 
                   data={data} 
                   onChange={handleDataChange} 
                   mode="practitioner" 
@@ -447,9 +445,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
       )}
 
       <div className="flex justify-center pt-12">
-        <button 
-            onClick={handleNextStep}
-            disabled={!isPatientCreationReady(data)}
+        <button onClick={handleNextStep}
+                        disabled={!isAdministrativeReady}
             className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
             Suivant : Tests & Mesures

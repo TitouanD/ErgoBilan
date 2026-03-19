@@ -3,7 +3,7 @@ import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import type { AdminTestBundle, AdminTestSummary, AdminSubtestRecord, AdminNormRecord, SubtestDuplicatePair, NormDuplicateSummary, NormQualityFlag, DuplicatePair, MergeResult, FittingScoreType } from '../../types';
-import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle, Settings, Wrench, Database, ArrowRight } from 'lucide-react';
+import { Check, Loader2, Plus, RefreshCw, Save, Search, Trash2, ArrowUpRight, Globe, Lock, GitMerge, Zap, AlertTriangle, Settings, Wrench, Database, ArrowRight, GripVertical } from 'lucide-react';
 import { normalizeSubtestName } from '../../utils';
 import { supabase } from '../../services/db';
 import { buildConditionalSubtestDisplayName, buildSubtestDisplayMetaMap, normalizeSubtestAbbreviationTag, stripDuplicateTrailingTag } from '../../utils/subtestDisplay';
@@ -11,6 +11,22 @@ import { buildConditionalSubtestDisplayName, buildSubtestDisplayMetaMap, normali
 interface SubtestDraft extends AdminSubtestRecord {
   isNew?: boolean;
 }
+
+const sortSubtestsByDisplayOrder = (subtests: SubtestDraft[]): SubtestDraft[] => (
+  [...subtests].sort((a, b) => {
+    const orderA = Number.isFinite(a.display_order) ? Number(a.display_order) : Number.MAX_SAFE_INTEGER;
+    const orderB = Number.isFinite(b.display_order) ? Number(b.display_order) : Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
+  })
+);
+
+const reindexSubtestsOrder = (subtests: SubtestDraft[]): SubtestDraft[] => (
+  sortSubtestsByDisplayOrder(subtests).map((subtest, index) => ({
+    ...subtest,
+    display_order: index + 1,
+  }))
+);
 
 interface NormDraft extends AdminNormRecord {
   temp_id?: string;
@@ -109,6 +125,8 @@ export const AdminLibrary: React.FC<Props> = ({
   const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([]);
   const [subTab, setSubTab] = useState<'normes' | 'meta' | 'validation' | 'issues' | 'outils'>('normes');
   const [inputConfigDraft, setInputConfigDraft] = useState('{}');
+  const [draggingSubtestId, setDraggingSubtestId] = useState<string | null>(null);
+  const [dropTargetSubtestId, setDropTargetSubtestId] = useState<string | null>(null);
 
   // Dedup state
   const [subtestDupPairs, setSubtestDupPairs] = useState<SubtestDuplicatePair[]>([]);
@@ -260,7 +278,7 @@ export const AdminLibrary: React.FC<Props> = ({
     setQualityFlags([]);
     try {
       const data = await AdminService.getTestBundle(testId);
-      const subtests = (data.subtests || []) as SubtestDraft[];
+      const subtests = reindexSubtestsOrder((data.subtests || []) as SubtestDraft[]);
       const norms = (data.norms || []) as NormDraft[];
       setBundle({ ...data, subtests, norms });
       const preferred = preferredSubtestId && subtests.some((s) => s.id === preferredSubtestId)
@@ -475,9 +493,38 @@ export const AdminLibrary: React.FC<Props> = ({
     });
   };
 
+  const handleReorderSubtests = (sourceSubtestId: string, targetSubtestId: string) => {
+    if (!bundle || sourceSubtestId === targetSubtestId) return;
+    setBundle((prev) => {
+      if (!prev) return prev;
+      const ordered = sortSubtestsByDisplayOrder(prev.subtests as SubtestDraft[]);
+      const sourceIndex = ordered.findIndex((subtest) => subtest.id === sourceSubtestId);
+      const targetIndex = ordered.findIndex((subtest) => subtest.id === targetSubtestId);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+
+      const nextOrdered = [...ordered];
+      const [moved] = nextOrdered.splice(sourceIndex, 1);
+      nextOrdered.splice(targetIndex, 0, moved);
+
+      setIsDirty(true);
+      return {
+        ...prev,
+        subtests: nextOrdered.map((subtest, index) => ({
+          ...subtest,
+          display_order: index + 1,
+        })),
+      };
+    });
+  };
+
   const addSubtest = () => {
     if (!bundle) return;
     const newName = `Nouveau Sous-test ${bundle.subtests.length + 1}`;
+    const nextDisplayOrder = (bundle.subtests || []).reduce((max, subtest) => {
+      const current = Number.isFinite(subtest.display_order) ? Number(subtest.display_order) : 0;
+      return Math.max(max, current);
+    }, 0) + 1;
+
     const newSub: SubtestDraft = {
       id: createSubtestId(bundle.test.id, newName),
       test_id: bundle.test.id,
@@ -494,9 +541,11 @@ export const AdminLibrary: React.FC<Props> = ({
       is_override_clone: false,
       always_show_raw: false,
       raw_display_decimals: null,
+      display_order: nextDisplayOrder,
+      display_group_order: null,
       isNew: true
     };
-    setBundle(prev => prev ? ({ ...prev, subtests: [...prev.subtests, newSub] }) : prev);
+    setBundle(prev => prev ? ({ ...prev, subtests: reindexSubtestsOrder([...prev.subtests, newSub]) }) : prev);
     setSelectedSubtestId(newSub.id);
     setIsDirty(true);
   };
@@ -506,7 +555,7 @@ export const AdminLibrary: React.FC<Props> = ({
     if (subtest.isNew) {
       setBundle(prev => prev ? ({
         ...prev,
-        subtests: prev.subtests.filter(s => s.id !== subtest.id),
+        subtests: reindexSubtestsOrder(prev.subtests.filter(s => s.id !== subtest.id) as SubtestDraft[]),
         norms: prev.norms.filter(n => n.subtest_id !== subtest.id)
       }) : prev);
       setSelectedSubtestId(null);
@@ -623,12 +672,14 @@ export const AdminLibrary: React.FC<Props> = ({
       organization_id: raw.test.organization_id || null
     };
 
-    const subtests = raw.subtests.map(s => {
+    const subtests = sortSubtestsByDisplayOrder(raw.subtests as SubtestDraft[]).map((s, index) => {
       const normalizedAbbreviation = normalizeAbbreviation(s.abbreviation);
       return {
         id: s.id,
         test_id: test.id,
         name: stripDuplicateTrailingTag(s.name, normalizedAbbreviation),
+        display_group_order: Number.isFinite(s.display_group_order) ? Number(s.display_group_order) : null,
+        display_order: Number.isFinite(s.display_order) ? Number(s.display_order) : (index + 1),
         abbreviation: normalizedAbbreviation || null,
         unit: s.unit || 'pts',
         score_type: s.score_type || 'none',
@@ -1553,15 +1604,38 @@ export const AdminLibrary: React.FC<Props> = ({
                   </div>
 
                   <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                    {bundle.subtests.map(s => (
+                    {sortSubtestsByDisplayOrder(bundle.subtests as SubtestDraft[]).map(s => (
                       <div
                         key={s.id}
-                        className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                        draggable
+                        onDragStart={(e) => {
+                          setDraggingSubtestId(s.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', s.id);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (dropTargetSubtestId !== s.id) setDropTargetSubtestId(s.id);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const sourceId = draggingSubtestId || e.dataTransfer.getData('text/plain');
+                          if (sourceId) handleReorderSubtests(sourceId, s.id);
+                          setDraggingSubtestId(null);
+                          setDropTargetSubtestId(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingSubtestId(null);
+                          setDropTargetSubtestId(null);
+                        }}
+                        className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${dropTargetSubtestId === s.id ? 'ring-1 ring-[#E07A5F]/60' : ''}`}
                         onClick={() => setSelectedSubtestId(s.id)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 min-w-0">
+                            <GripVertical size={12} className="text-stone-500 flex-shrink-0" />
                             {s.organization_id ? <Lock size={10} className="text-amber-400 flex-shrink-0" /> : <Globe size={10} className="text-emerald-400 flex-shrink-0" />}
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-stone-300 font-mono">#{s.display_order ?? '—'}</span>
                             <span className="text-xs font-bold text-white truncate">{getSubtestDisplayName(s)}</span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
-import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, Scale, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone, Heart, Monitor, Droplets, PenTool, Brain } from 'lucide-react';
+import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone, Monitor, Droplets, PenTool, Brain, Repeat } from 'lucide-react';
 
 interface Props {
   data: Patient;
@@ -11,16 +11,18 @@ interface Props {
   mode: 'family' | 'practitioner';
 }
 
-type SectionKey = 'identity' | 'parents' | 'school' | 'medical' | 'dev' | 'daily' | 'reason';
+type SectionKey = 'identity' | 'parents' | 'medical' | 'reason' | 'dev' | 'daily' | 'school' | 'emotions' | 'goals';
 
 const SECTIONS_CONFIG: { id: SectionKey; title: string; icon: any }[] = [
     { id: 'identity', title: "Identité de l'enfant", icon: User },
-    { id: 'parents', title: "Situation Familiale", icon: Users },
-    { id: 'medical', title: "Suivi Médical", icon: Stethoscope },
-    { id: 'reason', title: "Priorités & Objectifs", icon: MessageSquare },
-    { id: 'school', title: "Scolarité & AVS", icon: GraduationCap },
+    { id: 'parents', title: "Situation familiale", icon: Users },
+    { id: 'medical', title: "Suivi médical", icon: Stethoscope },
+    { id: 'reason', title: "Motif de consultation", icon: MessageSquare },
     { id: 'dev', title: "Développement", icon: Baby },
-    { id: 'daily', title: "Vie Quotidienne", icon: Coffee },
+    { id: 'daily', title: "Vie quotidienne", icon: Coffee },
+    { id: 'school', title: "Vie scolaire", icon: GraduationCap },
+    { id: 'emotions', title: "Gestion des émotions", icon: Brain },
+    { id: 'goals', title: "Vos objectifs prioritaires", icon: Smile },
 ];
 
 const SCHOOL_LEVELS = [
@@ -123,11 +125,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
       identity: true,
       parents: false,
-      school: false,
       medical: false,
       reason: false,
       dev: false,
-      daily: false
+      daily: false,
+      school: false,
+      emotions: false,
+      goals: false
   });
 
   const [progress, setProgress] = useState(0);
@@ -136,9 +140,9 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   useEffect(() => {
       if (mode === 'family') {
           let filled = 0;
-          const total = 12;
+          const total = 13;
           if (data.lastName && data.firstName) filled++;
-          if (data.parentNames) filled++;
+          if (data.parent1Name || data.parent2Name || data.parentNames) filled++;
           if (data.guardMode) filled++;
           if (data.school && data.classLevel) filled++;
           if (data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0) filled++;
@@ -149,16 +153,41 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           if (data.sensory || data.sleepStatus) filled++;
           if (data.writingPain || data.writingIssues) filled++;
           if (data.continence || data.dressing) filled++;
+          if (data.emotionalRegulation || data.screenTime) filled++;
           
           setProgress(Math.round((filled / total) * 100));
       }
   }, [data, mode]);
 
   const toggleSection = (id: SectionKey, forceState?: boolean) => {
-      setOpenSections(prev => ({ 
-          ...prev, 
-          [id]: forceState !== undefined ? forceState : !prev[id] 
-      }));
+      setOpenSections(prev => {
+          const shouldOpen = forceState !== undefined ? forceState : !prev[id];
+          if (!shouldOpen) {
+              return {
+                  identity: false,
+                  parents: false,
+                  medical: false,
+                  reason: false,
+                  dev: false,
+                  daily: false,
+                  school: false,
+                  emotions: false,
+                  goals: false
+              };
+          }
+          return {
+              identity: false,
+              parents: false,
+              medical: false,
+              reason: false,
+              dev: false,
+              daily: false,
+              school: false,
+              emotions: false,
+              goals: false,
+              [id]: true
+          };
+      });
   };
 
   const openNextSection = (currentId: SectionKey) => {
@@ -189,7 +218,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   // --- LOGIQUE LISTES ---
 
   const addSibling = () => {
-      onChange({ siblings: [...(data.siblings || []), { firstName: '', age: '', relation: 'Frère', livesWithChild: true }] });
+      onChange({ siblings: [...(data.siblings || []), { firstName: '', age: '', relation: 'Frère', livesWithChild: true, livesPartially: false, residenceStatus: 'with' }] });
   };
   const updateSibling = (idx: number, field: keyof Sibling, val: any) => {
       const newSiblings = [...(data.siblings || [])];
@@ -221,10 +250,57 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   // --- LOGIQUE OBJECTIFS (Priorités) ---
   const goals = data.goals || [];
+
+  const syncLegacyParentFields = (nextData: Partial<Patient>) => {
+      const parent1Name = nextData.parent1Name ?? data.parent1Name ?? '';
+      const parent2Name = nextData.parent2Name ?? data.parent2Name ?? '';
+      const parent1Phone = nextData.parent1Phone ?? data.parent1Phone ?? '';
+      const parent2Phone = nextData.parent2Phone ?? data.parent2Phone ?? '';
+      const parent1Email = nextData.parent1Email ?? data.parent1Email ?? '';
+      const parent2Email = nextData.parent2Email ?? data.parent2Email ?? '';
+
+      const mergedNames = [parent1Name, parent2Name].filter(Boolean).join(' / ');
+      const mergedPhones = [parent1Phone, parent2Phone].filter(Boolean).join(' / ');
+      const mergedEmails = [parent1Email, parent2Email].filter(Boolean).join(' / ');
+
+      onChange({
+          ...nextData,
+          parentNames: mergedNames,
+          parentPhone: mergedPhones,
+          parentEmail: mergedEmails,
+      });
+  };
+
+  const getSiblingResidence = (sib: Sibling): 'with' | 'partial' | 'away' | 'other' => {
+      if (sib.residenceStatus === 'other') return 'other';
+      if (sib.residenceStatus) return sib.residenceStatus;
+      if (sib.livesPartially) return 'partial';
+      return sib.livesWithChild ? 'with' : 'away';
+  };
+
+  const setSiblingResidence = (idx: number, status: 'with' | 'partial' | 'away' | 'other') => {
+      const newSiblings = [...(data.siblings || [])];
+      const livesWithChild = status === 'with';
+      const livesPartially = status === 'partial';
+      newSiblings[idx] = {
+          ...newSiblings[idx],
+          residenceStatus: status,
+          livesWithChild,
+          livesPartially,
+          residenceOther: status === 'other' ? (newSiblings[idx].residenceOther || '') : undefined,
+      };
+      onChange({ siblings: newSiblings });
+  };
+
   const addGoal = (text: string) => {
       if (!text.trim()) return;
       const newGoals = [...goals, text];
       onChange({ goals: newGoals, priorities: newGoals.join('. ') }); // Sync legacy
+  };
+  const updateGoal = (idx: number, text: string) => {
+      const newGoals = [...goals];
+      newGoals[idx] = text;
+      onChange({ goals: newGoals, priorities: newGoals.join('. ') });
   };
   const removeGoal = (idx: number) => {
       const newGoals = [...goals];
@@ -268,12 +344,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
         {SECTIONS_CONFIG.map((section) => {
             const isOpen = openSections[section.id];
+            const isAdministrativeSection = ['identity', 'parents', 'medical', 'reason'].includes(section.id);
             
             return (
-                <div id={`section-${section.id}`} key={section.id} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isOpen ? 'shadow-md border-[#E07A5F]/30 bg-[var(--card-bg)]' : 'shadow-sm hover:shadow border-[var(--border-color)] bg-[var(--card-bg)]'}`}>
+                <React.Fragment key={section.id}>
+                <div id={`section-${section.id}`} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isAdministrativeSection ? (isOpen ? 'shadow-md border-[#E07A5F]/40' : 'shadow-sm hover:shadow border-[#E07A5F]/25') : (isOpen ? 'shadow-md border-[#E07A5F]/30' : 'shadow-sm hover:shadow border-[var(--border-color)]')} ${isAdministrativeSection ? 'bg-[var(--hover-bg)]' : 'bg-[var(--card-bg)]'}`}>
                     <button 
                         onClick={() => toggleSection(section.id)}
-                        className={`w-full flex items-center justify-between p-5 transition-colors ${isOpen ? 'bg-[var(--card-bg)]' : 'bg-[var(--card-bg-raised)]'}`}
+                        className={`w-full flex items-center justify-between p-5 transition-colors ${isAdministrativeSection ? 'bg-[var(--card-bg-raised)]' : isOpen ? 'bg-[var(--card-bg)]' : 'bg-[var(--card-bg-raised)]'}`}
                     >
                         <div className="flex items-center gap-4">
                             <div className={`p-2.5 rounded-xl ${isOpen ? 'bg-[#fff5f2] dark:bg-[#E07A5F]/15 text-[#E07A5F]' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'}`}>
@@ -341,14 +419,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         onClick={() => handleFieldChange('guardMode', 'commune')}
                                                         label="Garde Commune" 
                                                         value="commune" 
-                                                        icon={Heart} 
+                                                        icon={Users} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'alternate'} 
                                                         onClick={() => handleFieldChange('guardMode', 'alternate')}
                                                         label="Garde Alternée" 
                                                         value="alternate" 
-                                                        icon={Scale} 
+                                                        icon={Repeat} 
                                                     />
                                                     <SelectCard 
                                                         selected={(data.guardMode || '').startsWith('exclusive')} 
@@ -380,20 +458,48 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 )}
                                             </div>
 
-                                            <div><label className={labelClass}>Noms des responsables</label><DebouncedInput name="parentNames" value={data.parentNames || ''} onChange={(v) => handleFieldChange('parentNames', v)} className={inputClass} placeholder="Mme X et M. Y" /></div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                                <div>
-                                                    <label className={labelClass}>Téléphone</label>
-                                                    <div className="relative">
-                                                        <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
-                                                        <DebouncedInput name="parentPhone" type="tel" value={data.parentPhone || ''} onChange={(v) => handleFieldChange('parentPhone', v)} className={`${inputClass} pl-10`} />
+                                                <div className="space-y-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
+                                                    <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable 1</h5>
+                                                    <div>
+                                                        <label className={labelClass}>Nom</label>
+                                                        <DebouncedInput name="parent1Name" value={data.parent1Name || ''} onChange={(v) => syncLegacyParentFields({ parent1Name: v })} className={inputClass} placeholder="Nom du responsable 1" />
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Téléphone</label>
+                                                        <div className="relative">
+                                                            <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent1Phone" type="tel" value={data.parent1Phone || ''} onChange={(v) => syncLegacyParentFields({ parent1Phone: v })} className={`${inputClass} pl-10`} />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Email</label>
+                                                        <div className="relative">
+                                                            <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent1Email" type="email" value={data.parent1Email || ''} onChange={(v) => syncLegacyParentFields({ parent1Email: v })} className={`${inputClass} pl-10`} />
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <label className={labelClass}>Email</label>
-                                                    <div className="relative">
-                                                        <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
-                                                        <DebouncedInput name="parentEmail" type="email" value={data.parentEmail || ''} onChange={(v) => handleFieldChange('parentEmail', v)} className={`${inputClass} pl-10`} />
+
+                                                <div className="space-y-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
+                                                    <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable 2</h5>
+                                                    <div>
+                                                        <label className={labelClass}>Nom</label>
+                                                        <DebouncedInput name="parent2Name" value={data.parent2Name || ''} onChange={(v) => syncLegacyParentFields({ parent2Name: v })} className={inputClass} placeholder="Nom du responsable 2" />
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Téléphone</label>
+                                                        <div className="relative">
+                                                            <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent2Phone" type="tel" value={data.parent2Phone || ''} onChange={(v) => syncLegacyParentFields({ parent2Phone: v })} className={`${inputClass} pl-10`} />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Email</label>
+                                                        <div className="relative">
+                                                            <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent2Email" type="email" value={data.parent2Email || ''} onChange={(v) => syncLegacyParentFields({ parent2Email: v })} className={`${inputClass} pl-10`} />
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -418,23 +524,29 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         <option value="Demi-sœur">Demi-sœur</option>
                                                     </select>
                                                     
-                                                    {/* BOUTON VIT AVEC ENFANT */}
-                                                    <button 
-                                                        onClick={() => updateSibling(idx, 'livesWithChild', !sib.livesWithChild)}
-                                                        className={`p-2 rounded-lg border transition-all ${sib.livesWithChild ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700/30 text-emerald-600 dark:text-emerald-400' : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'}`}
-                                                        title={sib.livesWithChild ? "Vit au domicile" : "Ne vit pas au domicile"}
+                                                    <select 
+                                                        value={getSiblingResidence(sib)}
+                                                        onChange={(e) => setSiblingResidence(idx, e.target.value as 'with' | 'partial' | 'away' | 'other')}
+                                                        className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
                                                     >
-                                                        <Home size={16} />
-                                                    </button>
-
-                                                    {/* BOUTON VIT PARTIELLEMENT (garde alternée) */}
-                                                    <button 
-                                                        onClick={() => updateSibling(idx, 'livesPartially', !sib.livesPartially)}
-                                                        className={`p-2 rounded-lg border transition-all text-xs font-bold ${sib.livesPartially ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700/30 text-amber-600 dark:text-amber-400' : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'}`}
-                                                        title={sib.livesPartially ? "Vit partiellement au domicile (garde alternée)" : "Résidence habituelle"}
-                                                    >
-                                                        ½
-                                                    </button>
+                                                        <option value="with">Vit au domicile</option>
+                                                        <option value="partial">Vit partiellement</option>
+                                                        <option value="away">Ne vit pas</option>
+                                                        <option value="other">Autre</option>
+                                                    </select>
+                                                    {getSiblingResidence(sib) === 'other' && (
+                                                        <input
+                                                            type="text"
+                                                            value={sib.residenceOther || ''}
+                                                            onChange={(e) => {
+                                                                const newSiblings = [...(data.siblings || [])];
+                                                                newSiblings[idx] = { ...newSiblings[idx], residenceOther: e.target.value };
+                                                                onChange({ siblings: newSiblings });
+                                                            }}
+                                                            placeholder="Préciser..."
+                                                            className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                                                        />
+                                                    )}
 
                                                     <button onClick={() => removeSibling(idx)} className="p-2 text-[var(--text-disabled)] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"><Trash2 size={16}/></button>
                                                 </div>
@@ -448,74 +560,168 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
                             {/* --- 3. SCOLARITÉ (AVEC AVS & OBSERVATIONS) --- */}
                             {section.id === 'school' && (
-                                <div className="space-y-5">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        <div><label className={labelClass}>École</label><DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} /></div>
-                                        <div>
-                                            <label className={labelClass}>Classe</label>
-                                            <select name="classLevel" value={data.classLevel || ''} onChange={handleChange} className={inputClass}>
-                                                <option value="">Sélectionner...</option>
-                                                {SCHOOL_LEVELS.map(level => (
-                                                    <option key={level} value={level}>{level}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className={labelClass}>Type de filière (lycée)</label>
-                                            <select name="schoolType" value={data.schoolType || ''} onChange={handleChange} className={inputClass}>
-                                                <option value="">—</option>
-                                                <option value="general">Général</option>
-                                                <option value="technologique">Technologique</option>
-                                                <option value="pro">Professionnel (Bac Pro)</option>
-                                                <option value="cap">CAP</option>
-                                                <option value="bts">BTS / BUT</option>
-                                                <option value="autre">Autre</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* BLOC AVS */}
-                                    <div className="bg-[#fff9f9] dark:bg-rose-950/20 border border-rose-100 dark:border-rose-800/20 p-4 rounded-2xl">
-                                        <ToggleSwitch 
-                                            label="Une AESH / AVS est-elle présente ?" 
-                                            checked={data.avs === 'OUI'} 
-                                            onChange={(checked) => handleFieldChange('avs', checked ? 'OUI' : 'NON')} 
-                                        />
-                                        
-                                        {data.avs === 'OUI' && (
-                                            <div className="mt-4 pt-4 border-t border-rose-100 dark:border-rose-800/20 grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
-                                                <div>
-                                                    <label className={labelClass}>Nombre d'heures / semaine</label>
-                                                    <input 
-                                                        type="text" 
-                                                        value={data.avsHours || ''} 
-                                                        onChange={(e) => handleFieldChange('avsHours', e.target.value)} 
-                                                        className="w-full p-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-lg text-sm font-bold text-[var(--text-heading)] outline-none" 
-                                                        placeholder="Ex: 12h"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className={labelClass}>Missions principales</label>
-                                                    <input 
-                                                        type="text" 
-                                                        value={data.avsMissions || ''} 
-                                                        onChange={(e) => handleFieldChange('avsMissions', e.target.value)} 
-                                                        className="w-full p-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-lg text-sm text-[var(--text-heading)] outline-none" 
-                                                        placeholder="Repas, Écriture, Comportement..."
-                                                    />
-                                                </div>
+                                <div className="space-y-6">
+                                    <div className="bg-[var(--card-bg-raised)] border border-[var(--border-color)] p-5 rounded-2xl space-y-4">
+                                        <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Book size={14}/> Scolarité</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                            <div><label className={labelClass}>École</label><DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} /></div>
+                                            <div>
+                                                <label className={labelClass}>Classe</label>
+                                                <select name="classLevel" value={data.classLevel || ''} onChange={handleChange} className={inputClass}>
+                                                    <option value="">Sélectionner...</option>
+                                                    {SCHOOL_LEVELS.map(level => (
+                                                        <option key={level} value={level}>{level}</option>
+                                                    ))}
+                                                </select>
                                             </div>
-                                        )}
+                                            <div>
+                                                <label className={labelClass}>Type de filière</label>
+                                                <select name="schoolType" value={data.schoolType || ''} onChange={handleChange} className={inputClass}>
+                                                    <option value="">—</option>
+                                                    <option value="general">Général</option>
+                                                    <option value="technologique">Technologique</option>
+                                                    <option value="pro">Professionnel (Bac Pro)</option>
+                                                    <option value="cap">CAP</option>
+                                                    <option value="bts">BTS / BUT</option>
+                                                    <option value="autre">Autre</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Redoublement</label>
+                                                <ChipGroup
+                                                    options={[{value: 'non', label: 'Non'}, {value: 'oui', label: 'Oui'}]}
+                                                    value={data.schoolRepeatYear}
+                                                    onChange={(v) => handleFieldChange('schoolRepeatYear', v)}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-[#fff9f9] dark:bg-rose-950/20 border border-rose-100 dark:border-rose-800/20 p-4 rounded-2xl">
+                                            <ToggleSwitch
+                                                label="Une AESH / AVS est-elle présente ?"
+                                                checked={data.avs === 'OUI'}
+                                                onChange={(checked) => handleFieldChange('avs', checked ? 'OUI' : 'NON')}
+                                            />
+
+                                            {data.avs === 'OUI' && (
+                                                <div className="mt-4 pt-4 border-t border-rose-100 dark:border-rose-800/20 grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+                                                    <div>
+                                                        <label className={labelClass}>Nombre d'heures / semaine</label>
+                                                        <input
+                                                            type="text"
+                                                            value={data.avsHours || ''}
+                                                            onChange={(e) => handleFieldChange('avsHours', e.target.value)}
+                                                            className="w-full p-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-lg text-sm font-bold text-[var(--text-heading)] outline-none"
+                                                            placeholder="Ex: 12h"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Missions principales</label>
+                                                        <input
+                                                            type="text"
+                                                            value={data.avsMissions || ''}
+                                                            onChange={(e) => handleFieldChange('avsMissions', e.target.value)}
+                                                            className="w-full p-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-lg text-sm text-[var(--text-heading)] outline-none"
+                                                            placeholder="Repas, écriture, attention..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className={labelClass}>Dispositif scolaire</label>
+                                            <ChipGroup
+                                                options={[{value: 'PAP', label: 'PAP'}, {value: 'PAI', label: 'PAI'}, {value: 'PPS', label: 'PPS'}, {value: 'PPRE', label: 'PPRE'}]}
+                                                value={data.carePlan}
+                                                onChange={(v) => handleFieldChange('carePlan', v)}
+                                                multi
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Aménagements rattachés</label>
+                                            <DebouncedTextarea name="schoolAccommodations" value={data.schoolAccommodations || ''} onChange={(v) => handleFieldChange('schoolAccommodations', v)} className={inputClass} placeholder="Placement, supports adaptés, tiers-temps, outils de compensation..." rows={2} />
+                                        </div>
                                     </div>
 
-                                    <div>
-                                        <label className={labelClass}>Dispositifs scolaires</label>
-                                        <ChipGroup 
-                                            options={[{value: 'PAP', label: 'PAP'}, {value: 'PAI', label: 'PAI'}, {value: 'PPS', label: 'PPS'}, {value: 'PPRE', label: 'PPRE'}]}
-                                            value={data.carePlan}
-                                            onChange={(v) => handleFieldChange('carePlan', v)}
-                                            multi
-                                        />
+                                    <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] space-y-4">
+                                        <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Users size={14}/> Vie scolaire et sociale</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={labelClass}>Matières préférées</label>
+                                                <DebouncedInput name="schoolFavoriteSubjects" value={data.schoolFavoriteSubjects || ''} onChange={(v) => handleFieldChange('schoolFavoriteSubjects', v)} className={inputClass} placeholder="Ex : sport, maths, arts..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Matières moins appréciées</label>
+                                                <DebouncedInput name="schoolDislikedSubjects" value={data.schoolDislikedSubjects || ''} onChange={(v) => handleFieldChange('schoolDislikedSubjects', v)} className={inputClass} placeholder="Ex : dictée, géométrie..." />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Comportement en classe</label>
+                                            <DebouncedInput name="classroomBehavior" value={data.classroomBehavior || ''} onChange={(v) => handleFieldChange('classroomBehavior', v)} className={inputClass} placeholder="Calme, impulsif, opposition, agitation..." />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div>
+                                                <label className={labelClass}>Organisation</label>
+                                                <DebouncedInput name="schoolOrganization" value={data.schoolOrganization || ''} onChange={(v) => handleFieldChange('schoolOrganization', v)} className={inputClass} placeholder="Cartable, matériel, consignes..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Mémorisation</label>
+                                                <DebouncedInput name="schoolMemory" value={data.schoolMemory || ''} onChange={(v) => handleFieldChange('schoolMemory', v)} className={inputClass} placeholder="Leçons, consignes, automatismes..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Attention & participation</label>
+                                                <DebouncedInput name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} placeholder="Concentration, participation, distractibilité..." />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Relation avec ses pairs</label>
+                                            <DebouncedInput name="peerRelations" value={data.peerRelations || data.socialBehavior || ''} onChange={(v) => handleFieldChange('peerRelations', v)} className={inputClass} placeholder="Jeux, interactions, conflits, isolement..." />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Devoirs</label>
+                                            <DebouncedTextarea name="homeworkHabits" value={data.homeworkHabits || ''} onChange={(v) => handleFieldChange('homeworkHabits', v)} className={inputClass} placeholder="Autonomie, aide nécessaire, durée, fatigue..." rows={2} />
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-[#f0f9ff] dark:bg-sky-950/20 border border-sky-100 dark:border-sky-800/20 p-4 rounded-2xl space-y-4">
+                                        <h4 className="text-xs font-bold text-sky-800 uppercase tracking-wider flex items-center gap-2 mb-2"><PenTool size={14}/> Écriture</h4>
+                                        <div>
+                                            <label className={labelClass}>Latéralité</label>
+                                            <ChipGroup options={[{value: 'Droitier', label: 'Droitier'}, {value: 'Gaucher', label: 'Gaucher'}, {value: 'Indeterminé', label: 'Non latéralisé'}]} value={data.handDominance} onChange={(v) => handleFieldChange('handDominance', v)} />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Difficultés d'écriture typiques (plusieurs choix possibles)</label>
+                                            <ChipGroup
+                                                options={[
+                                                    {value: 'orthographe', label: "Fautes d'orthographe"},
+                                                    {value: 'lisibilite', label: 'Lisibilité des écrits'},
+                                                    {value: 'miroir', label: 'Lettres miroir'},
+                                                    {value: 'douleur', label: 'Douleur'},
+                                                    {value: 'posture', label: 'Mauvaise posture'},
+                                                    {value: 'lenteur', label: 'Lenteur'},
+                                                ]}
+                                                value={data.writingDifficultyTags}
+                                                onChange={(v) => handleFieldChange('writingDifficultyTags', v)}
+                                                multi
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Difficultés d'écriture (remarques)</label>
+                                            <DebouncedTextarea name="writingIssues" value={data.writingIssues || ''} onChange={(v) => handleFieldChange('writingIssues', v)} className={inputClass} placeholder="Préciser les difficultés observées en écriture..." rows={2} />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Douleur en écrivant ?</label>
+                                            <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_long', label: 'Sur longues tâches'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Utilisation des outils scolaires</label>
+                                            <DebouncedTextarea name="toolUsage" value={data.toolUsage || ''} onChange={(v) => handleFieldChange('toolUsage', v)} className={inputClass} placeholder="Règle, gomme, compas, ciseaux, trousse..." rows={2} />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Autres remarques</label>
+                                            <DebouncedTextarea name="writingOther" value={data.writingOther || ''} onChange={(v) => handleFieldChange('writingOther', v)} className={inputClass} rows={2} placeholder="Tout autre élément relatif à l'écriture ou aux outils scolaires..." />
+                                        </div>
                                     </div>
 
                                     <FamilyNextButton sectionId={section.id} />
@@ -695,7 +901,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             <div>
                                                 <label className={labelClass}>Autonomie & Habitudes (plusieurs choix possibles)</label>
                                                 <ChipGroup 
-                                                    options={[{value: 'seul', label: 'Mange seul'}, {value: 'aide', label: 'A besoin d\'aide'}, {value: 'couverts_ok', label: 'Bonne utilisation couverts'}, {value: 'doigts', label: 'Mange avec les doigts'}, {value: 'selectif', label: 'Très sélectif'}, {value: 'salit', label: 'Salit beaucoup'}]}
+                                                    options={[{value: 'autonomie', label: 'Mange en autonomie'}, {value: 'aide_repas', label: 'A besoin d\'aide pour manger'}, {value: 'agite_repas', label: 'Agité(e) lors des repas'}, {value: 'couverts', label: 'Utilisation des couverts'}, {value: 'mains', label: 'Mange avec les mains'}, {value: 'salit', label: 'Se salit beaucoup'}]}
                                                     value={data.eatingHabits} 
                                                     onChange={(v) => handleFieldChange('eatingHabits', v)}
                                                     multi
@@ -751,134 +957,18 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <DebouncedTextarea name="timeSpace" value={data.timeSpace || ''} onChange={(v) => handleFieldChange('timeSpace', v)} className={inputClass} placeholder="Se repère-t-il dans la journée ? La semaine ? Retrouve-t-il son chemin ? Lit-il l’heure ?" rows={2} />
                                     </div>
 
-                                    {/* OUTILS SCOLAIRES */}
-                                    <div className="bg-[#f0f9ff] dark:bg-sky-950/20 border border-sky-100 dark:border-sky-800/20 p-4 rounded-2xl">
-                                        <h4 className="text-xs font-bold text-sky-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Scissors size={14}/> Trousse & Écriture</h4>
-
-                                        {/* VIE SCOLAIRE & SOCIALE */}
-                                        <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] mb-4 space-y-4">
-                                            <h5 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Book size={14}/> Vie Scolaire & Sociale</h5>
-                                            <div>
-                                                <label className={labelClass}>Attention & Participation (En classe)</label>
-                                                <DebouncedInput name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} placeholder="Attentif, rêveuse, participe..." />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Relations avec les camarades</label>
-                                                <DebouncedInput name="socialBehavior" value={data.socialBehavior || ''} onChange={(v) => handleFieldChange('socialBehavior', v)} className={inputClass} placeholder="Copains, récréation, conflits..." />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Difficultés observées (plusieurs choix possibles)</label>
-                                                <ChipGroup
-                                                    options={[
-                                                        {value: 'ecriture', label: 'Écriture'},
-                                                        {value: 'outils', label: 'Outils scolaires'},
-                                                        {value: 'autre', label: 'Autre'},
-                                                    ]}
-                                                    value={data.schoolDifficulties}
-                                                    onChange={(v) => handleFieldChange('schoolDifficulties', v)}
-                                                    multi
-                                                />
-                                            </div>
-                                            {(data.schoolDifficulties || '').includes('autre') && (
-                                                <div className="animate-in slide-in-from-top-2">
-                                                    <label className={labelClass}>Préciser « Autre »</label>
-                                                    <DebouncedTextarea name="schoolDifficultiesOther" value={data.schoolDifficultiesOther || ''} onChange={(v) => handleFieldChange('schoolDifficultiesOther', v)} className={inputClass} rows={2} placeholder="Décrivez les difficultés..." />
-                                                </div>
-                                            )}
-                                            <div>
-                                                <label className={labelClass}>Aménagements classe (hors AVS)</label>
-                                                <DebouncedTextarea name="schoolAccommodations" value={data.schoolAccommodations || ''} onChange={(v) => handleFieldChange('schoolAccommodations', v)} className={inputClass} placeholder="Tiers-temps, photocopies, placement devant..." rows={2} />
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className={labelClass}>Main dominante</label>
-                                                <ChipGroup options={[{value: 'Droitier', label: 'Droitier'}, {value: 'Gaucher', label: 'Gaucher'}, {value: 'Indeterminé', label: 'Non latéralisé'}]} value={data.handDominance} onChange={(v) => handleFieldChange('handDominance', v)} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Autres outils scolaires (compas, règle, gomme...)</label>
-                                                <DebouncedTextarea name="toolUsage" value={data.toolUsage || ''} onChange={(v) => handleFieldChange('toolUsage', v)} className={inputClass} placeholder="Utilise-t-il le compas, la règle, la gomme correctement ?" rows={2} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Difficultés d'écriture</label>
-                                                <DebouncedTextarea name="writingIssues" value={data.writingIssues || ''} onChange={(v) => handleFieldChange('writingIssues', v)} className={inputClass} placeholder="Lettres en miroir, saut de lignes, lisibilité, tenue du crayon, lenteur..." rows={2} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Douleur en écrivant ?</label>
-                                                <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_long', label: 'Sur longues tâches'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Autre (remarques complémentaires trousse & écriture)</label>
-                                                <DebouncedTextarea name="writingOther" value={data.writingOther || ''} onChange={(v) => handleFieldChange('writingOther', v)} className={inputClass} rows={2} placeholder="Tout autre élément relatif à la trousse ou à l'écriture..." />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* COMPORTEMENT & ÉCRANS */}
-                                    <div className="bg-[#faf5ff] border border-purple-100 p-4 rounded-2xl">
-                                        <h4 className="text-xs font-bold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Brain size={14}/> Comportement & Émotions</h4>
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className={labelClass}>Temps d’écran quotidien estimé</label>
-                                                <DebouncedInput name="screenTime" value={data.screenTime || ''} onChange={(v) => handleFieldChange('screenTime', v)} className={inputClass} placeholder="Ex: 1h tablette, 30 min TV..." />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Régulation émotionnelle</label>
-                                                <DebouncedTextarea name="emotionalRegulation" value={data.emotionalRegulation || ''} onChange={(v) => handleFieldChange('emotionalRegulation', v)} className={inputClass} placeholder="Colères, frustrations, anxiété, difficulté à gérer les transitions..." rows={2} />
-                                            </div>
-                                        </div>
-                                    </div>
-
                                     <FamilyNextButton sectionId={section.id} />
                                 </div>
                             )}
 
-                            {/* --- 7. PRIORITÉS (LISTE 1-5) --- */}
+                            {/* --- 7. MOTIF DE CONSULTATION --- */}
                             {section.id === 'reason' && (
                                 <div className="space-y-6">
-                                    {/* Motif de consultation */}
                                     <div className="bg-[var(--card-bg-raised)] border border-[var(--border-color)] p-5 rounded-2xl space-y-4">
                                         <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><MessageSquare size={14}/> Motif de consultation</h4>
                                         <div>
                                             <label className={labelClass}>Pourquoi consultez-vous en ergothérapie ?</label>
                                             <DebouncedTextarea name="reason" value={data.reason || ''} onChange={(v) => handleFieldChange('reason', v)} className={inputClass} placeholder="Décrivez ce qui vous amène à consulter (difficultés scolaires, motrices, comportementales...)" rows={3} />
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-800/20">
-                                        <h4 className="text-sm font-bold text-amber-900 dark:text-amber-400 mb-2 flex items-center gap-2">
-                                            <Smile size={18} /> Vos Objectifs Prioritaires
-                                        </h4>
-                                        <p className="text-xs text-amber-800 dark:text-amber-300/80 mb-4">Quels sont les 3 à 5 problèmes que vous aimeriez résoudre en premier ?</p>
-                                        
-                                        <div className="space-y-2 mb-4">
-                                            {goals.map((goal, idx) => (
-                                                <div key={idx} className="flex items-center gap-2 bg-[var(--card-bg)] p-3 rounded-xl border border-amber-200/40 shadow-sm animate-in slide-in-from-left-2">
-                                                    <span className="font-bold text-amber-500 w-6">{idx + 1}.</span>
-                                                    <span className="flex-1 text-sm font-bold text-[var(--text-heading)]">{goal}</span>
-                                                    <button onClick={() => removeGoal(idx)} className="text-[var(--text-disabled)] hover:text-rose-500"><Trash2 size={16}/></button>
-                                                </div>
-                                            ))}
-                                            {goals.length < 5 && (
-                                                <div className="flex gap-2">
-                                                    <input 
-                                                        value={tempGoal}
-                                                        onChange={(e) => setTempGoal(e.target.value)}
-                                                        onKeyDown={(e) => { if(e.key === 'Enter') { addGoal(tempGoal); setTempGoal(''); } }}
-                                                        placeholder="Ajouter un objectif..."
-                                                        className="flex-1 p-3 rounded-xl border border-[var(--border-color)] text-sm outline-none focus:border-amber-400 bg-[var(--input-bg)] text-[var(--text-heading)]"
-                                                    />
-                                                    <button onClick={() => { addGoal(tempGoal); setTempGoal(''); }} className="bg-amber-400 text-white p-3 rounded-xl hover:bg-amber-500 transition-colors"><Plus size={18}/></button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Suggestions */}
-                                        <div className="flex flex-wrap gap-2">
-                                            {["\u00c9criture lisible", "Faire ses lacets", "Manger proprement", "Rester assis", "Moins de col\u00e8res", "Utiliser la r\u00e8gle", "S'habiller seul", "Autonomie toilettes", "Organiser son cartable", "Lire l'heure", "Se concentrer en classe", "G\u00e9rer ses \u00e9motions", "D\u00e9couper proprement", "Tenir son crayon", "Copier du tableau"].map(sug => (
-                                                <button key={sug} onClick={() => addGoal(sug)} className="px-3 py-1 bg-[var(--card-bg)] border border-amber-200/40 rounded-full text-xs font-bold text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-all">+ {sug}</button>
-                                            ))}
                                         </div>
                                     </div>
 
@@ -891,11 +981,86 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 </div>
                             )}
 
+                            {/* --- 8. GESTION DES ÉMOTIONS --- */}
+                            {section.id === 'emotions' && (
+                                <div className="space-y-4">
+                                    <div className="bg-[#faf5ff] dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/20 p-4 rounded-2xl">
+                                        <h4 className="text-xs font-bold text-purple-800 dark:text-purple-300 uppercase tracking-wider flex items-center gap-2 mb-4"><Brain size={14}/> Gestion des émotions</h4>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className={labelClass}>Temps d’écran quotidien estimé</label>
+                                                <DebouncedInput name="screenTime" value={data.screenTime || ''} onChange={(v) => handleFieldChange('screenTime', v)} className={inputClass} placeholder="Ex: 1h tablette, 30 min TV..." />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Régulation émotionnelle</label>
+                                                <DebouncedTextarea name="emotionalRegulation" value={data.emotionalRegulation || ''} onChange={(v) => handleFieldChange('emotionalRegulation', v)} className={inputClass} placeholder="Colères, frustrations, anxiété, difficulté à gérer les transitions..." rows={2} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <FamilyNextButton sectionId={section.id} />
+                                </div>
+                            )}
+
+                            {/* --- 9. OBJECTIFS PRIORITAIRES --- */}
+                            {section.id === 'goals' && (
+                                <div className="space-y-6">
+                                    <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-800/20">
+                                        <h4 className="text-sm font-bold text-amber-900 dark:text-amber-400 mb-2 flex items-center gap-2">
+                                            <Smile size={18} /> Vos objectifs prioritaires
+                                        </h4>
+                                        <p className="text-xs text-amber-800 dark:text-amber-300/80 mb-4">Quels sont les 3 à 5 problèmes que vous aimeriez résoudre en premier ?</p>
+
+                                        <div className="space-y-2 mb-4">
+                                            {goals.map((goal, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 bg-[var(--card-bg)] p-3 rounded-xl border border-amber-200/40 shadow-sm animate-in slide-in-from-left-2">
+                                                    <span className="font-bold text-amber-500 w-6">{idx + 1}.</span>
+                                                    <input
+                                                        value={goal}
+                                                        onChange={(e) => updateGoal(idx, e.target.value)}
+                                                        className="flex-1 text-sm font-bold bg-transparent text-[var(--text-heading)] border-b border-transparent focus:border-amber-300 outline-none"
+                                                    />
+                                                    <button onClick={() => removeGoal(idx)} className="text-[var(--text-disabled)] hover:text-rose-500"><Trash2 size={16}/></button>
+                                                </div>
+                                            ))}
+                                            {goals.length < 5 && (
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        value={tempGoal}
+                                                        onChange={(e) => setTempGoal(e.target.value)}
+                                                        onKeyDown={(e) => { if(e.key === 'Enter') { addGoal(tempGoal); setTempGoal(''); } }}
+                                                        placeholder="Ajouter un objectif..."
+                                                        className="flex-1 p-3 rounded-xl border border-[var(--border-color)] text-sm outline-none focus:border-amber-400 bg-[var(--input-bg)] text-[var(--text-heading)]"
+                                                    />
+                                                    <button onClick={() => { addGoal(tempGoal); setTempGoal(''); }} className="bg-amber-400 text-white p-3 rounded-xl hover:bg-amber-500 transition-colors"><Plus size={18}/></button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2">
+                                            {["Écriture lisible", "Faire ses lacets", "Manger proprement", "Rester assis", "Moins de colères", "Utiliser la règle", "S'habiller seul", "Autonomie toilettes", "Organiser son cartable", "Lire l'heure", "Se concentrer en classe", "Gérer ses émotions", "Découper proprement", "Tenir son crayon", "Copier du tableau"].map(sug => (
+                                                <button key={sug} onClick={() => addGoal(sug)} className="px-3 py-1 bg-[var(--card-bg)] border border-amber-200/40 rounded-full text-xs font-bold text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-all">+ {sug}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <FamilyNextButton sectionId={section.id} />
+                                </div>
+                            )}
+
                         </div>
                     )}
                 </div>
+                {section.id === 'reason' && (
+                    <div className="my-12 py-2 flex items-center justify-center">
+                        <div className="h-px w-full max-w-xl bg-[var(--border-color)]" />
+                    </div>
+                )}
+                </React.Fragment>
             );
         })}
     </div>
   );
 };
+
+
+

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { supabase, ensureFreshSession } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { StorageService } from '../services/storage';
@@ -7,6 +8,21 @@ import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const FORCE_PASSWORD_REAUTH_DAYS = Number(import.meta.env.VITE_FORCE_PASSWORD_REAUTH_DAYS ?? 2);
+const FORCE_PASSWORD_REAUTH_MS = Number.isFinite(FORCE_PASSWORD_REAUTH_DAYS) && FORCE_PASSWORD_REAUTH_DAYS > 0
+    ? FORCE_PASSWORD_REAUTH_DAYS * 24 * 60 * 60 * 1000
+    : 0;
+
+const shouldForcePasswordReauth = (session: Session | null): boolean => {
+    if (!session?.user || FORCE_PASSWORD_REAUTH_MS <= 0) return false;
+    const lastSignInRaw = session.user.last_sign_in_at;
+    if (!lastSignInRaw) return false;
+
+    const lastSignInMs = Date.parse(lastSignInRaw);
+    if (!Number.isFinite(lastSignInMs)) return false;
+
+    return (Date.now() - lastSignInMs) >= FORCE_PASSWORD_REAUTH_MS;
+};
 
 type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'network_error' | 'error';
 
@@ -156,6 +172,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!session?.user) {
                 Logger.info('AUTH', 'No session found — unauthenticated');
                 setIsLoading(false);
+                return;
+            }
+
+            if (shouldForcePasswordReauth(session)) {
+                Logger.info('AUTH', `Password reauth required (>${FORCE_PASSWORD_REAUTH_DAYS} days since last sign-in)`);
+                try {
+                    await supabase.auth.signOut();
+                } catch (e) {
+                    Logger.warn('AUTH', 'Forced periodic sign-out failed', e);
+                }
+                if (!cancelled) {
+                    setAuthState('unauthenticated');
+                    setIsLoading(false);
+                }
                 return;
             }
 

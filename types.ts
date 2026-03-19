@@ -17,6 +17,8 @@ export interface Sibling {
     relation: string;
     livesWithChild: boolean;
     livesPartially?: boolean;
+    residenceStatus?: 'with' | 'partial' | 'away' | 'other';
+    residenceOther?: string;
 }
 
 export interface Patient {
@@ -30,6 +32,12 @@ export interface Patient {
     parentNames: string;
     parentPhone: string;
     parentEmail: string;
+    parent1Name?: string;
+    parent1Phone?: string;
+    parent1Email?: string;
+    parent2Name?: string;
+    parent2Phone?: string;
+    parent2Email?: string;
     guardArrangement: string;
     guardMode?: string;
     guardExclusiveOther?: string;
@@ -37,6 +45,8 @@ export interface Patient {
     school: string;
     classLevel: string;
     schoolType?: string;
+    schoolTrack?: string;
+    schoolRepeatYear?: string;
     teacher: string;
     carePlan: string;
     avs: string;
@@ -70,8 +80,17 @@ export interface Patient {
     continence: string;
     timeSpace: string;
     schoolAttention: string;
+    schoolFavoriteSubjects?: string;
+    schoolDislikedSubjects?: string;
+    classroomBehavior?: string;
+    schoolOrganization?: string;
+    schoolMemory?: string;
+    schoolParticipation?: string;
+    peerRelations?: string;
+    homeworkHabits?: string;
     socialBehavior?: string;
     writingIssues: string;
+    writingDifficultyTags?: string;
     writingPain?: string;
     toolUsage: string;
     toolScissors?: string;

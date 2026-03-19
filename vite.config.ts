@@ -4,6 +4,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const env = globalThis.process?.env ?? {};
+const appRelease =
+  env.VERCEL_GIT_COMMIT_SHA ||
+  env.GITHUB_SHA ||
+  env.COMMIT_SHA ||
+  env.VITE_SENTRY_RELEASE ||
+  'local';
 
 export default defineConfig({
   server: {
@@ -11,6 +18,9 @@ export default defineConfig({
     host: '0.0.0.0',
   },
   plugins: [react()],
+  define: {
+    __APP_RELEASE__: JSON.stringify(appRelease),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
