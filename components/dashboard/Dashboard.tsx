@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { PendingQuestionnaire, PatientDashboardPreviewMeta, PatientFile, PatientFollowup, UserProfile } from '../../types';
+import type { DashboardDraftMeta, PendingQuestionnaire, PatientDashboardPreviewMeta, PatientFile, PatientFollowup, UserProfile } from '../../types';
 import {
   AlertCircle,
   Archive,
@@ -35,7 +35,7 @@ interface Props {
   onShowPricing: () => void;
   onProcessPending?: (q: PendingQuestionnaire) => void;
   processingQueueId?: string | null;
-  draftsIndex?: Record<string, string>;
+  draftsIndex?: Record<string, DashboardDraftMeta>;
   onResumeDraft?: (patientId: string) => void;
   isDemoMode?: boolean;
   onCopyLink: (q: PendingQuestionnaire) => void;
@@ -68,56 +68,32 @@ const fullDate = (value: string | null | undefined) => {
   return new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-const clampPercent = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const REEVALUATION_TARGET_DAYS = 180;
-const REEVALUATION_MAX_DAYS = 365;
+const mapDraftStepToProgress = (step: number | null | undefined): number | null => {
+  if (typeof step !== 'number') return null;
+  if (step <= 1) return 20;
+  if (step === 2) return 40;
+  if (step === 3) return 60;
+  return 80;
+};
 
-interface ReevaluationProgress {
-  progressPercent: number;
-  label: string;
-  targetDateLabel: string;
-  badgeLabel: string;
-  statusTone: PatientDashboardPreviewMeta['workflow']['statusTone'];
-}
+const mapWorkflowToProgress = (workflow: PatientDashboardPreviewMeta['workflow']): number => {
+  if (workflow.progressLabel === 'tests_saisis') return 40;
+  return 20;
+};
 
-const buildReevaluationProgress = (lastReportDate: string | null | undefined): ReevaluationProgress | null => {
-  if (!lastReportDate) return null;
-  const referenceDate = new Date(lastReportDate);
-  if (Number.isNaN(referenceDate.getTime())) return null;
-  const targetDate = new Date(referenceDate.getTime() + REEVALUATION_TARGET_DAYS * DAY_IN_MS);
-  const targetDateLabel = targetDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+const buildInProgressState = (
+  previewMeta: PatientDashboardPreviewMeta,
+  draftStep: number | null | undefined,
+): { progressPercent: number; label: string; tone: PatientDashboardPreviewMeta['workflow']['statusTone'] } => {
+  const stepProgress = mapDraftStepToProgress(draftStep);
+  if (stepProgress === 20) return { progressPercent: 20, label: 'Informations administratives en cours', tone: 'warning' };
+  if (stepProgress === 40) return { progressPercent: 40, label: 'Tests en cours', tone: 'neutral' };
+  if (stepProgress === 60) return { progressPercent: 60, label: 'Synthèse en cours', tone: 'neutral' };
+  if (stepProgress === 80) return { progressPercent: 80, label: 'Validation en cours', tone: 'neutral' };
 
-  const daysSince = Math.max(0, Math.floor((Date.now() - referenceDate.getTime()) / DAY_IN_MS));
-  if (daysSince < REEVALUATION_TARGET_DAYS) {
-    const monthsLeft = Math.max(1, Math.ceil((REEVALUATION_TARGET_DAYS - daysSince) / 30));
-    return {
-      progressPercent: clampPercent((daysSince / REEVALUATION_TARGET_DAYS) * 100),
-      label: `Prochaine réévaluation dans ${monthsLeft} mois`,
-      targetDateLabel,
-      badgeLabel: 'Suivi',
-      statusTone: 'neutral',
-    };
-  }
-
-  if (daysSince < REEVALUATION_MAX_DAYS) {
-    return {
-      progressPercent: 100,
-      label: 'Fenêtre de réévaluation ouverte',
-      targetDateLabel,
-      badgeLabel: 'Réévaluation',
-      statusTone: 'warning',
-    };
-  }
-
-  const monthsLate = Math.max(1, Math.ceil((daysSince - REEVALUATION_MAX_DAYS) / 30));
-  return {
-    progressPercent: 100,
-    label: `Réévaluation en retard (${monthsLate} mois)`,
-    targetDateLabel,
-    badgeLabel: 'Réévaluation',
-    statusTone: 'warning',
-  };
+  const fallbackProgress = mapWorkflowToProgress(previewMeta.workflow);
+  if (fallbackProgress === 40) return { progressPercent: 40, label: 'Tests en cours', tone: 'neutral' };
+  return { progressPercent: 20, label: 'Bilan initial en cours', tone: 'warning' };
 };
 
 const workflowLabelMap: Record<PatientDashboardPreviewMeta['workflow']['progressLabel'], string> = {
@@ -175,63 +151,27 @@ const buildSyntheticFollowup = (file: PatientFile): PatientFollowup | null => {
   };
 };
 
-const buildFollowupProgress = (followup: PatientFollowup): ReevaluationProgress => {
+const buildFollowupStatusLabel = (followup: PatientFollowup): string => {
   const dueDateLabel = new Date(followup.dueAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   if (followup.status === 'due') {
-    return {
-      progressPercent: 100,
-      label: 'Fenêtre de réévaluation ouverte',
-      targetDateLabel: dueDateLabel,
-      badgeLabel: 'Réévaluation',
-      statusTone: 'warning',
-    };
+    return 'Fenêtre de réévaluation ouverte';
   }
   if (followup.status === 'overdue') {
-    return {
-      progressPercent: 100,
-      label: 'Réévaluation en retard',
-      targetDateLabel: dueDateLabel,
-      badgeLabel: 'Retard',
-      statusTone: 'warning',
-    };
+    return 'Réévaluation en retard';
   }
   if (followup.status === 'scheduled') {
-    return {
-      progressPercent: 80,
-      label: `Réévaluation planifiée (${dueDateLabel})`,
-      targetDateLabel: dueDateLabel,
-      badgeLabel: 'Planifié',
-      statusTone: 'neutral',
-    };
+    return `Réévaluation planifiée (${dueDateLabel})`;
   }
   if (followup.status === 'snoozed') {
     const snoozedDateLabel = followup.snoozedUntil
       ? new Date(followup.snoozedUntil).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
       : dueDateLabel;
-    return {
-      progressPercent: 70,
-      label: `Rappel reporté jusqu'au ${snoozedDateLabel}`,
-      targetDateLabel: dueDateLabel,
-      badgeLabel: 'Reporté',
-      statusTone: 'neutral',
-    };
+    return `Rappel reporté jusqu'au ${snoozedDateLabel}`;
   }
   if (followup.status === 'completed') {
-    return {
-      progressPercent: 100,
-      label: 'Rappel complété',
-      targetDateLabel: dueDateLabel,
-      badgeLabel: 'Complété',
-      statusTone: 'success',
-    };
+    return 'Rappel complété';
   }
-  return {
-    progressPercent: 45,
-    label: `Prochain rappel le ${dueDateLabel}`,
-    targetDateLabel: dueDateLabel,
-    badgeLabel: 'Suivi',
-    statusTone: 'neutral',
-  };
+  return `Prochain rappel le ${dueDateLabel}`;
 };
 
 const isEditableTarget = (target: EventTarget | null) => {
@@ -366,15 +306,17 @@ export const Dashboard: React.FC<Props> = ({
 
   const urgencyItems = useMemo<UrgencyItem[]>(() => {
     const drafts: UrgencyItem[] = Object.entries(draftsIndex)
-      .map(([patientId, draftDate]) => {
+      .map(([patientId, draftMeta]) => {
         const file = patientById.get(patientId);
         if (!file || file.archived) return null;
+        const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
+        if (previewMeta.flags.hasInitialReport) return null;
         return {
           id: `draft-${patientId}`,
           kind: 'draft',
           title: `${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Brouillon sans nom',
           subtitle: 'Brouillon à reprendre',
-          date: draftDate,
+          date: draftMeta.updatedAt,
           actionHint: 'Reprendre',
           onClick: () => onResumeDraft && onResumeDraft(patientId),
         };
@@ -747,19 +689,18 @@ export const Dashboard: React.FC<Props> = ({
           <div className="space-y-3">
             {filteredFiles.map((file) => {
               const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
-              const hasDraft = Boolean(draftsIndex[file.id]);
+              const draftMeta = draftsIndex[file.id];
+              const hasDraft = Boolean(draftMeta);
               const activityDate = previewMeta.metrics.lastFormalReportDate || previewMeta.metrics.lastAssessmentDate || file.lastInteraction;
-              const followup = !file.archived && !hasDraft ? buildSyntheticFollowup(file) : null;
-              const followUpProgress = followup
-                ? buildFollowupProgress(followup)
-                : !file.archived && !hasDraft && previewMeta.flags.hasInitialReport
-                  ? buildReevaluationProgress(previewMeta.metrics.lastFormalReportDate || file.lastInteraction)
-                  : null;
-              const tone = getToneClasses(followUpProgress?.statusTone || previewMeta.workflow.statusTone);
-              const progressPercent = followUpProgress ? followUpProgress.progressPercent : previewMeta.workflow.progressPercent;
-              const progressLabel = followUpProgress ? followUpProgress.label : workflowLabelMap[previewMeta.workflow.progressLabel];
-              const followUpTargetDateLabel = followUpProgress ? followUpProgress.targetDateLabel : null;
-              const statusBadgeLabel = hasDraft ? 'Brouillon' : followUpProgress ? followUpProgress.badgeLabel : nextActionLabelMap[previewMeta.workflow.nextAction];
+              const isInitialCompleted = previewMeta.flags.hasInitialReport;
+              const followup = !file.archived ? buildSyntheticFollowup(file) : null;
+              const followUpLabel = followup ? buildFollowupStatusLabel(followup) : null;
+              const inProgressState = buildInProgressState(previewMeta, draftMeta?.step ?? null);
+              const showProgress = !file.archived && !isInitialCompleted;
+              const tone = getToneClasses(showProgress ? inProgressState.tone : previewMeta.workflow.statusTone);
+              const progressPercent = inProgressState.progressPercent;
+              const progressLabel = inProgressState.label;
+              const statusBadgeLabel = isInitialCompleted ? null : hasDraft ? 'Brouillon' : 'En cours';
 
               return (
                 <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-[var(--card-bg)] p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-[var(--border-color)] opacity-80 hover:opacity-100' : 'border-[var(--border-color)] hover:border-[#E07A5F]/30'}`}>
@@ -769,13 +710,21 @@ export const Dashboard: React.FC<Props> = ({
                       <div className="min-w-0"><h3 className="truncate text-base font-bold text-[var(--text-heading)] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
                     </div>
                     <div>
-                      <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-[var(--progress-bg)]"><div className={`h-full ${tone.progress}`} style={{ width: `${progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{progressPercent}%</span></div>
-                      <p className="text-[11px] text-[var(--text-secondary)]">{progressLabel}</p>
-                      {followUpTargetDateLabel && <p className="mt-0.5 text-[10px] text-[var(--text-secondary)]">Cible: {followUpTargetDateLabel}</p>}
+                      {showProgress ? (
+                        <>
+                          <div className="mb-1 flex items-center gap-2"><div className="h-1.5 w-28 overflow-hidden rounded-full bg-[var(--progress-bg)]"><div className={`h-full ${tone.progress}`} style={{ width: `${progressPercent}%` }} /></div><span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{progressPercent}%</span></div>
+                          <p className="text-[11px] text-[var(--text-secondary)]">{progressLabel}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-[var(--text-main)]">Dossier patient actif</p>
+                          {followUpLabel && <p className="mt-0.5 text-[10px] text-[var(--text-secondary)]">{followUpLabel}</p>}
+                        </>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">Dernière modif.</p><p className="text-xs font-bold text-[var(--text-heading)]">{fullDate(activityDate)}</p></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-main)]' : tone.badge}`}>{statusBadgeLabel}</span></div>
+                    <div className="flex items-center justify-between gap-3 lg:justify-start"><div><p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">Dernière modif.</p><p className="text-xs font-bold text-[var(--text-heading)]">{fullDate(activityDate)}</p></div>{statusBadgeLabel && <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${hasDraft ? 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-main)]' : tone.badge}`}>{statusBadgeLabel}</span>}</div>
                     <div className="flex items-center justify-end gap-2">
-                      {hasDraft && !file.archived && onResumeDraft ? (
+                      {hasDraft && !file.archived && !isInitialCompleted && onResumeDraft ? (
                         <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre</button>
                       ) : (
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)] transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>

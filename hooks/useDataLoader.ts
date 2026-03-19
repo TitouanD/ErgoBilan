@@ -8,7 +8,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { StorageService } from '../services/storage';
-import type { PatientFile, PendingQuestionnaire, PractitionerProfile } from '../types';
+import type { DashboardDraftMeta, PatientFile, PendingQuestionnaire, PractitionerProfile } from '../types';
 import { Logger } from '../utils/logger';
 
 interface UseDataLoaderParams {
@@ -32,7 +32,7 @@ export const useDataLoader = ({
 }: UseDataLoaderParams) => {
   const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
   const [pendingQuestionnaires, setPendingQuestionnaires] = useState<PendingQuestionnaire[]>([]);
-  const [draftsIndex, setDraftsIndex] = useState<Record<string, string>>({});
+  const [draftsIndex, setDraftsIndex] = useState<Record<string, DashboardDraftMeta>>({});
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasMorePatients, setHasMorePatients] = useState(false);
   const [isLoadingMorePatients, setIsLoadingMorePatients] = useState(false);
@@ -91,7 +91,8 @@ export const useDataLoader = ({
 
   const loadDrafts = useCallback(async () => {
     if (!(sessionKey && orgKey && authState === 'authenticated') && !isDemoMode) return;
-    const draftsMap = await StorageService.getDraftsMetadata();
+    if (!sessionKey) return;
+    const draftsMap = await StorageService.getDraftsMetadata(sessionKey);
     setDraftsIndex(draftsMap);
   }, [sessionKey, orgKey, authState, isDemoMode]);
 

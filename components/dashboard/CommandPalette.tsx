@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { PatientFile } from '../../types';
+import type { DashboardDraftMeta, PatientFile } from '../../types';
 import { Command, FilePenLine, Plus, Search, UserRound } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   patientFiles: PatientFile[];
-  draftsIndex: Record<string, string>;
+  draftsIndex: Record<string, DashboardDraftMeta>;
   onOpenPatient: (patientId: string) => void;
   onOpenNewPatientChoice: () => void;
   onResumeDraft?: (patientId: string) => void;
@@ -41,8 +41,8 @@ export const CommandPalette: React.FC<Props> = ({
   }, [isOpen]);
 
   const latestDraftPatientId = useMemo(() => {
-    const ranked = (Object.entries(draftsIndex) as Array<[string, string]>)
-      .sort((a, b) => new Date(b[1]).getTime() - new Date(a[1]).getTime())
+    const ranked = Object.entries(draftsIndex)
+      .sort((a, b) => new Date(b[1].updatedAt).getTime() - new Date(a[1].updatedAt).getTime())
       .map(([patientId]) => patientId);
     return ranked[0];
   }, [draftsIndex]);

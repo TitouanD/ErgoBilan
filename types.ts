@@ -464,6 +464,11 @@ export interface DraftPayload {
     step?: number;
 }
 
+export interface DashboardDraftMeta {
+    updatedAt: string;
+    step: number | null;
+}
+
 /** Row from the admin_candidates_promotion SQL view */
 export interface CandidateRow {
     id: string;
