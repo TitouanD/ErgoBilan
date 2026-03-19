@@ -214,7 +214,7 @@ const parseSubtestOrderFromName = (name: string): number | undefined => {
     if (Number.isFinite(n)) return n;
   }
 
-  const leadingNumber = value.match(/^(\d{1,3})[\).\-\s]/);
+  const leadingNumber = value.match(/^(\d{1,3})[).\-\s]/);
   if (leadingNumber) {
     const n = Number(leadingNumber[1]);
     if (Number.isFinite(n)) return n;

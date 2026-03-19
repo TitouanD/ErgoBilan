@@ -34,7 +34,7 @@ function extractBgColor(styleAttr: string): string | undefined {
 type PdfStyle = Record<string, unknown>;
 
 /** Recursively render a DOM node into a react-pdf Text subtree (inline content) */
-function renderInline(node: ChildNode, fontFamily: string, pathPrefix = ''): React.ReactNode[] {
+function renderInline(node: Node, fontFamily: string, pathPrefix = ''): React.ReactNode[] {
     const results: React.ReactNode[] = [];
 
     if (node.nodeType === Node.TEXT_NODE) {

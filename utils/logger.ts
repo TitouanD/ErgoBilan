@@ -4,6 +4,8 @@
  * - disabled by default for production and preview builds
  */
 
+import { captureAppException } from '../services/sentryService';
+
 const logsEnabled = import.meta.env.DEV;
 
 const SCOPES = {
@@ -40,5 +42,10 @@ export const Logger = {
 
   error: (scope: LogScope, message: string, error?: unknown) => {
     print('error', scope, message, error);
+    captureAppException(error ?? new Error(message), {
+      scope,
+      message,
+      source: 'Logger.error',
+    });
   },
 };

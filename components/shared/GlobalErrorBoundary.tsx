@@ -1,6 +1,7 @@
 ﻿import React, { type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Logger } from '../../utils/logger';
+import { captureAppException } from '../../services/sentryService';
 
 interface Props {
   children?: ReactNode;
@@ -25,6 +26,11 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     Logger.error('SYSTEM', 'Uncaught Error in Component Tree', { error, componentStack: errorInfo.componentStack });
+    captureAppException(error, {
+      scope: 'SYSTEM',
+      source: 'GlobalErrorBoundary',
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   private handleReload = () => {

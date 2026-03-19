@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { captureEdgeException } from "../_shared/sentry.ts";
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -741,6 +742,11 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (_err) {
+    await captureEdgeException(_err, {
+      functionName: 'generate',
+      tags: { task: currentTask || 'unknown' },
+      extra: { userId, generationId },
+    });
     if (!finalized && (currentTask === 'report_bio' || currentTask === 'report_diagnostic')) {
       await safeFinalize(adminSupabase, generationId, userId, false, 'INTERNAL_ERROR');
       finalized = true;
