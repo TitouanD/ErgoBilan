@@ -271,13 +271,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       });
   };
 
-  const getSiblingResidence = (sib: Sibling): 'with' | 'partial' | 'away' => {
+  const getSiblingResidence = (sib: Sibling): 'with' | 'partial' | 'away' | 'other' => {
+      if (sib.residenceStatus === 'other') return 'other';
       if (sib.residenceStatus) return sib.residenceStatus;
       if (sib.livesPartially) return 'partial';
       return sib.livesWithChild ? 'with' : 'away';
   };
 
-  const setSiblingResidence = (idx: number, status: 'with' | 'partial' | 'away') => {
+  const setSiblingResidence = (idx: number, status: 'with' | 'partial' | 'away' | 'other') => {
       const newSiblings = [...(data.siblings || [])];
       const livesWithChild = status === 'with';
       const livesPartially = status === 'partial';
@@ -286,6 +287,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           residenceStatus: status,
           livesWithChild,
           livesPartially,
+          residenceOther: status === 'other' ? (newSiblings[idx].residenceOther || '') : undefined,
       };
       onChange({ siblings: newSiblings });
   };
@@ -342,13 +344,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
         {SECTIONS_CONFIG.map((section) => {
             const isOpen = openSections[section.id];
+            const isAdministrativeSection = ['identity', 'parents', 'medical', 'reason'].includes(section.id);
             
             return (
                 <React.Fragment key={section.id}>
-                <div id={`section-${section.id}`} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isOpen ? 'shadow-md border-[#E07A5F]/30 bg-[var(--card-bg)]' : 'shadow-sm hover:shadow border-[var(--border-color)] bg-[var(--card-bg)]'}`}>
+                <div id={`section-${section.id}`} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isAdministrativeSection ? (isOpen ? 'shadow-md border-[#E07A5F]/40' : 'shadow-sm hover:shadow border-[#E07A5F]/25') : (isOpen ? 'shadow-md border-[#E07A5F]/30' : 'shadow-sm hover:shadow border-[var(--border-color)]')} ${isAdministrativeSection ? 'bg-[var(--hover-bg)]' : 'bg-[var(--card-bg)]'}`}>
                     <button 
                         onClick={() => toggleSection(section.id)}
-                        className={`w-full flex items-center justify-between p-5 transition-colors ${isOpen ? 'bg-[var(--card-bg)]' : 'bg-[var(--card-bg-raised)]'}`}
+                        className={`w-full flex items-center justify-between p-5 transition-colors ${isAdministrativeSection ? 'bg-[var(--card-bg-raised)]' : isOpen ? 'bg-[var(--card-bg)]' : 'bg-[var(--card-bg-raised)]'}`}
                     >
                         <div className="flex items-center gap-4">
                             <div className={`p-2.5 rounded-xl ${isOpen ? 'bg-[#fff5f2] dark:bg-[#E07A5F]/15 text-[#E07A5F]' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'}`}>
@@ -521,25 +524,29 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         <option value="Demi-sœur">Demi-sœur</option>
                                                     </select>
                                                     
-                                                    <div className="flex rounded-lg border border-[var(--border-color)] overflow-hidden bg-[var(--card-bg)]">
-                                                        {[
-                                                            { key: 'with' as const, label: 'Avec', title: 'Vit au domicile' },
-                                                            { key: 'partial' as const, label: 'Partiel', title: 'Vit partiellement au domicile' },
-                                                            { key: 'away' as const, label: 'Non', title: 'Ne vit pas au domicile' },
-                                                        ].map((option) => {
-                                                            const active = getSiblingResidence(sib) === option.key;
-                                                            return (
-                                                                <button
-                                                                    key={option.key}
-                                                                    onClick={() => setSiblingResidence(idx, option.key)}
-                                                                    title={option.title}
-                                                                    className={`px-2 py-1.5 text-[10px] font-bold uppercase transition-all border-r last:border-r-0 ${active ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--hover-bg)]'}`}
-                                                                >
-                                                                    {option.label}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
+                                                    <select 
+                                                        value={getSiblingResidence(sib)}
+                                                        onChange={(e) => setSiblingResidence(idx, e.target.value as 'with' | 'partial' | 'away' | 'other')}
+                                                        className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                                                    >
+                                                        <option value="with">Vit au domicile</option>
+                                                        <option value="partial">Vit partiellement</option>
+                                                        <option value="away">Ne vit pas</option>
+                                                        <option value="other">Autre</option>
+                                                    </select>
+                                                    {getSiblingResidence(sib) === 'other' && (
+                                                        <input
+                                                            type="text"
+                                                            value={sib.residenceOther || ''}
+                                                            onChange={(e) => {
+                                                                const newSiblings = [...(data.siblings || [])];
+                                                                newSiblings[idx] = { ...newSiblings[idx], residenceOther: e.target.value };
+                                                                onChange({ siblings: newSiblings });
+                                                            }}
+                                                            placeholder="Préciser..."
+                                                            className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                                                        />
+                                                    )}
 
                                                     <button onClick={() => removeSibling(idx)} className="p-2 text-[var(--text-disabled)] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"><Trash2 size={16}/></button>
                                                 </div>
@@ -1044,7 +1051,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                     )}
                 </div>
                 {section.id === 'reason' && (
-                    <div className="my-2 flex items-center justify-center">
+                    <div className="my-12 py-2 flex items-center justify-center">
                         <div className="h-px w-full max-w-xl bg-[var(--border-color)]" />
                     </div>
                 )}
@@ -1054,3 +1061,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
     </div>
   );
 };
+
+
+

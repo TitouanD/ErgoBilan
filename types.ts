@@ -17,7 +17,8 @@ export interface Sibling {
     relation: string;
     livesWithChild: boolean;
     livesPartially?: boolean;
-    residenceStatus?: 'with' | 'partial' | 'away';
+    residenceStatus?: 'with' | 'partial' | 'away' | 'other';
+    residenceOther?: string;
 }
 
 export interface Patient {

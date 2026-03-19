@@ -15,6 +15,7 @@ import type {
   RawSection,
 } from '../data/testCatalog';
 import { Logger } from '../utils/logger';
+import { normalizeSubtestName, normalizeTestName } from '../utils';
 
 interface CatalogContextType {
   catalog: CategoryDef[];
@@ -76,7 +77,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         let subError: any = null;
         ({ data: subtestsData, error: subError } = await supabase
           .from('view_unified_subtests')
-          .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone, always_show_raw, raw_display_decimals'));
+          .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone, always_show_raw, raw_display_decimals, display_group_order, display_order'));
 
         if (subError && String(subError.code || '') === '42703') {
           // Backward-compat: allow older DB schema before new columns.
@@ -169,6 +170,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const qualitativeLayout = typeof raw.qualitativeLayout === 'string' ? (raw.qualitativeLayout as 'radio' | 'select' | 'toggle') : undefined;
           const groupKey = typeof raw.groupKey === 'string' && raw.groupKey.trim() ? raw.groupKey.trim() : undefined;
           const groupHeaderLabel = typeof raw.groupHeaderLabel === 'string' && raw.groupHeaderLabel.trim() ? raw.groupHeaderLabel.trim() : undefined;
+          const groupOrder = typeof raw.groupOrder === 'number' && Number.isFinite(raw.groupOrder) ? raw.groupOrder : undefined;
+          const orderIndex = typeof raw.orderIndex === 'number' && Number.isFinite(raw.orderIndex) ? raw.orderIndex : undefined;
 
           if (
             (!options || options.length === 0) &&
@@ -183,7 +186,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             !rawSections &&
             !qualitativeLayout &&
             !groupKey &&
-            !groupHeaderLabel
+            !groupHeaderLabel &&
+            groupOrder === undefined &&
+            orderIndex === undefined
           ) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
@@ -199,6 +204,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...(qualitativeLayout ? { qualitativeLayout } : {}),
             ...(groupKey ? { groupKey } : {}),
             ...(groupHeaderLabel ? { groupHeaderLabel } : {}),
+            ...(groupOrder !== undefined ? { groupOrder } : {}),
+            ...(orderIndex !== undefined ? { orderIndex } : {}),
           };
         };
 
@@ -211,6 +218,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         (subtestsData || []).forEach((s: any) => {
           let inputModel = normalizeInputModel(s.input_model);
           const inputConfig = normalizeInputConfig(s.input_config);
+          const displayGroupOrder = Number.isFinite(s.display_group_order) ? Number(s.display_group_order) : undefined;
+          const displayOrder = Number.isFinite(s.display_order) ? Number(s.display_order) : undefined;
           if (hasNonEmptyInputConfig(s.input_config) && !inputConfig) {
             Logger.warn('DB', 'Invalid input_config for subtest, applying safe fallback', { subtestId: s.id, testId: s.test_id });
           }
@@ -222,6 +231,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const sub: SubtestDef = {
             id: s.id,
             name: s.name,
+            displayGroupOrder,
+            displayOrder,
             unit: s.unit || 'pts',
             scoreType: normalizeScoreType(s.score_type),
             lowerIsBetter: false,
@@ -253,6 +264,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
 
           const testSubtests: SubtestDef[] = subtestsByTestId[row.id] || [];
+          if (testSubtests.length === 0) {
+            return;
+          }
           const testDef: TestDef = {
             id: row.id,
             name: row.label,
@@ -287,6 +301,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!query.trim()) return [];
     if (!hasLoaded) return [];
     const lowerQ = query.toLowerCase().trim();
+    const normalizedQ = normalizeSubtestName(query);
+    const normalizedQTest = normalizeTestName(query);
     // Escape regex special chars so queries like 'C+1' don't throw
     const safeQ = lowerQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const wordStartRe = new RegExp('\\b' + safeQ, 'i');
@@ -296,6 +312,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (lname.startsWith(lowerQ)) return 4;
       if (wordStartRe.test(name)) return 3;
       if (lname.includes(lowerQ)) return 2;
+      const normalizedCandidate = normalizeSubtestName(name);
+      if (normalizedQ && normalizedCandidate.includes(normalizedQ)) return 2;
+      const normalizedTestCandidate = normalizeTestName(name);
+      if (normalizedQTest && normalizedTestCandidate.includes(normalizedQTest)) return 2;
       return 0;
     };
 
