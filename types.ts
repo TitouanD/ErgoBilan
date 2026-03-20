@@ -3,8 +3,10 @@ export interface ParamedicalTracking {
     id: string;
     type: string;
     name: string;
+    profession?: string;
     frequency: string;
     since: string;
+    assessmentDate?: string;
     contact: string;
     reason: string;
     endDate?: string;
@@ -66,6 +68,8 @@ export interface Patient {
     developmentLanguage: string;
     walkingAge?: string;
     crawling?: string;
+    crawlingFourPattes?: string;
+    crawlingRamper?: string;
     cleanliness?: string;
     languageStatus?: string;
     sleep?: string;
@@ -74,11 +78,22 @@ export interface Patient {
     meals: string;
     eatingHabits?: string;
     dressing: string;
+    dressingAutonomy?: string;
     clothingButtons?: string;
     clothingLaces?: string;
     clothingZippers?: string;
+    dressingObservations?: string;
     continence: string;
+    hygieneTeeth?: string;
+    hygieneHands?: string;
+    hygieneBath?: string;
+    hygieneFace?: string;
+    hygieneHair?: string;
+    hygieneContinenceStatus?: string;
+    hygieneObservations?: string;
     timeSpace: string;
+    timeSpaceClockReading?: string;
+    timeSpaceObservations?: string;
     schoolAttention: string;
     schoolFavoriteSubjects?: string;
     schoolDislikedSubjects?: string;
@@ -105,6 +120,10 @@ export interface Patient {
     interviewNotes?: string;
     screenTime?: string;
     emotionalRegulation?: string;
+    emotionalGlobalTags?: string;
+    emotionalReactionTags?: string;
+    emotionalNotes?: string;
+    prescribingDoctorProfession?: string;
     organizationId?: string;
 }
 

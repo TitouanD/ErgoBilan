@@ -21,7 +21,7 @@ const SECTIONS_CONFIG: { id: SectionKey; title: string; icon: any }[] = [
     { id: 'dev', title: "Développement", icon: Baby },
     { id: 'daily', title: "Vie quotidienne", icon: Coffee },
     { id: 'school', title: "Vie scolaire", icon: GraduationCap },
-    { id: 'emotions', title: "Gestion des émotions", icon: Brain },
+    { id: 'emotions', title: "Gestion des émotions et interactions sociales", icon: Brain },
     { id: 'goals', title: "Vos objectifs prioritaires", icon: Smile },
 ];
 
@@ -31,6 +31,22 @@ const SCHOOL_LEVELS = [
     "6ème", "5ème", "4ème", "3ème",
     "2nde", "1ère", "Terminale",
     "ULIS", "IME / SESSAD", "Instruction en Famille", "Autre"
+];
+
+const LANGUAGE_LINE_1 = [
+    {value: 'apparition_precoce', label: 'Apparition précoce'},
+    {value: 'apparition_standard', label: 'Apparition standard'},
+    {value: 'apparition_tardive', label: 'Apparition tardive'},
+    {value: 'absence_langage', label: 'Absence de langage'},
+];
+
+const LANGUAGE_LINE_2 = [
+    {value: 'zezaiement', label: 'Zézaiement'},
+    {value: 'echolalie', label: 'Echolalie'},
+    {value: 'begaiement', label: 'Bégaiement'},
+    {value: 'manque_du_mot', label: 'Manque du mot'},
+    {value: 'vocabulaire_limite', label: 'Vocabulaire limité'},
+    {value: 'mutisme_selectif', label: 'Mutisme sélectif'},
 ];
 
 // --- UX COMPONENTS ---
@@ -153,7 +169,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           if (data.sensory || data.sleepStatus) filled++;
           if (data.writingPain || data.writingIssues) filled++;
           if (data.continence || data.dressing) filled++;
-          if (data.emotionalRegulation || data.screenTime) filled++;
+          if (data.emotionalGlobalTags || data.emotionalReactionTags || data.emotionalNotes || data.emotionalRegulation) filled++;
           
           setProgress(Math.round((filled / total) * 100));
       }
@@ -198,8 +214,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           toggleSection(nextId, true); // Ouvre la suivante
           setTimeout(() => {
               const el = document.getElementById(`section-${nextId}`);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
+              if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  window.scrollBy({ top: -120, behavior: 'smooth' });
+              }
+          }, 450);
       }
   };
 
@@ -233,7 +252,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   const addMedicalTracking = () => {
       const newItem: ParamedicalTracking = { 
-          id: crypto.randomUUID(), type: 'Orthophoniste', name: '', frequency: '1x/semaine', since: '', contact: '', reason: '' 
+          id: crypto.randomUUID(), type: 'Orthophoniste', name: '', profession: 'Orthophoniste', frequency: '', since: '', assessmentDate: '', contact: '', reason: '' 
       };
       onChange({ medicalTracking: [...(data.medicalTracking || []), newItem] });
   };
@@ -321,7 +340,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                   onClick={() => openNextSection(sectionId)}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all ${isLast ? 'bg-emerald-500' : 'bg-[#3D405B] hover:bg-[#E07A5F]'}`}
               >
-                  {isLast ? "Terminer la saisie" : "Valider et Suivant"}
+                  {isLast ? "Valider" : "Valider et Suivant"}
                   {!isLast && <ArrowRight size={16} />}
               </button>
           </div>
@@ -462,8 +481,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <div className="space-y-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
                                                     <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable 1</h5>
                                                     <div>
-                                                        <label className={labelClass}>Nom</label>
-                                                        <DebouncedInput name="parent1Name" value={data.parent1Name || ''} onChange={(v) => syncLegacyParentFields({ parent1Name: v })} className={inputClass} placeholder="Nom du responsable 1" />
+                                                        <label className={labelClass}>Nom et Prénom</label>
+                                                        <DebouncedInput name="parent1Name" value={data.parent1Name || ''} onChange={(v) => syncLegacyParentFields({ parent1Name: v })} className={inputClass} placeholder="Nom et prénom du responsable 1" />
                                                     </div>
                                                     <div>
                                                         <label className={labelClass}>Téléphone</label>
@@ -482,10 +501,10 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 </div>
 
                                                 <div className="space-y-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
-                                                    <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable 2</h5>
+                                                    <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable 2 (optionnel)</h5>
                                                     <div>
-                                                        <label className={labelClass}>Nom</label>
-                                                        <DebouncedInput name="parent2Name" value={data.parent2Name || ''} onChange={(v) => syncLegacyParentFields({ parent2Name: v })} className={inputClass} placeholder="Nom du responsable 2" />
+                                                        <label className={labelClass}>Nom et Prénom</label>
+                                                        <DebouncedInput name="parent2Name" value={data.parent2Name || ''} onChange={(v) => syncLegacyParentFields({ parent2Name: v })} className={inputClass} placeholder="Nom et prénom du responsable 2" />
                                                     </div>
                                                     <div>
                                                         <label className={labelClass}>Téléphone</label>
@@ -646,16 +665,18 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
                                     <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] space-y-4">
                                         <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Users size={14}/> Vie scolaire et sociale</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={labelClass}>Matières préférées</label>
-                                                <DebouncedInput name="schoolFavoriteSubjects" value={data.schoolFavoriteSubjects || ''} onChange={(v) => handleFieldChange('schoolFavoriteSubjects', v)} className={inputClass} placeholder="Ex : sport, maths, arts..." />
+                                        {mode !== 'family' && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className={labelClass}>Matières préférées</label>
+                                                    <DebouncedInput name="schoolFavoriteSubjects" value={data.schoolFavoriteSubjects || ''} onChange={(v) => handleFieldChange('schoolFavoriteSubjects', v)} className={inputClass} placeholder="Ex : sport, maths, arts..." />
+                                                </div>
+                                                <div>
+                                                    <label className={labelClass}>Matières moins appréciées</label>
+                                                    <DebouncedInput name="schoolDislikedSubjects" value={data.schoolDislikedSubjects || ''} onChange={(v) => handleFieldChange('schoolDislikedSubjects', v)} className={inputClass} placeholder="Ex : dictée, géométrie..." />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className={labelClass}>Matières moins appréciées</label>
-                                                <DebouncedInput name="schoolDislikedSubjects" value={data.schoolDislikedSubjects || ''} onChange={(v) => handleFieldChange('schoolDislikedSubjects', v)} className={inputClass} placeholder="Ex : dictée, géométrie..." />
-                                            </div>
-                                        </div>
+                                        )}
                                         <div>
                                             <label className={labelClass}>Comportement en classe</label>
                                             <DebouncedInput name="classroomBehavior" value={data.classroomBehavior || ''} onChange={(v) => handleFieldChange('classroomBehavior', v)} className={inputClass} placeholder="Calme, impulsif, opposition, agitation..." />
@@ -691,15 +712,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             <ChipGroup options={[{value: 'Droitier', label: 'Droitier'}, {value: 'Gaucher', label: 'Gaucher'}, {value: 'Indeterminé', label: 'Non latéralisé'}]} value={data.handDominance} onChange={(v) => handleFieldChange('handDominance', v)} />
                                         </div>
                                         <div>
-                                            <label className={labelClass}>Difficultés d'écriture typiques (plusieurs choix possibles)</label>
+                                            <label className={labelClass}>Observations</label>
                                             <ChipGroup
                                                 options={[
                                                     {value: 'orthographe', label: "Fautes d'orthographe"},
-                                                    {value: 'lisibilite', label: 'Lisibilité des écrits'},
-                                                    {value: 'miroir', label: 'Lettres miroir'},
-                                                    {value: 'douleur', label: 'Douleur'},
-                                                    {value: 'posture', label: 'Mauvaise posture'},
+                                                    {value: 'miroir', label: 'Lettres/chiffres en miroir'},
+                                                    {value: 'lisibilite', label: 'Peu de lisibilité des écrits'},
                                                     {value: 'lenteur', label: 'Lenteur'},
+                                                    {value: 'prise_crayon_atypique', label: 'Prise du crayon atypique'},
+                                                    {value: 'sauts_lignes', label: 'Sauts de lignes'},
                                                 ]}
                                                 value={data.writingDifficultyTags}
                                                 onChange={(v) => handleFieldChange('writingDifficultyTags', v)}
@@ -707,19 +728,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             />
                                         </div>
                                         <div>
-                                            <label className={labelClass}>Difficultés d'écriture (remarques)</label>
-                                            <DebouncedTextarea name="writingIssues" value={data.writingIssues || ''} onChange={(v) => handleFieldChange('writingIssues', v)} className={inputClass} placeholder="Préciser les difficultés observées en écriture..." rows={2} />
-                                        </div>
-                                        <div>
-                                            <label className={labelClass}>Douleur en écrivant ?</label>
-                                            <ChipGroup options={[{value: 'non', label: 'Jamais'}, {value: 'oui_long', label: 'Sur longues tâches'}, {value: 'oui_vite', label: 'Au bout de 5 min'}, {value: 'oui_constante', label: 'Immédiate'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
+                                            <label className={labelClass}>Douleur lors des écrits</label>
+                                            <ChipGroup options={[{value: 'oui_constante', label: 'Immédiate'}, {value: 'oui_vite', label: 'Au bout de 5 mins'}, {value: 'oui_long', label: 'Sur de longues tâches'}, {value: 'non', label: 'Jamais'}]} value={data.writingPain} onChange={(v) => handleFieldChange('writingPain', v)} />
                                         </div>
                                         <div>
                                             <label className={labelClass}>Utilisation des outils scolaires</label>
                                             <DebouncedTextarea name="toolUsage" value={data.toolUsage || ''} onChange={(v) => handleFieldChange('toolUsage', v)} className={inputClass} placeholder="Règle, gomme, compas, ciseaux, trousse..." rows={2} />
                                         </div>
                                         <div>
-                                            <label className={labelClass}>Autres remarques</label>
+                                            <label className={labelClass}>Précisions</label>
                                             <DebouncedTextarea name="writingOther" value={data.writingOther || ''} onChange={(v) => handleFieldChange('writingOther', v)} className={inputClass} rows={2} placeholder="Tout autre élément relatif à l'écriture ou aux outils scolaires..." />
                                         </div>
                                     </div>
@@ -735,8 +752,10 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     {/* HAUT DE PAGE 3 PDF */}
                                     <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--border-color)] mb-4 space-y-4">
                                         <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Stethoscope size={14}/> Cadre Médical</h4>
-                                        <div><label className={labelClass}>Médecin prescripteur</label><DebouncedInput name="prescribingDoctor" value={data.prescribingDoctor || ''} onChange={(v) => handleFieldChange('prescribingDoctor', v)} className={inputClass} placeholder="Nom du médecin prescripteur" /></div>
-                                        <div><label className={labelClass}>Médecin traitant</label><DebouncedInput name="treatingDoctor" value={data.treatingDoctor || ''} onChange={(v) => handleFieldChange('treatingDoctor', v)} className={inputClass} placeholder="Nom du médecin traitant" /></div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className={labelClass}>Médecin prescripteur</label><DebouncedInput name="prescribingDoctor" value={data.prescribingDoctor || ''} onChange={(v) => handleFieldChange('prescribingDoctor', v)} className={inputClass} placeholder="Nom et prénom" /></div>
+                                            <div><label className={labelClass}>Profession</label><DebouncedInput name="prescribingDoctorProfession" value={data.prescribingDoctorProfession || ''} onChange={(v) => handleFieldChange('prescribingDoctorProfession', v)} className={inputClass} placeholder="Profession" /></div>
+                                        </div>
                                         <div><label className={labelClass}>Diagnostics médicaux</label><DebouncedInput name="medicalDiagnosis" value={data.medicalDiagnosis || ''} onChange={(v) => handleFieldChange('medicalDiagnosis', v)} className={inputClass} placeholder="Si connu (ex: TDAH, Dys...)" /></div>
                                         <div><label className={labelClass}>Traitements en cours</label><DebouncedInput name="medicalTreatments" value={data.medicalTreatments || ''} onChange={(v) => handleFieldChange('medicalTreatments', v)} className={inputClass} placeholder="Médicaments, lunettes..." /></div>
                                     </div>
@@ -745,51 +764,78 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-[#f0fdf4] dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/20 p-4 rounded-2xl">
                                         <div className="flex justify-between items-center mb-4">
                                             <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-2"><Activity size={14}/> Suivi Extérieur</h4>
-                                            <button onClick={addMedicalTracking} className="text-[10px] bg-[var(--card-bg)] text-emerald-500 border border-emerald-500/30 px-3 py-1.5 rounded-full uppercase font-bold tracking-wider hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1"><Plus size={12}/> Ajouter un pro</button>
                                         </div>
                                         <div className="space-y-3">
                                             {(data.medicalTracking || []).map((track, idx) => (
-                                                <div key={track.id || idx} className="bg-[var(--card-bg)] p-3 rounded-xl border border-emerald-500/20 shadow-sm flex flex-col gap-2">
-                                                    <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
-                                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-2 w-full">
-                                                            <select value={track.type} onChange={(e) => updateMedicalTracking(idx, 'type', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold text-[var(--text-heading)] border border-[var(--input-border)] outline-none">
-                                                                <option>Orthophoniste</option><option>Psychomotricien</option><option>Psychologue</option><option>Neuropsychologue</option><option>Kiné</option><option>Orthoptiste</option><option>Ergothérapeute</option><option>Pédopsychiatre</option><option>Neuropediatre</option><option>Ophtalmologue</option><option>Podologue</option><option>ORL</option><option>Autre</option>
-                                                            </select>
-                                                            {track.type === 'Autre' ? (
-                                                                <input
-                                                                    placeholder="Préciser la profession..."
-                                                                    value={track.name}
-                                                                    onChange={(e) => updateMedicalTracking(idx, 'name', e.target.value)}
-                                                                    className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs border border-amber-200 dark:border-amber-700/40 outline-none text-[var(--text-heading)] col-span-2 md:col-span-2 font-semibold"
-                                                                    autoFocus
-                                                                />
-                                                            ) : (
-                                                            <input 
-                                                                placeholder="Nom" 
-                                                                value={track.name} 
-                                                                onChange={(e) => updateMedicalTracking(idx, 'name', e.target.value)} 
-                                                                className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" 
+                                                <div key={track.id || idx} className="bg-[var(--card-bg)] p-3 rounded-xl border border-emerald-500/20 shadow-sm flex flex-col gap-3">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className={labelClass}>Nom et prénom</label>
+                                                            <DebouncedInput
+                                                                placeholder="Nom et prénom"
+                                                                value={track.name}
+                                                                onChange={(v) => updateMedicalTracking(idx, 'name', v)}
+                                                                className={inputClass}
                                                             />
-                                                            )}
-                                                            <input placeholder="Motif..." value={track.reason || ''} onChange={(e) => updateMedicalTracking(idx, 'reason', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none md:col-span-1 text-[var(--text-heading)]" />
-                                                            <input placeholder="Fréquence" value={track.frequency} onChange={(e) => updateMedicalTracking(idx, 'frequency', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
-                                                            <input placeholder="Depuis..." value={track.since} onChange={(e) => updateMedicalTracking(idx, 'since', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
                                                         </div>
-                                                        <button onClick={() => removeMedicalTracking(idx)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 size={16}/></button>
+                                                        <div>
+                                                            <label className={labelClass}>Profession</label>
+                                                            <DebouncedInput
+                                                                placeholder="Profession"
+                                                                value={track.profession || (track.type === 'Autre' ? '' : track.type)}
+                                                                onChange={(v) => updateMedicalTracking(idx, 'profession', v)}
+                                                                className={inputClass}
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-2">
+
+                                                    <div className="h-1" />
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                         <div>
-                                                            <label className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1 mb-0.5 block">Terminé le</label>
-                                                            <input type="date" value={track.endDate || ''} onChange={(e) => updateMedicalTracking(idx, 'endDate', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                            <label className={labelClass}>Date du bilan</label>
+                                                            <input type="date" value={track.assessmentDate || ''} onChange={(e) => updateMedicalTracking(idx, 'assessmentDate', e.target.value)} className={inputClass} />
                                                         </div>
                                                         <div>
-                                                            <label className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1 mb-0.5 block">Nb de séances effectuées</label>
-                                                            <input type="number" min="0" placeholder="Ex: 24" value={track.sessionCount || ''} onChange={(e) => updateMedicalTracking(idx, 'sessionCount', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none text-[var(--text-heading)]" />
+                                                            <label className={labelClass}>Motif</label>
+                                                            <DebouncedInput placeholder="Motif" value={track.reason || ''} onChange={(v) => updateMedicalTracking(idx, 'reason', v)} className={inputClass} />
                                                         </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className={labelClass}>Date du début de suivi</label>
+                                                            <input type="date" value={track.since || ''} onChange={(e) => updateMedicalTracking(idx, 'since', e.target.value)} className={inputClass} />
+                                                        </div>
+                                                        <div>
+                                                            <label className={labelClass}>Date de fin de suivi</label>
+                                                            <input type="date" value={track.endDate || ''} onChange={(e) => updateMedicalTracking(idx, 'endDate', e.target.value)} className={inputClass} />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-2 items-end">
+                                                        <div>
+                                                            <label className={labelClass}>Périodicité</label>
+                                                            <DebouncedInput placeholder="Ex: 1 fois / semaine" value={track.frequency} onChange={(v) => updateMedicalTracking(idx, 'frequency', v)} className={inputClass} />
+                                                        </div>
+                                                        <div className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider text-center pb-2">OU</div>
+                                                        <div>
+                                                            <label className={labelClass}>Nombre de séances effectuées</label>
+                                                            <input type="number" min="0" placeholder="Ex: 24" value={track.sessionCount || ''} onChange={(e) => updateMedicalTracking(idx, 'sessionCount', e.target.value)} className={inputClass} />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="h-1" />
+
+                                                    <div className="flex justify-end">
+                                                        <button onClick={() => removeMedicalTracking(idx)} className="px-3 py-2 text-xs font-bold text-rose-500 border border-rose-200 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all flex items-center gap-2"><Trash2 size={14}/> Supprimer</button>
                                                     </div>
                                                 </div>
                                             ))}
                                             {(!data.medicalTracking || data.medicalTracking.length === 0) && <p className="text-xs text-[var(--text-secondary)] italic text-center">Aucun suivi renseigné.</p>}
+                                        </div>
+                                        <div className="mt-4 pt-4 border-t border-emerald-200 dark:border-emerald-800/30 flex justify-end">
+                                            <button onClick={addMedicalTracking} className="text-[10px] bg-[var(--card-bg)] text-emerald-600 border border-emerald-500/40 px-3 py-1.5 rounded-full uppercase font-bold tracking-wider hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1"><Plus size={12}/> Ajouter un pro</button>
                                         </div>
                                     </div>
                                     <FamilyNextButton sectionId={section.id} />
@@ -813,7 +859,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider flex items-center gap-2 mb-4">🔵 Motricité</h4>
                                         <div className="space-y-4">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                 <div>
                                                     <label className={labelClass}>Âge de la marche</label>
                                                     <div className="flex items-center gap-2">
@@ -822,16 +868,27 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className={labelClass}>4 pattes / Ramper ?</label>
+                                                    <label className={labelClass}>4 pattes</label>
                                                     <ChipGroup 
-                                                        options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'atypique', label: 'Atypique (Fesses)'}, {value: 'inconnu', label: 'Ne sais pas'}]}
-                                                        value={data.crawling} 
-                                                        onChange={(v) => handleFieldChange('crawling', v)} 
+                                                        options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'ne_sais_pas', label: 'Je ne sais pas'}]}
+                                                        value={data.crawlingFourPattes || data.crawling}
+                                                        onChange={(v) => {
+                                                            handleFieldChange('crawlingFourPattes', v);
+                                                            if (!data.crawling) handleFieldChange('crawling', v);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className={labelClass}>Ramper</label>
+                                                    <ChipGroup
+                                                        options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'ne_sais_pas', label: 'Je ne sais pas'}]}
+                                                        value={data.crawlingRamper}
+                                                        onChange={(v) => handleFieldChange('crawlingRamper', v)}
                                                     />
                                                 </div>
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Développement moteur</label>
+                                                <label className={labelClass}>Précisions</label>
                                                 <DebouncedTextarea name="developmentMotor" value={data.developmentMotor || ''} onChange={(v) => handleFieldChange('developmentMotor', v)} className={inputClass} placeholder="Marcher, courir, grimper, sauter, pédaler, équilibre..." rows={2} />
                                             </div>
                                         </div>
@@ -842,16 +899,23 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-2 mb-4">🟢 Langage</h4>
                                         <div className="space-y-4">
                                             <div>
-                                                <label className={labelClass}>Langage (plusieurs choix possibles)</label>
+                                                <label className={labelClass}>Observations</label>
                                                 <ChipGroup 
-                                                    options={[{value: 'standard', label: 'Apparition standard'}, {value: 'retard', label: 'Retard simple'}, {value: 'suivi_ortho', label: 'Suivi Ortho'}, {value: 'inintelligible', label: 'Difficile à comprendre'}, {value: 'begaiement', label: 'Bégaiement'}]}
+                                                    options={LANGUAGE_LINE_1}
+                                                    value={data.languageStatus} 
+                                                    onChange={(v) => handleFieldChange('languageStatus', v)}
+                                                    multi
+                                                />
+                                                <div className="mt-2" />
+                                                <ChipGroup
+                                                    options={LANGUAGE_LINE_2}
                                                     value={data.languageStatus} 
                                                     onChange={(v) => handleFieldChange('languageStatus', v)}
                                                     multi
                                                 />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Développement du langage (détails)</label>
+                                                <label className={labelClass}>Précisions</label>
                                                 <DebouncedTextarea name="developmentLanguage" value={data.developmentLanguage || ''} onChange={(v) => handleFieldChange('developmentLanguage', v)} className={inputClass} placeholder="Premiers mots, phrases, compréhension, bilinguisme..." rows={2} />
                                             </div>
                                         </div>
@@ -862,16 +926,30 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <h4 className="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-2 mb-4">🌙 Sommeil</h4>
                                         <div className="space-y-4">
                                             <div>
-                                                <label className={labelClass}>Sommeil (plusieurs choix possibles)</label>
+                                                <label className={labelClass}>Observations</label>
                                                 <ChipGroup 
-                                                    options={[{value: 'ok', label: 'Paisible'}, {value: 'endormissement', label: 'Endormissement long'}, {value: 'reveils', label: 'Réveils multiples'}, {value: 'agite', label: 'Agité / Cauchemars'}, {value: 'fatigue_diurne', label: 'Fatigue en journée'}]}
+                                                    options={[
+                                                        {value: 'besoin_presence', label: 'Besoin de présence'},
+                                                        {value: 'refus_couche', label: 'Refus du couché'},
+                                                        {value: 'rythme_irregulier', label: 'Rythme irrégulier'},
+                                                        {value: 'terreurs_nocturnes', label: 'Terreurs nocturnes'},
+                                                        {value: 'reveils_multiples', label: 'Réveils multiples'},
+                                                        {value: 'cauchemars', label: 'Cauchemars'},
+                                                        {value: 'agitation', label: 'Agitation'},
+                                                        {value: 'co_dodo', label: 'Co-dodo'},
+                                                        {value: 'siestes_difficiles', label: 'Siestes difficiles'},
+                                                        {value: 'reveil_matinal', label: 'Réveil très matinal'},
+                                                        {value: 'fatigue_journee', label: 'Fatigue en journée'},
+                                                        {value: 'paisible', label: 'Paisible'},
+                                                        {value: 'endormissement_long', label: 'Endormissement long'}
+                                                    ]}
                                                     value={data.sleepStatus} 
                                                     onChange={(v) => handleFieldChange('sleepStatus', v)}
                                                     multi
                                                 />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Détails sommeil (heures, rituels...)</label>
+                                                <label className={labelClass}>Précisions</label>
                                                 <DebouncedInput name="sleep" value={data.sleep || ''} onChange={(v) => handleFieldChange('sleep', v)} className={inputClass} placeholder="Heure coucher/lever, durée, rituel..." />
                                             </div>
                                         </div>
@@ -881,8 +959,22 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-2 mb-4">🟡 Sensoriel</h4>
                                         <div>
-                                            <label className={labelClass}>Particularités Sensorielles</label>
-                                            <DebouncedTextarea name="sensory" value={data.sensory || ''} onChange={(v) => handleFieldChange('sensory', v)} className={inputClass} placeholder="Hypersensibilité (Bruit, Lumière, Étiquettes, Textures alimentaires...)" rows={2} />
+                                            <label className={labelClass}>Précisions</label>
+                                            <ChipGroup
+                                                options={[
+                                                    {value: 'textures_gene', label: 'Gêné par certaines textures'},
+                                                    {value: 'odeurs_sensible', label: 'Sensible aux odeurs'},
+                                                    {value: 'bruits_sensible', label: 'Sensible aux bruits'},
+                                                    {value: 'lumiere_sensible', label: 'Sensible à la lumière'},
+                                                    {value: 'prenom_pas_reaction', label: 'Ne réagit pas au prénom'},
+                                                    {value: 'recherche_pression', label: 'Recherche de pression'},
+                                                    {value: 'maladresse', label: 'Maladresse'},
+                                                    {value: 'selectivite_alimentaire', label: 'Sélectivité alimentaire'}
+                                                ]}
+                                                value={data.sensory}
+                                                onChange={(v) => handleFieldChange('sensory', v)}
+                                                multi
+                                            />
                                         </div>
                                     </div>
 
@@ -901,14 +993,25 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             <div>
                                                 <label className={labelClass}>Autonomie & Habitudes (plusieurs choix possibles)</label>
                                                 <ChipGroup 
-                                                    options={[{value: 'autonomie', label: 'Mange en autonomie'}, {value: 'aide_repas', label: 'A besoin d\'aide pour manger'}, {value: 'agite_repas', label: 'Agité(e) lors des repas'}, {value: 'couverts', label: 'Utilisation des couverts'}, {value: 'mains', label: 'Mange avec les mains'}, {value: 'salit', label: 'Se salit beaucoup'}]}
+                                                    options={[
+                                                        {value: 'autonomie', label: 'Mange en autonomie'},
+                                                        {value: 'aide_repas', label: 'A besoin d\'aide pour manger'},
+                                                        {value: 'agite_repas', label: 'Agité à table'},
+                                                        {value: 'refus_alimentaire', label: 'Refus alimentaire'},
+                                                        {value: 'distrait', label: 'Distrait'},
+                                                        {value: 'lenteur', label: 'Lenteur'},
+                                                        {value: 'couverts', label: 'Utilise les couverts'},
+                                                        {value: 'mains', label: 'Mange avec les mains'},
+                                                        {value: 'salit', label: 'Se salit beaucoup'},
+                                                        {value: 'appetit_ok', label: 'Appétit satisfaisant'},
+                                                    ]}
                                                     value={data.eatingHabits} 
                                                     onChange={(v) => handleFieldChange('eatingHabits', v)}
                                                     multi
                                                 />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Commentaires (Couverts, propreté...)</label>
+                                                <label className={labelClass}>Précisions</label>
                                                 <DebouncedTextarea name="meals" value={data.meals || ''} onChange={(v) => handleFieldChange('meals', v)} className={inputClass} placeholder="Utilisation des couverts, comportement à table..." rows={2} />
                                             </div>
                                         </div>
@@ -918,23 +1021,50 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-[#fff9f9] dark:bg-rose-950/20 border border-rose-100 dark:border-rose-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-rose-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Shirt size={14}/> Habillage</h4>
                                         <div className="space-y-4">
+                                            <div>
+                                                <label className={labelClass}>Degré d'autonomie</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'autonome', label: 'Autonome' },
+                                                        { value: 'se_deshabille_seul', label: 'Se déshabille seul' },
+                                                        { value: 'besoin_aide', label: 'Besoin d\'aide' },
+                                                        { value: 'aide_totale', label: 'Aide totale' },
+                                                    ]}
+                                                    value={data.dressingAutonomy}
+                                                    onChange={(v) => handleFieldChange('dressingAutonomy', v)}
+                                                />
+                                            </div>
                                             {[{key: 'clothingButtons', label: 'Boutons'}, {key: 'clothingLaces', label: 'Lacets'}, {key: 'clothingZippers', label: 'Fermetures Éclair'}].map((item) => (
                                                 <div key={item.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-100 dark:border-rose-800/20 last:border-0 pb-2">
                                                     <span className="text-sm font-bold text-[var(--text-main)]">{item.label}</span>
                                                     <div className="flex gap-2">
-                                                        {['acquis', 'difficile', 'aide_totale'].map(opt => (
+                                                        {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
                                                             <label key={opt} className="cursor-pointer">
                                                                 <input type="radio" name={item.key} value={opt} checked={(data as any)[item.key] === opt} onChange={handleChange} className="peer sr-only"/>
                                                                 <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
-                                                                    {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : 'Impossible'}
+                                                                    {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
                                                                 </div>
                                                             </label>
                                                         ))}
                                                     </div>
                                                 </div>
                                             ))}
+                                            <div>
+                                                <label className={labelClass}>Observations complémentaires</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'vetements_envers', label: 'Vêtements à l\'envers' },
+                                                        { value: 'refus_habillage', label: 'Refus de s\'habiller' },
+                                                        { value: 'selectivite_habillage', label: 'Sélectivité' },
+                                                        { value: 'choisit_habits', label: 'Choisit ses habits' },
+                                                    ]}
+                                                    value={data.dressingObservations}
+                                                    onChange={(v) => handleFieldChange('dressingObservations', v)}
+                                                    multi
+                                                />
+                                            </div>
                                             <div className="mt-2">
-                                                <label className={labelClass}>Commentaire habillage (choix des vêtements, autonomie...)</label>
+                                                <label className={labelClass}>Précisions</label>
                                                 <DebouncedTextarea name="dressing" value={data.dressing || ''} onChange={(v) => handleFieldChange('dressing', v)} className={inputClass} placeholder="Choisit-il ses vêtements ? Met-il ses chaussures seul ? Enfile un manteau ?" rows={2} />
                                             </div>
                                         </div>
@@ -944,17 +1074,79 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-[#f0fdf4] dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Droplets size={14}/> Hygiène & Continence</h4>
                                         <div className="space-y-4">
+                                            {[{ key: 'hygieneTeeth', label: 'Brossage de dents' }, { key: 'hygieneHands', label: 'Lavage des mains' }, { key: 'hygieneBath', label: 'Douche / bain' }, { key: 'hygieneFace', label: 'Soin du visage' }, { key: 'hygieneHair', label: 'Coiffage' }, { key: 'hygieneContinenceStatus', label: 'Continence' }].map((item) => (
+                                                <div key={item.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 dark:border-emerald-800/20 last:border-0 pb-2">
+                                                    <span className="text-sm font-bold text-[var(--text-main)]">{item.label}</span>
+                                                    <div className="flex gap-2">
+                                                        {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
+                                                            <label key={opt} className="cursor-pointer">
+                                                                <input type="radio" name={item.key} value={opt} checked={(data as any)[item.key] === opt} onChange={handleChange} className="peer sr-only"/>
+                                                                <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
+                                                                    {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
+                                                                </div>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
                                             <div>
-                                                <label className={labelClass}>Toilettes, douche/bain, brossage des dents...</label>
-                                                <DebouncedTextarea name="continence" value={data.continence || ''} onChange={(v) => handleFieldChange('continence', v)} className={inputClass} placeholder="Va-t-il aux toilettes seul ? Se lave les mains ? Se brosse les dents seul ? Douche autonome ?" rows={2} />
+                                                <label className={labelClass}>Observations</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'cooperatif', label: 'Coopératif' },
+                                                        { value: 'refus_opposition', label: 'Refus / opposition' },
+                                                        { value: 'peur_eau', label: 'Peur de l\'eau' },
+                                                        { value: 'recherche_autonomie', label: 'Recherche l\'autonomie' },
+                                                        { value: 'besoin_rappels', label: 'Besoin de rappels' },
+                                                    ]}
+                                                    value={data.hygieneObservations}
+                                                    onChange={(v) => handleFieldChange('hygieneObservations', v)}
+                                                    multi
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Précisions</label>
+                                                <DebouncedTextarea name="continence" value={data.continence || ''} onChange={(v) => handleFieldChange('continence', v)} className={inputClass} placeholder="Détails complémentaires sur l'hygiène et la continence..." rows={2} />
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* AJOUT TEMPS/ESPACE */}
-                                    <div>
-                                        <label className={labelClass}>Repérage Temps & Espace</label>
-                                        <DebouncedTextarea name="timeSpace" value={data.timeSpace || ''} onChange={(v) => handleFieldChange('timeSpace', v)} className={inputClass} placeholder="Se repère-t-il dans la journée ? La semaine ? Retrouve-t-il son chemin ? Lit-il l’heure ?" rows={2} />
+                                    <div className="bg-[#f5f7ff] dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-800/20 p-4 rounded-2xl">
+                                        <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Clock size={14}/> Repérage Temps & Espace</h4>
+                                        <div className="space-y-4">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 dark:border-indigo-800/20 pb-2">
+                                                <span className="text-sm font-bold text-[var(--text-main)]">Lecture de l'heure</span>
+                                                <div className="flex gap-2">
+                                                    {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
+                                                        <label key={opt} className="cursor-pointer">
+                                                            <input type="radio" name="timeSpaceClockReading" value={opt} checked={data.timeSpaceClockReading === opt} onChange={handleChange} className="peer sr-only"/>
+                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
+                                                                {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Observations</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'repere_lieux', label: 'Se repère dans les lieux' },
+                                                        { value: 'confond_matin_soir', label: 'Confond Matin / Soir' },
+                                                        { value: 'se_perd', label: 'Se perd facilement' },
+                                                        { value: 'besoin_guidage', label: "Besoin de guidage pour s'orienter" },
+                                                    ]}
+                                                    value={data.timeSpaceObservations}
+                                                    onChange={(v) => handleFieldChange('timeSpaceObservations', v)}
+                                                    multi
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Précisions</label>
+                                                <DebouncedTextarea name="timeSpace" value={data.timeSpace || ''} onChange={(v) => handleFieldChange('timeSpace', v)} className={inputClass} placeholder="Précisions sur le repérage dans le temps et l'espace..." rows={2} />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <FamilyNextButton sectionId={section.id} />
@@ -985,15 +1177,42 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             {section.id === 'emotions' && (
                                 <div className="space-y-4">
                                     <div className="bg-[#faf5ff] dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/20 p-4 rounded-2xl">
-                                        <h4 className="text-xs font-bold text-purple-800 dark:text-purple-300 uppercase tracking-wider flex items-center gap-2 mb-4"><Brain size={14}/> Gestion des émotions</h4>
                                         <div className="space-y-4">
                                             <div>
-                                                <label className={labelClass}>Temps d’écran quotidien estimé</label>
-                                                <DebouncedInput name="screenTime" value={data.screenTime || ''} onChange={(v) => handleFieldChange('screenTime', v)} className={inputClass} placeholder="Ex: 1h tablette, 30 min TV..." />
+                                                <label className={labelClass}>Comportement global</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'calme_adaptable', label: 'Calme / Adaptable' },
+                                                        { value: 'agite_public', label: 'Agité en public' },
+                                                        { value: 'opposition', label: 'Opposition' },
+                                                        { value: 'separation_difficile', label: 'Séparation difficile' },
+                                                        { value: 'conflits_fratrie', label: 'Conflits fratrie' },
+                                                        { value: 'devoirs_difficiles', label: 'Devoirs difficiles' },
+                                                    ]}
+                                                    value={data.emotionalGlobalTags}
+                                                    onChange={(v) => handleFieldChange('emotionalGlobalTags', v)}
+                                                    multi
+                                                />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Régulation émotionnelle</label>
-                                                <DebouncedTextarea name="emotionalRegulation" value={data.emotionalRegulation || ''} onChange={(v) => handleFieldChange('emotionalRegulation', v)} className={inputClass} placeholder="Colères, frustrations, anxiété, difficulté à gérer les transitions..." rows={2} />
+                                                <label className={labelClass}>Émotions & Réactions</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        { value: 'verbalise_emotions', label: 'Verbalise ses émotions' },
+                                                        { value: 'accepte_imprevu', label: "Accepte l'imprévu" },
+                                                        { value: 'coleres_crises', label: 'Colères / Crises' },
+                                                        { value: 'agressivite', label: 'Agressivité' },
+                                                        { value: 'anxiete', label: 'Anxiété' },
+                                                        { value: 'intolerant_changement', label: 'Intolérant au changement' },
+                                                    ]}
+                                                    value={data.emotionalReactionTags}
+                                                    onChange={(v) => handleFieldChange('emotionalReactionTags', v)}
+                                                    multi
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Précisions</label>
+                                                <DebouncedTextarea name="emotionalNotes" value={data.emotionalNotes || data.emotionalRegulation || ''} onChange={(v) => { handleFieldChange('emotionalNotes', v); handleFieldChange('emotionalRegulation', v); }} className={inputClass} placeholder="Ex : méthode Barkley envisagée, très agité dans les supermarchés, tape quand il est frustré..." rows={2} />
                                             </div>
                                         </div>
                                     </div>
