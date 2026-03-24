@@ -726,16 +726,33 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       const curr = orderedScored[i];
       if (!prev.rawBounds || !curr.rawBounds) continue;
 
-      if (curr.rawBounds.min < prev.rawBounds.max) {
+      // Raw ranges are inclusive in lookup tables; touching bounds are suspicious too (e.g. 19-20 then 20).
+      if (curr.rawBounds.min <= prev.rawBounds.max) {
         rawOverlapCount += 1;
+        const sameBounds = curr.rawBounds.min === prev.rawBounds.min && curr.rawBounds.max === prev.rawBounds.max;
+        const conflictingScore = (
+          (prev.standardValue !== null && curr.standardValue !== null && Math.abs(prev.standardValue - curr.standardValue) > 0.5)
+          || (prev.percentileValue !== null && curr.percentileValue !== null && Math.abs(prev.percentileValue - curr.percentileValue) > 1)
+        );
+        if (sameBounds && conflictingScore) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_RAW_DUPLICATE_CONFLICT',
+            severity: 'blocking',
+            message: `Lignes brutes dupliquees avec scores contradictoires pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.98,
+          }));
+        }
         flags.push(makeFlag({
           code: 'LOOKUP_RAW_RANGE_OVERLAP',
-          severity: 'warning',
+          severity: sameBounds && conflictingScore ? 'blocking' : 'warning',
           message: `Chevauchement de plages brutes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(prev.rawBounds)} puis ${formatRawBounds(curr.rawBounds)}.`,
           subtest: bucket.subtest,
           groupLabel: bucket.groupLabel,
           rowId: curr.row.id,
-          confidence: 0.92,
+          confidence: sameBounds && conflictingScore ? 0.97 : 0.92,
         }));
       }
 

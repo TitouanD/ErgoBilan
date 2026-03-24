@@ -131,6 +131,102 @@ const isStatementTimeoutError = (error: unknown): boolean => {
     return code === '57014' || message.includes('statement timeout');
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const stringifyViolation = (violations: string[]): string => {
+    if (violations.length <= 6) return violations.join(' | ');
+    return `${violations.slice(0, 6).join(' | ')} | +${violations.length - 6} autre(s)`;
+};
+
+const validateContributionPayloadStrict = (payload: ContributionTestPayload): void => {
+    const subtests = Array.isArray(payload?.subtests) ? payload.subtests : [];
+    const violations: string[] = [];
+
+    subtests.forEach((subtest, subtestIndex) => {
+        const norms = getSubtestNorms(subtest) as Array<Record<string, unknown>>;
+        const subtestName = String(subtest?.name || `subtest#${subtestIndex + 1}`);
+        const computationMode = String(subtest?.computation_mode || 'LOOKUP').toUpperCase();
+
+        const byAgeGender = new Map<string, Array<{ rawMin: number; rawMax: number; standard: number | null; percentile: number | null; normIndex: number }>>();
+
+        norms.forEach((norm, normIndex) => {
+            const ageMin = toFiniteNumber(norm.age_min_months);
+            const ageMax = toFiniteNumber(norm.age_max_months);
+            const rawMin = toFiniteNumber(norm.raw_min);
+            const rawMax = toFiniteNumber(norm.raw_max);
+            const mean = toFiniteNumber(norm.mean);
+            const sd = toFiniteNumber(norm.sd);
+            const standard = toFiniteNumber(norm.standard_score);
+            const percentile = toFiniteNumber(norm.percentile);
+            const gender = String(norm.gender || 'Mixed');
+
+            if (ageMin === null || ageMax === null || ageMin > ageMax) {
+                violations.push(`${subtestName}[${normIndex + 1}] age invalid (${String(norm.age_min_months)}-${String(norm.age_max_months)})`);
+            }
+
+            if (percentile !== null && (percentile < 0 || percentile > 100)) {
+                violations.push(`${subtestName}[${normIndex + 1}] percentile out of bounds (${percentile})`);
+            }
+
+            const hasRawRange = rawMin !== null || rawMax !== null;
+            if (hasRawRange) {
+                if (rawMin === null || rawMax === null || rawMin > rawMax) {
+                    violations.push(`${subtestName}[${normIndex + 1}] raw range invalid (${String(norm.raw_min)}-${String(norm.raw_max)})`);
+                }
+            }
+
+            const hasMean = mean !== null;
+            const hasSd = sd !== null;
+            if (hasMean !== hasSd || (hasSd && sd <= 0)) {
+                violations.push(`${subtestName}[${normIndex + 1}] mean/sd invalid (mean=${String(norm.mean)}, sd=${String(norm.sd)})`);
+            }
+
+            if (mean === null && standard === null && percentile === null) {
+                violations.push(`${subtestName}[${normIndex + 1}] missing all score metrics`);
+            }
+
+            if (computationMode === 'LOOKUP' && rawMin !== null && rawMax !== null && ageMin !== null && ageMax !== null) {
+                const ageGenderKey = `${ageMin}|${ageMax}|${gender}`;
+                const existing = byAgeGender.get(ageGenderKey) || [];
+                const sameRange = existing.find((item) => item.rawMin === rawMin && item.rawMax === rawMax);
+                if (sameRange) {
+                    const scoreConflict = (
+                        (sameRange.standard !== null && standard !== null && Math.abs(sameRange.standard - standard) > 0.5)
+                        || (sameRange.percentile !== null && percentile !== null && Math.abs(sameRange.percentile - percentile) > 1)
+                    );
+                    if (scoreConflict) {
+                        violations.push(`${subtestName}[${normIndex + 1}] duplicate raw range conflict (${rawMin}-${rawMax})`);
+                    }
+                }
+                existing.push({ rawMin, rawMax, standard, percentile, normIndex: normIndex + 1 });
+                byAgeGender.set(ageGenderKey, existing);
+            }
+        });
+
+        if (computationMode === 'LOOKUP') {
+            byAgeGender.forEach((items, key) => {
+                if (items.length < 2) return;
+                const sorted = [...items].sort((a, b) => a.rawMin - b.rawMin || a.rawMax - b.rawMax);
+                for (let i = 1; i < sorted.length; i += 1) {
+                    const prev = sorted[i - 1];
+                    const curr = sorted[i];
+                    if (curr.rawMin <= prev.rawMax) {
+                        violations.push(`${subtestName} overlap in group ${key} between norms ${prev.normIndex} and ${curr.normIndex}`);
+                    }
+                }
+            });
+        }
+    });
+
+    if (violations.length > 0) {
+        throw new Error(`VALIDATION_BLOQUANTE: ${stringifyViolation(violations)}`);
+    }
+};
+
 
 /**
  * Service dédié aux opérations Administrateur.
@@ -290,6 +386,7 @@ export const AdminService = {
      * Sauvegarder un bundle (admin)
      */
     saveTestBundle: async (bundle: AdminTestBundle) => {
+        validateContributionPayloadStrict(bundle as unknown as ContributionTestPayload);
         const { error } = await supabase.rpc('admin_save_test_bundle', { p_payload: bundle });
         if (error) throw error;
     },
@@ -312,12 +409,14 @@ export const AdminService = {
     },
 
     createPrivateTest: async (payload: any): Promise<string> => {
+        validateContributionPayloadStrict(payload as ContributionTestPayload);
         const { data, error } = await supabase.rpc('create_private_test', { p_payload: payload });
         if (error) throw error;
         return data as string;
     },
 
     mergePrivateTest: async (targetId: string, payload: any): Promise<{ new_subtests: number; new_norms: number }> => {
+        validateContributionPayloadStrict(payload as ContributionTestPayload);
         const { data, error } = await supabase.rpc('merge_private_test', { p_target_id: targetId, p_payload: payload });
         if (error) throw error;
         return data as { new_subtests: number; new_norms: number };
@@ -329,6 +428,7 @@ export const AdminService = {
      */
     attachSubtestsToTest: async (testId: string, payload: any): Promise<AttachResult> => {
         const typedPayload = (payload || {}) as ContributionTestPayload;
+        validateContributionPayloadStrict(typedPayload);
         const chunks = splitContributionPayloadIntoChunks(typedPayload);
 
         if (chunks.length === 1) {

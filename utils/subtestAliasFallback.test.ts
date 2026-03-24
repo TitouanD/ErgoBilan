@@ -6,6 +6,6 @@ describe('resolveSubtestAlias NEPSY 2 fallback', () => {
     expect(resolveSubtestAlias('Nepsy 2', 'Mémoire de Faces - C', { abbreviation: 'MFC' })).toBe('Mémoire Faciale Couleurs');
     expect(resolveSubtestAlias('Nepsy 2', 'Mémoire de Figures - D', { abbreviation: 'MFDC' })).toBe('Mémoire Dénomination Couleurs');
     expect(resolveSubtestAlias('Nepsy 2', 'Prosodie Mélodique', { abbreviation: 'PMS' })).toBe('Phonologie et Morphologie Syntaxe');
-    expect(resolveSubtestAlias('Nepsy 2', 'Vitesse de Traitement Visuo-Moteur', { abbreviation: 'PV' })).toBe('Précision visuo-motrice');
+    expect(resolveSubtestAlias('Nepsy 2', 'Vitesse de Traitement Visuo-Moteur', { abbreviation: 'PV' })).toBe('Précision visuomotrice');
   });
 });

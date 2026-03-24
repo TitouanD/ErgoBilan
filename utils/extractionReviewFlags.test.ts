@@ -173,4 +173,53 @@ describe('extractionReviewFlags LOOKUP v1', () => {
     expect(blockingBroken.length).toBeGreaterThan(0);
     expect(blockingBroken.some((flag) => flag.code === 'GROUP_ROW_COUNT_MISMATCH' || flag.code === 'LOOKUP_NS_RANGE_INCOMPLETE')).toBe(true);
   });
+
+  it('flags duplicate raw rows with conflicting scores as blocking', () => {
+    const rows: ExtractedRow[] = [
+      {
+        id: 'dup-1',
+        subtest: 'Mémoire de la Navigation',
+        label: '5;0 - 5;5',
+        raw: '0',
+        standard: '3',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 60,
+        hidden_age_max: 65,
+        source_column_key: 'MN::1',
+      },
+      {
+        id: 'dup-2',
+        subtest: 'Mémoire de la Navigation',
+        label: '5;0 - 5;5',
+        raw: '0',
+        standard: '4',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 60,
+        hidden_age_max: 65,
+        source_column_key: 'MN::1',
+      },
+      {
+        id: 'dup-3',
+        subtest: 'Mémoire de la Navigation',
+        label: '5;0 - 5;5',
+        raw: '1',
+        standard: '5',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 60,
+        hidden_age_max: 65,
+        source_column_key: 'MN::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-duplicate-raw-conflict',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    expect(flags.some((flag) => flag.code === 'LOOKUP_RAW_DUPLICATE_CONFLICT' && flag.severity === 'blocking')).toBe(true);
+  });
 });

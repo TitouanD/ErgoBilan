@@ -2677,6 +2677,25 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return;
         }
 
+        const strictWarningCodes = new Set([
+            'LOOKUP_STANDARD_NON_MONOTONIC',
+            'LOOKUP_PERCENTILE_NON_MONOTONIC',
+            'LOOKUP_STANDARD_STEP_OUTLIER',
+            'LOOKUP_PERCENTILE_STEP_OUTLIER',
+            'LOOKUP_RAW_RANGE_OVERLAP',
+            'LOOKUP_RAW_DUPLICATE_CONFLICT',
+        ]);
+        const severeWarningCount = validatedPages.reduce((sum, page) => {
+            const count = page.flags.filter((flag) => (
+                flag.severity === 'warning' && strictWarningCodes.has(flag.code)
+            )).length;
+            return sum + count;
+        }, 0);
+        if (severeWarningCount > 0) {
+            toast.error(`${severeWarningCount} incohérence(s) structurelle(s) critique(s) restante(s) sur des pages validées. Corrigez avant sauvegarde.`);
+            return;
+        }
+
         const unrenamedAcrossValidated = Array.from(
             new Set(
                 validatedPages
