@@ -458,11 +458,88 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
   },
 };
 
-export const resolveSubtestAlias = (testName: string, subtestName: string): string => {
+type ResolveSubtestAliasOptions = {
+  abbreviation?: string | null;
+  domain?: string | null;
+};
+
+const normalizeAliasAbbreviation = (value?: string | null): string => (
+  String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9&/ -]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+);
+
+const NEPSY2_LOOKUP_ABBREVIATION_ALIASES: Record<string, string> = {
+  'AA': 'Attention Auditive',
+  'FD': 'Flexibilité Dénomination',
+  'IND': 'Inhibition - Dénomination (Temps)',
+  'INI': 'Inhibition Interférence',
+  'INE': 'Inhibition Erreurs',
+  'ST': 'Statue',
+  'IP': 'Imitation des Postures',
+  'PV': 'Précision visuo-motrice',
+  'AF': 'Affects Faciaux',
+  'ES': 'Encodage Social',
+  'CC': 'Comportement Contenu',
+  'PP': 'Prosodie Parabole',
+  'PS': 'Prosodie Sémantique',
+  'DR': 'Dénomination rapide',
+  'PMS': 'Phonologie et Morphologie Syntaxe',
+  'MFC': 'Mémoire Faciale Couleurs',
+  'MFS': 'Mémoire Faciale Séquences',
+  'MFT': 'Mémoire Faciale Temps',
+  'MFDC': 'Mémoire Dénomination Couleurs',
+  'MFDS': 'Mémoire Dénomination Séquences',
+  'MFDT': 'Mémoire Dénomination Temps',
+  'MFD': 'Mémoire Dénomination Couleurs',
+  'MV': 'Mémoire Verbatim',
+  'MVD': 'Mémoire Verbatim Différée',
+  'MP': 'Mémoire Phrases',
+  'MPD': 'Mémoire Phrases Différée',
+  'MP & MPD': 'Mémoire Phrases et Mémoire Phrases Différée',
+};
+
+const NEPSY2_LOOKUP_NAME_ALIASES: Record<string, string> = {
+  'memoiredefacesc': 'Mémoire Faciale Couleurs',
+  'memoiredefacess': 'Mémoire Faciale Séquences',
+  'memoiredefacest': 'Mémoire Faciale Temps',
+  'memoiredefiguresd': 'Mémoire Dénomination Couleurs',
+  'memoiredefiguresds': 'Mémoire Dénomination Séquences',
+  'memoiredefiguresdt': 'Mémoire Dénomination Temps',
+  'memoireverbalec': 'Mémoire Verbatim',
+  'memoireverbaled': 'Mémoire Verbatim Différée',
+  'memoiredeprosodie': 'Mémoire Phrases',
+  'memoiredeprosodied': 'Mémoire Phrases Différée',
+  'affectionfaciale': 'Affects Faciaux',
+  'emotionsociale': 'Encodage Social',
+};
+
+export const resolveSubtestAlias = (
+  testName: string,
+  subtestName: string,
+  options?: ResolveSubtestAliasOptions,
+): string => {
   const trimmed = subtestName.trim();
   if (!testName || !trimmed) return trimmed;
 
   const testKey = normalizeTestName(testName);
+  if (testKey === 'nepsy2') {
+    const abbreviationKey = normalizeAliasAbbreviation(options?.abbreviation);
+    if (abbreviationKey && NEPSY2_LOOKUP_ABBREVIATION_ALIASES[abbreviationKey]) {
+      return NEPSY2_LOOKUP_ABBREVIATION_ALIASES[abbreviationKey];
+    }
+
+    const localNameAlias = NEPSY2_LOOKUP_NAME_ALIASES[normalizeSubtestName(trimmed)];
+    if (localNameAlias) {
+      return localNameAlias;
+    }
+  }
+
   const aliasTable = SUBTEST_ALIASES[testKey];
   if (!aliasTable) return trimmed;
 

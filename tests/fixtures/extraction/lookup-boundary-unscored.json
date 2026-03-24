@@ -1,0 +1,61 @@
+{
+  "pageId": "fixture-boundary-unscored",
+  "structure": "LOOKUP",
+  "rows": [
+    {
+      "id": "row-1",
+      "subtest": "Integration Visuo-Motrice",
+      "label": "4;0 - 4;1",
+      "raw": "0",
+      "standard": "",
+      "zScore": "",
+      "percentile": "",
+      "hidden_age_min": 48,
+      "hidden_age_max": 49
+    },
+    {
+      "id": "row-2",
+      "subtest": "Integration Visuo-Motrice",
+      "label": "4;0 - 4;1",
+      "raw": "1",
+      "standard": "7",
+      "zScore": "",
+      "percentile": "16",
+      "hidden_age_min": 48,
+      "hidden_age_max": 49
+    },
+    {
+      "id": "row-3",
+      "subtest": "Integration Visuo-Motrice",
+      "label": "4;0 - 4;1",
+      "raw": "2",
+      "standard": "10",
+      "zScore": "",
+      "percentile": "50",
+      "hidden_age_min": 48,
+      "hidden_age_max": 49
+    },
+    {
+      "id": "row-4",
+      "subtest": "Integration Visuo-Motrice",
+      "label": "4;0 - 4;1",
+      "raw": "3",
+      "standard": "13",
+      "zScore": "",
+      "percentile": "84",
+      "hidden_age_min": 48,
+      "hidden_age_max": 49
+    },
+    {
+      "id": "row-5",
+      "subtest": "Integration Visuo-Motrice",
+      "label": "4;0 - 4;1",
+      "raw": "4",
+      "standard": "",
+      "zScore": "",
+      "percentile": "",
+      "hidden_age_min": 48,
+      "hidden_age_max": 49
+    }
+  ]
+}

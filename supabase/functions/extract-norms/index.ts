@@ -1,6 +1,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { captureEdgeException } from "../_shared/sentry.ts";
+import {
+  chunkInventoryColumns,
+  compareVerificationResults,
+  decideExtractionRouting,
+  matchRepairColumns,
+  sortTablesByInventoryOrder,
+  summarizeInventoryCompleteness,
+  type InventoryColumnDescriptor,
+  type InventoryScanResult,
+  type VerificationMismatch as ExtractionVerificationMismatch,
+  type VerificationScanResult,
+} from "./extractionUtils.ts";
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -12,14 +24,18 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 180_000); // Allow extra time for chunked fallback
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 40_000); // Keep each AI call bounded to avoid edge hard timeout (~150s)
 const MAX_EXTRACTIONS_PER_HOUR = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PER_HOUR"), 20);
 const MAX_EXTRACTIONS_PER_DAY = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PER_DAY"), 60);
-const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 2);
+const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
 const MAX_OUTPUT_TOKENS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_OUTPUT_TOKENS"), 65536);
 const CHUNKED_SUBTEST_THRESHOLD = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNKED_SUBTEST_THRESHOLD"), 8); // Trigger chunked fallback if inventory finds > N subtests
 const MAX_SUBTESTS_PER_CHUNK = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_SUBTESTS_PER_CHUNK"), 10); // Max subtests per focused extraction call
+const CHUNK_MIN_COVERAGE_PERCENT = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNK_MIN_COVERAGE_PERCENT"), 40);
+const CHUNK_MIN_COLUMN_COVERAGE_RATIO = Math.min(1, Math.max(0.1, CHUNK_MIN_COVERAGE_PERCENT / 100));
+const MAX_VERIFICATION_REPAIR_TARGETS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_VERIFICATION_REPAIR_TARGETS"), 20);
+const MAX_COLUMNS_FOR_SYNC_VERIFICATION = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_COLUMNS_FOR_SYNC_VERIFICATION"), 28);
 const ENABLE_VERIFICATION_PASS = Deno.env.get("EXTRACTION_ENABLE_VERIFICATION") !== 'false'; // Lightweight verification after extraction
 const THINKING_BUDGET = parsePositiveInt(Deno.env.get("EXTRACTION_THINKING_BUDGET"), 2048); // Gemini thinking tokens
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PAYLOAD_BYTES"), 10_000_000);
@@ -43,8 +59,8 @@ const AI_DEV_MODE =
   (Deno.env.get("AI_DEV_MODE") || "false").trim().toLowerCase() === "true";
 const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
   .split(",")
-  .map((value) => value.trim())
-  .filter((value) => value.length > 0);
+  .map((value: string) => value.trim())
+  .filter((value: string) => value.length > 0);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,20 +116,21 @@ interface ExtractionResult {
   tables?: ExtractedTable[];
 }
 
-interface InventoryDomain {
+interface LegacyInventoryDomain {
   domain: string;
   subtests: string[];
 }
 
-interface InventoryResult {
-  tc?: string;           // test_context
-  st?: string;           // structure_type
-  domains: InventoryDomain[];
+interface InventoryResult extends InventoryScanResult {
+  domains?: LegacyInventoryDomain[];
 }
 
 interface RepairFocusSubtest {
   name: string;
   abbreviation?: string | null;
+  domain?: string | null;
+  columnOrder?: number | null;
+  isInverted?: boolean | null;
 }
 
 interface RepairExpectedGroupCount {
@@ -126,9 +143,25 @@ interface RepairRequestPayload {
   expectedGroupCounts: RepairExpectedGroupCount[];
   includeNeighborColumns: boolean;
   existingSubtests: string[];
+  dominantAgeMin?: number | null;
+  dominantAgeMax?: number | null;
 }
 
-type InventoryMode = 'off' | 'conditional';
+type InventoryMode = 'off' | 'conditional' | 'required';
+
+interface ExtractionUncertaintyLowCoverageColumn {
+  column: string;
+  extractedRows: number;
+  medianRows: number;
+}
+
+interface ExtractionUncertaintyFlags {
+  emptyExtractedColumns?: string[];
+  lowCoverageColumns?: ExtractionUncertaintyLowCoverageColumn[];
+  verificationMismatchColumns?: string[];
+  adjacentDuplicateColumns?: string[];
+  inventoryCoverageRatio?: number;
+}
 
 interface ExtractionMeta {
   strategy: string;
@@ -137,6 +170,14 @@ interface ExtractionMeta {
   inventoryMode?: InventoryMode;
   verified?: boolean;
   verificationRepairs?: number;
+  verifiedSubtests?: string[];
+  inventoryColumnCount?: number;
+  isInvertedLookup?: boolean;
+  expectedSourceColumns?: string[];
+  missingSourceColumns?: string[];
+  expectedSourceColumnCount?: number;
+  uncertaintyFlags?: ExtractionUncertaintyFlags;
+  confidenceScore?: number;
 }
 
 interface ExtractionRunResult {
@@ -144,18 +185,8 @@ interface ExtractionRunResult {
   meta: ExtractionMeta;
 }
 
-interface VerificationEntry {
-  ab: string;
-  min_n: number;
-  max_n: number;
-  min_r: string;
-  max_r: string;
-  count: number;
-}
-
-interface VerificationResult {
-  verify: VerificationEntry[];
-}
+type VerificationResult = VerificationScanResult;
+type VerificationMismatch = ExtractionVerificationMismatch;
 
 // ── RETRY UTILITY ──────────────────────────────────────────────────────────
 
@@ -235,7 +266,7 @@ const callGemini = async (
     GEMINI_RETRY_BASE_MS,
     (error) => {
       const msg = String(error).toLowerCase();
-      return msg.includes('timeout') || msg.includes('retryable');
+      return msg.includes('retryable');
     }
   );
 
@@ -305,6 +336,43 @@ const normalizePromptToken = (value: unknown): string =>
     .trim()
     .replace(/\s+/g, ' ');
 
+const normalizeInventoryToken = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '');
+
+const SCORE_SCALE_TOKENS = new Set([
+  'NS',
+  'NOTESTANDARD',
+  'NOTESTANDARDS',
+  'NOTEETALONNEE',
+  'NOTEETALONNEES',
+  'SCORESTANDARD',
+  'SCORESSTANDARD',
+  'STANDARDSCORE',
+  'SCALEDSCORE',
+]);
+
+const isLikelyScoreScaleColumn = (sid: string, ab: string): boolean => {
+  const sidToken = normalizeInventoryToken(sid);
+  const abToken = normalizeInventoryToken(ab);
+  if (!sidToken && !abToken) return false;
+
+  if (SCORE_SCALE_TOKENS.has(sidToken)) return true;
+  if (sidToken.startsWith('NOTEETALONNEE') || sidToken.startsWith('NOTESTANDARD') || sidToken.startsWith('SCORESTANDARD')) {
+    return true;
+  }
+
+  if ((abToken === 'NS' || SCORE_SCALE_TOKENS.has(abToken)) && (sidToken === 'NS' || sidToken.includes('NOTE') || sidToken.includes('SCORE'))) {
+    return true;
+  }
+
+  return false;
+};
+
 const parseRepairRequest = (raw: unknown): RepairRequestPayload | null => {
   if (!raw || typeof raw !== 'object') return null;
   const input = raw as Record<string, unknown>;
@@ -316,10 +384,16 @@ const parseRepairRequest = (raw: unknown): RepairRequestPayload | null => {
         const value = entry as Record<string, unknown>;
         const name = normalizePromptToken(value.name);
         const abbreviation = normalizePromptToken(value.abbreviation);
+        const domain = normalizePromptToken(value.domain);
+        const columnOrderRaw = Number(value.columnOrder);
+        const columnOrder = Number.isFinite(columnOrderRaw) ? Math.trunc(columnOrderRaw) : null;
         if (!name) return null;
         return {
           name,
           abbreviation: abbreviation || null,
+          domain: domain || null,
+          columnOrder,
+          isInverted: value.isInverted === true,
         } as RepairFocusSubtest;
       })
       .filter((entry): entry is RepairFocusSubtest => !!entry)
@@ -347,11 +421,18 @@ const parseRepairRequest = (raw: unknown): RepairRequestPayload | null => {
       .filter((name) => !!name)
     : [];
 
+  const dominantAgeMinRaw = Number(input.dominantAgeMin);
+  const dominantAgeMaxRaw = Number(input.dominantAgeMax);
+  const dominantAgeMin = Number.isFinite(dominantAgeMinRaw) ? Math.trunc(dominantAgeMinRaw) : null;
+  const dominantAgeMax = Number.isFinite(dominantAgeMaxRaw) ? Math.trunc(dominantAgeMaxRaw) : null;
+
   return {
     focusSubtests,
     expectedGroupCounts,
     includeNeighborColumns: input.includeNeighborColumns === true,
     existingSubtests,
+    dominantAgeMin,
+    dominantAgeMax,
   };
 };
 
@@ -370,7 +451,8 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    The cell value is the raw score (single value or range). You MUST output one "sid" table entry per DATA COLUMN, with:
    - "r" = cell value (the raw score read from the cell)
    - "n" = row header (the NS/standard score from the left column)
-   - One row object per non-empty cell in that column.
+  - One row object per visible cell in that column.
+  - IMPORTANT: Cells containing "-", "–", "—" or ":" are NOT empty placeholders. They indicate "not scorable" and MUST be output as r:"-" with the corresponding n.
    CRITICAL FOR INVERTED TABLES: Read each column independently, top to bottom. Do NOT confuse adjacent columns. Mentally trace a vertical line from the column header down to each cell to verify horizontal alignment.
 3. VALUES:
    - If Parametric: Extract "m" and "s".
@@ -382,8 +464,9 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - For LOOKUP, keep raw score ranges as strings (e.g. "0-5").
 4b. DENSE TABLE READING STRATEGY (CRITICAL for tables with more than 8 data columns):
    - Read the table COLUMN BY COLUMN, not row by row.
-   - For each column: (a) identify the column header/abbreviation, (b) scan every row from top to bottom, (c) record each non-empty cell with its row header (the NS/score from the leftmost column).
-   - After extracting each column, VERIFY the count of extracted values matches the number of non-empty cells visible in that column.
+  - For each column: (a) identify the column header/abbreviation, (b) scan every row from top to bottom, (c) record each visible cell with its row header (the NS/score from the leftmost column).
+  - Dash-like cells ("-", "–", "—", ":") count as visible cells and must be extracted as r:"-".
+  - After extracting each column, VERIFY the count of extracted values matches the number of visible cells in that column.
    - Common error on dense tables: reading a neighboring column's value instead of the target column. To prevent this, mentally trace a strict vertical line from the column header down to each cell.
    - The LAST columns (rightmost) are just as important as the first. Do NOT stop reading early.
 5. SUBTEST NAMING (CRITICAL):
@@ -411,7 +494,9 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - For LOOKUP: Each "sid" entry groups all rows for ONE subtest. If the page covers a single age group (visible in the header), ALL rows under that subtest share the same a0/a1.
    - For PARAMETRIC: Each "sid" entry groups all age/grade rows for ONE subtest.
    COMPLETENESS CHECK (LOOKUP):
-   - For inverted/transposed LOOKUP tables with NS rows (1-19 or similar), each subtest column should produce up to 19 rows (some NS levels may legitimately have an empty cell — skip those).
+  - For inverted/transposed LOOKUP tables with NS rows (1-19 or similar), each subtest column should produce up to 19 rows.
+  - If a cell is a dash-like token ("-", "–", "—", ":"), output r:"-" for that NS row (do NOT skip it).
+  - Skip only truly blank/absent cells where no glyph is visible.
    - If you extracted significantly fewer rows for one column than for its neighbors, re-scan that column before finalizing.
    - The highest raw score for a subtest is typically at the highest NS (e.g. NS 19). Verify you did not stop reading a column early or confuse it with an adjacent column.
    - After generating the full output, do a final spot-check: compare the LAST two columns' max raw scores with what you see in the image. If they differ, re-read those columns.
@@ -623,6 +708,273 @@ ${JSON_SCHEMA}`;
   };
 };
 
+const sanitizeInventoryColumns = (columns: unknown): InventoryColumnDescriptor[] => {
+  if (!Array.isArray(columns)) return [];
+
+  const sanitized: Array<InventoryColumnDescriptor | null> = columns
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const value = entry as Record<string, unknown>;
+      const sid = normalizePromptToken(value.sid);
+      const ab = normalizePromptToken(value.ab);
+      if (!sid || !ab) return null;
+      if (isLikelyScoreScaleColumn(sid, ab)) return null;
+
+      const domain = normalizePromptToken(value.domain);
+      const columnOrderRaw = Number(value.columnOrder);
+      const tableOrderRaw = Number(value.tableOrder);
+
+      return {
+        sid,
+        ab,
+        domain: domain || null,
+        columnOrder: Number.isFinite(columnOrderRaw) ? Math.trunc(columnOrderRaw) : null,
+        tableOrder: Number.isFinite(tableOrderRaw) ? Math.trunc(tableOrderRaw) : null,
+        isInverted: value.isInverted === true,
+      };
+    });
+
+  const nonNull = sanitized.filter((entry) => entry !== null) as InventoryColumnDescriptor[];
+
+  return nonNull
+    .sort((left, right) => {
+      const leftTableOrder = Number.isFinite(Number(left.tableOrder)) ? Number(left.tableOrder) : 1;
+      const rightTableOrder = Number.isFinite(Number(right.tableOrder)) ? Number(right.tableOrder) : 1;
+      if (leftTableOrder !== rightTableOrder) return leftTableOrder - rightTableOrder;
+      const leftColumnOrder = Number.isFinite(Number(left.columnOrder)) ? Number(left.columnOrder) : Number.MAX_SAFE_INTEGER;
+      const rightColumnOrder = Number.isFinite(Number(right.columnOrder)) ? Number(right.columnOrder) : Number.MAX_SAFE_INTEGER;
+      if (leftColumnOrder !== rightColumnOrder) return leftColumnOrder - rightColumnOrder;
+      return `${left.sid}::${left.ab}`.localeCompare(`${right.sid}::${right.ab}`);
+    });
+};
+
+const parseInventoryResult = (text: string | null): InventoryResult | null => {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    return {
+      tc: typeof parsed.tc === 'string' ? parsed.tc : null,
+      st: typeof parsed.st === 'string' ? parsed.st : null,
+      isInverted: parsed.isInverted === true,
+      columns: sanitizeInventoryColumns(parsed.columns),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildInventoryScanTaskV2 = (payload: Record<string, unknown>) => {
+  const filename = String(payload.filename || 'document');
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const imagePart = payload.imagePart;
+
+  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
+CONTEXT: The filename is "${filename}".
+${buildCanonicalNamesBlock(canonicalSubtestNames)}
+TASK: Build a PHYSICAL COLUMN INVENTORY for this page before any extraction.
+
+Inspect ALL tables or sections on the page and return every DATA COLUMN in physical left-to-right order.
+
+For each physical data column, return:
+- "sid": FULL French clinical subtest name
+- "ab": original printed abbreviation exactly as visible in the image
+- "domain": visible section/domain header above that column
+- "tableOrder": 1-based order of the table block on the page (top table=1, next table=2, etc.)
+- "columnOrder": 1-based left-to-right order inside that table block
+- "isInverted": true if the table is inverted/transposed (leftmost column is NS / Note étalonnée / a 1-19 score scale)
+
+IMPORTANT COLUMN FILTER:
+- EXCLUDE the left score scale column itself (e.g. NS / Note etalonnee / Note standard).
+- INCLUDE only true subtest data columns that contain raw-score cells.
+
+Also detect the structure type:
+- "PARAMETRIC" if the table contains Mean/SD statistical constants
+- "LOOKUP" if it maps raw scores to standard scores or percentiles
+
+OUTPUT JSON ONLY:
+{
+  "tc": "string",
+  "st": "PARAMETRIC" | "LOOKUP",
+  "isInverted": true | false,
+  "columns": [
+    {
+      "sid": "string",
+      "ab": "string",
+      "domain": "string",
+      "tableOrder": number,
+      "columnOrder": number,
+      "isInverted": true | false
+    }
+  ]
+}
+
+RULES:
+- Include ALL data columns from ALL tables on the page.
+- "columns" must follow physical order as printed in the image.
+- NEVER use abbreviations as "sid".
+- Do not stop early after the first domain or first table.
+- If the page is LOOKUP, the inventory must include the rightmost columns too.`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
+const buildFocusedExtractionTaskV2 = (
+  payload: Record<string, unknown>,
+  focusColumns: InventoryColumnDescriptor[],
+  domainHint: string
+) => {
+  const filename = String(payload.filename || 'document');
+  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
+  const imagePart = payload.imagePart;
+  const serializedColumns = focusColumns.map((column) => ({
+    sid: column.sid,
+    ab: column.ab || null,
+    domain: column.domain || null,
+    tableOrder: column.tableOrder ?? null,
+    columnOrder: column.columnOrder ?? null,
+    isInverted: column.isInverted === true,
+  }));
+
+  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
+CONTEXT: The filename is "${filename}".
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
+FOCUS CONSTRAINT: Extract data ONLY for these specific physical columns: ${JSON.stringify(serializedColumns)}
+These belong to the domain section: "${domainHint}".
+IGNORE all other columns entirely. Only output data for the listed columns.
+
+CRITICAL FOR DENSE / INVERTED LOOKUP TABLES:
+- Track the listed columns by their physical position, not only by name.
+- Re-read the rightmost targeted columns before finalizing.
+- Do NOT borrow values from adjacent columns unless the target list explicitly includes them.
+
+TASK: Extract and normalize data for the specified columns only.
+${EXTRACTION_RULES}
+${JSON_SCHEMA}`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
+const buildRepairExtractionTaskV2 = (
+  payload: Record<string, unknown>,
+  repairRequest: RepairRequestPayload
+) => {
+  const filename = String(payload.filename || 'document');
+  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
+  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
+  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
+  const imagePart = payload.imagePart;
+
+  const focusList = repairRequest.focusSubtests.map((entry) => ({
+    sid: entry.name,
+    ab: entry.abbreviation || null,
+    domain: entry.domain || null,
+    columnOrder: entry.columnOrder ?? null,
+    isInverted: entry.isInverted === true,
+  }));
+  const expectedCountsBlock = repairRequest.expectedGroupCounts.length > 0
+    ? `EXPECTED ROW COUNTS PER AGE/GROUP (must be respected):
+${repairRequest.expectedGroupCounts.map((entry) => `- "${entry.groupLabel}" => ${entry.expectedCount} rows per targeted subtest`).join('\n')}`
+    : 'EXPECTED ROW COUNTS PER AGE/GROUP: not provided.';
+  const existingSubtestsBlock = repairRequest.existingSubtests.length > 0
+    ? `EXISTING SUBTESTS ALREADY PRESENT ON THIS PAGE (for name consistency only): ${JSON.stringify(repairRequest.existingSubtests)}`
+    : '';
+  const neighborColumnsRule = repairRequest.includeNeighborColumns
+    ? 'If you detect clearly missing adjacent columns tied to the same domain block, include them as additional tables to recover omissions.'
+    : 'Do NOT include any non-targeted column. Restrict output strictly to targeted subtests.';
+  const dominantAgeRule =
+    repairRequest.dominantAgeMin != null && repairRequest.dominantAgeMax != null
+      ? `DOMINANT PAGE AGE CONSTRAINT: normalize this page to ${repairRequest.dominantAgeMin}-${repairRequest.dominantAgeMax} months. Do NOT drift to a neighboring age bucket.`
+      : 'DOMINANT PAGE AGE CONSTRAINT: not provided.';
+
+  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
+CONTEXT: The filename is "${filename}".
+IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
+REPAIR MODE: targeted re-extraction after quality issues.
+TARGET SUBTESTS (extract these first, exhaustively): ${JSON.stringify(focusList)}
+${expectedCountsBlock}
+${existingSubtestsBlock}
+${neighborColumnsRule}
+${dominantAgeRule}
+
+MANDATORY REPAIR RULES:
+- Extract ALL rows for each targeted subtest.
+- Respect expected row counts when provided. If the page has one age group header, that count applies to that group.
+- Keep one unique sid per physical source column variant and keep original abbreviation in "ab".
+- Reuse known/canonical names when possible. Avoid creating duplicate aliases for the same target.
+- Repair only the requested physical columns unless neighbor columns are explicitly allowed.
+- On inverted tables, re-check the lowest NS and highest NS cells for every targeted column.
+- Output valid JSON only.
+
+${EXTRACTION_RULES}
+${JSON_SCHEMA}`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
+const buildVerificationTaskV2 = (
+  payload: Record<string, unknown>,
+  columnsToVerify: InventoryColumnDescriptor[],
+) => {
+  const imagePart = payload.imagePart;
+  const verifyList = columnsToVerify.map((column) => ({
+    sid: column.sid,
+    ab: column.ab || null,
+    domain: column.domain || null,
+    tableOrder: column.tableOrder ?? null,
+    columnOrder: column.columnOrder ?? null,
+    isInverted: column.isInverted === true,
+  }));
+
+  const prompt = `Verify the following physical columns independently in the image.
+TARGET COLUMNS: ${JSON.stringify(verifyList)}
+
+For EACH targeted column, report:
+- sid
+- ab
+- domain
+- columnOrder
+- isInverted
+- min_n (lowest standard/NS with data)
+- max_n (highest standard/NS with data)
+- min_r (raw at min_n)
+- max_r (raw at max_n)
+- count (number of visible cells, including dash-like placeholders "-", "–", "—", ":")
+
+CRITICAL:
+- Read each target column independently top-to-bottom.
+- Do NOT confuse adjacent columns.
+- For inverted tables, re-check the rightmost columns carefully.
+- If a targeted column is missing or unreadable, still output an entry with sid/ab and count 0.
+
+JSON only:
+{"verify":[{"sid":"...","ab":"...","domain":"...","columnOrder":1,"isInverted":true,"min_n":1,"max_n":19,"min_r":"0-3","max_r":"44-46","count":19}]}`;
+
+  return {
+    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
+  };
+};
+
+const applyInventoryOrdering = (
+  result: ExtractionResult | null,
+  inventoryColumns: InventoryColumnDescriptor[],
+): ExtractionResult | null => {
+  if (!result || !Array.isArray(result.tables) || result.tables.length === 0) return result;
+  return {
+    ...result,
+    tables: sortTablesByInventoryOrder(result.tables, inventoryColumns),
+  };
+};
+
 // ── MERGE EXTRACTION RESULTS ───────────────────────────────────────────────
 
 const normalizeStableKeyPart = (value: unknown): string =>
@@ -632,6 +984,185 @@ const normalizeStableKeyPart = (value: unknown): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase();
 
+const clamp01 = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+};
+
+const buildInventoryColumnKeyLocal = (sid: unknown, ab: unknown): string => (
+  `${normalizeStableKeyPart(sid)}::${normalizeStableKeyPart(ab || 'NOABBR')}`
+);
+
+const getInventoryColumnLabel = (column: Pick<InventoryColumnDescriptor, 'sid' | 'ab'>): string => (
+  String(column.ab || column.sid || '').trim()
+);
+
+const computeMedian = (values: number[]): number => {
+  if (!Array.isArray(values) || values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+};
+
+const buildExtractionRowCountsByKey = (
+  result: ExtractionResult,
+): Map<string, number[]> => {
+  const counts = new Map<string, number[]>();
+  if (!Array.isArray(result.tables)) return counts;
+
+  result.tables.forEach((table) => {
+    const key = buildInventoryColumnKeyLocal(table.sid, table.ab || null);
+    const rowCount = Array.isArray(table.rows) ? table.rows.length : 0;
+    const existing = counts.get(key) || [];
+    existing.push(rowCount);
+    counts.set(key, existing);
+  });
+
+  return counts;
+};
+
+const buildExtractionRowCountsByInventoryOccurrence = (
+  result: ExtractionResult,
+  inventoryColumns: InventoryColumnDescriptor[],
+): number[] => {
+  const countsByKey = buildExtractionRowCountsByKey(result);
+  const cursorByKey = new Map<string, number>();
+
+  return inventoryColumns.map((column) => {
+    const key = buildInventoryColumnKeyLocal(column.sid, column.ab || null);
+    const values = countsByKey.get(key) || [];
+    const cursor = cursorByKey.get(key) || 0;
+    cursorByKey.set(key, cursor + 1);
+    const rowCount = values[cursor];
+    return Number.isFinite(rowCount) ? Number(rowCount) : 0;
+  });
+};
+
+const buildInventoryColumnDisplayLabels = (
+  inventoryColumns: InventoryColumnDescriptor[],
+): string[] => {
+  const labelTotals = new Map<string, number>();
+  inventoryColumns.forEach((column) => {
+    const label = getInventoryColumnLabel(column) || 'COL';
+    labelTotals.set(label, (labelTotals.get(label) || 0) + 1);
+  });
+
+  const labelCursors = new Map<string, number>();
+  return inventoryColumns.map((column) => {
+    const label = getInventoryColumnLabel(column) || 'COL';
+    const total = labelTotals.get(label) || 1;
+    if (total <= 1) return label;
+    const occurrence = (labelCursors.get(label) || 0) + 1;
+    labelCursors.set(label, occurrence);
+    return `${label} (#${occurrence})`;
+  });
+};
+
+const computeUncertaintyFlags = (
+  result: ExtractionResult | null,
+  inventoryColumns: InventoryColumnDescriptor[],
+  mismatches: VerificationMismatch[] = [],
+): ExtractionUncertaintyFlags | undefined => {
+  if (!result || !Array.isArray(inventoryColumns) || inventoryColumns.length === 0) return undefined;
+
+  const rowCountsByInventoryIndex = buildExtractionRowCountsByInventoryOccurrence(result, inventoryColumns);
+  const labels = buildInventoryColumnDisplayLabels(inventoryColumns);
+  const counts = inventoryColumns.map((_, index) => {
+    const rowCount = rowCountsByInventoryIndex[index] ?? 0;
+    return {
+      column: labels[index] || `COL #${index + 1}`,
+      rows: rowCount,
+    };
+  });
+
+  const positiveRows = counts.map((entry) => entry.rows).filter((value) => value > 0);
+  const medianRows = computeMedian(positiveRows);
+  const minExpectedRows = Math.max(3, Math.ceil(medianRows * 0.5));
+
+  const emptyExtractedColumns = counts
+    .filter((entry) => entry.rows === 0)
+    .map((entry) => entry.column);
+
+  const lowCoverageColumns: ExtractionUncertaintyLowCoverageColumn[] = medianRows > 0
+    ? counts
+      .filter((entry) => entry.rows > 0 && entry.rows < minExpectedRows)
+      .map((entry) => ({
+        column: entry.column,
+        extractedRows: entry.rows,
+        medianRows,
+      }))
+    : [];
+
+  const verificationMismatchColumns = Array.from(new Set(
+    mismatches
+      .map((mismatch) => String(mismatch.ab || mismatch.sid || '').trim())
+      .filter((value) => value.length > 0)
+  ));
+
+  const adjacentDuplicateColumns = Array.from(new Set(
+    mismatches
+      .filter((mismatch) => String(mismatch.reason || '').startsWith('adjacent_duplicate'))
+      .map((mismatch) => String(mismatch.ab || mismatch.sid || '').trim())
+      .filter((value) => value.length > 0)
+  ));
+
+  const coveredColumns = counts.filter((entry) => entry.rows > 0).length;
+  const inventoryCoverageRatio = inventoryColumns.length > 0
+    ? coveredColumns / inventoryColumns.length
+    : undefined;
+
+  const flags: ExtractionUncertaintyFlags = {};
+  if (emptyExtractedColumns.length > 0) flags.emptyExtractedColumns = emptyExtractedColumns;
+  if (lowCoverageColumns.length > 0) flags.lowCoverageColumns = lowCoverageColumns;
+  if (verificationMismatchColumns.length > 0) flags.verificationMismatchColumns = verificationMismatchColumns;
+  if (adjacentDuplicateColumns.length > 0) flags.adjacentDuplicateColumns = adjacentDuplicateColumns;
+  if (typeof inventoryCoverageRatio === 'number') flags.inventoryCoverageRatio = inventoryCoverageRatio;
+
+  return Object.keys(flags).length > 0 ? flags : undefined;
+};
+
+const computeConfidenceScore = (
+  uncertaintyFlags: ExtractionUncertaintyFlags | undefined,
+  mismatchCount: number,
+  expectedColumnCount: number,
+): number => {
+  if (!Number.isFinite(expectedColumnCount) || expectedColumnCount <= 0) return 0.5;
+
+  const coverage = uncertaintyFlags?.inventoryCoverageRatio ?? 1;
+  const emptyCount = uncertaintyFlags?.emptyExtractedColumns?.length || 0;
+  const lowCoverageCount = uncertaintyFlags?.lowCoverageColumns?.length || 0;
+  const adjacentDuplicateCount = uncertaintyFlags?.adjacentDuplicateColumns?.length || 0;
+  const mismatchRatio = mismatchCount / expectedColumnCount;
+  const emptyRatio = emptyCount / expectedColumnCount;
+  const lowCoverageRatio = lowCoverageCount / expectedColumnCount;
+  const adjacentDuplicateRatio = adjacentDuplicateCount / expectedColumnCount;
+
+  const score =
+    coverage
+    - (emptyRatio * 0.35)
+    - (mismatchRatio * 0.45)
+    - (lowCoverageRatio * 0.25)
+    - (adjacentDuplicateRatio * 0.2);
+
+  return clamp01(score);
+};
+
+const annotateExtractionQuality = (
+  meta: ExtractionMeta,
+  result: ExtractionResult | null,
+  inventoryColumns: InventoryColumnDescriptor[],
+  mismatches: VerificationMismatch[] = [],
+) => {
+  const uncertaintyFlags = computeUncertaintyFlags(result, inventoryColumns, mismatches);
+  meta.uncertaintyFlags = uncertaintyFlags;
+  meta.confidenceScore = computeConfidenceScore(uncertaintyFlags, mismatches.length, inventoryColumns.length);
+};
+
 const hasStableValue = (value: unknown): boolean => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
@@ -639,7 +1170,7 @@ const hasStableValue = (value: unknown): boolean => {
 };
 
 const stableRowScore = (row: Record<string, unknown>): number =>
-  Object.values(row).reduce((score, value) => score + (hasStableValue(value) ? 1 : 0), 0);
+  Object.values(row).reduce<number>((score, value) => score + (hasStableValue(value) ? 1 : 0), 0);
 
 const stableRowValue = (value: unknown): string => {
   if (value === null || value === undefined) return '';
@@ -1140,7 +1671,8 @@ const buildVerificationTask = (
 
   const prompt = `Verify each column abbreviation in the image. For EACH, report boundary values only.
 Columns: ${JSON.stringify(abList)}
-Per column: ab, min_n (lowest NS with data), max_n (highest NS with data), min_r (raw at min_n), max_r (raw at max_n), count (non-empty cells).
+Per column: ab, min_n (lowest NS with data), max_n (highest NS with data), min_r (raw at min_n), max_r (raw at max_n), count (visible cells, including dash-like placeholders).
+Treat "-", "–", "—" and ":" as visible data placeholders (count them and report min/max using the nearest numeric raw values when available).
 Read each column independently top-to-bottom. Do NOT confuse adjacent columns.
 JSON only, minified: {"verify":[{"ab":"XX","min_n":1,"min_r":"0-3","max_n":19,"max_r":"60-86","count":19},...]}`;
 
@@ -1149,21 +1681,21 @@ JSON only, minified: {"verify":[{"ab":"XX","min_n":1,"min_r":"0-3","max_n":19,"m
   };
 };
 
-interface VerificationMismatch {
+interface LegacyVerificationMismatch {
   sid: string;
   ab: string;
   reason: string;
 }
 
-const compareVerificationResults = (
+const compareVerificationResultsLegacy = (
   extraction: ExtractionResult,
   verification: VerificationResult
-): VerificationMismatch[] => {
+): LegacyVerificationMismatch[] => {
   if (!verification?.verify || !Array.isArray(verification.verify)) return [];
   if (!extraction?.tables || !Array.isArray(extraction.tables)) return [];
 
-  const mismatches: VerificationMismatch[] = [];
-  const verifyMap = new Map<string, VerificationEntry>();
+  const mismatches: LegacyVerificationMismatch[] = [];
+  const verifyMap = new Map<string, VerificationResult['verify'][number]>();
   for (const entry of verification.verify) {
     if (entry.ab) verifyMap.set(entry.ab.toUpperCase().trim(), entry);
   }
@@ -1173,16 +1705,18 @@ const compareVerificationResults = (
     if (!ab) continue;
     const verified = verifyMap.get(ab);
     if (!verified) continue;
+    const verifiedCount = Number.isFinite(Number(verified.count)) ? Number(verified.count) : null;
+    const verifiedMaxN = Number.isFinite(Number(verified.max_n)) ? Number(verified.max_n) : null;
 
     const rows = table.rows || [];
     const extractedCount = rows.length;
 
     // Check row count mismatch (tolerance of 1)
-    if (Math.abs(extractedCount - verified.count) > 1) {
+    if (verifiedCount !== null && Math.abs(extractedCount - verifiedCount) > 1) {
       mismatches.push({
         sid: table.sid,
         ab: table.ab || ab,
-        reason: `row_count: extracted=${extractedCount}, verified=${verified.count}`,
+        reason: `row_count: extracted=${extractedCount}, verified=${verifiedCount}`,
       });
       continue;
     }
@@ -1193,11 +1727,11 @@ const compareVerificationResults = (
       .filter((n) => Number.isFinite(n));
     const extractedMaxN = extractedNValues.length > 0 ? Math.max(...extractedNValues) : null;
 
-    if (extractedMaxN !== null && verified.max_n > 0 && Math.abs(extractedMaxN - verified.max_n) > 1) {
+    if (extractedMaxN !== null && verifiedMaxN !== null && verifiedMaxN > 0 && Math.abs(extractedMaxN - verifiedMaxN) > 1) {
       mismatches.push({
         sid: table.sid,
         ab: table.ab || ab,
-        reason: `max_standard: extracted=${extractedMaxN}, verified=${verified.max_n}`,
+        reason: `max_standard: extracted=${extractedMaxN}, verified=${verifiedMaxN}`,
       });
       continue;
     }
@@ -1264,7 +1798,7 @@ const extractWithFallback = async (
           throw new Error('Both full extraction and inventory scan failed');
         }
       } else {
-        const totalSubtests = inventory.domains.reduce((sum, d) => sum + d.subtests.length, 0);
+        const totalSubtests = inventory.domains.reduce((sum: number, d: LegacyInventoryDomain) => sum + d.subtests.length, 0);
 
         // If inventory shows few subtests, the single call should have been enough
         if (!wasTruncated && totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
@@ -1351,7 +1885,7 @@ const extractWithFallback = async (
       return baseResult;
     }
 
-    const mismatches = compareVerificationResults(parsed, verifyResult);
+    const mismatches = compareVerificationResultsLegacy(parsed, verifyResult);
 
     if (mismatches.length === 0) {
       baseResult.meta.verified = true;
@@ -1360,7 +1894,7 @@ const extractWithFallback = async (
     }
 
     // Auto-repair mismatched subtests (up to 10 at once)
-    const repairTargets = mismatches.slice(0, 10);
+    const repairTargets = mismatches.slice(0, MAX_VERIFICATION_REPAIR_TARGETS);
     const repairRequest: RepairRequestPayload = {
       focusSubtests: repairTargets.map((m) => ({ name: m.sid, abbreviation: m.ab })),
       expectedGroupCounts: [],
@@ -1411,6 +1945,448 @@ const extractWithRepair = async (
       repairedSubtests,
       inventoryMode: repairRequest.includeNeighborColumns ? 'conditional' : 'off',
     },
+  };
+};
+
+const runChunkedInventoryExtraction = async (
+  payload: Record<string, unknown>,
+  inventory: InventoryResult,
+): Promise<{ parsed: ExtractionResult; apiCalls: number; strategy: string }> => {
+  const chunks = chunkInventoryColumns(inventory.columns, MAX_SUBTESTS_PER_CHUNK);
+  if (chunks.length === 0) {
+    throw new Error('Inventory scan did not return any extractable columns');
+  }
+
+  const runChunk = async (chunk: { columns: InventoryColumnDescriptor[]; domainHint: string }) => {
+    const task = buildFocusedExtractionTaskV2(payload, chunk.columns, chunk.domainHint);
+    const { text } = await callGemini(task.contents);
+    return safeJsonParse(text);
+  };
+
+  const computeChunkCoverage = (
+    parsed: ExtractionResult | null,
+    columns: InventoryColumnDescriptor[],
+  ): number => {
+    if (!parsed || !Array.isArray(parsed.tables) || parsed.tables.length === 0 || columns.length === 0) return 0;
+
+    const rowsByKey = new Map<string, number[]>();
+    parsed.tables.forEach((table) => {
+      const key = buildInventoryColumnKeyLocal(table.sid, table.ab || null);
+      const rowCount = Array.isArray(table.rows) ? table.rows.length : 0;
+      const existing = rowsByKey.get(key) || [];
+      existing.push(rowCount);
+      rowsByKey.set(key, existing);
+    });
+
+    const cursorByKey = new Map<string, number>();
+    let coveredColumns = 0;
+    columns.forEach((column) => {
+      const key = buildInventoryColumnKeyLocal(column.sid, column.ab || null);
+      const values = rowsByKey.get(key) || [];
+      const cursor = cursorByKey.get(key) || 0;
+      cursorByKey.set(key, cursor + 1);
+      const rowCount = values[cursor] || 0;
+      if (rowCount > 0) coveredColumns += 1;
+    });
+
+    return coveredColumns / Math.max(1, columns.length);
+  };
+
+  const assessed = await Promise.all(
+    chunks.map(async (chunk) => {
+      const parsed = await runChunk(chunk);
+      return {
+        chunk,
+        parsed,
+        coverage: computeChunkCoverage(parsed, chunk.columns),
+      };
+    }),
+  );
+  let apiCalls = chunks.length;
+
+  const retryCandidates = assessed.filter((entry) => !entry.parsed || entry.coverage < CHUNK_MIN_COLUMN_COVERAGE_RATIO);
+  if (retryCandidates.length > 0) {
+    const retried = await Promise.all(retryCandidates.map(async (entry) => runChunk(entry.chunk)));
+    apiCalls += retryCandidates.length;
+    retryCandidates.forEach((entry, index) => {
+      const parsed = retried[index];
+      entry.parsed = parsed;
+      entry.coverage = computeChunkCoverage(parsed, entry.chunk.columns);
+    });
+  }
+
+  const incompleteChunks = assessed.filter((entry) => !entry.parsed || entry.coverage < CHUNK_MIN_COLUMN_COVERAGE_RATIO);
+  if (incompleteChunks.length > 0) {
+    throw new Error(`Chunked extraction incomplete: ${incompleteChunks.length}/${chunks.length} chunks below coverage threshold`);
+  }
+
+  const parsedResults = assessed
+    .map((entry) => entry.parsed)
+    .filter((entry): entry is ExtractionResult => !!entry);
+  if (parsedResults.length === 0) {
+    throw new Error('Chunked extraction returned no valid JSON');
+  }
+
+  const merged = applyInventoryOrdering(
+    mergeExtractionResultsStable([
+      {
+        tc: inventory.tc || undefined,
+        st: inventory.st || 'LOOKUP',
+        tables: [],
+      },
+      ...parsedResults,
+    ]),
+    inventory.columns,
+  );
+
+  if (!merged) {
+    throw new Error('Unable to merge chunked extraction results');
+  }
+
+  return {
+    parsed: merged,
+    apiCalls,
+    strategy: retryCandidates.length > 0
+      ? `inventory-chunked-${chunks.length}+retry-${retryCandidates.length}`
+      : `inventory-chunked-${chunks.length}`,
+  };
+};
+
+const extractWithFallbackV2 = async (
+  payload: Record<string, unknown>
+): Promise<ExtractionRunResult> => {
+  const inventoryTask = buildInventoryScanTaskV2(payload);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents);
+  const inventory = parseInventoryResult(inventoryText);
+
+  if (!inventory || !inventory.st) {
+    const fullTask = buildFullExtractionTask(payload);
+    const { text: fullText } = await callGemini(fullTask.contents);
+    if (!fullText) throw new Error('Full extraction returned empty response');
+    return {
+      text: fullText,
+      meta: {
+        strategy: 'single-no-inventory',
+        apiCalls: 2,
+        inventoryMode: 'conditional',
+      },
+    };
+  }
+
+  const routing = decideExtractionRouting(inventory, CHUNKED_SUBTEST_THRESHOLD);
+  const baseMeta: ExtractionMeta = {
+    strategy: routing.mode,
+    apiCalls: 1,
+    inventoryMode: 'required',
+    inventoryColumnCount: routing.inventoryColumnCount,
+    isInvertedLookup: routing.isInverted,
+  };
+
+  let parsed: ExtractionResult | null = null;
+  if (routing.mode === 'lookup-chunked-verified' && inventory.columns.length > 0) {
+    try {
+      const chunked = await runChunkedInventoryExtraction(payload, inventory);
+      parsed = chunked.parsed;
+      baseMeta.apiCalls += chunked.apiCalls;
+      baseMeta.strategy = chunked.strategy;
+    } catch (chunkError) {
+      // Dense lookup pages should avoid serial full recovery fallback to stay under edge timeout budget.
+      if (inventory.columns.length > MAX_COLUMNS_FOR_SYNC_VERIFICATION) {
+        throw chunkError;
+      }
+      const fullTask = buildFullExtractionTask(payload);
+      const { text: recoveryText, finishReason: recoveryFinishReason } = await callGemini(fullTask.contents);
+      baseMeta.apiCalls += 1;
+      parsed = safeJsonParse(recoveryText);
+      if (!parsed) {
+        throw new Error('Chunked extraction incomplete and full recovery failed');
+      }
+      baseMeta.strategy = recoveryFinishReason === 'MAX_TOKENS' || recoveryFinishReason === 'LENGTH'
+        ? `${routing.mode}+full-recovery-truncated`
+        : `${routing.mode}+full-recovery`;
+    }
+  } else {
+    const fullTask = buildFullExtractionTask(payload);
+    const { text: fullText, finishReason } = await callGemini(fullTask.contents);
+    baseMeta.apiCalls += 1;
+    parsed = safeJsonParse(fullText);
+
+    const shouldFallbackToChunked =
+      String(inventory.st || '').toUpperCase() === 'LOOKUP'
+      && inventory.columns.length > 0
+      && (
+        finishReason === 'MAX_TOKENS'
+        || finishReason === 'LENGTH'
+        || !parsed
+        || ((parsed?.tables?.length ?? 0) < Math.max(1, Math.floor(inventory.columns.length * 0.7)))
+      );
+
+    if (shouldFallbackToChunked) {
+      const chunked = await runChunkedInventoryExtraction(payload, inventory);
+      parsed = chunked.parsed;
+      baseMeta.apiCalls += chunked.apiCalls;
+      baseMeta.strategy = `${routing.mode}+chunk-fallback`;
+    }
+  }
+
+  if (!parsed) {
+    throw new Error('Extraction returned no valid JSON');
+  }
+
+  parsed = applyInventoryOrdering(parsed, inventory.columns);
+  if (!parsed) {
+    throw new Error('Extraction ordering failed');
+  }
+  const completeness = summarizeInventoryCompleteness(parsed, inventory.columns);
+  baseMeta.expectedSourceColumns = completeness.expectedSourceColumns;
+  baseMeta.missingSourceColumns = completeness.missingSourceColumns;
+  baseMeta.expectedSourceColumnCount = completeness.expectedSourceColumnCount;
+  annotateExtractionQuality(baseMeta, parsed, inventory.columns);
+  let baseResult: ExtractionRunResult = {
+    text: JSON.stringify(parsed),
+    meta: baseMeta,
+  };
+
+  const isLookup = String(parsed.st || inventory.st || '').toUpperCase() === 'LOOKUP';
+  const shouldVerifySynchronously =
+    ENABLE_VERIFICATION_PASS
+    && isLookup
+    && inventory.columns.length > 0
+    && inventory.columns.length <= MAX_COLUMNS_FOR_SYNC_VERIFICATION;
+
+  if (!shouldVerifySynchronously) {
+    if (ENABLE_VERIFICATION_PASS && isLookup && inventory.columns.length > MAX_COLUMNS_FOR_SYNC_VERIFICATION) {
+      baseResult.meta.strategy = `${baseResult.meta.strategy}+verify-skipped-dense`;
+      baseResult.meta.verified = false;
+    }
+    return baseResult;
+  }
+
+  const verifyTask = buildVerificationTaskV2(payload, inventory.columns);
+  const { text: verifyText } = await callGemini(verifyTask.contents);
+  baseResult.meta.apiCalls += 1;
+
+  let verifyResult: VerificationResult | null = null;
+  try {
+    verifyResult = verifyText ? JSON.parse(verifyText) : null;
+  } catch {
+    verifyResult = null;
+  }
+
+  if (!verifyResult || !Array.isArray(verifyResult.verify)) {
+    baseResult.meta.verified = false;
+    if (typeof baseResult.meta.confidenceScore === 'number') {
+      baseResult.meta.confidenceScore = clamp01(baseResult.meta.confidenceScore - 0.1);
+    }
+    return baseResult;
+  }
+
+  const mismatches = compareVerificationResults(parsed, verifyResult, inventory.columns);
+  if (mismatches.length === 0) {
+    baseResult.meta.verified = true;
+    baseResult.meta.verificationRepairs = 0;
+    baseResult.meta.verifiedSubtests = inventory.columns.map((column) => column.sid);
+    annotateExtractionQuality(baseResult.meta, parsed, inventory.columns, []);
+    return baseResult;
+  }
+
+  const repairTargets = mismatches.slice(0, MAX_VERIFICATION_REPAIR_TARGETS);
+  const includeNeighborColumns =
+    routing.mode === 'lookup-chunked-verified'
+    || repairTargets.some((entry) =>
+      entry.reason.startsWith('missing_') || entry.reason.startsWith('adjacent_duplicate'));
+
+  const repairColumns = matchRepairColumns(
+    inventory.columns,
+    repairTargets.map((entry) => ({ sid: entry.sid, ab: entry.ab })),
+    includeNeighborColumns,
+  );
+
+  if (repairColumns.length === 0) {
+    baseResult.meta.verified = false;
+    annotateExtractionQuality(baseResult.meta, parsed, inventory.columns, mismatches);
+    return baseResult;
+  }
+
+  const repairRequest: RepairRequestPayload = {
+    focusSubtests: repairColumns.map((column) => ({
+      name: column.sid,
+      abbreviation: column.ab || null,
+      domain: column.domain || null,
+      columnOrder: column.columnOrder ?? null,
+      isInverted: column.isInverted === true,
+    })),
+    expectedGroupCounts: [],
+    includeNeighborColumns,
+    existingSubtests: parsed.tables?.map((table) => table.sid).filter(Boolean) || [],
+    dominantAgeMin: parsed.pa0 ?? null,
+    dominantAgeMax: parsed.pa1 ?? null,
+  };
+
+  const repairTask = buildRepairExtractionTaskV2(payload, repairRequest);
+  const { text: repairText } = await callGemini(repairTask.contents);
+  baseResult.meta.apiCalls += 1;
+  const repairedResult = safeJsonParse(repairText);
+
+  if (!repairedResult || !Array.isArray(repairedResult.tables)) {
+    baseResult.meta.verified = false;
+    annotateExtractionQuality(baseResult.meta, parsed, inventory.columns, mismatches);
+    return baseResult;
+  }
+
+  const repairedMerged = applyInventoryOrdering(
+    mergeExtractionResultsStable([parsed, repairedResult]),
+    inventory.columns,
+  );
+  if (!repairedMerged) {
+    baseResult.meta.verified = false;
+    annotateExtractionQuality(baseResult.meta, parsed, inventory.columns, mismatches);
+    return baseResult;
+  }
+
+  const reverifyTask = buildVerificationTaskV2(payload, repairColumns);
+  const { text: reverifyText } = await callGemini(reverifyTask.contents);
+  baseResult.meta.apiCalls += 1;
+  let reverifyResult: VerificationResult | null = null;
+  try {
+    reverifyResult = reverifyText ? JSON.parse(reverifyText) : null;
+  } catch {
+    reverifyResult = null;
+  }
+
+  if (!reverifyResult || !Array.isArray(reverifyResult.verify)) {
+    baseResult.meta.verified = false;
+    annotateExtractionQuality(baseResult.meta, repairedMerged, inventory.columns, mismatches);
+    if (typeof baseResult.meta.confidenceScore === 'number') {
+      baseResult.meta.confidenceScore = clamp01(baseResult.meta.confidenceScore - 0.1);
+    }
+    return baseResult;
+  }
+
+  const reverifyMismatches = compareVerificationResults(repairedMerged, reverifyResult, repairColumns);
+  if (reverifyMismatches.length > 0) {
+    baseResult.meta.verified = false;
+    annotateExtractionQuality(baseResult.meta, repairedMerged, inventory.columns, reverifyMismatches);
+    return baseResult;
+  }
+
+  const finalMeta: ExtractionMeta = {
+    ...baseResult.meta,
+    strategy: `${baseMeta.strategy}+verified`,
+    repairedSubtests: repairColumns.map((column) => column.sid),
+    verified: true,
+    verificationRepairs: repairColumns.length,
+    verifiedSubtests: repairColumns.map((column) => column.sid),
+  };
+  annotateExtractionQuality(finalMeta, repairedMerged, inventory.columns, []);
+
+  return {
+    text: JSON.stringify(repairedMerged),
+    meta: finalMeta,
+  };
+};
+
+const extractWithRepairV2 = async (
+  payload: Record<string, unknown>,
+  repairRequest: RepairRequestPayload
+): Promise<ExtractionRunResult> => {
+  const inventoryTask = buildInventoryScanTaskV2(payload);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents);
+  const inventory = parseInventoryResult(inventoryText);
+
+  const inventoryColumns = inventory?.columns || [];
+  const matchedColumns = matchRepairColumns(
+    inventoryColumns,
+    repairRequest.focusSubtests.map((entry) => ({
+      sid: entry.name,
+      ab: entry.abbreviation || null,
+    })),
+    repairRequest.includeNeighborColumns,
+  );
+
+  const effectiveRepairRequest: RepairRequestPayload = {
+    ...repairRequest,
+    focusSubtests: matchedColumns.length > 0
+      ? matchedColumns.map((column) => ({
+        name: column.sid,
+        abbreviation: column.ab || null,
+        domain: column.domain || null,
+        columnOrder: column.columnOrder ?? null,
+        isInverted: column.isInverted === true,
+      }))
+      : repairRequest.focusSubtests,
+  };
+
+  const repairTask = buildRepairExtractionTaskV2(payload, effectiveRepairRequest);
+  const { text } = await callGemini(repairTask.contents);
+  if (!text) {
+    throw new Error('Repair extraction returned empty response');
+  }
+
+  const parsed = safeJsonParse(text);
+  if (!parsed) {
+    throw new Error('Repair extraction returned invalid JSON');
+  }
+
+  const orderedParsed = applyInventoryOrdering(parsed, inventoryColumns) || parsed;
+  const repairedSubtests = effectiveRepairRequest.focusSubtests.map((entry) => entry.name);
+  const completeness = summarizeInventoryCompleteness(orderedParsed, inventoryColumns);
+  const meta: ExtractionMeta = {
+    strategy: 'repair-focused-v2',
+    apiCalls: 2,
+    repairedSubtests,
+    inventoryMode: 'required',
+    inventoryColumnCount: inventoryColumns.length,
+    isInvertedLookup: inventory?.isInverted === true,
+    expectedSourceColumns: completeness.expectedSourceColumns,
+    missingSourceColumns: completeness.missingSourceColumns,
+    expectedSourceColumnCount: completeness.expectedSourceColumnCount,
+  };
+  annotateExtractionQuality(meta, orderedParsed, inventoryColumns);
+
+  if (
+    ENABLE_VERIFICATION_PASS
+    && String(orderedParsed.st || inventory?.st || '').toUpperCase() === 'LOOKUP'
+    && matchedColumns.length > 0
+    && inventoryColumns.length <= MAX_COLUMNS_FOR_SYNC_VERIFICATION
+  ) {
+    const verifyTask = buildVerificationTaskV2(payload, matchedColumns);
+    const { text: verifyText } = await callGemini(verifyTask.contents);
+    meta.apiCalls += 1;
+
+    let verifyResult: VerificationResult | null = null;
+    try {
+      verifyResult = verifyText ? JSON.parse(verifyText) : null;
+    } catch {
+      verifyResult = null;
+    }
+
+    if (verifyResult && Array.isArray(verifyResult.verify)) {
+      const mismatches = compareVerificationResults(orderedParsed, verifyResult, matchedColumns);
+      meta.verified = mismatches.length === 0;
+      meta.verificationRepairs = mismatches.length === 0 ? matchedColumns.length : 0;
+      if (mismatches.length === 0) {
+        meta.verifiedSubtests = matchedColumns.map((column) => column.sid);
+      }
+      annotateExtractionQuality(meta, orderedParsed, inventoryColumns, mismatches);
+    } else {
+      meta.verified = false;
+      if (typeof meta.confidenceScore === 'number') {
+        meta.confidenceScore = clamp01(meta.confidenceScore - 0.1);
+      }
+    }
+  } else if (
+    ENABLE_VERIFICATION_PASS
+    && String(orderedParsed.st || inventory?.st || '').toUpperCase() === 'LOOKUP'
+    && inventoryColumns.length > MAX_COLUMNS_FOR_SYNC_VERIFICATION
+  ) {
+    meta.strategy = `${meta.strategy}+verify-skipped-dense`;
+    meta.verified = false;
+  }
+
+  return {
+    text: JSON.stringify(orderedParsed),
+    meta,
   };
 };
 
@@ -1673,9 +2649,9 @@ Deno.serve(async (req: Request) => {
 
     try {
       if (repairRequest) {
-        result = await extractWithRepair(payload, repairRequest);
+        result = await extractWithRepairV2(payload, repairRequest);
       } else {
-        result = await extractWithFallback(payload);
+        result = await extractWithFallbackV2(payload);
       }
     } catch (err) {
       const errMsg = String(err);

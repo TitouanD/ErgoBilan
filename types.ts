@@ -398,6 +398,18 @@ export interface ExtractedRow {
     source_column_key?: string;
 }
 
+export type DisplayFilterMode = 'all' | 'flagged';
+
+export interface DisplayLookupRow {
+    id: string;
+    row?: ExtractedRow;
+    isPlaceholder: boolean;
+    displayRaw: string;
+    displayStandard: string;
+    displayZScore: string;
+    displayPercentile: string;
+}
+
 export type ReviewSeverity = 'blocking' | 'warning' | 'info';
 
 export type ReviewFlagCode =
@@ -421,10 +433,13 @@ export type ReviewFlagCode =
     | 'LOOKUP_ZERO_Z_PLATEAU'
     | 'LOOKUP_NON_INTEGER_SCORE'
     | 'SUBTEST_CONTENT_DUPLICATE'
+    | 'SUBTEST_CONTENT_REASSIGNED'
     | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED'
     | 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW'
     | 'LOOKUP_MAX_RAW_OUTLIER'
-    | 'LOOKUP_NS_RANGE_INCOMPLETE';
+    | 'LOOKUP_NS_RANGE_INCOMPLETE'
+    | 'LOOKUP_GROUP_AGE_MISMATCH'
+    | 'LOOKUP_COLUMN_SHIFT_SUSPECT';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
@@ -636,6 +651,9 @@ export interface AIExtractionResult {
 export interface ExtractionRepairFocusSubtest {
     name: string;
     abbreviation?: string | null;
+    domain?: string | null;
+    columnOrder?: number | null;
+    isInverted?: boolean | null;
 }
 
 export interface ExtractionRepairExpectedGroupCount {
@@ -648,15 +666,39 @@ export interface ExtractionRepairRequest {
     expectedGroupCounts: ExtractionRepairExpectedGroupCount[];
     includeNeighborColumns: boolean;
     existingSubtests: string[];
+    dominantAgeMin?: number | null;
+    dominantAgeMax?: number | null;
+}
+
+export interface ExtractionUncertaintyLowCoverageColumn {
+    column: string;
+    extractedRows: number;
+    medianRows: number;
+}
+
+export interface ExtractionUncertaintyFlags {
+    emptyExtractedColumns?: string[];
+    lowCoverageColumns?: ExtractionUncertaintyLowCoverageColumn[];
+    verificationMismatchColumns?: string[];
+    adjacentDuplicateColumns?: string[];
+    inventoryCoverageRatio?: number;
 }
 
 export interface ExtractionCallMeta {
     strategy: string;
     apiCalls: number;
     repairedSubtests?: string[];
-    inventoryMode?: 'off' | 'conditional';
+    inventoryMode?: 'off' | 'conditional' | 'required';
     verified?: boolean;
     verificationRepairs?: number;
+    verifiedSubtests?: string[];
+    inventoryColumnCount?: number;
+    isInvertedLookup?: boolean;
+    expectedSourceColumns?: string[];
+    missingSourceColumns?: string[];
+    expectedSourceColumnCount?: number;
+    uncertaintyFlags?: ExtractionUncertaintyFlags;
+    confidenceScore?: number;
 }
 
 // ── Deduplication types ──
