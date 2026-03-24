@@ -39,7 +39,7 @@ export const VoiceTextarea: React.FC<{
             {label && <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{label}</label>}
             <div className="relative">
                 <textarea
-                    value={value}
+                    value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={placeholder}
                     rows={rows}
@@ -50,21 +50,16 @@ export const VoiceTextarea: React.FC<{
                         type="button"
                         onClick={toggleListening}
                         className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${
-                            isListening 
-                                ? 'bg-red-100 text-red-600 animate-pulse shadow-lg shadow-red-200' 
+                            isListening
+                                ? 'bg-red-100 text-red-600 animate-pulse shadow-lg shadow-red-200'
                                 : 'bg-[var(--progress-bg)] text-[var(--text-secondary)] hover:bg-[#E07A5F]/10 hover:text-[#E07A5F]'
                         }`}
                         title={isListening ? 'Arrêter la dictée' : 'Dictée vocale'}
                     >
-                        {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                        {isListening ? <Mic size={16} /> : <MicOff size={16} />}
                     </button>
                 )}
             </div>
-            {isListening && interimText && (
-                <div className="mt-1 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 italic animate-pulse">
-                    🎙️ {interimText}...
-                </div>
-            )}
         </div>
     );
 };

@@ -372,7 +372,7 @@ const VoiceObservation: React.FC<{
   return (
     <div className="relative mt-3">
       <textarea
-        value={value}
+        value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
         onChange={(e) => !readOnly && onChange(e.target.value)}
         onFocus={onFocus}
         placeholder="Observation clinique rapide..."
@@ -387,10 +387,9 @@ const VoiceObservation: React.FC<{
           className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-[var(--text-disabled)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]'
             }`}
         >
-          {isListening ? <MicOff size={12} /> : <Mic size={12} />}
+          {isListening ? <Mic size={12} /> : <MicOff size={12} />}
         </button>
       )}
-      {isListening && interimText && <div className="mt-1 px-2 py-1 bg-red-50 border border-red-100 rounded text-[10px] text-red-500 italic">Dictée : {interimText}…</div>}
     </div>
   );
 };
@@ -1586,7 +1585,7 @@ const CompactSubtestRow: React.FC<{
             : getSubtestDisplayName(subtest)}
         </span>
         {hasData && parts.length > 0 && (
-          <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : 'text-[var(--text-secondary)]'
+          <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : tone === 'good' ? 'text-emerald-600' : 'text-[var(--text-secondary)]'
             }`}>
             {parts.join(' \u00b7 ')}
           </span>
@@ -1777,7 +1776,7 @@ const TableView: React.FC<{
             }
 
             return (
-              <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''}`}>
+              <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : tone === 'good' ? 'bg-emerald-50/20 dark:bg-emerald-900/5' : ''}`}>
                 <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
                   <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
                   {canAutoConvert && st.computationMode === 'PARAMETRIC' && (

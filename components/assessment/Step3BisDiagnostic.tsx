@@ -35,7 +35,7 @@ const VoiceArea: React.FC<{
     return (
         <div className="relative">
             <textarea
-                value={value}
+                value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 className={className}
@@ -51,13 +51,8 @@ const VoiceArea: React.FC<{
                         }`}
                     title="Dictée vocale"
                 >
-                    {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                    {isListening ? <Mic size={16} /> : <MicOff size={16} />}
                 </button>
-            )}
-            {isListening && interimText && (
-                <div className="mt-1.5 px-3 py-1.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-500 italic">
-                    🎙️ {interimText}...
-                </div>
             )}
         </div>
     );
@@ -69,18 +64,21 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
     const [notesExpanded, setNotesExpanded] = useState(false);
     const [panelExpanded, setPanelExpanded] = useState(false);
 
-    const { testInfoMap, subtestNameMap } = useMemo(() => {
+    const { testInfoMap, subtestNameMap, subtestOrderMap } = useMemo(() => {
         const testInfoMap: Record<string, { name: string; categoryName: string }> = {};
         const subtestNameMap: Record<string, string> = {};
+        const subtestOrderMap: Record<string, Record<string, number>> = {};
         catalog.forEach(cat => {
             cat.tests.forEach(t => {
                 testInfoMap[t.id] = { name: t.name, categoryName: cat.name };
-                t.subtests.forEach(st => {
+                subtestOrderMap[t.id] = {};
+                t.subtests.forEach((st, index) => {
                     subtestNameMap[st.id] = (st as any).displayName || st.name || st.id;
+                    subtestOrderMap[t.id][st.id] = index;
                 });
             });
         });
-        return { testInfoMap, subtestNameMap };
+        return { testInfoMap, subtestNameMap, subtestOrderMap };
     }, [catalog]);
 
     const groupedData = useMemo((): Record<string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]> => {
@@ -95,6 +93,13 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                 if (hasData) subtestList.push({ subId, name: subtestNameMap[subId] || subtestNameMap[subId.toLowerCase()] || subId, res });
             });
             if (subtestList.length === 0) return;
+            // Sort subtests according to catalog order
+            const orderMap = subtestOrderMap[testId] || {};
+            subtestList.sort((a, b) => {
+                const orderA = orderMap[a.subId] ?? 999;
+                const orderB = orderMap[b.subId] ?? 999;
+                return orderA - orderB;
+            });
             const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
             const info = testInfoMap[testId];
             const categoryName = info?.categoryName || 'Autre';
@@ -103,7 +108,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
             result[categoryName].push({ testId, name: testName, avg, subtests: subtestList });
         });
         return result;
-    }, [tests, testInfoMap, subtestNameMap]);
+    }, [tests, testInfoMap, subtestNameMap, subtestOrderMap]);
 
     const zColor = (z?: number | null): string => {
         if (z == null || !Number.isFinite(z)) return '#94a3b8';
@@ -119,11 +124,11 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
         <>
         {panelExpanded && (
             <div
-                className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-start justify-end p-4 pt-20"
+                className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
                 onClick={() => setPanelExpanded(false)}
             >
                 <div
-                    className="w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-2xl"
+                    className="w-full max-w-6xl max-h-[85vh] overflow-y-auto bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-2xl"
                     onClick={e => e.stopPropagation()}
                 >
                     <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center justify-between">
