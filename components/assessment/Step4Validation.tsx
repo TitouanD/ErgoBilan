@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, ChevronLeft, Download, FileCheck, FileText, Home, ArrowLeft, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck } from 'lucide-react';
+import { Check, Edit2, AlertCircle, Download, FileCheck, FileText, ArrowLeft, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import { sanitizeReportText } from '../../utils/textSanitizer';
 import { useTextHistory } from '../../hooks/useTextHistory';
 
@@ -22,6 +22,47 @@ const parseBold = (text: string) => {
     });
 };
 
+const getListLineInfo = (line: string) => {
+    const match = line.match(/^(\s*)([*-])\s+(.*)$/);
+    if (!match) return null;
+
+    const spaces = match[1].length;
+    const level = Math.max(0, Math.floor(spaces / 2));
+    return {
+        level,
+        content: match[3],
+    };
+};
+
+const indentSelectedLines = (value: string, start: number, end: number, direction: 'indent' | 'outdent') => {
+    const blockStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+    let blockEnd = value.indexOf('\n', end);
+    if (blockEnd === -1) blockEnd = value.length;
+
+    const block = value.slice(blockStart, blockEnd);
+    const lines = block.split('\n');
+
+    let removedSpaces = 0;
+    const nextLines = lines.map((line) => {
+        if (!line.trim()) return line;
+        if (direction === 'indent') return `  ${line}`;
+        const removed = line.match(/^ {1,2}/)?.[0].length ?? 0;
+        removedSpaces += removed;
+        return line.replace(/^ {1,2}/, '');
+    });
+
+    const nextBlock = nextLines.join('\n');
+    const nextValue = value.slice(0, blockStart) + nextBlock + value.slice(blockEnd);
+    const addedSpaces = direction === 'indent' ? nextLines.filter((line) => line.trim()).length * 2 : 0;
+    const delta = direction === 'indent' ? addedSpaces : -removedSpaces;
+
+    return {
+        value: nextValue,
+        selectionStart: Math.max(blockStart, start + Math.min(2, delta)),
+        selectionEnd: Math.max(blockStart, end + delta),
+    };
+};
+
 const renderMarkdown = (text: string) => {
     const safeText = sanitizeReportText(text);
     if (!safeText) return <p className="text-stone-400 dark:text-[var(--text-disabled)] italic">Aucun contenu.</p>;
@@ -35,12 +76,20 @@ const renderMarkdown = (text: string) => {
         if (trimmed.startsWith('## ')) {
             return <h3 key={idx} className="text-xl font-serif font-bold text-stone-900 dark:text-[var(--text-heading)] mt-8 mb-4 border-b border-stone-100 dark:border-[var(--border-color)] pb-2">{trimmed.replace('## ', '')}</h3>;
         }
-        if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+        const listLineInfo = getListLineInfo(line);
+        if (listLineInfo) {
+            const markerClass =
+                listLineInfo.level === 0
+                    ? 'w-1.5 h-1.5 rounded-full bg-rose-400'
+                    : listLineInfo.level === 1
+                        ? 'w-1.5 h-1.5 rounded-full border border-rose-400'
+                        : 'w-1 h-1 rounded-sm bg-rose-300';
+
              return (
-                <div key={idx} className="flex gap-3 ml-2 mb-2 items-start">
-                    <div className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-2.5 shrink-0"></div>
+                <div key={idx} className="flex gap-3 mb-2 items-start" style={{ marginLeft: `${8 + listLineInfo.level * 18}px` }}>
+                    <div className={`${markerClass} mt-[0.62rem] shrink-0`}></div>
                     <p className="text-stone-700 dark:text-[var(--text-main)] leading-relaxed text-base text-justify">
-                         {parseBold(trimmed.replace(/^[*-]\s+/, ''))}
+                         {parseBold(listLineInfo.content)}
                     </p>
                 </div>
             );
@@ -74,6 +123,12 @@ const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: stri
             </button>
             <button onMouseDown={(e) => { e.preventDefault(); onAction('list'); }} className={btnClass} title="Liste à puces">
                 <List size={16} />
+            </button>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('indentList'); }} className={btnClass} title="Sous-puce (Tab)">
+                <ChevronRight size={16} />
+            </button>
+            <button onMouseDown={(e) => { e.preventDefault(); onAction('outdentList'); }} className={btnClass} title="Remonter la puce (Shift+Tab)">
+                <ChevronLeft size={16} />
             </button>
             <div className="w-px h-4 bg-white/20 mx-1"></div>
             <div className="px-2 text-[10px] font-medium text-white/50 select-none">Markdown</div>
@@ -135,6 +190,14 @@ const SectionCard: React.FC<{
             const lineStart = text.lastIndexOf('\n', start - 1) + 1;
             newText = text.substring(0, lineStart) + "- " + text.substring(lineStart);
             newCursor = end + 2;
+        } else if (type === 'indentList' || type === 'outdentList') {
+            const result = indentSelectedLines(text, start, end, type === 'indentList' ? 'indent' : 'outdent');
+            history.set(result.value);
+            setTimeout(() => {
+                field.focus();
+                field.setSelectionRange(result.selectionStart, result.selectionEnd);
+            }, 0);
+            return;
         }
 
         history.set(newText);
@@ -180,11 +243,28 @@ const SectionCard: React.FC<{
                         <textarea 
                             ref={textareaRef}
                             spellCheck={true}
+                            autoCorrect="on"
+                            autoCapitalize="sentences"
                             lang="fr"
-                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-mono resize-y shadow-inner transition-all"
+                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-medium resize-y shadow-inner transition-all"
                             value={history.value}
                             onChange={(e) => history.set(e.target.value)}
                             onKeyDown={(e) => {
+                                if (e.key === 'Tab') {
+                                    e.preventDefault();
+                                    const result = indentSelectedLines(
+                                        history.value,
+                                        e.currentTarget.selectionStart,
+                                        e.currentTarget.selectionEnd,
+                                        e.shiftKey ? 'outdent' : 'indent',
+                                    );
+                                    history.set(result.value);
+                                    setTimeout(() => {
+                                        textareaRef.current?.focus();
+                                        textareaRef.current?.setSelectionRange(result.selectionStart, result.selectionEnd);
+                                    }, 0);
+                                    return;
+                                }
                                 if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
                                     e.preventDefault();
                                     history.undo();
@@ -200,7 +280,7 @@ const SectionCard: React.FC<{
                     <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800/30">
                         <div className="flex items-center gap-2 text-xs text-blue-800 dark:text-blue-300">
                             <Info size={14} />
-                            <span>Utilisez la barre d'outils pour mettre en forme.</span>
+                            <span>Utilisez Tab/Shift+Tab pour les sous-puces. Pour l'orthographe: clic droit sur un mot.</span>
                         </div>
                     </div>
 
@@ -240,12 +320,13 @@ const SectionCard: React.FC<{
 };
 
 export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidateSection, onNext, onBack }) => {
-  const validatedCount = sections.filter(s => s.status === 'validated').length;
-  const allValidated = validatedCount === sections.length && sections.length > 0;
-  const pendingCount = sections.length - validatedCount;
+    const displayedSections = sections.filter((section) => section.id !== 'objectifs');
+    const validatedCount = displayedSections.filter(s => s.status === 'validated').length;
+    const allValidated = validatedCount === displayedSections.length && displayedSections.length > 0;
+    const pendingCount = displayedSections.length - validatedCount;
 
   const handleValidateAll = () => {
-    sections.forEach(s => {
+        displayedSections.forEach(s => {
       if (s.status !== 'validated') {
         onValidateSection(s.id, s.content);
       }
@@ -253,12 +334,12 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
   };
 
   return (
-    <div className="max-w-4xl mx-auto pb-40 animate-in fade-in duration-500">
+        <div className="max-w-4xl mx-auto pb-10 animate-in fade-in duration-500">
       
-        <div className="bg-[var(--card-bg)] sticky top-24 z-30 p-6 rounded-2xl shadow-xl shadow-stone-200/50 dark:shadow-black/20 border border-[var(--border-color)] mb-12 flex items-center justify-between ring-1 ring-[var(--card-bg)]">
+            <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex justify-between items-end gap-4 relative z-10">
         <div className="space-y-1">
-            <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
-            <p className="text-[var(--text-secondary)] font-medium text-sm">Vérifiez et ajustez le contenu généré par l'IA.</p>
+                        <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
+                        <p className="text-[var(--text-secondary)] font-medium mt-2">Vérifiez et ajustez le contenu généré par l'IA.</p>
         </div>
         <div className="flex items-center gap-3">
             <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
@@ -266,9 +347,9 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
                 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700/40'
                 : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-500 border-amber-200 dark:border-amber-700/40'
             }`}>
-              {validatedCount}/{sections.length} validé(s)
+                            {validatedCount}/{displayedSections.length} validé(s)
             </div>
-            {pendingCount > 0 && sections.length > 0 && (
+                        {pendingCount > 0 && displayedSections.length > 0 && (
               <button
                 type="button"
                 onClick={handleValidateAll}
@@ -283,33 +364,33 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
       </div>
 
       <div className="space-y-4">
-        {sections.length === 0 ? (
+        {displayedSections.length === 0 ? (
             <div className="text-center py-20 text-stone-400 dark:text-[var(--text-disabled)] italic">
                 Génération en attente...
             </div>
         ) : (
-            sections.map(section => (
+            displayedSections.map(section => (
                 <SectionCard key={section.id} section={section} onValidate={onValidateSection} />
             ))
         )}
       </div>
 
-      <div className="fixed bottom-10 left-0 right-0 z-40 pointer-events-none flex justify-center">
-        <div className="bg-[var(--card-bg)] p-3 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3 border border-[var(--border-color)]">
+      <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
+        <div className="max-w-4xl w-full flex items-center justify-between gap-3">
             
             <button 
                 onClick={onBack} 
-                className="px-6 py-3 rounded-xl flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--hover-bg)] transition-colors font-bold text-sm uppercase tracking-wider"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-4 py-3 transition-colors"
             >
-                <ArrowLeft size={18} /> Retour
+                <ArrowLeft size={18} /> Quitter
             </button>
             
             <div className="h-8 w-px bg-[var(--border-color)] mx-1"></div>
             
             <button 
                 onClick={onNext}
-                disabled={sections.length === 0}
-                className="flex items-center gap-3 px-8 py-3 bg-stone-900 text-white rounded-xl font-bold text-sm disabled:opacity-40 disabled:grayscale transition-all hover:bg-rose-700 shadow-lg"
+                disabled={displayedSections.length === 0}
+                className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[#3D405B] hover:bg-[#E07A5F]"
             >
                 <Download size={18} />
                 <span className="uppercase tracking-wider">Visualiser le document</span>

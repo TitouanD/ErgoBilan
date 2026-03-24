@@ -2641,51 +2641,53 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, tests]);
 
   return (
-    <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-32">
-      <div className="mb-8 bg-[var(--card-bg)] p-6 rounded-[32px] shadow-sm border border-[var(--border-color)]">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
-              <Activity size={24} className="text-[#E07A5F]" />
-              Tests & mesures
-            </h2>
+    <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
+      <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
+            <Activity size={24} className="text-[#E07A5F]" />
+            Tests & mesures
+          </h2>
+          <p className="text-[var(--text-secondary)] font-medium mt-2">
+            Saisissez et validez les mesures avant la synthèse clinique.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+            {stat.rev}/{stat.total} revus
           </div>
-          <div className="flex items-center gap-3">
-            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-              {stat.rev}/{stat.total} revus
-            </div>
-            {stat.pending > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = { ...tests };
-                  Object.entries(next).forEach(([testId, subtests]) => {
-                    Object.entries(subtests).forEach(([subId, res]) => {
-                      if (hasValue(res) && !reviewed(res)) {
-                        next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
-                      }
-                    });
-                  });
-                  updateTests(next);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-              >
-                <CheckCheck size={14} />
-                Tout revu
-              </button>
-            )}
+          {stat.pending > 0 && (
             <button
-              onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
-              className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
+              type="button"
+              onClick={() => {
+                const next = { ...tests };
+                Object.entries(next).forEach(([testId, subtests]) => {
+                  Object.entries(subtests).forEach(([subId, res]) => {
+                    if (hasValue(res) && !reviewed(res)) {
+                      next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
+                    }
+                  });
+                });
+                updateTests(next);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
             >
-              <Plus size={16} />
-              Ajouter
+              <CheckCheck size={14} />
+              Tout revu
             </button>
-          </div>
+          )}
+          <button
+            onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
+            className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
+          >
+            <Plus size={16} />
+            Ajouter
+          </button>
         </div>
-        <div className="mt-4 h-2 rounded-full bg-[var(--progress-bg)] overflow-hidden">
-          <div className="h-full bg-[#81B29A]" style={{ width: `${completion}%` }} />
-        </div>
+      </div>
+
+      <div className="mb-8 h-2 rounded-full bg-[var(--progress-bg)] overflow-hidden">
+        <div className="h-full bg-[#81B29A]" style={{ width: `${completion}%` }} />
       </div>
 
       <div className="flex gap-8">
@@ -2883,9 +2885,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-5 bg-[var(--card-bg)]/90 backdrop-blur-md border-t border-[var(--border-color)] flex justify-center z-50">
-        <div className="max-w-4xl w-full flex justify-between items-center">
-          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
+      <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
+        <div className="max-w-4xl w-full flex justify-between items-center gap-4">
+          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Quitter</button>
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
             disabled={isPersistingDirectionOverrides}

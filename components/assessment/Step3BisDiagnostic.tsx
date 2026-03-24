@@ -424,12 +424,12 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
     }, [tests]);
 
     return (
-        <div className="max-w-6xl mx-auto pb-32 animate-in fade-in duration-500">
+        <div className="max-w-6xl mx-auto pb-10 animate-in fade-in duration-500">
 
-            <div className="flex justify-between items-end mb-8">
+            <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                     <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Synthèse & Projet</h2>
-                    <p className="text-stone-500 font-medium mt-2">Posez votre diagnostic. L'IA se chargera de l'argumenter.</p>
+                    <p className="text-[var(--text-secondary)] font-medium mt-2">Posez votre diagnostic. L'IA se chargera de l'argumenter.</p>
                 </div>
                 {reviewStats.total > 0 && (
                     <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold ${reviewStats.allReviewed ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700/40' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/40'
@@ -549,10 +549,10 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
             </div>
 
             {/* NAVIGATION FOOTER */}
-            <div className="fixed bottom-0 left-0 right-0 p-6 bg-[var(--card-bg)] backdrop-blur-md border-t border-[var(--border-color)] flex justify-center z-50">
+            <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
                 <div className="max-w-4xl w-full flex justify-between items-center">
                     <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">
-                        Retour
+                        Quitter
                     </button>
 
                     <button
