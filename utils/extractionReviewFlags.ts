@@ -195,11 +195,19 @@ const normalizeAgeToken = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS'];
+
+const hasAmbiguousAgeQualifierContext = (token: string): boolean => (
+  AGE_QUALIFIER_AMBIGUOUS_PATTERNS.some((pattern) => token.includes(pattern))
+);
+
 const isLikelyAgeQualifierToken = (value: unknown): boolean => {
   const token = normalizeAgeToken(value);
   if (!token) return false;
 
-  if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+  const hasAmbiguousContext = hasAmbiguousAgeQualifierContext(token);
+
+  if (((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -207,7 +215,7 @@ const isLikelyAgeQualifierToken = (value: unknown): boolean => {
     return true;
   }
 
-  if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-\u2013\u2014]\s*\d+/.test(token)) {
+  if ((/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-\u2013\u2014]\s*\d+/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -707,6 +715,7 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     }
 
     const orderedScored = ordered.filter((entry) => entry.rawBounds !== null && entry.hasScore);
+    const orderedWithRaw = ordered.filter((entry) => entry.rawBounds !== null);
     const standardSteps: NumericStep[] = [];
     const percentileSteps: NumericStep[] = [];
 
@@ -721,9 +730,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     let totalPercentileChecks = 0;
     let rawOverlapCount = 0;
 
-    for (let i = 1; i < orderedScored.length; i += 1) {
-      const prev = orderedScored[i - 1];
-      const curr = orderedScored[i];
+    for (let i = 1; i < orderedWithRaw.length; i += 1) {
+      const prev = orderedWithRaw[i - 1];
+      const curr = orderedWithRaw[i];
       if (!prev.rawBounds || !curr.rawBounds) continue;
 
       // Raw ranges are inclusive in lookup tables; touching bounds are suspicious too (e.g. 19-20 then 20).
@@ -733,6 +742,11 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
         const conflictingScore = (
           (prev.standardValue !== null && curr.standardValue !== null && Math.abs(prev.standardValue - curr.standardValue) > 0.5)
           || (prev.percentileValue !== null && curr.percentileValue !== null && Math.abs(prev.percentileValue - curr.percentileValue) > 1)
+        );
+        const partialScoreConflict = sameBounds && (
+          (prev.standardValue === null) !== (curr.standardValue === null)
+          || (prev.percentileValue === null) !== (curr.percentileValue === null)
+          || (prev.zValue === null) !== (curr.zValue === null)
         );
         if (sameBounds && conflictingScore) {
           flags.push(makeFlag({
@@ -744,17 +758,33 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
             rowId: curr.row.id,
             confidence: 0.98,
           }));
+        } else if (partialScoreConflict) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_RAW_DUPLICATE_PARTIAL',
+            severity: 'blocking',
+            message: `Lignes brutes dupliquees avec metriques incomplètes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.96,
+          }));
         }
         flags.push(makeFlag({
           code: 'LOOKUP_RAW_RANGE_OVERLAP',
-          severity: sameBounds && conflictingScore ? 'blocking' : 'warning',
+          severity: sameBounds && (conflictingScore || partialScoreConflict) ? 'blocking' : 'warning',
           message: `Chevauchement de plages brutes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(prev.rawBounds)} puis ${formatRawBounds(curr.rawBounds)}.`,
           subtest: bucket.subtest,
           groupLabel: bucket.groupLabel,
           rowId: curr.row.id,
-          confidence: sameBounds && conflictingScore ? 0.97 : 0.92,
+          confidence: sameBounds && (conflictingScore || partialScoreConflict) ? 0.97 : 0.92,
         }));
       }
+    }
+
+    for (let i = 1; i < orderedScored.length; i += 1) {
+      const prev = orderedScored[i - 1];
+      const curr = orderedScored[i];
+      if (!prev.rawBounds || !curr.rawBounds) continue;
 
       if (prev.standardValue !== null && curr.standardValue !== null) {
         // For a decreasing-direction scale (higher raw = worse, e.g. error counts),

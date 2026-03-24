@@ -23,10 +23,18 @@ import type {
     SubtestDirectionIssue
 } from '../types';
 import { Logger } from '../utils/logger';
+import { captureAppMetric } from './sentryService';
+import { featureFlag } from '../utils/featureFlags';
 
 const ATTACH_MAX_SUBTESTS_PER_CHUNK = 10;
 const ATTACH_MAX_NORMS_PER_CHUNK = 450;
 const ATTACH_MAX_NORMS_PER_SUBTEST_FRAGMENT = 450;
+const ATTACH_CHUNK_TIMEOUT_RETRIES = 2;
+const ATTACH_CHUNK_RETRY_BASE_MS = 1200;
+const ATTACH_MIN_FRAGMENT_NORMS = 50;
+const ATTACH_RESUME_STATE_KEY = 'contrib_attach_resume_v1';
+const ATTACH_RECHUNK_ENABLED = featureFlag('VITE_FEATURE_ATTACH_RECHUNK', true);
+const ATTACH_RESUME_ENABLED = featureFlag('VITE_FEATURE_ATTACH_RESUME', true);
 
 type ContributionSubtestPayload = {
     norms?: unknown[];
@@ -39,6 +47,30 @@ type ContributionTestPayload = {
     [key: string]: unknown;
 };
 
+type AttachProgress = {
+    current: number;
+    total: number;
+    attempt: number;
+    chunkSubtests: number;
+    chunkNorms: number;
+    message: string;
+};
+
+type AttachChunkTask = {
+    payload: ContributionTestPayload;
+    maxSubtestsPerChunk: number;
+    maxNormsPerChunk: number;
+    maxNormsPerSubtestFragment: number;
+    retriesUsed: number;
+};
+
+type AttachResumeState = {
+    testId: string;
+    payloadSignature: string;
+    completedChunkFingerprints: string[];
+    updatedAt: string;
+};
+
 const getSubtestNorms = (subtest: ContributionSubtestPayload): unknown[] => (
     Array.isArray(subtest.norms) ? subtest.norms : []
 );
@@ -47,6 +79,110 @@ const cloneSubtestWithNorms = (subtest: ContributionSubtestPayload, norms: unkno
     ...subtest,
     norms,
 });
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const canUseLocalStorage = (): boolean => (
+    typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+);
+
+const quickHash = (value: string): string => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(i);
+        hash |= 0;
+    }
+    return String(hash >>> 0);
+};
+
+const computePayloadSignature = (payload: ContributionTestPayload): string => {
+    const serialized = JSON.stringify(payload || {});
+    return `p:${quickHash(serialized)}:${serialized.length}`;
+};
+
+const computeChunkFingerprint = (payload: ContributionTestPayload): string => {
+    const serialized = JSON.stringify(payload || {});
+    return `c:${quickHash(serialized)}:${serialized.length}`;
+};
+
+const loadAttachResumeState = (testId: string, payloadSignature: string): AttachResumeState | null => {
+    if (!canUseLocalStorage()) return null;
+    try {
+        const raw = window.localStorage.getItem(ATTACH_RESUME_STATE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as AttachResumeState;
+        if (!parsed || parsed.testId !== testId || parsed.payloadSignature !== payloadSignature) return null;
+        if (!Array.isArray(parsed.completedChunkFingerprints)) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+const saveAttachResumeState = (state: AttachResumeState): void => {
+    if (!canUseLocalStorage()) return;
+    try {
+        window.localStorage.setItem(ATTACH_RESUME_STATE_KEY, JSON.stringify(state));
+    } catch {
+        // Ignore local storage failures.
+    }
+};
+
+const clearAttachResumeState = (testId: string, payloadSignature: string): void => {
+    if (!canUseLocalStorage()) return;
+    try {
+        const raw = window.localStorage.getItem(ATTACH_RESUME_STATE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as AttachResumeState;
+        if (parsed?.testId === testId && parsed?.payloadSignature === payloadSignature) {
+            window.localStorage.removeItem(ATTACH_RESUME_STATE_KEY);
+        }
+    } catch {
+        // Ignore local storage failures.
+    }
+};
+
+const computeChunkStats = (payload: ContributionTestPayload): { subtests: number; norms: number } => {
+    const subtests = Array.isArray(payload?.subtests) ? payload.subtests : [];
+    const chunkSubtests = subtests.length;
+    const chunkNorms = subtests.reduce((sum, subtest) => sum + getSubtestNorms(subtest).length, 0);
+    return {
+        subtests: chunkSubtests,
+        norms: chunkNorms,
+    };
+};
+
+const splitAttachChunkTask = (task: AttachChunkTask): AttachChunkTask[] | null => {
+    const nextMaxSubtests = Math.max(1, Math.floor(task.maxSubtestsPerChunk / 2));
+    const nextMaxNorms = Math.max(ATTACH_MIN_FRAGMENT_NORMS, Math.floor(task.maxNormsPerChunk / 2));
+    const nextMaxNormsPerSubtestFragment = Math.max(
+        ATTACH_MIN_FRAGMENT_NORMS,
+        Math.floor(task.maxNormsPerSubtestFragment / 2),
+    );
+
+    const unchanged =
+        nextMaxSubtests === task.maxSubtestsPerChunk
+        && nextMaxNorms === task.maxNormsPerChunk
+        && nextMaxNormsPerSubtestFragment === task.maxNormsPerSubtestFragment;
+
+    if (unchanged) return null;
+
+    const splitPayloads = splitContributionPayloadIntoChunks(task.payload, {
+        maxSubtestsPerChunk: nextMaxSubtests,
+        maxNormsPerChunk: nextMaxNorms,
+        maxNormsPerSubtestFragment: nextMaxNormsPerSubtestFragment,
+    });
+
+    if (splitPayloads.length <= 1) return null;
+
+    return splitPayloads.map((payload) => ({
+        payload,
+        maxSubtestsPerChunk: nextMaxSubtests,
+        maxNormsPerChunk: nextMaxNorms,
+        maxNormsPerSubtestFragment: nextMaxNormsPerSubtestFragment,
+        retriesUsed: 0,
+    }));
+};
 
 const flattenSubtestsForChunking = (
     subtests: ContributionSubtestPayload[],
@@ -227,6 +363,41 @@ const validateContributionPayloadStrict = (payload: ContributionTestPayload): vo
     }
 };
 
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => (
+    !!value && typeof value === 'object' && !Array.isArray(value)
+);
+
+const toFiniteNumberOrZero = (value: unknown): number => {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const validateCreatePrivateTestResult = (data: unknown): string => {
+    if (typeof data === 'string' && data.trim().length > 0) return data;
+    throw new Error('RPC_CONTRACT_ERROR:create_private_test returned invalid test id');
+};
+
+const validateMergeResult = (data: unknown, rpcName: 'merge_private_test' | 'attach_subtests_to_test'): AttachResult => {
+    if (!isObjectRecord(data)) {
+        throw new Error(`RPC_CONTRACT_ERROR:${rpcName} returned invalid payload`);
+    }
+    return {
+        new_subtests: toFiniteNumberOrZero(data.new_subtests),
+        new_norms: toFiniteNumberOrZero(data.new_norms),
+        test_id: typeof data.test_id === 'string' ? data.test_id : '',
+    };
+};
+
+const validateSimilarTestsResult = (data: unknown): SimilarTestMatch[] => {
+    if (!Array.isArray(data)) return [];
+    return data
+        .filter((item) => isObjectRecord(item) && typeof item.id === 'string' && typeof item.name === 'string')
+        .map((item) => ({
+            ...(item as SimilarTestMatch),
+            similarity_score: toFiniteNumberOrZero(item.similarity_score),
+        }));
+};
+
 
 /**
  * Service dédié aux opérations Administrateur.
@@ -405,54 +576,92 @@ export const AdminService = {
     findSimilarTests: async (name: string, threshold = 0.3): Promise<SimilarTestMatch[]> => {
         const { data, error } = await supabase.rpc('find_similar_tests', { p_name: name, p_threshold: threshold });
         if (error) throw error;
-        return (data || []) as SimilarTestMatch[];
+        return validateSimilarTestsResult(data);
     },
 
     createPrivateTest: async (payload: any): Promise<string> => {
         validateContributionPayloadStrict(payload as ContributionTestPayload);
         const { data, error } = await supabase.rpc('create_private_test', { p_payload: payload });
         if (error) throw error;
-        return data as string;
+        return validateCreatePrivateTestResult(data);
     },
 
     mergePrivateTest: async (targetId: string, payload: any): Promise<{ new_subtests: number; new_norms: number }> => {
         validateContributionPayloadStrict(payload as ContributionTestPayload);
         const { data, error } = await supabase.rpc('merge_private_test', { p_target_id: targetId, p_payload: payload });
         if (error) throw error;
-        return data as { new_subtests: number; new_norms: number };
+        const parsed = validateMergeResult(data, 'merge_private_test');
+        return {
+            new_subtests: parsed.new_subtests,
+            new_norms: parsed.new_norms,
+        };
     },
 
     /**
      * Attach private subtests/norms to an existing test (public or private).
      * Subtests are scoped to the user's organization.
      */
-    attachSubtestsToTest: async (testId: string, payload: any): Promise<AttachResult> => {
+    attachSubtestsToTest: async (
+        testId: string,
+        payload: any,
+        onProgress?: (progress: AttachProgress) => void,
+    ): Promise<AttachResult> => {
+        const startedAt = performance.now();
         const typedPayload = (payload || {}) as ContributionTestPayload;
         validateContributionPayloadStrict(typedPayload);
         const chunks = splitContributionPayloadIntoChunks(typedPayload);
+        const payloadSignature = computePayloadSignature(typedPayload);
+        const resumeState = ATTACH_RESUME_ENABLED ? loadAttachResumeState(testId, payloadSignature) : null;
+        const completedFingerprints = new Set(resumeState?.completedChunkFingerprints || []);
+        let resumedChunks = 0;
+        let timeoutRetries = 0;
+        let timeoutSplits = 0;
+        const taskQueue: AttachChunkTask[] = chunks.map((chunkPayload) => ({
+            payload: chunkPayload,
+            maxSubtestsPerChunk: ATTACH_MAX_SUBTESTS_PER_CHUNK,
+            maxNormsPerChunk: ATTACH_MAX_NORMS_PER_CHUNK,
+            maxNormsPerSubtestFragment: ATTACH_MAX_NORMS_PER_SUBTEST_FRAGMENT,
+            retriesUsed: 0,
+        }));
 
-        if (chunks.length === 1) {
-            const { data, error } = await supabase.rpc('attach_subtests_to_test', { p_test_id: testId, p_payload: typedPayload });
-            if (error) throw error;
-            return data as AttachResult;
-        }
-
-        Logger.info('DB', `Attach payload split into ${chunks.length} chunks for test ${testId}`);
+        Logger.info('DB', `Attach payload split into ${taskQueue.length} chunks for test ${testId}`);
 
         let totalNewSubtests = 0;
         let totalNewNorms = 0;
 
-        for (let index = 0; index < chunks.length; index += 1) {
-            const chunkPayload = chunks[index];
-            const chunkSubtests = Array.isArray(chunkPayload.subtests) ? chunkPayload.subtests.length : 0;
-            const chunkNorms = (chunkPayload.subtests || []).reduce((sum, subtest) => {
-                const norms = getSubtestNorms(subtest);
-                return sum + norms.length;
-            }, 0);
+        for (let index = 0; index < taskQueue.length;) {
+            const task = taskQueue[index];
+            const chunkPayload = task.payload;
+            const stats = computeChunkStats(chunkPayload);
+            const attempt = task.retriesUsed + 1;
+            const chunkFingerprint = computeChunkFingerprint(chunkPayload);
+
+            if (completedFingerprints.has(chunkFingerprint)) {
+                resumedChunks += 1;
+                onProgress?.({
+                    current: index + 1,
+                    total: taskQueue.length,
+                    attempt: 0,
+                    chunkSubtests: stats.subtests,
+                    chunkNorms: stats.norms,
+                    message: `Lot ${index + 1}/${taskQueue.length} déjà envoyé, reprise en cours...`,
+                });
+                index += 1;
+                continue;
+            }
+
+            onProgress?.({
+                current: index + 1,
+                total: taskQueue.length,
+                attempt,
+                chunkSubtests: stats.subtests,
+                chunkNorms: stats.norms,
+                message: `Envoi du lot ${index + 1}/${taskQueue.length} (${stats.subtests} sous-tests, ${stats.norms} normes)...`,
+            });
 
             Logger.info(
                 'DB',
-                `Attach chunk ${index + 1}/${chunks.length} -> ${chunkSubtests} subtests, ${chunkNorms} norms`,
+                `Attach chunk ${index + 1}/${taskQueue.length} (attempt ${attempt}) -> ${stats.subtests} subtests, ${stats.norms} norms`,
             );
 
             const { data, error } = await supabase.rpc('attach_subtests_to_test', {
@@ -462,17 +671,102 @@ export const AdminService = {
 
             if (error) {
                 if (isStatementTimeoutError(error)) {
+                    if (task.retriesUsed < ATTACH_CHUNK_TIMEOUT_RETRIES) {
+                        task.retriesUsed += 1;
+                        timeoutRetries += 1;
+                        const waitMs = ATTACH_CHUNK_RETRY_BASE_MS * Math.max(1, task.retriesUsed);
+                        Logger.warn('DB', `Attach chunk ${index + 1}/${taskQueue.length} timeout; retry in ${waitMs}ms`);
+                        onProgress?.({
+                            current: index + 1,
+                            total: taskQueue.length,
+                            attempt: task.retriesUsed + 1,
+                            chunkSubtests: stats.subtests,
+                            chunkNorms: stats.norms,
+                            message: `Lot ${index + 1} temporairement bloqué. Nouvelle tentative...`,
+                        });
+                        await sleep(waitMs);
+                        continue;
+                    }
+
+                    const splitTasks = ATTACH_RECHUNK_ENABLED ? splitAttachChunkTask(task) : null;
+                    if (splitTasks && splitTasks.length > 1) {
+                        timeoutSplits += 1;
+                        taskQueue.splice(index, 1, ...splitTasks);
+                        Logger.warn('DB', `Attach chunk ${index + 1} split into ${splitTasks.length} smaller chunks after timeout`);
+                        onProgress?.({
+                            current: index + 1,
+                            total: taskQueue.length,
+                            attempt: 1,
+                            chunkSubtests: stats.subtests,
+                            chunkNorms: stats.norms,
+                            message: `Lot ${index + 1} redécoupé automatiquement pour reprise.`,
+                        });
+                        continue;
+                    }
+
+                    captureAppMetric('contribution.attach.failed', 1, { operation: 'attach', reason: 'timeout' }, {
+                        chunkIndex: index + 1,
+                        queueSize: taskQueue.length,
+                        retriesUsed: task.retriesUsed,
+                    });
                     throw new Error(
-                        `ATTACH_TIMEOUT_CHUNK_${index + 1}_OF_${chunks.length}: opération volumineuse, relancez pour reprendre (idempotent).`,
+                        `ATTACH_TIMEOUT_CHUNK_${index + 1}_OF_${taskQueue.length}: opération volumineuse, relancez pour reprendre (idempotent).`,
                     );
                 }
+                captureAppMetric('contribution.attach.failed', 1, { operation: 'attach' }, {
+                    chunkIndex: index + 1,
+                    queueSize: taskQueue.length,
+                    retriesUsed: task.retriesUsed,
+                });
                 throw error;
             }
 
-            const chunkResult = (data || {}) as Partial<AttachResult>;
+            const chunkResult = validateMergeResult(data, 'attach_subtests_to_test');
             totalNewSubtests += Number(chunkResult.new_subtests || 0);
             totalNewNorms += Number(chunkResult.new_norms || 0);
+            completedFingerprints.add(chunkFingerprint);
+            if (ATTACH_RESUME_ENABLED) {
+                saveAttachResumeState({
+                    testId,
+                    payloadSignature,
+                    completedChunkFingerprints: Array.from(completedFingerprints.values()),
+                    updatedAt: new Date().toISOString(),
+                });
+            }
+            onProgress?.({
+                current: index + 1,
+                total: taskQueue.length,
+                attempt,
+                chunkSubtests: stats.subtests,
+                chunkNorms: stats.norms,
+                message: `Lot ${index + 1}/${taskQueue.length} terminé.`,
+            });
+            index += 1;
         }
+
+        if (ATTACH_RESUME_ENABLED) {
+            clearAttachResumeState(testId, payloadSignature);
+        }
+
+        captureAppMetric('contribution.attach.completed', 1, { operation: 'attach' }, {
+            durationMs: Math.round(performance.now() - startedAt),
+            queueSize: taskQueue.length,
+            resumedChunks,
+            timeoutRetries,
+            timeoutSplits,
+            newSubtests: totalNewSubtests,
+            newNorms: totalNewNorms,
+        });
+        const attachKpiPass = timeoutSplits === 0 && timeoutRetries <= 1;
+        captureAppMetric('contribution.attach.kpi', attachKpiPass ? 1 : 0, {
+            operation: 'attach',
+            gate: attachKpiPass ? 'pass' : 'fail',
+        }, {
+            queueSize: taskQueue.length,
+            resumedChunks,
+            timeoutRetries,
+            timeoutSplits,
+        });
 
         return {
             new_subtests: totalNewSubtests,

@@ -30,7 +30,10 @@ const MAX_EXTRACTIONS_PER_DAY = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PE
 const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
 const MAX_OUTPUT_TOKENS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_OUTPUT_TOKENS"), 65536);
-const CHUNKED_SUBTEST_THRESHOLD = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNKED_SUBTEST_THRESHOLD"), 8); // Trigger chunked fallback if inventory finds > N subtests
+const PRECHECK_COLUMN_THRESHOLD = parsePositiveInt(
+  Deno.env.get("EXTRACTION_PRECHECK_COLUMN_THRESHOLD") ?? Deno.env.get("EXTRACTION_CHUNKED_SUBTEST_THRESHOLD"),
+  8,
+); // Inventory precheck threshold: route dense LOOKUP pages directly to chunked extraction
 const MAX_SUBTESTS_PER_CHUNK = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_SUBTESTS_PER_CHUNK"), 10); // Max subtests per focused extraction call
 const CHUNK_MIN_COVERAGE_PERCENT = parsePositiveInt(Deno.env.get("EXTRACTION_CHUNK_MIN_COVERAGE_PERCENT"), 40);
 const CHUNK_MIN_COLUMN_COVERAGE_RATIO = Math.min(1, Math.max(0.1, CHUNK_MIN_COVERAGE_PERCENT / 100));
@@ -1362,6 +1365,14 @@ type ParametricAccumulator = {
   rows: Map<string, MergedParametricRow>;
 };
 
+type ParametricTableDescriptor = {
+  tableKey: string;
+  outputSid: string;
+  outputAb?: string;
+  role: StatRole;
+  rows: Record<string, unknown>[];
+};
+
 const normalizeToken = (value: string): string =>
   value
     .normalize('NFD')
@@ -1377,11 +1388,19 @@ const normalizeAgeQualifierToken = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS'];
+
+const hasAmbiguousAgeQualifierContext = (token: string): boolean => (
+  AGE_QUALIFIER_AMBIGUOUS_PATTERNS.some((pattern) => token.includes(pattern))
+);
+
 const isLikelyAgeQualifierToken = (value: unknown): boolean => {
   const token = normalizeAgeQualifierToken(value);
   if (!token) return false;
 
-  if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+  const hasAmbiguousContext = hasAmbiguousAgeQualifierContext(token);
+
+  if (((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -1389,7 +1408,7 @@ const isLikelyAgeQualifierToken = (value: unknown): boolean => {
     return true;
   }
 
-  if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) {
+  if ((/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -1487,6 +1506,31 @@ const buildParametricRowKey = (row: MergedParametricRow): string => {
   return `${agePart}|${groupPart || 'nogroup'}`;
 };
 
+const describeParametricTable = (table: ExtractedTable): ParametricTableDescriptor | null => {
+  const sid = String(table?.sid || '').trim();
+  if (!sid || !Array.isArray(table?.rows) || table.rows.length === 0) return null;
+
+  const { baseSid, suffixToken } = splitStatSuffix(sid);
+  const roleFromSuffix = detectStatRoleFromValue(suffixToken);
+  const roleFromAb = detectStatRoleFromValue(table.ab);
+  const role: StatRole = roleFromAb !== 'none' ? roleFromAb : roleFromSuffix;
+  const outputSid = role !== 'none' && baseSid ? baseSid : sid;
+  if (!outputSid) return null;
+
+  const abRaw = typeof table.ab === 'string' ? table.ab.trim() : '';
+  const isNonStatAb = !!abRaw && detectStatRoleFromValue(abRaw) === 'none';
+  const outputAb = role === 'none' && isNonStatAb ? abRaw : undefined;
+  const tableKey = outputAb ? `${outputSid}::ab:${normalizeToken(outputAb)}` : outputSid;
+
+  return {
+    tableKey,
+    outputSid,
+    outputAb,
+    role,
+    rows: table.rows as Record<string, unknown>[],
+  };
+};
+
 const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResult => {
   if (String(result.st || '').toUpperCase() !== 'PARAMETRIC' || !Array.isArray(result.tables)) {
     return result;
@@ -1497,44 +1541,24 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
   const pa1 = typeof result.pa1 === 'number' && Number.isFinite(result.pa1) ? result.pa1 : null;
 
   const tableMap = new Map<string, ParametricAccumulator>();
+  const descriptors = result.tables
+    .map((table) => describeParametricTable(table))
+    .filter((descriptor): descriptor is ParametricTableDescriptor => !!descriptor);
 
-  for (const table of result.tables) {
-    const sid = String(table?.sid || '').trim();
-    if (!sid || !Array.isArray(table?.rows)) continue;
-
-    const { baseSid, suffixToken } = splitStatSuffix(sid);
-    const roleFromSuffix = detectStatRoleFromValue(suffixToken);
-    const roleFromAb = detectStatRoleFromValue(table.ab);
-    const role: StatRole = roleFromAb !== 'none' ? roleFromAb : roleFromSuffix;
-
-    const outputSid = role !== 'none' && baseSid ? baseSid : sid;
-    if (!outputSid) continue;
-
-    const abRaw = typeof table.ab === 'string' ? table.ab.trim() : '';
-    const isNonStatAb = !!abRaw && detectStatRoleFromValue(abRaw) === 'none';
-    const tableKey = role === 'none' && isNonStatAb
-      ? `${outputSid}::ab:${normalizeToken(abRaw)}`
-      : outputSid;
-
-    if (!tableMap.has(tableKey)) {
-      tableMap.set(tableKey, {
-        sid: outputSid,
-        ab: role === 'none' && isNonStatAb ? abRaw : undefined,
+  for (const descriptor of descriptors) {
+    let accumulator = tableMap.get(descriptor.tableKey);
+    if (!accumulator) {
+      accumulator = {
+        sid: descriptor.outputSid,
+        ab: descriptor.outputAb,
         rows: new Map<string, MergedParametricRow>(),
-      });
+      };
+      tableMap.set(descriptor.tableKey, accumulator);
+    } else if (!accumulator.ab && descriptor.outputAb) {
+      accumulator.ab = descriptor.outputAb;
     }
 
-    const accumulator = tableMap.get(tableKey)!;
-
-    for (const rawRow of table.rows) {
-      if (!rawRow || typeof rawRow !== 'object') continue;
-      const row = rawRow as Record<string, unknown>;
-
-      let meanVal = pickNumericString(row.m);
-      let sdVal = pickNumericString(row.s);
-      if (role === 'mean' && !meanVal) meanVal = pickNumericString(row.s);
-      if (role === 'sd' && !sdVal) sdVal = pickNumericString(row.m);
-
+    for (const row of descriptor.rows) {
       const mergedCandidate: MergedParametricRow = {
         a0: pickOptionalNumber(row.a0) ?? (pa0 !== null ? pa0 : undefined),
         a1: pickOptionalNumber(row.a1) ?? (pa1 !== null ? pa1 : undefined),
@@ -1542,11 +1566,17 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
       };
 
       const rowKey = buildParametricRowKey(mergedCandidate);
-      if (!accumulator.rows.has(rowKey)) {
-        accumulator.rows.set(rowKey, { ...mergedCandidate });
+      let mergedRow = accumulator.rows.get(rowKey);
+      if (!mergedRow) {
+        mergedRow = { ...mergedCandidate };
+        accumulator.rows.set(rowKey, mergedRow);
       }
 
-      const mergedRow = accumulator.rows.get(rowKey)!;
+      let meanVal = pickNumericString(row.m);
+      let sdVal = pickNumericString(row.s);
+      if (descriptor.role === 'mean' && !meanVal) meanVal = pickNumericString(row.s);
+      if (descriptor.role === 'sd' && !sdVal) sdVal = pickNumericString(row.m);
+
       if (mergedRow.a0 === undefined && mergedCandidate.a0 !== undefined) mergedRow.a0 = mergedCandidate.a0;
       if (mergedRow.a1 === undefined && mergedCandidate.a1 !== undefined) mergedRow.a1 = mergedCandidate.a1;
       if (!mergedRow.gl && mergedCandidate.gl) mergedRow.gl = mergedCandidate.gl;
@@ -2073,7 +2103,7 @@ const extractWithFallbackV2 = async (
     };
   }
 
-  const routing = decideExtractionRouting(inventory, CHUNKED_SUBTEST_THRESHOLD);
+  const routing = decideExtractionRouting(inventory, PRECHECK_COLUMN_THRESHOLD);
   const baseMeta: ExtractionMeta = {
     strategy: routing.mode,
     apiCalls: 1,
@@ -2398,15 +2428,27 @@ const getImagePartByteSize = (imagePart: unknown): number => {
   return Math.floor((base64.length * 3) / 4);
 };
 
-const isValidImagePart = (imagePart: unknown): boolean => {
-  if (!imagePart || typeof imagePart !== 'object') return false;
+const isStrictBase64 = (value: string): boolean => {
+  if (!value || value.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+};
+
+const getImagePartValidationError = (imagePart: unknown): string | null => {
+  if (!imagePart || typeof imagePart !== 'object') return 'INVALID_IMAGE_PART';
   const inlineData = (imagePart as { inlineData?: { mimeType?: unknown; data?: unknown } }).inlineData;
   const mimeType = typeof inlineData?.mimeType === 'string' ? inlineData.mimeType.trim().toLowerCase() : '';
   const base64 = typeof inlineData?.data === 'string' ? inlineData.data.trim() : '';
-  if (!mimeType || !base64) return false;
-  if (!allowedMimeTypes.has(mimeType)) return false;
+  if (!mimeType || !base64) return 'INVALID_IMAGE_PART_MISSING_FIELDS';
+  if (!allowedMimeTypes.has(mimeType)) return 'INVALID_IMAGE_PART_MIME_TYPE';
+  if (!isStrictBase64(base64)) return 'INVALID_IMAGE_PART_BASE64_FORMAT';
   const imageBytes = getImagePartByteSize(imagePart);
-  return imageBytes > 0 && imageBytes <= MAX_IMAGE_PART_BYTES;
+  if (imageBytes <= 0) return 'INVALID_IMAGE_PART_EMPTY';
+  if (imageBytes > MAX_IMAGE_PART_BYTES) return 'INVALID_IMAGE_PART_TOO_LARGE';
+  return null;
+};
+
+const isValidImagePart = (imagePart: unknown): boolean => {
+  return getImagePartValidationError(imagePart) === null;
 };
 
 const safeLogExtractionFailure = async (
@@ -2583,8 +2625,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!isValidImagePart(payload.imagePart)) {
-      return new Response(JSON.stringify({ error: 'INVALID_IMAGE_PART' }), {
+    const imagePartError = getImagePartValidationError(payload.imagePart);
+    if (imagePartError) {
+      return new Response(JSON.stringify({ error: imagePartError }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

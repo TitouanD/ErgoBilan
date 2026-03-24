@@ -56,6 +56,27 @@ export const captureAppException = (error: unknown, context?: Record<string, unk
   });
 };
 
+export const captureAppMetric = (
+  metric: string,
+  value: number,
+  tags?: Record<string, string>,
+  context?: Record<string, unknown>,
+): void => {
+  if (!IS_ENABLED) return;
+  Sentry.withScope((scope) => {
+    scope.setTag('app_surface', 'frontend');
+    scope.setTag('metric_name', metric);
+    scope.setTag('metric_type', 'counter');
+    if (tags) {
+      Object.entries(tags).forEach(([key, tagValue]) => {
+        scope.setTag(key, tagValue);
+      });
+    }
+    scope.setContext('metric', scrubDeep({ value, ...(context || {}) }) as Record<string, unknown>);
+    Sentry.captureMessage(`metric:${metric}`, 'info');
+  });
+};
+
 export const withSentryProfiler = <T extends ComponentType<any>>(component: T): T => {
   if (!IS_ENABLED) return component;
   return Sentry.withProfiler(component) as T;

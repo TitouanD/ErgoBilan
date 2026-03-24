@@ -222,4 +222,41 @@ describe('extractionReviewFlags LOOKUP v1', () => {
 
     expect(flags.some((flag) => flag.code === 'LOOKUP_RAW_DUPLICATE_CONFLICT' && flag.severity === 'blocking')).toBe(true);
   });
+
+  it('flags duplicate raw rows with partial score coverage as blocking', () => {
+    const rows: ExtractedRow[] = [
+      {
+        id: 'partial-1',
+        subtest: 'Attention Auditive',
+        label: '6;0 - 6;5',
+        raw: '5-6',
+        standard: '8',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 72,
+        hidden_age_max: 77,
+        source_column_key: 'AA::1',
+      },
+      {
+        id: 'partial-2',
+        subtest: 'Attention Auditive',
+        label: '6;0 - 6;5',
+        raw: '5-6',
+        standard: '',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 72,
+        hidden_age_max: 77,
+        source_column_key: 'AA::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-duplicate-raw-partial',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    expect(flags.some((flag) => flag.code === 'LOOKUP_RAW_DUPLICATE_PARTIAL' && flag.severity === 'blocking')).toBe(true);
+  });
 });

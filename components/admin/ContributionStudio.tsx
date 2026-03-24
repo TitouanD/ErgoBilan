@@ -7,13 +7,16 @@ import { fileToGenerativePart, dataUrlToGenerativePart, cleanAndParseJson, expan
 import { calculateFromStandard, calculateFromZ, calculateFromPercentile, zScoreToPercentile } from '../../utils/scoring';
 import { supabase } from '../../services/db';
 import { AdminService } from '../../services/admin';
+import { captureAppMetric } from '../../services/sentryService';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { Logger } from '../../utils/logger';
 import { TEST_CATALOG } from '../../data/testCatalog';
 import { resolveSubtestAlias } from '../../data/subtestAliases';
 import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from '../../utils';
+import { featureFlag } from '../../utils/featureFlags';
 import { DisambiguationModal, SKIP_SENTINEL } from './DisambiguationModal';
+import { scoreCandidate } from '../../utils/subtestMatcher';
 import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
 import { analyzeFitting, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
 import {
@@ -43,7 +46,14 @@ const GRADE_TO_AGE: Record<string, string> = {
     '6ÈME': '11 ans', '5ÈME': '12 ans', '4ÈME': '13 ans', '3ÈME': '14 ans',
     '2NDE': '15 ans', '2DE': '15 ans',
     '1ERE': '16 ans', '1RE': '16 ans',
-    'TERMINALE': '17 ans', 'TLE': '17 ans'
+    'TERMINALE': '17 ans', 'TLE': '17 ans',
+    'BTS1': '18 ans', 'BTS 1': '18 ans',
+    'BTS2': '19 ans', 'BTS 2': '19 ans',
+    'BUT1': '18 ans', 'BUT 1': '18 ans',
+    'BUT2': '19 ans', 'BUT 2': '19 ans',
+    'BUT3': '20 ans', 'BUT 3': '20 ans',
+    'L1': '18 ans', 'L2': '19 ans', 'L3': '20 ans',
+    'M1': '21 ans', 'M2': '22 ans'
 };
 
 // Grade → age in months for filename age parsing
@@ -56,6 +66,13 @@ const GRADE_TO_MONTHS: Record<string, number> = {
     '2NDE': 180, '2DE': 180,
     '1ERE': 192, '1RE': 192,
     'TERMINALE': 204, 'TLE': 204,
+    'BTS1': 216, 'BTS 1': 216,
+    'BTS2': 228, 'BTS 2': 228,
+    'BUT1': 216, 'BUT 1': 216,
+    'BUT2': 228, 'BUT 2': 228,
+    'BUT3': 240, 'BUT 3': 240,
+    'L1': 216, 'L2': 228, 'L3': 240,
+    'M1': 252, 'M2': 264,
 };
 
 type ParsedGroupAge = {
@@ -231,6 +248,7 @@ type ExtractionPage = {
     repairAttemptsUsed: number;
     repairBudgetMax: number;
     autoRepairApplied: boolean;
+    rowsHash?: string;
     extractionMeta?: ExtractionCallMeta;
     expectedSourceColumns?: string[];
     missingSourceColumns?: string[];
@@ -300,11 +318,19 @@ const normalizeAgeQualifierToken = (value?: string | null): string => (
         .trim()
 );
 
+const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS'];
+
+const hasAmbiguousAgeQualifierContext = (token: string): boolean => (
+    AGE_QUALIFIER_AMBIGUOUS_PATTERNS.some((pattern) => token.includes(pattern))
+);
+
 const isLikelyAgeQualifier = (value?: string | null): boolean => {
     const token = normalizeAgeQualifierToken(value);
     if (!token) return false;
 
-    if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+    const hasAmbiguousContext = hasAmbiguousAgeQualifierContext(token);
+
+    if (((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) && !hasAmbiguousContext) {
         return true;
     }
 
@@ -312,7 +338,7 @@ const isLikelyAgeQualifier = (value?: string | null): boolean => {
         return true;
     }
 
-    if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) {
+    if ((/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-–—]\s*\d+/.test(token)) && !hasAmbiguousContext) {
         return true;
     }
 
@@ -334,14 +360,65 @@ const buildSubtestIdentityKey = (name: string, abbreviation?: string | null): st
     `${normalizeSubtestName(name)}::${normalizeAbbreviation(abbreviation)}`
 );
 
+const hashRows = (rows: ExtractedRow[]): string => {
+    const raw = JSON.stringify(rows.map((row) => ({
+        id: row.id,
+        subtest: row.subtest,
+        label: row.label,
+        raw: row.raw,
+        standard: row.standard,
+        zScore: row.zScore,
+        percentile: row.percentile,
+        mean: row.mean,
+        sd: row.sd,
+        hidden_age_min: row.hidden_age_min,
+        hidden_age_max: row.hidden_age_max,
+        hidden_raw_min: row.hidden_raw_min,
+        hidden_raw_max: row.hidden_raw_max,
+        source_column_key: row.source_column_key,
+        source_abbreviation: row.source_abbreviation,
+    })));
+
+    let hash = 0;
+    for (let i = 0; i < raw.length; i += 1) {
+        hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+        hash |= 0;
+    }
+    return String(hash >>> 0);
+};
+
+const sanitizeTestName = (value: string): string => {
+    return String(value || '')
+        .trim()
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 255)
+        .trim();
+};
+
 // --- DRAFT PERSISTENCE (survives PIN lock, crash, tab close) ---
 const DRAFT_KEY = 'contrib_studio_draft';
 const DRAFT_IMAGES_KEY = 'contrib_studio_draft_images_v1';
+const LEARNED_ALIAS_KEY = 'contrib_studio_learned_aliases_v1';
 const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_DRAFT_IMAGE_BYTES = 1 * 1024 * 1024;
 const MAX_DRAFT_IMAGES_TOTAL_BYTES = 6 * 1024 * 1024;
-const PAGE_REPAIR_BUDGET_MAX = 1;
+const PAGE_REPAIR_BUDGET_BASE = 1;
+const PAGE_REPAIR_BUDGET_MAX = 3;
 const AUTO_REPAIR_MISMATCH_THRESHOLD = 3;
+const FEATURE_CONTRIB_AUTO_REPAIR = featureFlag('VITE_FEATURE_CONTRIB_AUTO_REPAIR', true);
+const FEATURE_CONTRIB_FORCED_DISAMBIG = featureFlag('VITE_FEATURE_CONTRIB_FORCED_DISAMBIG', true);
+const FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN = featureFlag('VITE_FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN', true);
+const FEATURE_CONTRIB_ALIAS_LEARNING = featureFlag('VITE_FEATURE_CONTRIB_ALIAS_LEARNING', true);
+
+const computeRepairBudget = (structure: TableStructure, rows: ExtractedRow[]): number => {
+    if (structure === 'PARAMETRIC') return PAGE_REPAIR_BUDGET_BASE;
+    const subtestCount = new Set(rows.map((row) => String(row.subtest || '').trim()).filter(Boolean)).size;
+    if (subtestCount <= 5) return PAGE_REPAIR_BUDGET_BASE;
+    if (subtestCount <= 10) return 2;
+    return PAGE_REPAIR_BUDGET_MAX;
+};
 
 interface ContribDraftV2 {
     version: 2;
@@ -368,14 +445,89 @@ type DraftImageStore = {
     imagesByPage: Record<string, string>;
 };
 
+type DraftPersistStatus = 'ok' | 'degraded' | 'failed';
+
 const EMPTY_FLAG_COUNTS: ReviewFlagCounts = { blocking: 0, warning: 0, info: 0, total: 0, withFix: 0 };
 
-const saveDraft = (d: ContribDraftV2) => {
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* quota */ }
+type LearnedAliasStore = Record<string, Record<string, string>>;
+
+const loadLearnedAliasStore = (): LearnedAliasStore => {
+    if (typeof window === 'undefined') return {};
+    try {
+        const raw = window.localStorage.getItem(LEARNED_ALIAS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        return parsed as LearnedAliasStore;
+    } catch {
+        return {};
+    }
 };
 
-const saveDraftImages = (payload: DraftImageStore) => {
-    try { localStorage.setItem(DRAFT_IMAGES_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+const saveLearnedAliasStore = (store: LearnedAliasStore): void => {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.setItem(LEARNED_ALIAS_KEY, JSON.stringify(store));
+    } catch {
+        // Ignore local storage failures.
+    }
+};
+
+const getLearnedAliasesForTest = (testNameValue: string): Record<string, string> => {
+    const key = normalizeTestName(testNameValue || '');
+    if (!key) return {};
+    return loadLearnedAliasStore()[key] || {};
+};
+
+const saveLearnedAliasesForTest = (testNameValue: string, aliases: Record<string, string>): void => {
+    const key = normalizeTestName(testNameValue || '');
+    if (!key) return;
+    const cleaned = Object.entries(aliases).reduce((acc, [source, target]) => {
+        const normalizedSource = normalizeSubtestName(source);
+        const trimmedTarget = String(target || '').trim();
+        if (!normalizedSource || !trimmedTarget) return acc;
+        acc[normalizedSource] = trimmedTarget;
+        return acc;
+    }, {} as Record<string, string>);
+    if (Object.keys(cleaned).length === 0) return;
+    const store = loadLearnedAliasStore();
+    store[key] = {
+        ...(store[key] || {}),
+        ...cleaned,
+    };
+    saveLearnedAliasStore(store);
+};
+
+const saveDraft = (d: ContribDraftV2): DraftPersistStatus => {
+    try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+        return 'ok';
+    } catch {
+        try {
+            const degradedDraft: ContribDraftV2 = {
+                ...d,
+                imagesByPage: {},
+            };
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(degradedDraft));
+            return 'degraded';
+        } catch {
+            return 'failed';
+        }
+    }
+};
+
+const saveDraftImages = (payload: DraftImageStore): DraftPersistStatus => {
+    try {
+        localStorage.setItem(DRAFT_IMAGES_KEY, JSON.stringify(payload));
+        return 'ok';
+    } catch {
+        try {
+            localStorage.removeItem(DRAFT_IMAGES_KEY);
+            return 'degraded';
+        } catch {
+            return 'failed';
+        }
+    }
 };
 
 const loadDraftImages = (): DraftImageStore | null => {
@@ -392,6 +544,7 @@ const loadDraftImages = (): DraftImageStore | null => {
 
 const migrateLegacyPage = (page: LegacyExtractionPage): ExtractionPage => {
     const status: PageStatus = page.validated ? 'validated' : 'pending';
+    const dynamicBudget = computeRepairBudget(page.detectedStructure, page.rows || []);
     return {
         ...page,
         sourceFilename: page.sourceFilename,
@@ -400,8 +553,9 @@ const migrateLegacyPage = (page: LegacyExtractionPage): ExtractionPage => {
         flagCounts: EMPTY_FLAG_COUNTS,
         rejectionReason: undefined,
         repairAttemptsUsed: typeof page.repairAttemptsUsed === 'number' ? page.repairAttemptsUsed : 0,
-        repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : PAGE_REPAIR_BUDGET_MAX,
+        repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : dynamicBudget,
         autoRepairApplied: page.autoRepairApplied === true,
+        rowsHash: typeof page.rowsHash === 'string' ? page.rowsHash : undefined,
         expectedSourceColumns: Array.isArray(page.expectedSourceColumns) ? page.expectedSourceColumns : [],
         missingSourceColumns: Array.isArray(page.missingSourceColumns) ? page.missingSourceColumns : [],
         expectedSourceColumnCount: typeof page.expectedSourceColumnCount === 'number' ? page.expectedSourceColumnCount : undefined,
@@ -434,8 +588,9 @@ const loadDraft = (): ContribDraftV2 | null => {
                     flags: Array.isArray(page.flags) ? page.flags : [],
                     flagCounts: page.flagCounts || EMPTY_FLAG_COUNTS,
                     repairAttemptsUsed: typeof page.repairAttemptsUsed === 'number' ? page.repairAttemptsUsed : 0,
-                    repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : PAGE_REPAIR_BUDGET_MAX,
+                    repairBudgetMax: typeof page.repairBudgetMax === 'number' ? page.repairBudgetMax : computeRepairBudget(page.detectedStructure, page.rows || []),
                     autoRepairApplied: page.autoRepairApplied === true,
+                    rowsHash: typeof page.rowsHash === 'string' ? page.rowsHash : undefined,
                     expectedSourceColumns: Array.isArray(page.expectedSourceColumns) ? page.expectedSourceColumns : [],
                     missingSourceColumns: Array.isArray(page.missingSourceColumns) ? page.missingSourceColumns : [],
                     expectedSourceColumnCount: typeof page.expectedSourceColumnCount === 'number' ? page.expectedSourceColumnCount : undefined,
@@ -579,6 +734,44 @@ const stripPreviewFromPages = (pages: ExtractionPage[]): ExtractionPage[] => (
     }))
 );
 
+const detectCrossPageLookupDuplicates = (pages: ExtractionPage[]): string[] => {
+    const signatureMap = new Map<string, { pageLabel: string; subtest: string }>();
+    const warnings: string[] = [];
+
+    pages.forEach((page) => {
+        if (page.detectedStructure !== 'LOOKUP') return;
+        const grouped = page.rows.reduce<Record<string, ExtractedRow[]>>((acc, row) => {
+            const key = String(row.subtest || '').trim() || 'Sous-test';
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(row);
+            return acc;
+        }, {});
+
+        Object.entries(grouped).forEach(([subtest, rows]) => {
+            const signature = rows
+                .map((row) => `${String(row.raw || '').trim()}|${String(row.standard || '').trim()}|${String(row.zScore || '').trim()}|${String(row.percentile || '').trim()}`)
+                .sort()
+                .join(';');
+            if (!signature || rows.length < 3) return;
+
+            const duplicateKey = `${normalizeSubtestName(subtest)}::${signature}`;
+            const currentPageLabel = `page ${page.fileIndex + 1}`;
+            const existing = signatureMap.get(duplicateKey);
+            if (existing) {
+                warnings.push(`Sous-test "${subtest}" potentiellement dupliqué entre ${existing.pageLabel} et ${currentPageLabel}.`);
+                return;
+            }
+
+            signatureMap.set(duplicateKey, {
+                pageLabel: currentPageLabel,
+                subtest,
+            });
+        });
+    });
+
+    return Array.from(new Set(warnings));
+};
+
 /**
  * Re-disambiguate pages in-place when multiple rows share the same subtest name
  * but carry different source_abbreviation values (e.g. AAO/AAC/AAI for NEPSY-2
@@ -708,6 +901,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [hasPendingDraft, setHasPendingDraft] = useState(false);
     const draftRef = useRef<ContribDraftV2 | null>(null);
     const draftImagesRef = useRef<Record<string, string>>({});
+    const draftQuotaWarnedRef = useRef(false);
 
     const [testName, setTestName] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -723,6 +917,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [legalConsent, setLegalConsent] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [saveProgressMessage, setSaveProgressMessage] = useState<string>('');
 
     // MERGE STATE
     const [showMergeModal, setShowMergeModal] = useState(false);
@@ -740,6 +935,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [showUnmappedModal, setShowUnmappedModal] = useState(false);
     // Track subtest names that had duplicate sids from extraction (user must rename)
     const [duplicatedSids, setDuplicatedSids] = useState<string[]>([]);
+    const [forcedDisambiguationNames, setForcedDisambiguationNames] = useState<string[]>([]);
     const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
     const [displayFilterMode, setDisplayFilterMode] = useState<DisplayFilterMode>('all');
     const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
@@ -751,6 +947,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const normalizedLookupRows = page.detectedStructure === 'LOOKUP'
             ? normalizeLookupRowsToDominantAgeRange(page.rows).rows
             : page.rows;
+        const rowsHash = hashRows(normalizedLookupRows);
+        const canReuse = page.rowsHash === rowsHash && Array.isArray(page.flags) && !!page.flagCounts;
+
+        if (canReuse) {
+            const nextStatus: PageStatus =
+                page.status === 'validated' && page.flagCounts.blocking > 0
+                    ? 'pending'
+                    : page.status;
+            if (nextStatus === page.status) {
+                return {
+                    ...page,
+                    rows: normalizedLookupRows,
+                };
+            }
+            return {
+                ...page,
+                rows: normalizedLookupRows,
+                status: nextStatus,
+            };
+        }
+
         const flags = analyzePageRows({
             pageId: page.id,
             rows: normalizedLookupRows,
@@ -768,6 +985,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             status: nextStatus,
             flags,
             flagCounts,
+            rowsHash,
         };
     }, []);
 
@@ -800,7 +1018,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         pages.forEach((page) => {
             if (draftImagesRef.current[page.id]) imagePresence[page.id] = true;
         });
-        saveDraft({
+        const draftStatus = saveDraft({
             version: 2,
             testName,
             selectedCategory,
@@ -809,6 +1027,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             imagesByPage: imagePresence,
             savedAt,
         });
+
+        if ((draftStatus === 'degraded' || draftStatus === 'failed') && !draftQuotaWarnedRef.current) {
+            draftQuotaWarnedRef.current = true;
+            toast.error(
+                draftStatus === 'degraded'
+                    ? 'Quota local dépassé: brouillon sauvegardé sans aperçus.'
+                    : 'Quota local dépassé: impossible de sauvegarder le brouillon.',
+            );
+        }
     }, [testName, selectedCategory, tableStructure, pages]);
 
     useEffect(() => { persistDraft(); }, [persistDraft]);
@@ -828,10 +1055,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             localStorage.removeItem(DRAFT_IMAGES_KEY);
             return;
         }
-        saveDraftImages({
+        const imageStatus = saveDraftImages({
             savedAt: new Date().toISOString(),
             imagesByPage: draftImagesRef.current,
         });
+        if ((imageStatus === 'degraded' || imageStatus === 'failed') && !draftQuotaWarnedRef.current) {
+            draftQuotaWarnedRef.current = true;
+            toast.error(
+                imageStatus === 'degraded'
+                    ? 'Quota local dépassé: aperçus du brouillon supprimés pour continuer.'
+                    : 'Quota local dépassé: impossible de sauvegarder les aperçus du brouillon.',
+            );
+        }
     }, [pages]);
 
     const restoreDraft = () => {
@@ -1838,6 +2073,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const processFilesSequentially = async (inputFiles: File[]) => {
         suppressIdleLock();
+        const startedAt = performance.now();
+        let extractedPages = 0;
+        let extractionFailures = 0;
+        let autoRepairAttempts = 0;
+        let autoRepairFailures = 0;
         try {
             const nextPages: ExtractionPage[] = [];
             let resolvedStructure: TableStructure = tableStructure;
@@ -1882,21 +2122,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     result.duplicatedSids.forEach(sid => allDuplicatedSids.add(sid));
                 }
             });
-            if (allDuplicatedSids.size > 0) {
-                setDuplicatedSids(Array.from(allDuplicatedSids));
-                setShowDisambiguationModal(true);
-            } else {
-                setDuplicatedSids([]);
-            }
+            setDuplicatedSids(Array.from(allDuplicatedSids));
 
             // Process results in order — save draft progressively so no data is lost
             for (let i = 0; i < results.length; i += 1) {
                 const { result, success, error } = results[i];
 
                 if (!success || !result) {
+                    extractionFailures += 1;
                     toast.error(`Erreur sur la page ${i + 1}: ${error instanceof Error ? error.message : 'Extraction échouée'}`);
                     continue;
                 }
+                extractedPages += 1;
 
                 if (resolvedStructure === 'UNKNOWN') {
                     resolvedStructure = result.detectedStructure;
@@ -1922,7 +2159,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     flagCounts: EMPTY_FLAG_COUNTS,
                     previewDataUrl,
                     repairAttemptsUsed: 0,
-                    repairBudgetMax: PAGE_REPAIR_BUDGET_MAX,
+                    repairBudgetMax: computeRepairBudget(result.detectedStructure, result.rows),
                     autoRepairApplied: false,
                     extractionMeta: result.extractionMeta,
                     expectedSourceColumns: result.expectedSourceColumns,
@@ -1930,20 +2167,26 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     expectedSourceColumnCount: result.expectedSourceColumnCount,
                 });
 
-                try {
-                    const autoRepair = await runTargetedRepairForPage(page, 'auto', inputFiles[i]);
-                    if (autoRepair.attempted) {
-                        page = autoRepair.page;
-                        if (autoRepair.failed) {
-                            toast.error(`Auto-relance page ${i + 1} échouée: ${autoRepair.reason || 'erreur inconnue'}.`);
-                        } else {
-                            toast.info(
-                                `Auto-correction page ${i + 1}: issues bloquantes ${autoRepair.beforeBlocking} -> ${autoRepair.afterBlocking}.`
-                            );
+                if (FEATURE_CONTRIB_AUTO_REPAIR) {
+                    try {
+                        const autoRepair = await runTargetedRepairForPage(page, 'auto', inputFiles[i]);
+                        if (autoRepair.attempted) {
+                            autoRepairAttempts += 1;
+                            page = autoRepair.page;
+                            if (autoRepair.failed) {
+                                autoRepairFailures += 1;
+                                toast.error(`Auto-relance page ${i + 1} échouée: ${autoRepair.reason || 'erreur inconnue'}.`);
+                            } else {
+                                toast.info(
+                                    `Auto-correction page ${i + 1}: issues bloquantes ${autoRepair.beforeBlocking} -> ${autoRepair.afterBlocking}.`
+                                );
+                            }
                         }
+                    } catch (autoErr) {
+                        autoRepairAttempts += 1;
+                        autoRepairFailures += 1;
+                        Logger.warn('AI', `Auto targeted repair failed on page ${i + 1}`, autoErr);
                     }
-                } catch (autoErr) {
-                    Logger.warn('AI', `Auto targeted repair failed on page ${i + 1}`, autoErr);
                 }
                 nextPages.push(page);
 
@@ -1953,11 +2196,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                 // Progressive draft save — each successful page is persisted immediately
                 const savedAt = new Date().toISOString();
-                saveDraftImages({
+                const imageStatus = saveDraftImages({
                     savedAt,
                     imagesByPage: draftImagesRef.current,
                 });
-                saveDraft({
+                const draftStatus = saveDraft({
                     version: 2,
                     testName: resolvedTestName || testName,
                     selectedCategory,
@@ -1969,10 +2212,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     }, {} as Record<string, true>),
                     savedAt,
                 });
+                if ((imageStatus === 'degraded' || imageStatus === 'failed' || draftStatus === 'degraded' || draftStatus === 'failed') && !draftQuotaWarnedRef.current) {
+                    draftQuotaWarnedRef.current = true;
+                    toast.error('Quota local dépassé: brouillon enregistré en mode dégradé (sans certains aperçus).');
+                }
+            }
+
+            const learnedAliases = FEATURE_CONTRIB_ALIAS_LEARNING ? getLearnedAliasesForTest(resolvedTestName || testName) : {};
+            if (Object.keys(learnedAliases).length > 0) {
+                nextPages.forEach((page) => {
+                    page.rows = page.rows.map((row) => {
+                        const key = normalizeSubtestName(row.subtest || '');
+                        const learnedName = key ? learnedAliases[key] : undefined;
+                        if (!learnedName || learnedName === row.subtest) return row;
+                        return { ...row, subtest: learnedName };
+                    });
+                });
             }
 
             // --- Post-extraction: strict canonical matching or legacy dedup ---
             const canonicalNames = canonicalNameInventory;
+
+            let forcedDisambiguationNamesNext: string[] = [];
 
             if (canonicalSubtestsNormalized.length > 0) {
                 // DB-backed test → soft canonical mapping: normalize recognized rows, keep unknown rows.
@@ -1980,6 +2241,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 let unmatchedCount = 0;
                 let ambiguousWithoutAbbrCount = 0;
                 let mappedCount = 0;
+                const forcedDisambiguationQueue = new Set<string>();
 
                 nextPages.forEach(page => {
                     const remapped: ExtractedRow[] = [];
@@ -2001,9 +2263,22 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             if (abbrCandidates.length === 1) {
                                 matchedCanonical = abbrCandidates[0];
                             } else if (abbrCandidates.length > 1) {
-                                const narrowed = findBestCanonicalMatch(aliased, abbrCandidates.map(c => c.name));
-                                if (narrowed) {
-                                    matchedCanonical = abbrCandidates.find(c => c.name === narrowed) || null;
+                                const scored = abbrCandidates
+                                    .map((candidate) => ({
+                                        candidate,
+                                        score: scoreCandidate(aliased, candidate.name),
+                                    }))
+                                    .sort((left, right) => right.score - left.score);
+                                const top = scored[0] || null;
+                                const second = scored[1] || null;
+                                const hasHighConfidence = !!top
+                                    && top.score >= 0.70
+                                    && (!second || (top.score - second.score) >= 0.08);
+
+                                if (hasHighConfidence && top) {
+                                    matchedCanonical = top.candidate;
+                                } else {
+                                    forcedDisambiguationQueue.add((row.subtest || '').trim());
                                 }
                             }
                         }
@@ -2017,9 +2292,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     matchedCanonical = candidates[0];
                                 } else if (candidates.length > 1) {
                                     if (rowAbbr) {
-                                        matchedCanonical = candidates.find(c => normalizeAbbreviation(c.abbreviation) === rowAbbr) || candidates[0];
+                                        matchedCanonical = candidates.find(c => normalizeAbbreviation(c.abbreviation) === rowAbbr) || null;
+                                        if (!matchedCanonical) {
+                                            forcedDisambiguationQueue.add((row.subtest || '').trim());
+                                        }
                                     } else {
-                                        matchedCanonical = candidates[0];
+                                        forcedDisambiguationQueue.add((row.subtest || '').trim());
                                     }
                                 }
                             }
@@ -2059,6 +2337,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 if (ambiguousWithoutAbbrCount > 0) {
                     toast.info(`${ambiguousWithoutAbbrCount} ligne(s) ambiguë(s) conservée(s) sans abréviation canonique.`);
                 }
+                forcedDisambiguationNamesNext = Array.from(forcedDisambiguationQueue).filter(Boolean);
             } else {
                 // Unknown test → legacy dedup: unify subtest names across pages
                 const nameMapping = new Map<string, string>();
@@ -2091,6 +2370,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         return row;
                     });
                 });
+                forcedDisambiguationNamesNext = [];
             }
 
             // Re-disambiguate variant subtests collapsed by canonical matching
@@ -2098,13 +2378,55 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             preserveDistinctSourceColumns(nextPages);
 
             const finalPages = nextPages.map(withPageReview);
+            const crossPageDuplicates = detectCrossPageLookupDuplicates(finalPages);
+            if (FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN && crossPageDuplicates.length > 0) {
+                toast.error(`Doublons potentiels détectés entre pages (${crossPageDuplicates.length}). Vérifiez avant validation.`);
+                Logger.warn('ADMIN', 'Cross-page duplicate lookup signatures detected', crossPageDuplicates);
+            }
 
             setTableStructure(resolvedStructure);
             setPages(finalPages);
             setCurrentFileIndex(0);
             setStep('editor');
+            const effectiveForcedNames = FEATURE_CONTRIB_FORCED_DISAMBIG ? forcedDisambiguationNamesNext : [];
+            setForcedDisambiguationNames(effectiveForcedNames);
+            setShowDisambiguationModal(allDuplicatedSids.size > 0 || effectiveForcedNames.length > 0);
+
+            const totalBlocking = finalPages.reduce((acc, page) => acc + page.flagCounts.blocking, 0);
+            captureAppMetric('contribution.extraction.completed', 1, { operation: 'extraction' }, {
+                durationMs: Math.round(performance.now() - startedAt),
+                fileCount: inputFiles.length,
+                extractedPages,
+                extractionFailures,
+                autoRepairAttempts,
+                autoRepairFailures,
+                totalBlocking,
+                crossPageDuplicates: crossPageDuplicates.length,
+            });
+            const extractionKpiPass = extractionFailures === 0
+                && extractedPages === inputFiles.length
+                && totalBlocking <= Math.max(2, inputFiles.length * 2);
+            captureAppMetric('contribution.extraction.kpi', extractionKpiPass ? 1 : 0, {
+                operation: 'extraction',
+                gate: extractionKpiPass ? 'pass' : 'fail',
+            }, {
+                fileCount: inputFiles.length,
+                extractedPages,
+                extractionFailures,
+                totalBlocking,
+                autoRepairFailures,
+                crossPageDuplicates: crossPageDuplicates.length,
+            });
         } catch (error) {
             Logger.error('AI', "Gemini Extraction Error", error);
+            captureAppMetric('contribution.extraction.failed', 1, { operation: 'extraction' }, {
+                durationMs: Math.round(performance.now() - startedAt),
+                fileCount: inputFiles.length,
+                extractedPages,
+                extractionFailures: extractionFailures + 1,
+                autoRepairAttempts,
+                autoRepairFailures,
+            });
             toast.error("Erreur lors de l'analyse du document. Vérifiez la qualité de l'image.");
             setStep('upload');
         } finally {
@@ -2322,7 +2644,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             const narrowedName = findBestCanonicalMatch(alias, candidates.map(c => c.name));
             if (narrowedName) {
-                const narrowed = candidates.find(c => c.name === narrowedName) || candidates[0];
+                const narrowed = candidates.find(c => c.name === narrowedName) || null;
+                if (!narrowed) {
+                    return {
+                        name: fallbackName,
+                        abbreviation: sourceAbbr || null,
+                        scoreType: null,
+                        displayName: formatSubtestDisplayName(fallbackName, sourceAbbr || null, false),
+                        isAmbiguous: false,
+                        isHiddenInvalidAmbiguous: false,
+                        isMapped: false,
+                    };
+                }
                 const narrowedDisplayName = withSourceColumnSuffix(narrowed.name, sourceColumnIndex);
                 const narrowedAbbr = normalizeAbbreviation(narrowed.abbreviation) || sourceAbbr;
                 const normalizedCandidateName = normalizeSubtestName(narrowed.name);
@@ -2460,6 +2793,17 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         Object.entries(renames).forEach(([k, v]) => {
             if (v !== SKIP_SENTINEL) effectiveRenames[k] = v;
         });
+        if (FEATURE_CONTRIB_ALIAS_LEARNING) {
+            saveLearnedAliasesForTest(
+                testName,
+                Object.entries(effectiveRenames).reduce((acc, [source, target]) => {
+                    if (source.trim() && target.trim() && source.trim() !== target.trim()) {
+                        acc[source] = target;
+                    }
+                    return acc;
+                }, {} as Record<string, string>),
+            );
+        }
 
         setPages(prev => prev.map(page => ({
             ...withPageReview({
@@ -2473,10 +2817,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }),
         })));
         setDuplicatedSids([]);
+        setForcedDisambiguationNames([]);
         setShowDisambiguationModal(false);
         const skippedMsg = skipNames.size > 0 ? ` · ${skipNames.size} colonne(s) ignorée(s).` : '';
         toast.success(`Sous-tests mis à jour avec succès.${skippedMsg}`);
-    }, [toast, withPageReview]);
+    }, [testName, toast, withPageReview]);
 
     const handleValidateCurrentPage = () => {
         const page = pages[currentFileIndex];
@@ -2653,7 +2998,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
         }
 
-        if (!testName.trim()) {
+        if (!sanitizeTestName(testName)) {
             setTestNameError(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
@@ -2823,7 +3168,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const buildTestPayload = () => ({
         test: {
-            name: testName.trim(),
+            name: sanitizeTestName(testName),
             category_id: selectedCategory,
             version: '1.0',
             structure_type: tableStructure === 'PARAMETRIC' ? 'PARAMETRIC' : 'LOOKUP'
@@ -2856,6 +3201,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }
 
         setIsSaving(true);
+        setSaveProgressMessage('Préparation de la sauvegarde...');
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Utilisateur non connecté");
@@ -2897,6 +3243,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
 
             // No similar test found → create normally
+            setSaveProgressMessage('Création du test...');
             await performCreate();
 
         } catch (e: unknown) {
@@ -2904,6 +3251,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error("Erreur lors de la création : " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setIsSaving(false);
+            setSaveProgressMessage('');
         }
     };
 
@@ -2911,6 +3259,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const handleSelectFuzzyMatch = async (match: SimilarTestMatch) => {
         setShowFuzzyModal(false);
         setIsSaving(true);
+        setSaveProgressMessage('Chargement du test similaire...');
         try {
             const { data: existingSubs } = await supabase
                 .from('view_unified_subtests')
@@ -2932,6 +3281,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error('Erreur chargement du test similaire.');
         } finally {
             setIsSaving(false);
+            setSaveProgressMessage('');
         }
     };
 
@@ -2939,6 +3289,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const handleSkipFuzzy = async () => {
         setShowFuzzyModal(false);
         setIsSaving(true);
+        setSaveProgressMessage('Création du test...');
         try {
             await performCreate();
         } catch (e: unknown) {
@@ -2946,13 +3297,22 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error("Erreur : " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setIsSaving(false);
+            setSaveProgressMessage('');
         }
     };
 
     // --- CREATE NEW TEST (original flow) ---
     const performCreate = async () => {
+        const startedAt = performance.now();
+        setSaveProgressMessage('Création du test...');
         const payload = buildTestPayload();
         const testId = await AdminService.createPrivateTest(payload);
+
+        captureAppMetric('contribution.create.completed', 1, { operation: 'create' }, {
+            durationMs: Math.round(performance.now() - startedAt),
+            rowCount: includedRows.length,
+            pageCount: pages.length,
+        });
 
         Logger.info('DB', "Test privé créé avec succès.");
         finishSuccess(testId);
@@ -2962,18 +3322,37 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const performMerge = async () => {
         if (!mergeTarget) return;
         setIsSaving(true);
+        setSaveProgressMessage('Préparation de la fusion...');
+        const startedAt = performance.now();
         try {
             const existingTestId = mergeTarget.id;
             const payload = buildTestPayload();
 
             if (mergeTarget.isPublic) {
                 // Public test → attach private subtests (scoped to user's org)
-                const result = await AdminService.attachSubtestsToTest(existingTestId, payload);
+                const result = await AdminService.attachSubtestsToTest(existingTestId, payload, (progress) => {
+                    setSaveProgressMessage(progress.message);
+                });
+                captureAppMetric('contribution.save.completed', 1, { operation: 'attach', target: 'public' }, {
+                    durationMs: Math.round(performance.now() - startedAt),
+                    newSubtests: result.new_subtests,
+                    newNorms: result.new_norms,
+                    rowCount: includedRows.length,
+                    pageCount: pages.length,
+                });
                 Logger.info('DB', `Attach réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
                 toast.success(`Rattachement réussi ! ${result.new_norms} nouvelles normes ajoutées au test public.`);
             } else {
                 // Private test (same org) → merge
+                setSaveProgressMessage('Fusion du test existant...');
                 const result = await AdminService.mergePrivateTest(existingTestId, payload);
+                captureAppMetric('contribution.save.completed', 1, { operation: 'merge', target: 'private' }, {
+                    durationMs: Math.round(performance.now() - startedAt),
+                    newSubtests: result.new_subtests,
+                    newNorms: result.new_norms,
+                    rowCount: includedRows.length,
+                    pageCount: pages.length,
+                });
                 Logger.info('DB', `Merge réussi: +${result.new_subtests} sous-tests, +${result.new_norms} normes dans ${existingTestId}`);
                 toast.success(`Fusion réussie ! ${result.new_norms} nouvelles entrées ajoutées.`);
             }
@@ -2984,6 +3363,19 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         } catch (e: unknown) {
             Logger.error('DB', "Erreur merge/attach test:", e);
             const message = e instanceof Error ? e.message : String(e);
+            captureAppMetric(
+                'contribution.save.failed',
+                1,
+                {
+                    operation: mergeTarget.isPublic ? 'attach' : 'merge',
+                    reason: message.includes('ATTACH_TIMEOUT_CHUNK_') ? 'timeout' : 'error',
+                },
+                {
+                    durationMs: Math.round(performance.now() - startedAt),
+                    rowCount: includedRows.length,
+                    pageCount: pages.length,
+                },
+            );
             if (message.includes('ATTACH_TIMEOUT_CHUNK_')) {
                 toast.error("Le rattachement est volumineux et a dépassé le temps SQL sur un lot. Relancez: la reprise est idempotente et ajoutera uniquement le manquant.");
             } else {
@@ -2991,12 +3383,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
         } finally {
             setIsSaving(false);
+            setSaveProgressMessage('');
         }
     };
 
     // --- FORCE CREATE (user chose "Créer séparé" from merge modal) ---
     const handleForceCreate = async () => {
         setIsSaving(true);
+        setSaveProgressMessage('Création d\'un test séparé...');
         setShowMergeModal(false);
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -3008,6 +3402,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             toast.error("Erreur : " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setIsSaving(false);
+            setSaveProgressMessage('');
         }
     };
 
@@ -3761,6 +4156,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     Confirmer
                                 </button>
                             </div>
+                            {isSaving && saveProgressMessage && (
+                                <p className="text-xs text-[var(--text-secondary)] mt-3 text-center">{saveProgressMessage}</p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -3794,6 +4192,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     Créer quand même
                                 </button>
                             </div>
+                            {isSaving && saveProgressMessage && (
+                                <p className="text-xs text-[var(--text-secondary)] mt-3 text-center">{saveProgressMessage}</p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -3924,6 +4325,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 <DisambiguationModal
                     pages={pages}
                     officialSubtests={canonicalSubtests}
+                    forcedNames={forcedDisambiguationNames}
                     onConfirm={handleDisambiguationConfirm}
                     onClose={() => setShowDisambiguationModal(false)}
                 />

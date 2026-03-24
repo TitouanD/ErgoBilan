@@ -73,6 +73,14 @@ Créer un fichier `.env.local` à la racine :
 VITE_SUPABASE_URL=https://<votre-projet>.supabase.co
 VITE_SUPABASE_ANON_KEY=<votre-clé-anon>
 API_KEY=<votre-clé-gemini>
+
+# Feature flags contribution (optionnel)
+VITE_FEATURE_CONTRIB_AUTO_REPAIR=true
+VITE_FEATURE_CONTRIB_FORCED_DISAMBIG=true
+VITE_FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN=true
+VITE_FEATURE_CONTRIB_ALIAS_LEARNING=true
+VITE_FEATURE_ATTACH_RECHUNK=true
+VITE_FEATURE_ATTACH_RESUME=true
 ```
 
 ### Lancer en développement
