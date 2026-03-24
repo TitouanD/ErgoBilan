@@ -22,7 +22,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Circle,
   CircleCheck,
   FilePlus,
@@ -1082,7 +1081,7 @@ const CustomTextRow: React.FC<{
             onFocus={onFocus}
             disabled={readOnly}
             placeholder="Décrivez vos observations..."
-            rows={5}
+            rows={10}
             className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
           />
         </div>
@@ -1287,7 +1286,10 @@ const CompositeItemsRow: React.FC<{
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base flex items-center gap-1.5">
+              <ChevronDown size={12} className="text-[var(--text-secondary)] shrink-0" />
+              <span className="truncate">{getSubtestDisplayName(subtest)}</span>
+            </h4>
             <div className="flex items-center flex-wrap gap-1.5 mt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
               {getScaleLabel(subtest.scoreType) && (
@@ -1327,7 +1329,7 @@ const CompositeItemsRow: React.FC<{
                   {filledCount}/{items.filter(it => !it.isMaster).length}
                 </span>
               </span>
-              {itemsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {itemsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
 
             {itemsExpanded && (
@@ -2113,7 +2115,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                     <div className="flex items-center gap-2 shrink-0">
                       {alreadyCount > 0 && <span className="rounded-full bg-[var(--progress-bg)] text-[var(--text-secondary)] px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
                       {selectedCount > 0 && <span className="rounded-full bg-[#E07A5F] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
-                      {isExpanded ? <ChevronUp size={16} className="text-[var(--text-secondary)]" /> : <ChevronDown size={16} className="text-[var(--text-secondary)]" />}
+                      {isExpanded ? <ChevronDown size={16} className="text-[var(--text-secondary)]" /> : <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
                     </div>
                   </button>
                   {isExpanded && (
@@ -2647,9 +2649,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               <Activity size={24} className="text-[#E07A5F]" />
               Tests & mesures
             </h2>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mt-1">
-              Saisie fluide : automatique si normes disponibles, assistée sinon.
-            </p>
           </div>
           <div className="flex items-center gap-3">
             <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
@@ -2737,7 +2736,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                               <GripVertical size={16} />
                             </button>
                             <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-[var(--text-secondary)] rounded-xl p-1.5 hover:bg-[var(--card-bg)] hover:shadow-sm transition-all">
-                              {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                              {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                             </button>
                             <div className="min-w-0">
                               {cat && (

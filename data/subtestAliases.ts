@@ -307,14 +307,14 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
 
   // ──────────── Figure de Rey ────────────
   'figurecomplexerey': {
-    'copiedumodele':          'Copie du modèle',
+    'copiedumodele':          'Type de copie',
     'typecopie':              'Type de copie',
     'richesseexactitudecopie':'Richesse et exactitude de la copie',
     'tempscopie':             'Temps de copie',
     'reproductionmemoire':    'Reproduction de mémoire',
     'typereproduction':       'Type de reproduction',
     'richesseexactitudereproduction': 'Richesse et exactitude de la reproduction',
-    'copie':                  'Copie du modèle',
+    'copie':                  'Type de copie',
     'memoire':                'Reproduction de mémoire',
     'rappel':                 'Reproduction de mémoire',
     'reproduction':           'Reproduction de mémoire',
