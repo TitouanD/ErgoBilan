@@ -752,7 +752,7 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
           flags.push(makeFlag({
             code: 'LOOKUP_RAW_DUPLICATE_CONFLICT',
             severity: 'blocking',
-            message: `Lignes brutes dupliquees avec scores contradictoires pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            message: `Lignes brutes dupliquées avec scores contradictoires pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
             subtest: bucket.subtest,
             groupLabel: bucket.groupLabel,
             rowId: curr.row.id,
@@ -762,7 +762,7 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
           flags.push(makeFlag({
             code: 'LOOKUP_RAW_DUPLICATE_PARTIAL',
             severity: 'blocking',
-            message: `Lignes brutes dupliquees avec metriques incomplètes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            message: `Lignes brutes dupliquées avec métriques incomplètes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
             subtest: bucket.subtest,
             groupLabel: bucket.groupLabel,
             rowId: curr.row.id,

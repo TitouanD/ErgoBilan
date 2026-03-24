@@ -611,12 +611,13 @@ export const StorageService = {
       .eq('patient_id', patientId)
       .maybeSingle();
 
-    const payload: Record<string, string> = {
+    const payload: { user_id: string; updated_at: string; iv: string; encrypted_data: string; patient_id: string; step: number | null } = {
       user_id: user.id,
       updated_at: new Date().toISOString(),
       iv: enc.iv,
       encrypted_data: enc.content,
       patient_id: patientId,
+      step: typeof draftData?.step === 'number' ? draftData.step : null,
     };
 
     if (existing) await supabase.from('drafts').update(payload).eq('id', existing.id);
@@ -633,30 +634,19 @@ export const StorageService = {
 
     const { data, error } = await supabase
       .from('drafts')
-      .select('patient_id, updated_at, iv, encrypted_data')
+      .select('patient_id, updated_at, step')
       .eq('user_id', user.id);
     if (error || !data) return {};
 
     const map: Record<string, DashboardDraftMeta> = {};
 
-    await Promise.all(
-      data.map(async (row: { patient_id: string | null; updated_at: string; iv: string; encrypted_data: string }) => {
-        if (!row.patient_id) return;
-
-        let step: number | null = null;
-        try {
-          const draft = (await decryptBlob(row.iv, row.encrypted_data, sessionKey)) as DraftPayload;
-          step = typeof draft?.step === 'number' ? draft.step : null;
-        } catch {
-          step = null;
-        }
-
-        map[row.patient_id] = {
-          updatedAt: row.updated_at,
-          step,
-        };
-      }),
-    );
+    for (const row of data as { patient_id: string | null; updated_at: string; step: number | null }[]) {
+      if (!row.patient_id) continue;
+      map[row.patient_id] = {
+        updatedAt: row.updated_at,
+        step: typeof row.step === 'number' ? row.step : null,
+      };
+    }
 
     return map;
   },

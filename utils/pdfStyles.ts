@@ -11,10 +11,12 @@ import { StyleSheet, Font } from '@react-pdf/renderer';
 // Fetched via Google Fonts CSS2 API with Android user-agent to obtain genuine TrueType files.
 // IMPORTANT: URLs from fonts.gstatic.com/s/ serve real .ttf; /l/font?kit= URLs serve EOT.
 
-let fontsRegistered = false;
+let fontRegistrationPromise: Promise<void> | null = null;
 
-export async function ensurePdfFontsRegistered(): Promise<void> {
-    if (fontsRegistered) return;
+export function ensurePdfFontsRegistered(): Promise<void> {
+    if (fontRegistrationPromise) return fontRegistrationPromise;
+    fontRegistrationPromise = new Promise<void>((resolve, reject) => {
+        try {
 
 Font.register({
     family: 'Quicksand',
@@ -77,7 +79,13 @@ Font.register({
 // Hyphenation callback - disable hyphenation
 Font.registerHyphenationCallback((word) => [word]);
 
-    fontsRegistered = true;
+            resolve();
+        } catch (err) {
+            fontRegistrationPromise = null;
+            reject(err);
+        }
+    });
+    return fontRegistrationPromise;
 }
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────

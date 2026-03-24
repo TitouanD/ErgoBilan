@@ -33,7 +33,7 @@ const ATTACH_CHUNK_TIMEOUT_RETRIES = 2;
 const ATTACH_CHUNK_RETRY_BASE_MS = 1200;
 const ATTACH_MIN_FRAGMENT_NORMS = 50;
 const ATTACH_RESUME_STATE_KEY = 'contrib_attach_resume_v1';
-const ATTACH_RECHUNK_ENABLED = featureFlag('VITE_FEATURE_ATTACH_RECHUNK', true);
+const ATTACH_RECHUNK_ENABLED = featureFlag('VITE_FEATURE_ATTACH_RECHUNK', false);
 const ATTACH_RESUME_ENABLED = featureFlag('VITE_FEATURE_ATTACH_RESUME', true);
 
 type ContributionSubtestPayload = {
@@ -688,6 +688,9 @@ export const AdminService = {
                         continue;
                     }
 
+                    // NOTE: We intentionally do not rechunk the task queue after a timeout.
+                    // Dynamically splitting chunks here would change chunk identities between runs
+                    // and can break resume logic that relies on stable chunk fingerprints.
                     const splitTasks = ATTACH_RECHUNK_ENABLED ? splitAttachChunkTask(task) : null;
                     if (splitTasks && splitTasks.length > 1) {
                         timeoutSplits += 1;
