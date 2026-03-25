@@ -67,6 +67,8 @@ const initialSynthesis: ClinicalSynthesis = {
   recommendationsInput: ''
 };
 
+const DRAFT_VERSION = 2;
+
 export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { sessionKey, orgKey, isDemoMode } = useAuth();
 
@@ -183,6 +185,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           synthesis: assessmentData.synthesis,
           sections: assessmentData.sections,
           step: assessmentData.step,
+          version: DRAFT_VERSION,
           timestamp: new Date().toISOString(),
         };
 
@@ -239,7 +242,12 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
 
   const updateSection = (id: string, update: Partial<ReportSection>) => {
-    setSections(prev => prev.map(s => s.id === id ? { ...s, ...update } : s));
+    setSections(prev => {
+      const exists = prev.some(s => s.id === id);
+      if (exists) return prev.map(s => s.id === id ? { ...s, ...update } : s);
+      // Create the section if it doesn't exist yet (e.g. Page École)
+      return [...prev, { id, title: update.title || id, content: update.content || '', status: 'draft' as const, ...update }];
+    });
   };
 
   const resetAssessment = () => {
@@ -260,10 +268,11 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const loadFromDraft = (draft: any) => {
     Logger.debug('DB', 'Context: Loading Draft...', draft);
-    if (draft.patient) setPatient({ ...draft.patient });
+    // Merge with initial defaults to handle schema evolution (B3)
+    if (draft.patient) setPatient({ ...initialPatient, ...draft.patient });
     if (draft.tests) setTests({ ...draft.tests });
-    if (draft.observations) setObservations({ ...draft.observations });
-    if (draft.synthesis) setSynthesis({ ...draft.synthesis });
+    if (draft.observations) setObservations({ ...initialObs, ...draft.observations });
+    if (draft.synthesis) setSynthesis({ ...initialSynthesis, ...draft.synthesis });
     if (draft.sections) setSections([...draft.sections]);
     if (draft.reportType === 'initial' || draft.reportType === 'reevaluation') setReportType(draft.reportType);
     if (draft.step) setStep(draft.step);

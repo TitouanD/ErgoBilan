@@ -2,67 +2,22 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import type { Patient } from '../../types';
 import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../utils';
-import { User, Lock, AlertTriangle, Mic, MicOff, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { User, Lock, AlertTriangle, Mic, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { useAuth } from '../../contexts/AuthContext';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
-import { useVoiceDictation } from '../../hooks/useVoiceDictation';
+import { VoiceTextarea } from '../shared/VoiceTextarea';
+export { VoiceTextarea } from '../shared/VoiceTextarea';
 
 interface Props {
   data: Patient;
   updateData: (data: Partial<Patient>) => void;
+    onQuit: () => void;
   onNext: () => void;
   onPatientCreated: () => void;
 }
-
-// --- VOICE TEXTAREA COMPONENT (reusable across steps) ---
-export const VoiceTextarea: React.FC<{
-    value: string;
-    onChange: (val: string) => void;
-    placeholder?: string;
-    rows?: number;
-    className?: string;
-    label?: string;
-}> = ({ value, onChange, placeholder, rows = 5, className = '', label }) => {
-    const handleTranscript = useCallback((text: string) => {
-        onChange(value ? `${value} ${text}` : text);
-    }, [value, onChange]);
-
-    const { isListening, isSupported, interimText, toggleListening } = useVoiceDictation({
-        onTranscript: handleTranscript,
-    });
-
-    return (
-        <div className="relative">
-            {label && <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{label}</label>}
-            <div className="relative">
-                <textarea
-                    value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
-                    onChange={(e) => onChange(e.target.value)}
-                    placeholder={placeholder}
-                    rows={rows}
-                    className={`w-full bg-[var(--input-bg)] border rounded-xl p-4 text-[var(--text-main)] placeholder:text-[var(--text-disabled)] outline-none focus:ring-2 focus:ring-[#E07A5F]/30 focus:border-[#E07A5F]/50 resize-none leading-relaxed pr-12 ${className}`}
-                />
-                {isSupported && (
-                    <button
-                        type="button"
-                        onClick={toggleListening}
-                        className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${
-                            isListening
-                                ? 'bg-red-100 text-red-600 animate-pulse shadow-lg shadow-red-200'
-                                : 'bg-[var(--progress-bg)] text-[var(--text-secondary)] hover:bg-[#E07A5F]/10 hover:text-[#E07A5F]'
-                        }`}
-                        title={isListening ? 'Arrêter la dictée' : 'Dictée vocale'}
-                    >
-                        {isListening ? <Mic size={16} /> : <MicOff size={16} />}
-                    </button>
-                )}
-            </div>
-        </div>
-    );
-};
 
 // --- Human-readable label maps for chip/select values ---
 const LABEL_MAP: Record<string, string> = {
@@ -173,9 +128,15 @@ const SectionSummary: React.FC<{
     );
 };
 
-export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
+export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, onPatientCreated }) => {
   const { orgKey } = useAuth(); 
-  const [viewMode, setViewMode] = useState<'review' | 'edit'>('review');
+  const [viewMode, setViewModeRaw] = useState<'review' | 'edit'>(() =>
+      (sessionStorage.getItem('step1_viewMode') as 'review' | 'edit') || 'review'
+  );
+  const setViewMode = (mode: 'review' | 'edit') => {
+      setViewModeRaw(mode);
+      sessionStorage.setItem('step1_viewMode', mode);
+  };
     const [userSwitchedToReview, setUserSwitchedToReview] = useState(false);
   const toast = useToast();
     const isAdministrativeReady = isAdministrativeSectionReady(data);
@@ -445,10 +406,17 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           </>
       )}
 
-      <div className="flex justify-center pt-12">
-        <button onClick={handleNextStep}
-                        disabled={!isAdministrativeReady}
-            className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+    <div className="mt-10 flex justify-between items-center gap-4">
+        <button
+            onClick={onQuit}
+            className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
+        >
+            Quitter
+        </button>
+        <button
+            onClick={handleNextStep}
+            disabled={!isAdministrativeReady}
+            className="px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
         >
             Suivant : Tests & Mesures
         </button>

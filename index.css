@@ -149,6 +149,18 @@ select:focus {
   transition: none !important;
 }
 
+/* Dashed page-height guide: shows where the A4 boundary ends */
+.page-a4::after {
+  content: '';
+  position: absolute;
+  left: 5mm;
+  right: 5mm;
+  top: 297mm;
+  border-top: 1.5px dashed #d4d4d8;
+  pointer-events: none;
+  z-index: 10;
+}
+
 /* PDF viewer panel gets themed; A4 canvas remains white */
 .pdf-viewer-panel {
   background-color: var(--app-bg);
@@ -194,6 +206,10 @@ select:focus {
     width: 100%;
     border: none;
     padding: 15mm;
+  }
+
+  .page-a4::after {
+    display: none;
   }
 
   .no-print,

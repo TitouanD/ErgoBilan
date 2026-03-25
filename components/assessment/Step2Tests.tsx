@@ -466,6 +466,7 @@ const NumericRow: React.FC<{
   onChange: (patch: Partial<ScoreResult>) => void;
   readOnly?: boolean;
   onFocus?: () => void;
+  onToggleExpand?: () => void;
   hasNorms?: boolean;
   normsStatusCode?: NormsStatusCode;
   effectiveDirection: EffectiveDirection;
@@ -480,6 +481,7 @@ const NumericRow: React.FC<{
   onChange,
   readOnly,
   onFocus,
+  onToggleExpand,
   hasNorms,
   normsStatusCode,
   effectiveDirection,
@@ -688,7 +690,20 @@ const NumericRow: React.FC<{
           {/* Header: name + meta badges */}
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
-              <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
+              <div className="flex items-start gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onToggleExpand?.()}
+                  className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+                  title={onToggleExpand ? 'Refermer le sous-test' : undefined}
+                  aria-label="Refermer le sous-test"
+                >
+                  <ChevronDown size={12} className="shrink-0" />
+                </button>
+                <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
+                  {getSubtestDisplayName(subtest)}
+                </h4>
+              </div>
               <div className="flex items-center flex-wrap gap-1.5 mt-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
                 {getScaleLabel(subtest.scoreType) && (
@@ -960,7 +975,14 @@ const NumericRow: React.FC<{
     );
   };
 
-const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void }> = ({ subtest, result, onChange, readOnly, onFocus }) => {
+const QualitativeRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onToggleExpand?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
   const options = [...(subtest.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
   const selected = result.qualitativeCode || result.raw;
 
@@ -970,7 +992,18 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{getSubtestDisplayName(subtest)}</h4>
+          <div className="flex items-start gap-1.5">
+            <button
+              type="button"
+              onClick={() => onToggleExpand?.()}
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
+              aria-label="Refermer le sous-test"
+            >
+              <ChevronDown size={12} className="shrink-0" />
+            </button>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
+          </div>
           <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Catégorie normative</p>
         </div>
 
@@ -1020,13 +1053,31 @@ const QualitativeRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onCha
   );
 };
 
-const RawOnlyRow: React.FC<{ subtest: SubtestDef; result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void; readOnly?: boolean; onFocus?: () => void }> = ({ subtest, result, onChange, readOnly, onFocus }) => {
+const RawOnlyRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onToggleExpand?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
   return (
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
         <div className="mb-4">
-          <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight">{getSubtestDisplayName(subtest)}</h4>
+          <div className="flex items-start gap-1.5">
+            <button
+              type="button"
+              onClick={() => onToggleExpand?.()}
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
+              aria-label="Refermer le sous-test"
+            >
+              <ChevronDown size={12} className="shrink-0" />
+            </button>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
+          </div>
           <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Saisie brute manuelle</p>
         </div>
 
@@ -1055,12 +1106,27 @@ const CustomTextRow: React.FC<{
   onChange: (patch: Partial<ScoreResult>) => void;
   readOnly?: boolean;
   onFocus?: () => void;
-}> = ({ result, onChange, readOnly, onFocus }) => {
+  onToggleExpand?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
   const setPatch = (patch: Partial<ScoreResult>) => onChange({ ...result, ...patch });
 
   return (
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5 space-y-3">
+        <div>
+          <div className="flex items-start gap-1.5">
+            <button
+              type="button"
+              onClick={() => onToggleExpand?.()}
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
+              aria-label="Refermer le sous-test"
+            >
+              <ChevronDown size={12} className="shrink-0" />
+            </button>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
+          </div>
+        </div>
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
           <input
@@ -1127,6 +1193,7 @@ const CompositeItemsRow: React.FC<{
   onChange: (patch: Partial<ScoreResult>) => void;
   readOnly?: boolean;
   onFocus?: () => void;
+  onToggleExpand?: () => void;
   hasNorms?: boolean;
   normsStatusCode?: NormsStatusCode;
   effectiveDirection: EffectiveDirection;
@@ -1141,6 +1208,7 @@ const CompositeItemsRow: React.FC<{
   onChange,
   readOnly,
   onFocus,
+  onToggleExpand,
   hasNorms,
   normsStatusCode,
   effectiveDirection,
@@ -1285,10 +1353,20 @@ const CompositeItemsRow: React.FC<{
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base flex items-center gap-1.5">
-              <ChevronDown size={12} className="text-[var(--text-secondary)] shrink-0" />
-              <span className="truncate">{getSubtestDisplayName(subtest)}</span>
-            </h4>
+            <div className="flex items-start gap-1.5">
+              <button
+                type="button"
+                onClick={() => onToggleExpand?.()}
+                className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+                title={onToggleExpand ? 'Refermer le sous-test' : undefined}
+                aria-label="Refermer le sous-test"
+              >
+                <ChevronDown size={12} className="shrink-0" />
+              </button>
+              <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
+                {getSubtestDisplayName(subtest)}
+              </h4>
+            </div>
             <div className="flex items-center flex-wrap gap-1.5 mt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
               {getScaleLabel(subtest.scoreType) && (
@@ -1510,9 +1588,9 @@ const FlexibleSubtestRow = React.memo((props: {
   hasPendingDirectionOverride?: boolean;
 }) => {
   const model = props.subtest.inputModel || 'numeric_4mode';
-  if (model === 'custom_text') return <CustomTextRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
-  if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
-  if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} />;
+  if (model === 'custom_text') return <CustomTextRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
+  if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
+  if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
   if (model === 'computed_items') return (
     <CompositeItemsRow
       testId={props.testId}
@@ -1522,6 +1600,7 @@ const FlexibleSubtestRow = React.memo((props: {
       onChange={props.onChange}
       readOnly={props.readOnly}
       onFocus={props.onFocus}
+      onToggleExpand={props.onToggleExpand}
       hasNorms={props.hasNorms}
       normsStatusCode={props.normsStatusCode}
       effectiveDirection={props.effectiveDirection}
@@ -1539,6 +1618,7 @@ const FlexibleSubtestRow = React.memo((props: {
       onChange={props.onChange}
       readOnly={props.readOnly}
       onFocus={props.onFocus}
+      onToggleExpand={props.onToggleExpand}
       hasNorms={props.hasNorms}
       normsStatusCode={props.normsStatusCode}
       effectiveDirection={props.effectiveDirection}
@@ -2853,6 +2933,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                           baseDirection={baseDirection}
                                           onToggleDirection={() => toggleSubtestDirection(dbSubId, st)}
                                           hasPendingDirectionOverride={pendingDirectionOverrides[dbSubId] !== undefined}
+                                          isExpanded={isSubExpanded}
+                                          onToggleExpand={() => setExpandedSubKey((prev) => (prev === subKey ? null : subKey))}
                                           onFocus={() => setExpandedSubKey(subKey)}
                                         />
                                       ) : (
@@ -2884,18 +2966,16 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}
       </div>
 
-      <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
-        <div className="max-w-4xl w-full flex justify-between items-center gap-4">
-          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Quitter</button>
+      <div className="mt-10 flex justify-between items-center gap-4">
+          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
             disabled={isPersistingDirectionOverrides}
-            className="flex items-center gap-3 px-7 py-3 bg-gradient-to-r from-[#E07A5F] to-[#d0694e] text-white rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:brightness-105 transition-all"
+            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
           >
             <span>{isPersistingDirectionOverrides ? 'Enregistrement...' : 'Passer au diagnostic'}</span>
             <ArrowRight size={20} />
           </button>
-        </div>
       </div>
 
       <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} onContribute={onContribute} initialExpandedTestId={catalogTargetTestId} />

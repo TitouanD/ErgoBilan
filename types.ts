@@ -441,8 +441,12 @@ export type ReviewFlagCode =
     | 'LOOKUP_MAX_RAW_OUTLIER'
     | 'LOOKUP_NS_RANGE_INCOMPLETE'
     | 'LOOKUP_GROUP_AGE_MISMATCH'
-    | 'LOOKUP_COLUMN_SHIFT_SUSPECT';
-
+    | 'LOOKUP_COLUMN_SHIFT_SUSPECT'
+    | 'LOOKUP_ADJACENT_COLUMN_DUPLICATE'
+    | 'EXTRACTION_MISSING_SOURCE_COLUMNS'
+    | 'EXTRACTION_NOT_VERIFIED'
+    | 'EXTRACTION_LOW_CONFIDENCE'
+    | 'CROSS_PAGE_CONFLICT';
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
 export interface ReviewSuggestedFix {

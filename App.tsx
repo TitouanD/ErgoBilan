@@ -15,6 +15,7 @@ import { GenerationLoader } from './components/shared/GenerationLoader';
 import { AssessmentStepper } from './components/assessment/AssessmentStepper';
 import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
+import { ConfirmModal } from './components/shared/ConfirmModal';
 import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
@@ -40,6 +41,7 @@ const Step5Export = React.lazy(() => import('./components/assessment/Step5Export
 
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then(module => ({ default: module.AdminPanel })));
 const ContributionStudio = React.lazy(() => import('./components/admin/ContributionStudio').then(module => ({ default: module.ContributionStudio })));
+const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEditor').then(module => ({ default: module.ProfileEditor })));
 const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then(module => ({ default: module.OnboardingExperience })));
 
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then(module => ({ default: module.PatientDetail })));
@@ -66,7 +68,7 @@ const AppRouter = () => {
     const toast = useToast();
 
     // --- UI mode / navigation ---
-    const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail'>('landing');
+    const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail' | 'profile'>('landing');
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authMode, setAuthMode] = useState<'login' | 'register' | 'confirm_email'>('login');
     const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('');
@@ -78,6 +80,8 @@ const AppRouter = () => {
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
+    const [stepperConfirm, setStepperConfirm] = useState<{ target: number } | null>(null);
+    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [detailPaging, setDetailPaging] = useState({
         hasMoreAssessments: false,
         nextAssessmentOffset: 0,
@@ -247,6 +251,46 @@ const AppRouter = () => {
     }, [handleSaveAndQuit]);
 
     const onResumeDraft = useCallback(async (patientId?: string) => { const ok = await handleResumeDraft(patientId); if (ok) setMode('assessment'); }, [handleResumeDraft]);
+
+    // --- Guarded stepper navigation (A1): warn when going back before step 4 with existing sections ---
+    const handleStepperClick = useCallback((targetStep: number) => {
+        const currentStep = assessment.step;
+        // Going backward to step ≤3 from step ≥4 when sections exist → warn about regeneration risk
+        if (targetStep < currentStep && targetStep <= 3 && currentStep >= 4 && assessment.sections.length > 0) {
+            setStepperConfirm({ target: targetStep });
+            return;
+        }
+        assessment.setStep(targetStep);
+    }, [assessment]);
+
+    const confirmStepperNavigation = useCallback(() => {
+        if (stepperConfirm) {
+            assessment.setStep(stepperConfirm.target);
+            setStepperConfirm(null);
+        }
+    }, [assessment, stepperConfirm]);
+
+    // --- Quit handler (A4): save-or-discard when data exists ---
+    const handleQuitAssessment = useCallback(() => {
+        const hasData = !!(assessment.patient.firstName || assessment.patient.lastName || assessment.patient.dob);
+        if (hasData) {
+            setShowQuitConfirm(true);
+        } else {
+            assessment.resetAssessment();
+            setMode('dashboard');
+        }
+    }, [assessment]);
+
+    const handleQuitDiscard = useCallback(() => {
+        setShowQuitConfirm(false);
+        assessment.resetAssessment();
+        setMode('dashboard');
+    }, [assessment]);
+
+    const handleQuitSave = useCallback(async () => {
+        setShowQuitConfirm(false);
+        await onSaveAndQuit();
+    }, [onSaveAndQuit]);
 
     const onProcessPending = useCallback(async (q: Parameters<typeof handleProcessPending>[0]) => { const result = await handleProcessPending(q); if (result === 'assessment') setMode('assessment'); }, [handleProcessPending]);
 
@@ -455,6 +499,9 @@ const AppRouter = () => {
                                         <button onClick={() => { setShowAccountMenu(false); handleContributionAccess(); }} className="w-full mt-1 px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <FilePlus size={14} /> Créer un test
                                         </button>
+                                        <button onClick={() => { setShowAccountMenu(false); setMode('profile'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
+                                            <User size={14} /> Mon Profil
+                                        </button>
                                         <button onClick={() => { setShowAccountMenu(false); setPricingModalMode('plans'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <Crown size={14} /> Mon abonnement
                                         </button>
@@ -567,14 +614,16 @@ const AppRouter = () => {
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} initialUrl={portalInitialUrl} />}
                     {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => { }} />}
 
+                    {mode === 'profile' && <ProfileEditor onClose={() => setMode(assessment?.patient ? 'assessment' : 'dashboard')} />}
+
                     {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW 5 ÉTAPES) --- */}
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">
                             {/* Navigation Stepper */}
-                            <AssessmentStepper currentStep={assessment.step} onStepClick={(s) => assessment.setStep(s)} />
+                            <AssessmentStepper currentStep={assessment.step} onStepClick={handleStepperClick} disabled={isGenerating} />
 
                             {/* Step 1: Admin */}
-                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
+                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onQuit={handleQuitAssessment} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
 
                             {/* Step 2: Tests & Observations (FUSIONNÉ) */}
                             {assessment.step === 2 && (
@@ -585,7 +634,7 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     updateObservations={assessment.updateObservations}
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
-                                    onBack={() => setMode('dashboard')}
+                                    onBack={() => assessment.setStep(1)}
                                     onContribute={handleContributionAccess}
                                     userProfile={userProfile}
                                 />
@@ -600,13 +649,13 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     patient={assessment.patient}
                                     onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
-                                    onBack={() => setMode('dashboard')}
+                                    onBack={() => assessment.setStep(2)}
                                     isGenerating={isGenerating}
                                 />
                             )}
 
                             {/* Step 4: Validation */}
-                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
+                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
 
                             {/* Step 5: Export */}
                             {assessment.step === 5 && (
@@ -623,6 +672,7 @@ const AppRouter = () => {
                                     onBack={() => assessment.setStep(4)}
                                     isDemoMode={isDemoMode}
                                     onDemoConvert={(action) => setDemoConversion({ show: true, action })}
+                                    onOpenProfile={() => setMode('profile')}
                                 />
                             )}
                         </div>
@@ -633,6 +683,31 @@ const AppRouter = () => {
 
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && generationError !== 'CREDIT_INSUFFICIENT' && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); onTriggerGeneration(); }} onClose={() => setGenerationError(null)} />}
+
+            {/* Stepper backward navigation guard (A1) */}
+            <ConfirmModal
+                isOpen={!!stepperConfirm}
+                title="Retour en arrière"
+                message={"Vous avez déjà un rapport généré. Si vous revenez en arrière et régénérez le bilan, vos modifications de relecture seront écrasées.\n\nContinuer ?"}
+                confirmLabel="Continuer"
+                cancelLabel="Annuler"
+                variant="warning"
+                onConfirm={confirmStepperNavigation}
+                onCancel={() => setStepperConfirm(null)}
+            />
+
+            {/* Quit assessment guard (A4) */}
+            <ConfirmModal
+                isOpen={showQuitConfirm}
+                title="Quitter le bilan"
+                message="Souhaitez-vous sauvegarder un brouillon avant de quitter ?"
+                confirmLabel="Quitter sans sauvegarder"
+                cancelLabel="Annuler"
+                variant="danger"
+                secondaryAction={{ label: 'Sauvegarder le brouillon', onClick: handleQuitSave }}
+                onConfirm={handleQuitDiscard}
+                onCancel={() => setShowQuitConfirm(false)}
+            />
 
             {/* POPUP CONFIRMATION IA */}
             {showConfirmGeneration && (

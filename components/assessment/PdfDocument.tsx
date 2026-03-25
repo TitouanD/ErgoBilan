@@ -205,19 +205,21 @@ const PdfHeader: React.FC<{
     );
 
     const PractitionerDetails = () => (
-        <View style={{ marginTop: 4 }}>
+        <View style={{ marginTop: 6 }}>
             {branding?.practitionerName ? (
-                <Text style={{ fontSize: 10, fontWeight: 700, color: COLORS.stone700 }}>{branding.practitionerName}</Text>
+                <Text style={{ fontSize: 9, fontWeight: 700, color: COLORS.stone700, marginBottom: 2 }}>{branding.practitionerName}</Text>
+            ) : null}
+            {branding?.phone ? (
+                <Text style={{ fontSize: 8, color: COLORS.stone500, marginBottom: 1 }}>{branding.phone}</Text>
+            ) : null}
+            {branding?.email ? (
+                <Text style={{ fontSize: 8, color: COLORS.stone500, marginBottom: 1 }}>{branding.email}</Text>
+            ) : null}
+            {branding?.siret ? (
+                <Text style={{ fontSize: 7, color: COLORS.stone400, marginBottom: 1 }}>SIRET : {branding.siret}</Text>
             ) : null}
             {branding?.address ? (
-                <Text style={{ fontSize: 8, color: COLORS.stone500, marginTop: 2 }}>{branding.address}</Text>
-            ) : null}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
-                {branding?.phone ? <Text style={{ fontSize: 8, color: COLORS.stone500 }}>{branding.phone}</Text> : null}
-                {branding?.email ? <Text style={{ fontSize: 8, color: COLORS.stone500 }}>{branding.email}</Text> : null}
-            </View>
-            {branding?.siret ? (
-                <Text style={{ fontSize: 7, color: COLORS.stone400, marginTop: 2, fontFamily: 'Roboto' }}>{branding.siret}</Text>
+                <Text style={{ fontSize: 8, color: COLORS.stone500, marginBottom: 1 }}>{branding.address}</Text>
             ) : null}
         </View>
     );
@@ -248,41 +250,6 @@ const PdfHeader: React.FC<{
         );
     };
 
-    // ── InfoBlock strip for PDF (rendered under all templates)
-    const PdfInfoBlockStrip = () => {
-        const cfg = branding?.infoBlock ?? { position: 'right' as const, size: 'M' as const, bgColor: '#FAFAF9', borderColor: '#E7E5E4', extraLines: [] };
-        const pos = cfg.position ?? 'right';
-        const justifyContent = pos === 'left' ? ('flex-start' as const) : pos === 'right' ? ('flex-end' as const) : ('center' as const);
-        const hasInfo = branding?.practitionerName || branding?.phone || branding?.email || branding?.siret || branding?.address;
-        if (!hasInfo) return null;
-        const paddingMap: Record<string, number> = { S: 4, M: 6, L: 8 };
-        const fontSizeMap: Record<string, number> = { S: 6, M: 7, L: 8 };
-        const pd = paddingMap[cfg.size] ?? 6;
-        const fs = fontSizeMap[cfg.size] ?? 7;
-        const extras = (anchor: string) =>
-            (cfg.extraLines ?? []).filter(l => l.after === anchor).map((l, i) => (
-                <Text key={i} style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{l.text}</Text>
-            ));
-
-        return (
-            <View style={{ flexDirection: 'row', justifyContent, marginTop: 8, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: COLORS.stone100 }}>
-                <View style={{ padding: pd, backgroundColor: cfg.bgColor, border: `0.5pt solid ${cfg.borderColor}`, borderRadius: 4, minWidth: 120 }}>
-                    {extras('top')}
-                    {branding?.practitionerName ? <Text style={{ fontSize: fs, fontWeight: 700, color: COLORS.stone800, marginBottom: 1, fontFamily }}>{branding.practitionerName}</Text> : null}
-                    {extras('name')}
-                    {branding?.phone ? <Text style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{branding.phone}</Text> : null}
-                    {extras('phone')}
-                    {branding?.email ? <Text style={{ fontSize: fs, color: COLORS.stone600, marginBottom: 1 }}>{branding.email}</Text> : null}
-                    {extras('email')}
-                    {branding?.siret ? <Text style={{ fontSize: fs - 1, color: COLORS.stone400, marginBottom: 1 }}>SIRET : {branding.siret}</Text> : null}
-                    {extras('siret')}
-                    {branding?.address ? <Text style={{ fontSize: fs, color: COLORS.stone500 }}>{branding.address}</Text> : null}
-                    {extras('address')}
-                </View>
-            </View>
-        );
-    };
-
     // ── Template rendering
     if (template === 'corporate') {
         return (
@@ -297,7 +264,6 @@ const PdfHeader: React.FC<{
                         <PractitionerDetails />
                     </View>
                 </View>
-                <PdfInfoBlockStrip />
             </View>
         );
     }
@@ -311,7 +277,6 @@ const PdfHeader: React.FC<{
                 <View style={{ width: '66%', borderTopWidth: 1, borderTopColor: COLORS.stone100, paddingTop: 12, marginTop: 12 }}>
                     <PatientBlock align="center" />
                 </View>
-                <PdfInfoBlockStrip />
             </View>
         );
     }
@@ -329,7 +294,6 @@ const PdfHeader: React.FC<{
                     <PatientBlock align="right" />
                 </View>
             </View>
-            <PdfInfoBlockStrip />
         </View>
     );
 };
@@ -668,7 +632,7 @@ const PdfBarChart: React.FC<{
                             <G key={i}>
                                 {/* Label */}
                                 <SvgText x={labelW - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
-                                    {item.label.length > 18 ? item.label.slice(0, 17) + '…' : item.label}
+                                    {item.label}
                                 </SvgText>
                                 {/* Dot */}
                                 <Circle cx={dotX} cy={y} r={4} fill={item.color} />
@@ -790,7 +754,7 @@ const PdfPercentileChart: React.FC<{
                             return (
                                 <G key={idx}>
                                     <SvgText x={labelW - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
-                                        {item.label.length > 18 ? item.label.slice(0, 17) + '…' : item.label}
+                                        {item.label}
                                     </SvgText>
                                     <Circle cx={dotX} cy={y} r={4} fill={item.color} />
                                     <SvgText x={labelW + barAreaW + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: item.color }}>
@@ -851,8 +815,8 @@ const PdfScoreTable: React.FC<{
     // Fallback for private/custom tests not in catalog — still render their score data
     const def = catalogDef || {
         id: testId,
-        name: testId.startsWith('priv_') ? 'Test personnalisé' : testId,
-        subtests: Object.keys(subtests).map(subId => ({ id: subId, name: subId, unit: 'pts', scoreType: 'standard' as const, lowerIsBetter: false, computationMode: 'LOOKUP' as const, inputModel: 'numeric_4mode' as const })),
+        name: testId === 'custom_observations' ? 'Observations personnalisées' : testId.startsWith('priv_') ? 'Test personnalisé' : testId,
+        subtests: Object.keys(subtests).map(subId => ({ id: subId, name: (subtests[subId] as any)?.customLabel || subId, displayName: (subtests[subId] as any)?.customLabel || undefined, unit: 'pts', scoreType: 'standard' as const, lowerIsBetter: false, computationMode: 'LOOKUP' as const, inputModel: 'numeric_4mode' as const, inputConfig: undefined as any })),
     };
 
     const validSubtests = Object.entries(subtests).filter(([, val]) => hasAnyScoreValue(val as ScoreResult)) as [string, ScoreResult][];
@@ -890,6 +854,25 @@ const PdfScoreTable: React.FC<{
         return COLORS.green;
     };
 
+    // Custom observations: simple card layout (no score table)
+    if (testId === 'custom_observations') {
+        return (
+            <View style={{ marginBottom: 16, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: radius, overflow: 'hidden' }} wrap={false}>
+                <View style={{ backgroundColor: primary + '08', padding: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200 }}>
+                    <Text style={{ fontSize: 12, fontWeight: 700, color: primary, fontFamily }}>{def.name}</Text>
+                </View>
+                <View style={{ padding: 12, gap: 10 }}>
+                    {validSubtests.map(([subId, result]: [string, ScoreResult]) => (
+                        <View key={subId} style={{ border: `0.5pt solid ${COLORS.stone100}`, borderRadius: 4, padding: 8 }}>
+                            <Text style={{ fontSize: 9, fontWeight: 700, color: COLORS.stone700, marginBottom: 4 }}>{result.customLabel || 'Observation personnalisée'}</Text>
+                            <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{result.observation || '-'}</Text>
+                        </View>
+                    ))}
+                </View>
+            </View>
+        );
+    }
+
     return (
         <View style={{ marginBottom: 16, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: radius, overflow: 'hidden' }} wrap={false}>
             {/* Test header */}
@@ -907,7 +890,7 @@ const PdfScoreTable: React.FC<{
                 {/* Quantitative subtests */}
                 {quantitativeSubtests.length > 0 && (
                     <View style={{ marginBottom: qualitativeSubtests.length > 0 ? 12 : 0 }}>
-                        <Text style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: COLORS.stone400, marginBottom: 6 }}>Quantitatif</Text>
+                        <Text style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: COLORS.stone400, marginBottom: 6 }}> </Text>
 
                         {/* Header */}
                         <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>

@@ -17,7 +17,7 @@ import { normalizeSubtestName, normalizeTestName, findBestCanonicalMatch } from 
 import { featureFlag } from '../../utils/featureFlags';
 import { DisambiguationModal, SKIP_SENTINEL } from './DisambiguationModal';
 import { scoreCandidate } from '../../utils/subtestMatcher';
-import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes } from '../../utils/extractionReviewFlags';
+import { analyzePageRows, applyAllSuggestedFixes, applySuggestedFix, computeFlagCounts, suggestFixes, detectCrossPageConflicts } from '../../utils/extractionReviewFlags';
 import { analyzeFitting, normalizeScoreTypeToken } from '../../utils/normFittingEngine';
 import {
     buildConditionalSubtestDisplayName,
@@ -411,6 +411,65 @@ const FEATURE_CONTRIB_AUTO_REPAIR = featureFlag('VITE_FEATURE_CONTRIB_AUTO_REPAI
 const FEATURE_CONTRIB_FORCED_DISAMBIG = featureFlag('VITE_FEATURE_CONTRIB_FORCED_DISAMBIG', true);
 const FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN = featureFlag('VITE_FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN', true);
 const FEATURE_CONTRIB_ALIAS_LEARNING = featureFlag('VITE_FEATURE_CONTRIB_ALIAS_LEARNING', true);
+const CONTRIBUTION_MIN_CONFIDENCE_SCORE = 0.72;
+
+const buildExtractionIntegritySignature = (page: ExtractionPage): string => {
+    const missingSourceColumns = (page.missingSourceColumns || []).join('|');
+    const verified = page.extractionMeta?.verified === true ? '1' : '0';
+    const confidenceRaw = page.extractionMeta?.confidenceScore;
+    const confidence = typeof confidenceRaw === 'number' ? confidenceRaw.toFixed(4) : 'na';
+    return `${missingSourceColumns}::${verified}::${confidence}`;
+};
+
+const buildExtractionIntegrityFlags = (page: ExtractionPage): ReviewFlag[] => {
+    const flags: ReviewFlag[] = [];
+    const missingSourceColumns = page.missingSourceColumns || [];
+
+    if (missingSourceColumns.length > 0) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_MISSING_SOURCE_COLUMNS::meta`,
+            code: 'EXTRACTION_MISSING_SOURCE_COLUMNS',
+            severity: 'blocking',
+            message: `Colonnes attendues manquantes: ${missingSourceColumns.join(', ')}.`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 1,
+            blocking: true,
+        });
+    }
+
+    if (page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_NOT_VERIFIED::meta`,
+            code: 'EXTRACTION_NOT_VERIFIED',
+            severity: 'blocking',
+            message: `La page LOOKUP n'a pas été validée par la passe de vérification edge.`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 0.98,
+            blocking: true,
+        });
+    }
+
+    const confidenceScore = page.extractionMeta?.confidenceScore;
+    if (typeof confidenceScore === 'number' && confidenceScore < CONTRIBUTION_MIN_CONFIDENCE_SCORE) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_LOW_CONFIDENCE::meta`,
+            code: 'EXTRACTION_LOW_CONFIDENCE',
+            severity: 'blocking',
+            message: `Confiance extraction insuffisante (${Math.round(confidenceScore * 100)}%, seuil ${Math.round(CONTRIBUTION_MIN_CONFIDENCE_SCORE * 100)}%).`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 0.95,
+            blocking: true,
+        });
+    }
+
+    return flags;
+};
 
 const computeRepairBudget = (structure: TableStructure, rows: ExtractedRow[]): number => {
     if (structure === 'PARAMETRIC') return PAGE_REPAIR_BUDGET_BASE;
@@ -947,8 +1006,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const normalizedLookupRows = page.detectedStructure === 'LOOKUP'
             ? normalizeLookupRowsToDominantAgeRange(page.rows).rows
             : page.rows;
-        const rowsHash = hashRows(normalizedLookupRows);
-        const canReuse = page.rowsHash === rowsHash && Array.isArray(page.flags) && !!page.flagCounts;
+        const baseRowsHash = hashRows(normalizedLookupRows);
+        const reviewHash = `${baseRowsHash}::${buildExtractionIntegritySignature(page)}`;
+        const canReuse = page.rowsHash === reviewHash && Array.isArray(page.flags) && !!page.flagCounts;
 
         if (canReuse) {
             const nextStatus: PageStatus =
@@ -973,7 +1033,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             rows: normalizedLookupRows,
             structure: page.detectedStructure,
         });
-        const flagCounts = computeFlagCounts(flags);
+        const integrityFlags = buildExtractionIntegrityFlags(page);
+        const mergedFlags = [...flags, ...integrityFlags];
+        const flagCounts = computeFlagCounts(mergedFlags);
         const nextStatus: PageStatus =
             page.status === 'validated' && flagCounts.blocking > 0
                 ? 'pending'
@@ -983,9 +1045,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             ...page,
             rows: normalizedLookupRows,
             status: nextStatus,
-            flags,
+            flags: mergedFlags,
             flagCounts,
-            rowsHash,
+            rowsHash: reviewHash,
         };
     }, []);
 
@@ -1796,6 +1858,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     };
 
     const processSingleExtraction = async (file: File, knownSubtestNames?: string[]) => {
+        // Image quality pre-check: warn for very small images (likely low-res photos)
+        if (file.type.startsWith('image/')) {
+            const MIN_IMAGE_BYTES = 50_000; // 50KB — extremely small for a norm table photo
+            if (file.size < MIN_IMAGE_BYTES) {
+                Logger.warn('AI', `Image quality warning: ${file.name} is only ${(file.size / 1024).toFixed(0)}KB — may be too low-resolution for reliable extraction`);
+                toast.error(`Image "${file.name}" très petite (${(file.size / 1024).toFixed(0)}KB). La qualité d'extraction pourrait être réduite.`);
+            }
+        }
+
         const imagePart = await fileToGenerativePart(file);
         const filename = file.name;
 
@@ -2092,28 +2163,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 );
             }
 
-            // PARALLEL PROCESSING: Extract all files at once for much faster processing
-            Logger.info('ADMIN', `Starting parallel extraction of ${inputFiles.length} file(s)`);
+            // SEQUENTIAL PROCESSING: Each page inherits knownSubtestNames from
+            // previous pages for cross-page name consistency. Promise.all would
+            // start all calls simultaneously, making the shared array a no-op.
+            Logger.info('ADMIN', `Starting sequential extraction of ${inputFiles.length} file(s)`);
 
-            const extractionPromises = inputFiles.map(async (file, i) => {
+            const results: Array<{ result: ReturnType<typeof buildRowsFromExtractionText> | null; index: number; success: boolean; error?: unknown }> = [];
+            for (let i = 0; i < inputFiles.length; i += 1) {
+                setCurrentFileIndex(i);
                 try {
-                    setCurrentFileIndex(i);
-                    const result = await processSingleExtraction(file, knownSubtestNames.length > 0 ? knownSubtestNames : undefined);
+                    const result = await processSingleExtraction(
+                        inputFiles[i],
+                        knownSubtestNames.length > 0 ? [...knownSubtestNames] : undefined,
+                    );
 
-                    // Collect unique subtest names from this page
+                    // Collect unique subtest names from this page for subsequent pages
                     const pageSubtests = new Set(result.rows.map(r => r.subtest).filter(Boolean));
                     pageSubtests.forEach(name => {
                         if (!knownSubtestNames.includes(name)) knownSubtestNames.push(name);
                     });
 
-                    return { result, index: i, success: true };
+                    results.push({ result, index: i, success: true });
                 } catch (error) {
-                    Logger.error('ADMIN', `Failed to extract ${file.name}`, error);
-                    return { result: null, index: i, success: false, error };
+                    Logger.error('ADMIN', `Failed to extract ${inputFiles[i].name}`, error);
+                    results.push({ result: null, index: i, success: false, error });
                 }
-            });
-
-            const results = await Promise.all(extractionPromises);
+            }
 
             // Collect all duplicated sids from across pages
             const allDuplicatedSids = new Set<string>();
@@ -2379,6 +2454,28 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             const finalPages = nextPages.map(withPageReview);
             const crossPageDuplicates = detectCrossPageLookupDuplicates(finalPages);
+
+            // Cross-page value conflicts (same subtest+age+raw with divergent scores)
+            const crossPageConflictFlags = detectCrossPageConflicts(
+                finalPages.map((p) => ({ pageId: p.id, rows: p.rows })),
+            );
+            if (crossPageConflictFlags.length > 0) {
+                // Inject flags into the first affected page for each conflict
+                const flagsByPage = new Map<string, ReviewFlag[]>();
+                crossPageConflictFlags.forEach((flag) => {
+                    const list = flagsByPage.get(flag.pageId) || [];
+                    list.push(flag);
+                    flagsByPage.set(flag.pageId, list);
+                });
+                flagsByPage.forEach((flags, pageId) => {
+                    const page = finalPages.find((p) => p.id === pageId);
+                    if (page) {
+                        page.flags = [...page.flags, ...flags];
+                        page.flagCounts = computeFlagCounts(page.flags);
+                    }
+                });
+                toast.error(`${crossPageConflictFlags.length} conflit(s) inter-pages détecté(s). Vérifiez les valeurs divergentes.`);
+            }
             if (FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN && crossPageDuplicates.length > 0) {
                 toast.error(`Doublons potentiels détectés entre pages (${crossPageDuplicates.length}). Vérifiez avant validation.`);
                 Logger.warn('ADMIN', 'Cross-page duplicate lookup signatures detected', crossPageDuplicates);
@@ -3038,6 +3135,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }, 0);
         if (severeWarningCount > 0) {
             toast.error(`${severeWarningCount} incohérence(s) structurelle(s) critique(s) restante(s) sur des pages validées. Corrigez avant sauvegarde.`);
+            return;
+        }
+
+        const missingInventoryColumns = validatedPages.reduce((sum, page) => sum + ((page.missingSourceColumns || []).length), 0);
+        if (missingInventoryColumns > 0) {
+            toast.error(`${missingInventoryColumns} colonne(s) attendue(s) manquante(s) sur les pages validées. Relancez l'extraction ciblée avant sauvegarde.`);
+            return;
+        }
+
+        const unverifiedLookupPages = validatedPages.filter((page) => (
+            page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true
+        ));
+        if (unverifiedLookupPages.length > 0) {
+            toast.error(`${unverifiedLookupPages.length} page(s) LOOKUP non vérifiée(s) par la passe de contrôle edge.`);
+            return;
+        }
+
+        const lowConfidencePages = validatedPages.filter((page) => {
+            const confidence = page.extractionMeta?.confidenceScore;
+            return typeof confidence === 'number' && confidence < CONTRIBUTION_MIN_CONFIDENCE_SCORE;
+        });
+        if (lowConfidencePages.length > 0) {
+            const minConfidence = lowConfidencePages
+                .map((page) => page.extractionMeta?.confidenceScore ?? 1)
+                .reduce((min, value) => Math.min(min, value), 1);
+            toast.error(`Confiance extraction insuffisante (${Math.round(minConfidence * 100)}% min, seuil ${Math.round(CONTRIBUTION_MIN_CONFIDENCE_SCORE * 100)}%).`);
             return;
         }
 
