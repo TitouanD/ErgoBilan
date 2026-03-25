@@ -206,6 +206,7 @@ export interface ReportSection {
     id: string;
     title: string;
     content: string;
+    originalContent?: string;
     contentFormat?: 'plain' | 'html';
     status: 'draft' | 'validated';
     isAiGenerated?: boolean;
@@ -277,6 +278,7 @@ export interface PractitionerProfile {
     encryptionSalt: string;
     encryptionValidator: string;
     organizationRole?: string;
+    aiStylePreferences?: string;
 }
 
 export type PatientAssessmentKind = 'initial' | 'reevaluation' | 'mini_reevaluation';
@@ -620,6 +622,7 @@ export interface GeneratedReportSection {
     id: string;
     title: string;
     content: string;
+    originalContent?: string;
     status: 'draft';
     isAiGenerated: true;
 }

@@ -445,13 +445,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               siret: (user.siret as string) || '',
               addressPro: (user.address_pro as string) || '',
               encryptionSalt: (user.encryption_salt as string) || '',
-              encryptionValidator: (user.encryption_validator as string) || ''
+              encryptionValidator: (user.encryption_validator as string) || '',
+              aiStylePreferences: (user.ai_style_preferences as string) || undefined,
           });
 
           // 1. Charger le Praticien (seul appel réseau bloquant)
           // Select only required columns: identity, crypto setup, contact fields
           const userResult = await withTimeout(
-              supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator').eq('id', userId).maybeSingle(),
+              supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator, ai_style_preferences').eq('id', userId).maybeSingle(),
               15000
           );
           if (userResult.timedOut) {
@@ -492,7 +493,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               );
               if (!repairResult.timedOut && !repairResult.value?.error) {
                   const retryResult = await withTimeout(
-                      supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator').eq('id', userId).maybeSingle(),
+                      supabase.from('practitioners').select('id, email, first_name, last_name, phone_pro, siret, address_pro, encryption_salt, encryption_validator, ai_style_preferences').eq('id', userId).maybeSingle(),
                       5000
                   );
                   if (!retryResult.timedOut && retryResult.value?.data) {

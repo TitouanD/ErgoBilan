@@ -31,7 +31,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
 
-type AITask = 'report_bio' | 'report_diagnostic';
+type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback';
 
 type BuildResult = {
   contents: unknown;
@@ -268,11 +268,18 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
 
   const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
 
+  const styleBlock = String(payload.styleDirectives || '').trim();
+
   const userPrompt = [
     SECURITY_INSTRUCTION,
     '',
+    ...(styleBlock ? [
+      'PREFERENCES DE STYLE DU PRATICIEN (issues de ses corrections precedentes) :',
+      styleBlock,
+      '',
+    ] : []),
     `CONTEXTE ${subjectLabel} : ${context}`,
-    '',
+    '',,
     `DONNEES BRUTES (questionnaire/anamnese) :\n${questionnaire}`,
     '',
     'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) en respectant STRICTEMENT ce format :',
@@ -390,9 +397,16 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 
   const subjectLabel = profile === 'adult' ? 'la personne' : "l'enfant";
 
+  const styleBlock = String(payload.styleDirectives || '').trim();
+
   const userPrompt = [
     SECURITY_INSTRUCTION,
     '',
+    ...(styleBlock ? [
+      'PREFERENCES DE STYLE DU PRATICIEN (issues de ses corrections precedentes) :',
+      styleBlock,
+      '',
+    ] : []),
     `PROFIL OCCUPATIONNEL DEJA ETABLI :\n${profilContext}`,
     '',
     `OBSERVATIONS CLINIQUES :`,
@@ -514,9 +528,76 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 // NOTE: Vision/OCR extraction has been moved to dedicated 'extract-norms' edge function
 // for better performance (parallel processing), separate rate limits, and no credit consumption.
 
+// ── STYLE FEEDBACK EXTRACTION ──────────────────────
+
+const FEEDBACK_RESPONSE_SCHEMA = {
+  type: 'OBJECT' as const,
+  properties: {
+    style_preferences: { type: 'STRING' as const, description: 'Liste consolidee de regles de style du praticien, en bullet points. Maximum 500 caracteres. Aucune donnee clinique ou patient.' },
+  },
+  required: ['style_preferences'],
+};
+
+const FEEDBACK_SYSTEM = `Tu es un assistant specialise dans l'analyse de style redactionnel pour des rapports d'ergotherapie.
+Tu recois des textes ANONYMISES (les noms et donnees personnelles ont ete remplaces par des placeholders).
+
+REGLES ABSOLUES DE SECURITE DES DONNEES :
+- Tu ne dois JAMAIS inclure de donnees cliniques, medicales ou personnelles dans ta sortie.
+- Tu ne dois JAMAIS reproduire de contenu specifique a un patient (symptomes, diagnostics, situations).
+- Tu extrais UNIQUEMENT des regles de STYLE et de FORMULATION abstraites et generiques.
+- Si tu detectes des donnees patient dans ta sortie, supprime-les immediatement.
+
+Ton role : comparer les textes originaux (generes par IA) avec les corrections du praticien pour en deduire des PREFERENCES DE STYLE ABSTRAITES.`;
+
+const buildFeedbackTask = (payload: Record<string, unknown>): BuildResult => {
+  const diffs = payload.diffs as Array<{ sectionId: string; original: string; corrected: string }> || [];
+  const existingPreferences = String(payload.existingPreferences || '').trim();
+
+  if (diffs.length === 0) throw new Error('No diffs provided');
+
+  const diffBlocks = diffs.map((d, i) =>
+    `--- Section ${i + 1} (${d.sectionId}) ---\nORIGINAL :\n${d.original}\n\nCORRIGE PAR LE PRATICIEN :\n${d.corrected}`
+  ).join('\n\n');
+
+  const userPrompt = [
+    'REGLE DE SECURITE : Ne reproduis AUCUNE donnee clinique, medicale ou personnelle dans ta reponse. Extrais UNIQUEMENT des regles de style abstraites.',
+    '',
+    ...(existingPreferences ? [
+      'PREFERENCES DE STYLE EXISTANTES (a consolider avec les nouvelles observations) :',
+      existingPreferences,
+      '',
+    ] : []),
+    'CORRECTIONS DU PRATICIEN (textes anonymises) :',
+    diffBlocks,
+    '',
+    'TACHE : Analyse les differences entre les textes originaux et corriges. Extrais des REGLES DE STYLE ABSTRAITES et GENERIQUES que le praticien prefere.',
+    '',
+    'EXEMPLES de bonnes regles :',
+    '- Prefere les phrases courtes et directes aux formulations litteraires.',
+    '- Utilise "sur demande de" plutot que "sur referencement de".',
+    '- Decrit les relations sociales avec nuance plutot que de generaliser.',
+    '- Evite les softeners inutiles ("globalement", "relativement").',
+    '- Prefere "prise de stylo crispee" a "prise tridigitale".',
+    '',
+    'EXEMPLES de MAUVAISES regles (A EVITER car elles contiennent des donnees patient) :',
+    '- "Pour Teyla, mentionner le bilan orthoptique" ← contient un prenom',
+    '- "Quand l\'enfant a des douleurs 6/10, le dire" ← contient des donnees cliniques',
+    '',
+    'FORMAT : Retourne un JSON avec "style_preferences" contenant des bullet points (tirets "-"). Maximum 500 caracteres. Si des preferences existantes sont fournies, CONSOLIDE-les avec les nouvelles (pas de doublons, maximum 10 regles).',
+  ].join('\n');
+
+  return {
+    contents: userPrompt,
+    systemInstruction: FEEDBACK_SYSTEM,
+    responseMimeType: 'application/json',
+    responseSchema: FEEDBACK_RESPONSE_SCHEMA,
+  };
+};
+
 const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult => {
   if (task === 'report_bio') return buildBioTask(payload);
   if (task === 'report_diagnostic') return buildDiagnosticTask(payload);
+  if (task === 'extract_style_feedback') return buildFeedbackTask(payload);
   throw new Error(`Invalid task: ${task}`);
 };
 
@@ -597,8 +678,71 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!['report_bio', 'report_diagnostic'].includes(task)) {
+    if (!['report_bio', 'report_diagnostic', 'extract_style_feedback'].includes(task)) {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ── Style feedback task: no credits, no generation session ──
+    if (task === 'extract_style_feedback') {
+      if (!GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ error: 'AI service not configured' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const built = buildTask(task, payload);
+      const feedbackGeminiBody: Record<string, unknown> = {
+        contents: [{ role: 'user', parts: [{ text: String(built.contents || '') }] }],
+        generationConfig: {
+          responseMimeType: built.responseMimeType,
+          ...(built.responseSchema && { responseSchema: built.responseSchema }),
+        },
+        ...(built.systemInstruction && { system_instruction: { parts: [{ text: built.systemInstruction }] } }),
+      };
+
+      try {
+        const fbController = new AbortController();
+        const fbTimer = setTimeout(() => fbController.abort(), GEMINI_TIMEOUT_MS);
+        const fbResponse = await fetch(GEMINI_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+          body: JSON.stringify(feedbackGeminiBody),
+          signal: fbController.signal,
+        });
+        clearTimeout(fbTimer);
+
+        if (!fbResponse.ok) {
+          return new Response(JSON.stringify({ error: 'Feedback extraction failed' }), {
+            status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const fbData = await fbResponse.json();
+        const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+
+        if (fbText) {
+          try {
+            const parsed = JSON.parse(fbText);
+            const prefs = String(parsed?.style_preferences || '').slice(0, 2000);
+            if (prefs.length > 0) {
+              // Persist to practitioners table (admin client bypasses RLS)
+              await adminSupabase!.from('practitioners')
+                .update({ ai_style_preferences: prefs })
+                .eq('id', userId);
+            }
+          } catch {
+            // JSON parse failure — non-blocking
+          }
+        }
+
+        return new Response(JSON.stringify({ text: fbText, generationId: null }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: 'Feedback extraction error' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (providedGenId && !looksLikeUuid(providedGenId)) {

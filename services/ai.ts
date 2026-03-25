@@ -30,6 +30,7 @@ export interface GenerationPayload {
   scoresEvidence: unknown;
   childContext: string;
   synthesis: ClinicalSynthesis;
+  styleDirectives?: string;
 }
 
 export interface GenerationResult {
@@ -60,6 +61,7 @@ export const AIService = {
           profile,
           childContext: payload.childContext,
           safeQuestionnaire: payload.safeQuestionnaire,
+          ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
         },
       });
 
@@ -75,6 +77,7 @@ export const AIService = {
           safeObservations: payload.safeObservations,
           scoresEvidence: payload.scoresEvidence,
           synthesis: payload.synthesis,
+          ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
         },
         generationId: sessionGenerationId ?? undefined,
       });
@@ -142,6 +145,11 @@ export const AIService = {
           isAiGenerated: true,
         },
       ];
+
+      // Preserve original AI content for feedback loop
+      for (const section of sections) {
+        section.originalContent = section.content;
+      }
 
       return { sections, reformulatedObservations };
     } catch (e: unknown) {
