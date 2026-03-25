@@ -195,7 +195,7 @@ const normalizeAgeToken = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS'];
+const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS', 'SERIE', 'SERIES', 'TRIAL', 'TRIALS'];
 
 const hasAmbiguousAgeQualifierContext = (token: string): boolean => (
   AGE_QUALIFIER_AMBIGUOUS_PATTERNS.some((pattern) => token.includes(pattern))
@@ -451,6 +451,82 @@ const buildLookupBucketMap = (rows: ExtractedRow[]): Map<string, LookupBucket> =
   return buckets;
 };
 
+const computeLookupSignature = (row: ExtractedRow): string => {
+  const rawBounds = getRawBounds(row);
+  const rawSig = rawBounds ? `${rawBounds.min}-${rawBounds.max}` : `raw:${cleanText(row.raw)}`;
+  const standardSig = cleanText(row.standard);
+  const zSig = cleanText(row.zScore);
+  const percentileSig = cleanText(row.percentile);
+  return `${rawSig}|${standardSig}|${zSig}|${percentileSig}`;
+};
+
+const detectAdjacentColumnDuplicate = (
+  buckets: Map<string, LookupBucket>,
+  makeFlag: ReturnType<typeof makeFlagFactory>,
+): ReviewFlag[] => {
+  const flags: ReviewFlag[] = [];
+  const grouped = new Map<string, LookupBucket[]>();
+
+  for (const bucket of buckets.values()) {
+    const groupKey = `${cleanText(bucket.subtest)}::${cleanText(bucket.groupLabel)}`;
+    const current = grouped.get(groupKey) || [];
+    current.push(bucket);
+    grouped.set(groupKey, current);
+  }
+
+  for (const bucketGroup of grouped.values()) {
+    const ordered = bucketGroup
+      .map((bucket) => {
+        const sourceRow = bucket.rows.find((row) => cleanText(row.source_column_key).length > 0);
+        const sourceKey = cleanText(sourceRow?.source_column_key);
+        const match = sourceKey.match(/(\d+)$/);
+        const order = match ? Number(match[1]) : Number.NaN;
+        const signatures = bucket.rows
+          .filter((row) => hasLookupRawValue(row) || hasLookupScoreValue(row))
+          .map((row) => ({
+            rowId: row.id,
+            signature: computeLookupSignature(row),
+          }));
+        return { bucket, order, signatures };
+      })
+      .sort((left, right) => {
+        if (Number.isFinite(left.order) && Number.isFinite(right.order)) return left.order - right.order;
+        if (Number.isFinite(left.order) && !Number.isFinite(right.order)) return -1;
+        if (!Number.isFinite(left.order) && Number.isFinite(right.order)) return 1;
+        return left.bucket.bucketKey.localeCompare(right.bucket.bucketKey);
+      });
+
+    for (let index = 1; index < ordered.length; index += 1) {
+      const prev = ordered[index - 1];
+      const curr = ordered[index];
+      const prevSet = new Set(prev.signatures.map((entry) => entry.signature));
+      const currSet = new Set(curr.signatures.map((entry) => entry.signature));
+      if (prevSet.size < 3 || currSet.size < 3) continue;
+
+      let overlap = 0;
+      for (const signature of currSet) {
+        if (prevSet.has(signature)) overlap += 1;
+      }
+
+      const coverage = overlap / Math.max(prevSet.size, currSet.size);
+      if (coverage < 0.95) continue;
+
+      const rowId = curr.signatures[0]?.rowId || curr.bucket.rows[0]?.id;
+      flags.push(makeFlag({
+        code: 'LOOKUP_ADJACENT_COLUMN_DUPLICATE',
+        severity: 'blocking',
+        message: `Colonnes lookup adjacentes potentiellement dupliquees pour "${curr.bucket.subtest}" (${curr.bucket.groupLabel}) : similarite ${(coverage * 100).toFixed(0)}%.`,
+        subtest: curr.bucket.subtest,
+        groupLabel: curr.bucket.groupLabel,
+        rowId,
+        confidence: Math.min(0.99, 0.9 + Math.min(0.09, coverage - 0.9)),
+      }));
+    }
+  }
+
+  return flags;
+};
+
 export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): ReviewFlag[] => {
   if (!rows || rows.length === 0) return [];
   const makeFlag = makeFlagFactory(pageId);
@@ -546,6 +622,7 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
   const collapsedFlagRowIds = new Set<string>();
   const collapsedSuggestionKey = new Set<string>();
   const lookupBuckets = buildLookupBucketMap(rows);
+  flags.push(...detectAdjacentColumnDuplicate(lookupBuckets, makeFlag));
 
   // Detect collapsed percentile intervals with high-confidence fix.
   for (const bucket of lookupBuckets.values()) {

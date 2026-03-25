@@ -554,31 +554,28 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
             </div>
 
             {/* NAVIGATION FOOTER */}
-            <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
-                <div className="max-w-4xl w-full flex justify-between items-center">
-                    <button onClick={onBack} className="text-stone-400 hover:text-[#3D405B] font-bold text-sm uppercase tracking-widest px-4 transition-colors">
-                        Quitter
-                    </button>
+            <div className="mt-10 flex justify-between items-center gap-4">
+                <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">
+                    Retour
+                </button>
 
-                    <button
-                        onClick={onNext}
-                        disabled={isGenerating}
-                        className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all ${isGenerating ? 'bg-stone-300 cursor-not-allowed' : 'bg-[#3D405B] hover:bg-[#E07A5F] hover:-translate-y-1'
-                            }`}
-                    >
-                        {isGenerating ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>Génération du rapport...</span>
-                            </>
-                        ) : (
-                            <>
-                                <Sparkles size={20} className="text-[#F2CC8F]" />
-                                <span>Générer le Bilan</span>
-                            </>
-                        )}
-                    </button>
-                </div>
+                <button
+                    onClick={onNext}
+                    disabled={isGenerating}
+                    className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
+                >
+                    {isGenerating ? (
+                        <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Génération du rapport...</span>
+                        </>
+                    ) : (
+                        <>
+                            <Sparkles size={20} />
+                            <span>Générer le Bilan</span>
+                        </>
+                    )}
+                </button>
             </div>
         </div>
     );

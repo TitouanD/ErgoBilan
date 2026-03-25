@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { ReportSection, Patient } from '../../types';
-import { Check, Edit2, AlertCircle, Download, FileCheck, FileText, ArrowLeft, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Check, Edit2, AlertCircle, Download, FileCheck, FileText, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import { sanitizeReportText } from '../../utils/textSanitizer';
 import { useTextHistory } from '../../hooks/useTextHistory';
 
@@ -375,27 +375,22 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
         )}
       </div>
 
-      <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
-        <div className="max-w-4xl w-full flex items-center justify-between gap-3">
-            
-            <button 
-                onClick={onBack} 
-                className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-4 py-3 transition-colors"
-            >
-                <ArrowLeft size={18} /> Quitter
-            </button>
-            
-            <div className="h-8 w-px bg-[var(--border-color)] mx-1"></div>
-            
-            <button 
-                onClick={onNext}
-                disabled={displayedSections.length === 0}
-                className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[#3D405B] hover:bg-[#E07A5F]"
-            >
-                <Download size={18} />
-                <span className="uppercase tracking-wider">Visualiser le document</span>
-            </button>
-        </div>
+      <div className="mt-10 flex items-center justify-between gap-4">
+          <button 
+              onClick={onBack} 
+              className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
+          >
+              Retour
+          </button>
+          
+          <button 
+              onClick={onNext}
+              disabled={displayedSections.length === 0}
+              className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[#3D405B] hover:bg-[#E07A5F]"
+          >
+              <Download size={18} />
+              <span className="uppercase tracking-wider">Visualiser le document</span>
+          </button>
       </div>
     </div>
   );

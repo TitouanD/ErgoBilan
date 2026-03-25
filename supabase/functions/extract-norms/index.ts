@@ -1133,6 +1133,8 @@ const computeConfidenceScore = (
   uncertaintyFlags: ExtractionUncertaintyFlags | undefined,
   mismatchCount: number,
   expectedColumnCount: number,
+  missingSourceColumnsCount: number,
+  verified: boolean | undefined,
 ): number => {
   if (!Number.isFinite(expectedColumnCount) || expectedColumnCount <= 0) return 0.5;
 
@@ -1144,13 +1146,17 @@ const computeConfidenceScore = (
   const emptyRatio = emptyCount / expectedColumnCount;
   const lowCoverageRatio = lowCoverageCount / expectedColumnCount;
   const adjacentDuplicateRatio = adjacentDuplicateCount / expectedColumnCount;
+  const missingSourceRatio = Math.min(1, Math.max(0, missingSourceColumnsCount / expectedColumnCount));
+  const verificationPenalty = verified === false ? 0.08 : 0;
 
   const score =
     coverage
     - (emptyRatio * 0.35)
     - (mismatchRatio * 0.45)
     - (lowCoverageRatio * 0.25)
-    - (adjacentDuplicateRatio * 0.2);
+    - (adjacentDuplicateRatio * 0.2)
+    - (missingSourceRatio * 0.45)
+    - verificationPenalty;
 
   return clamp01(score);
 };
@@ -1163,7 +1169,13 @@ const annotateExtractionQuality = (
 ) => {
   const uncertaintyFlags = computeUncertaintyFlags(result, inventoryColumns, mismatches);
   meta.uncertaintyFlags = uncertaintyFlags;
-  meta.confidenceScore = computeConfidenceScore(uncertaintyFlags, mismatches.length, inventoryColumns.length);
+  meta.confidenceScore = computeConfidenceScore(
+    uncertaintyFlags,
+    mismatches.length,
+    inventoryColumns.length,
+    meta.missingSourceColumns?.length || 0,
+    meta.verified,
+  );
 };
 
 const hasStableValue = (value: unknown): boolean => {
@@ -1831,7 +1843,7 @@ const extractWithFallback = async (
         const totalSubtests = inventory.domains.reduce((sum: number, d: LegacyInventoryDomain) => sum + d.subtests.length, 0);
 
         // If inventory shows few subtests, the single call should have been enough
-        if (!wasTruncated && totalSubtests <= CHUNKED_SUBTEST_THRESHOLD && fullText) {
+        if (!wasTruncated && totalSubtests <= PRECHECK_COLUMN_THRESHOLD && fullText) {
           baseResult = { text: fullText, meta: { strategy: 'single-verified', apiCalls: 2 } };
         } else {
           // ── PHASE 3: Chunked extraction by domain ──

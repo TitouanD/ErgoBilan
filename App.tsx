@@ -574,7 +574,7 @@ const AppRouter = () => {
                             <AssessmentStepper currentStep={assessment.step} onStepClick={(s) => assessment.setStep(s)} />
 
                             {/* Step 1: Admin */}
-                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
+                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onQuit={() => setMode('dashboard')} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
 
                             {/* Step 2: Tests & Observations (FUSIONNÉ) */}
                             {assessment.step === 2 && (
@@ -585,7 +585,7 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     updateObservations={assessment.updateObservations}
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
-                                    onBack={() => setMode('dashboard')}
+                                    onBack={() => assessment.setStep(1)}
                                     onContribute={handleContributionAccess}
                                     userProfile={userProfile}
                                 />
@@ -600,13 +600,13 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     patient={assessment.patient}
                                     onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
-                                    onBack={() => setMode('dashboard')}
+                                    onBack={() => assessment.setStep(2)}
                                     isGenerating={isGenerating}
                                 />
                             )}
 
                             {/* Step 4: Validation */}
-                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
+                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
 
                             {/* Step 5: Export */}
                             {assessment.step === 5 && (

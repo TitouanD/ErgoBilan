@@ -13,6 +13,7 @@ import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 interface Props {
   data: Patient;
   updateData: (data: Partial<Patient>) => void;
+    onQuit: () => void;
   onNext: () => void;
   onPatientCreated: () => void;
 }
@@ -173,7 +174,7 @@ const SectionSummary: React.FC<{
     );
 };
 
-export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
+export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, onPatientCreated }) => {
   const { orgKey } = useAuth(); 
   const [viewMode, setViewMode] = useState<'review' | 'edit'>('review');
     const [userSwitchedToReview, setUserSwitchedToReview] = useState(false);
@@ -445,10 +446,17 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onNext, onPatien
           </>
       )}
 
-      <div className="flex justify-center pt-12">
-        <button onClick={handleNextStep}
-                        disabled={!isAdministrativeReady}
-            className="px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-sm shadow-xl hover:bg-[#E07A5F] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+    <div className="mt-10 flex justify-between items-center gap-4">
+        <button
+            onClick={onQuit}
+            className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
+        >
+            Quitter
+        </button>
+        <button
+            onClick={handleNextStep}
+            disabled={!isAdministrativeReady}
+            className="px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
         >
             Suivant : Tests & Mesures
         </button>

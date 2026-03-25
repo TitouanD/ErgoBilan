@@ -411,6 +411,65 @@ const FEATURE_CONTRIB_AUTO_REPAIR = featureFlag('VITE_FEATURE_CONTRIB_AUTO_REPAI
 const FEATURE_CONTRIB_FORCED_DISAMBIG = featureFlag('VITE_FEATURE_CONTRIB_FORCED_DISAMBIG', true);
 const FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN = featureFlag('VITE_FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN', true);
 const FEATURE_CONTRIB_ALIAS_LEARNING = featureFlag('VITE_FEATURE_CONTRIB_ALIAS_LEARNING', true);
+const CONTRIBUTION_MIN_CONFIDENCE_SCORE = 0.72;
+
+const buildExtractionIntegritySignature = (page: ExtractionPage): string => {
+    const missingSourceColumns = (page.missingSourceColumns || []).join('|');
+    const verified = page.extractionMeta?.verified === true ? '1' : '0';
+    const confidenceRaw = page.extractionMeta?.confidenceScore;
+    const confidence = typeof confidenceRaw === 'number' ? confidenceRaw.toFixed(4) : 'na';
+    return `${missingSourceColumns}::${verified}::${confidence}`;
+};
+
+const buildExtractionIntegrityFlags = (page: ExtractionPage): ReviewFlag[] => {
+    const flags: ReviewFlag[] = [];
+    const missingSourceColumns = page.missingSourceColumns || [];
+
+    if (missingSourceColumns.length > 0) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_MISSING_SOURCE_COLUMNS::meta`,
+            code: 'EXTRACTION_MISSING_SOURCE_COLUMNS',
+            severity: 'blocking',
+            message: `Colonnes attendues manquantes: ${missingSourceColumns.join(', ')}.`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 1,
+            blocking: true,
+        });
+    }
+
+    if (page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_NOT_VERIFIED::meta`,
+            code: 'EXTRACTION_NOT_VERIFIED',
+            severity: 'blocking',
+            message: `La page LOOKUP n'a pas été validée par la passe de vérification edge.`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 0.98,
+            blocking: true,
+        });
+    }
+
+    const confidenceScore = page.extractionMeta?.confidenceScore;
+    if (typeof confidenceScore === 'number' && confidenceScore < CONTRIBUTION_MIN_CONFIDENCE_SCORE) {
+        flags.push({
+            id: `${page.id}::EXTRACTION_LOW_CONFIDENCE::meta`,
+            code: 'EXTRACTION_LOW_CONFIDENCE',
+            severity: 'blocking',
+            message: `Confiance extraction insuffisante (${Math.round(confidenceScore * 100)}%, seuil ${Math.round(CONTRIBUTION_MIN_CONFIDENCE_SCORE * 100)}%).`,
+            pageId: page.id,
+            subtest: 'Global',
+            groupLabel: 'Page',
+            confidence: 0.95,
+            blocking: true,
+        });
+    }
+
+    return flags;
+};
 
 const computeRepairBudget = (structure: TableStructure, rows: ExtractedRow[]): number => {
     if (structure === 'PARAMETRIC') return PAGE_REPAIR_BUDGET_BASE;
@@ -947,8 +1006,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const normalizedLookupRows = page.detectedStructure === 'LOOKUP'
             ? normalizeLookupRowsToDominantAgeRange(page.rows).rows
             : page.rows;
-        const rowsHash = hashRows(normalizedLookupRows);
-        const canReuse = page.rowsHash === rowsHash && Array.isArray(page.flags) && !!page.flagCounts;
+        const baseRowsHash = hashRows(normalizedLookupRows);
+        const reviewHash = `${baseRowsHash}::${buildExtractionIntegritySignature(page)}`;
+        const canReuse = page.rowsHash === reviewHash && Array.isArray(page.flags) && !!page.flagCounts;
 
         if (canReuse) {
             const nextStatus: PageStatus =
@@ -973,7 +1033,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             rows: normalizedLookupRows,
             structure: page.detectedStructure,
         });
-        const flagCounts = computeFlagCounts(flags);
+        const integrityFlags = buildExtractionIntegrityFlags(page);
+        const mergedFlags = [...flags, ...integrityFlags];
+        const flagCounts = computeFlagCounts(mergedFlags);
         const nextStatus: PageStatus =
             page.status === 'validated' && flagCounts.blocking > 0
                 ? 'pending'
@@ -983,9 +1045,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             ...page,
             rows: normalizedLookupRows,
             status: nextStatus,
-            flags,
+            flags: mergedFlags,
             flagCounts,
-            rowsHash,
+            rowsHash: reviewHash,
         };
     }, []);
 
@@ -3038,6 +3100,32 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }, 0);
         if (severeWarningCount > 0) {
             toast.error(`${severeWarningCount} incohérence(s) structurelle(s) critique(s) restante(s) sur des pages validées. Corrigez avant sauvegarde.`);
+            return;
+        }
+
+        const missingInventoryColumns = validatedPages.reduce((sum, page) => sum + ((page.missingSourceColumns || []).length), 0);
+        if (missingInventoryColumns > 0) {
+            toast.error(`${missingInventoryColumns} colonne(s) attendue(s) manquante(s) sur les pages validées. Relancez l'extraction ciblée avant sauvegarde.`);
+            return;
+        }
+
+        const unverifiedLookupPages = validatedPages.filter((page) => (
+            page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true
+        ));
+        if (unverifiedLookupPages.length > 0) {
+            toast.error(`${unverifiedLookupPages.length} page(s) LOOKUP non vérifiée(s) par la passe de contrôle edge.`);
+            return;
+        }
+
+        const lowConfidencePages = validatedPages.filter((page) => {
+            const confidence = page.extractionMeta?.confidenceScore;
+            return typeof confidence === 'number' && confidence < CONTRIBUTION_MIN_CONFIDENCE_SCORE;
+        });
+        if (lowConfidencePages.length > 0) {
+            const minConfidence = lowConfidencePages
+                .map((page) => page.extractionMeta?.confidenceScore ?? 1)
+                .reduce((min, value) => Math.min(min, value), 1);
+            toast.error(`Confiance extraction insuffisante (${Math.round(minConfidence * 100)}% min, seuil ${Math.round(CONTRIBUTION_MIN_CONFIDENCE_SCORE * 100)}%).`);
             return;
         }
 
