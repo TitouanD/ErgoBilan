@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import type { PatientAssessment, PatientFile, PatientFollowup, ScoreResult } from '../../types';
 import {
   AlertTriangle,
@@ -17,10 +17,13 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StorageService } from '../../services/storage';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+
+const PatientEvolutionChart = React.lazy(() =>
+  import('./PatientEvolutionChart').then((module) => ({ default: module.PatientEvolutionChart })),
+);
 
 interface Props {
   file: PatientFile;
@@ -369,15 +372,9 @@ export const PatientDetail: React.FC<Props> = ({
             <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><TrendingUp size={22} className="text-[#E07A5F]" /> Evolution</h2>
             {chartData.length >= 3 ? (
               <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#A8A29E' }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#A8A29E' }} domain={[0, 20]} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="score" stroke="#E07A5F" strokeWidth={3} fill="#E07A5F22" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="h-full w-full rounded-lg bg-[var(--hover-bg)] animate-pulse" />}>
+                  <PatientEvolutionChart data={chartData} />
+                </Suspense>
               </div>
             ) : (
               <p className="text-sm text-[var(--text-secondary)]">Pas assez de points comparables (minimum 3) pour afficher une courbe pertinente.</p>

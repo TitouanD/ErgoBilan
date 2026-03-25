@@ -179,7 +179,10 @@ export const useAssessmentFlow = ({
 
       const tracking =
         p.medicalTracking?.map((t) => {
-          let entry = `- ${t.type} (${t.name}): ${t.frequency} depuis ${t.since}`;
+          let entry = `- ${t.name || '-'}${t.profession ? ` (${t.profession})` : t.type ? ` (${t.type})` : ''}`;
+          if (t.assessmentDate?.trim()) entry += `, bilan: ${t.assessmentDate}`;
+          if (t.since?.trim()) entry += `, début: ${t.since}`;
+          if (t.frequency?.trim()) entry += `, périodicité: ${t.frequency}`;
           if (t.sessionCount?.trim()) entry += `, ${t.sessionCount} séances`;
           if (t.endDate?.trim()) entry += ` (fin: ${t.endDate})`;
           if (t.reason?.trim()) entry += `. Objectif: ${t.reason}`;
@@ -213,7 +216,7 @@ export const useAssessmentFlow = ({
         '',
         '--- MÉDICAL ---',
         line('Médecin prescripteur', p.prescribingDoctor),
-        line('Médecin traitant', p.treatingDoctor),
+        line('Profession prescripteur', p.prescribingDoctorProfession),
         line('Diagnostic médical', p.medicalDiagnosis),
         line('Traitements', p.medicalTreatments),
         line('Suivi médical', p.medicalFollowup),
@@ -223,7 +226,8 @@ export const useAssessmentFlow = ({
         line('Grossesse / Naissance', p.pregnancyBirth),
         line('Développement moteur', p.developmentMotor),
         line('Âge de marche', p.walkingAge),
-        line('Quatre pattes', p.crawling),
+        line('Quatre pattes', p.crawlingFourPattes || p.crawling),
+        line('Ramper', p.crawlingRamper),
         line('Développement du langage', p.developmentLanguage),
         line('Statut langage actuel', p.languageStatus),
         line('Propreté', p.cleanliness),
@@ -232,11 +236,16 @@ export const useAssessmentFlow = ({
         '--- VIE QUOTIDIENNE & AUTONOMIE ---',
         line('Repas', p.meals),
         line('Habitudes alimentaires', p.eatingHabits),
+        line('Autonomie habillage', p.dressingAutonomy),
         line('Habillage', p.dressing),
         line('Boutons', p.clothingButtons),
         line('Lacets', p.clothingLaces),
         line('Zippers/fermetures', p.clothingZippers),
+        line('Observations habillage', p.dressingObservations),
         line('Continence', p.continence),
+        line('Observations hygiène', p.hygieneObservations),
+        line('Lecture de l\'heure', p.timeSpaceClockReading),
+        line('Observations temps/espace', p.timeSpaceObservations),
         line('Orientation temps/espace', p.timeSpace),
         '',
         '--- ÉCRITURE & OUTILS ---',
@@ -249,8 +258,9 @@ export const useAssessmentFlow = ({
         '--- COMPORTEMENT & SOCIAL ---',
         line('Profil sensoriel', p.sensory),
         line('Sommeil', p.sleepStatus || p.sleep),
-        line('Temps d\'écran', p.screenTime),
-        line('Régulation émotionnelle', p.emotionalRegulation),
+        line('Comportement global', p.emotionalGlobalTags),
+        line('Émotions & réactions', p.emotionalReactionTags),
+        line('Régulation émotionnelle', p.emotionalNotes || p.emotionalRegulation),
         line('Comportement social', p.socialBehavior),
         '',
         '--- CONTEXTE FAMILIAL ---',

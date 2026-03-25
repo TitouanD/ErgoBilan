@@ -11,6 +11,11 @@ import { StyleSheet, Font } from '@react-pdf/renderer';
 // Fetched via Google Fonts CSS2 API with Android user-agent to obtain genuine TrueType files.
 // IMPORTANT: URLs from fonts.gstatic.com/s/ serve real .ttf; /l/font?kit= URLs serve EOT.
 
+let fontsRegistered = false;
+
+export async function ensurePdfFontsRegistered(): Promise<void> {
+    if (fontsRegistered) return;
+
 Font.register({
     family: 'Quicksand',
     fonts: [
@@ -71,6 +76,9 @@ Font.register({
 
 // Hyphenation callback - disable hyphenation
 Font.registerHyphenationCallback((word) => [word]);
+
+    fontsRegistered = true;
+}
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────
 export const A4_WIDTH = 595.28;

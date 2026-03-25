@@ -22,7 +22,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Circle,
   CircleCheck,
   FilePlus,
@@ -1081,7 +1080,7 @@ const CustomTextRow: React.FC<{
             onFocus={onFocus}
             disabled={readOnly}
             placeholder="Décrivez vos observations..."
-            rows={5}
+            rows={10}
             className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
           />
         </div>
@@ -1286,7 +1285,10 @@ const CompositeItemsRow: React.FC<{
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base">{getSubtestDisplayName(subtest)}</h4>
+            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base flex items-center gap-1.5">
+              <ChevronDown size={12} className="text-[var(--text-secondary)] shrink-0" />
+              <span className="truncate">{getSubtestDisplayName(subtest)}</span>
+            </h4>
             <div className="flex items-center flex-wrap gap-1.5 mt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
               {getScaleLabel(subtest.scoreType) && (
@@ -1326,7 +1328,7 @@ const CompositeItemsRow: React.FC<{
                   {filledCount}/{items.filter(it => !it.isMaster).length}
                 </span>
               </span>
-              {itemsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {itemsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
 
             {itemsExpanded && (
@@ -2112,7 +2114,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                     <div className="flex items-center gap-2 shrink-0">
                       {alreadyCount > 0 && <span className="rounded-full bg-[var(--progress-bg)] text-[var(--text-secondary)] px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
                       {selectedCount > 0 && <span className="rounded-full bg-[#E07A5F] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
-                      {isExpanded ? <ChevronUp size={16} className="text-[var(--text-secondary)]" /> : <ChevronDown size={16} className="text-[var(--text-secondary)]" />}
+                      {isExpanded ? <ChevronDown size={16} className="text-[var(--text-secondary)]" /> : <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
                     </div>
                   </button>
                   {isExpanded && (
@@ -2638,54 +2640,53 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, tests]);
 
   return (
-    <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-32">
-      <div className="mb-8 bg-[var(--card-bg)] p-6 rounded-[32px] shadow-sm border border-[var(--border-color)]">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
-              <Activity size={24} className="text-[#E07A5F]" />
-              Tests & mesures
-            </h2>
-            <p className="text-[var(--text-secondary)] text-sm font-medium mt-1">
-              Saisie fluide : automatique si normes disponibles, assistée sinon.
-            </p>
+    <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
+      <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
+            <Activity size={24} className="text-[#E07A5F]" />
+            Tests & mesures
+          </h2>
+          <p className="text-[var(--text-secondary)] font-medium mt-2">
+            Saisissez et validez les mesures avant la synthèse clinique.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+            {stat.rev}/{stat.total} revus
           </div>
-          <div className="flex items-center gap-3">
-            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-              {stat.rev}/{stat.total} revus
-            </div>
-            {stat.pending > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = { ...tests };
-                  Object.entries(next).forEach(([testId, subtests]) => {
-                    Object.entries(subtests).forEach(([subId, res]) => {
-                      if (hasValue(res) && !reviewed(res)) {
-                        next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
-                      }
-                    });
-                  });
-                  updateTests(next);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-              >
-                <CheckCheck size={14} />
-                Tout revu
-              </button>
-            )}
+          {stat.pending > 0 && (
             <button
-              onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
-              className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
+              type="button"
+              onClick={() => {
+                const next = { ...tests };
+                Object.entries(next).forEach(([testId, subtests]) => {
+                  Object.entries(subtests).forEach(([subId, res]) => {
+                    if (hasValue(res) && !reviewed(res)) {
+                      next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
+                    }
+                  });
+                });
+                updateTests(next);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
             >
-              <Plus size={16} />
-              Ajouter
+              <CheckCheck size={14} />
+              Tout revu
             </button>
-          </div>
+          )}
+          <button
+            onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
+            className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
+          >
+            <Plus size={16} />
+            Ajouter
+          </button>
         </div>
-        <div className="mt-4 h-2 rounded-full bg-[var(--progress-bg)] overflow-hidden">
-          <div className="h-full bg-[#81B29A]" style={{ width: `${completion}%` }} />
-        </div>
+      </div>
+
+      <div className="mb-8 h-2 rounded-full bg-[var(--progress-bg)] overflow-hidden">
+        <div className="h-full bg-[#81B29A]" style={{ width: `${completion}%` }} />
       </div>
 
       <div className="flex gap-8">
@@ -2736,7 +2737,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                               <GripVertical size={16} />
                             </button>
                             <button onClick={() => setCollapsedTests((p) => ({ ...p, [test.id]: !p[test.id] }))} className="text-[var(--text-secondary)] rounded-xl p-1.5 hover:bg-[var(--card-bg)] hover:shadow-sm transition-all">
-                              {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                              {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                             </button>
                             <div className="min-w-0">
                               {cat && (
@@ -2883,9 +2884,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-5 bg-[var(--card-bg)]/90 backdrop-blur-md border-t border-[var(--border-color)] flex justify-center z-50">
-        <div className="max-w-4xl w-full flex justify-between items-center">
-          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
+      <div className="mt-10 p-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl flex justify-center">
+        <div className="max-w-4xl w-full flex justify-between items-center gap-4">
+          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Quitter</button>
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
             disabled={isPersistingDirectionOverrides}

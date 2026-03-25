@@ -72,10 +72,10 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
   // ──────────── NEPSY 2 ────────────
   'nepsy2': {
     // Attention et fonctions exécutives
-    'aa':                           'Attention Auditive',
-    'attentionauditive':            'Attention Auditive',
-    'attentionauditivereponsesassociees': 'Attention Auditive',
-    'reponsesassociees':            'Attention Auditive',
+    'aa':                           'Attention auditive',
+    'attentionauditive':            'Attention auditive',
+    'attentionauditivereponsesassociees': 'Attention auditive',
+    'reponsesassociees':            'Attention auditive',
     'categorisation':               'Catégorisation',
     'trianimaux':                   'Catégorisation',
     'animalsorting':                'Catégorisation',
@@ -83,21 +83,22 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'fluiditedessin':               'Fluidité de dessin',
     'fluiditedeconception':         'Fluidité de dessin',
     'designfluency':                'Fluidité de dessin',
-    'inhibition':                   'Inhibition - Dénomination (Temps)',
-    'inhibitiondenomination':       'Inhibition - Dénomination (Temps)',
-    'inhibitiondenominationtemps':  'Inhibition - Dénomination (Temps)',
-    'inhibitiontemps':              'Inhibition - Dénomination (Temps)',
-    'in':                           'Inhibition - Dénomination (Temps)',
+    'inhibition':                   'Inhibition',
+    'inhibitiondenomination':       'Inhibition',
+    'inhibitiondenominationtemps':  'Inhibition',
+    'inhibitiontemps':              'Inhibition',
+    'in':                           'Inhibition',
     'st':                           'Statue',
     'statue':                       'Statue',
 
     // Langage
-    'cc':                           'Compréhension de Consignes',
-    'comprehensiondeconsignes':     'Compréhension de Consignes',
-    'comprehensionconsigne':        'Compréhension de Consignes',
+    'cc':                           'Compréhension de consignes',
+    'comprehensiondeconsignes':     'Compréhension de consignes',
+    'comprehensionconsigne':        'Compréhension de consignes',
     'dr':                           'Dénomination rapide',
     'denominationrapide':           'Dénomination rapide',
-    'speedednaing':                'Dénomination rapide',
+    'speedednaing':                 'Dénomination rapide',
+    'speedednaming':                'Dénomination rapide',
     'phonologie':                   'Phonologie',
     'traitementphonologique':       'Phonologie',
     'ph':                           'Phonologie',
@@ -118,10 +119,10 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'memoireliste':                 'Mémoire de liste',
     'mn':                           'Mémoire narrative',
     'memoirenarrative':             'Mémoire narrative',
-    'md':                           'Mémoire des noms',
-    'memoiredesnoms':               'Mémoire des noms',
-    'memoireprenom':                'Mémoire des noms',
-    'memoryforname':                'Mémoire des noms',
+    'md':                           'Mémoire des prénoms',
+    'memoiredesnoms':               'Mémoire des prénoms',
+    'memoireprenom':                'Mémoire des prénoms',
+    'memoryforname':                'Mémoire des prénoms',
     'mv':                           'Mémoire des visages',
     'memoiredesvisages':            'Mémoire des visages',
     'ilm':                          'Interférence de liste de mots',
@@ -130,12 +131,12 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'wordlistinterference':         'Interférence de liste de mots',
 
     // Fonctions sensorimotrices
-    'ip':                           'Imitation de positions de main',
-    'imitationpositionmain':        'Imitation de positions de main',
-    'imitationdepositionsdemain':   'Imitation de positions de main',
-    'precisionvisuomotrice':        'Précision visuo-motrice',
-    'precisionvisuo':               'Précision visuo-motrice',
-    'pv':                           'Précision visuo-motrice',
+    'ip':                           'Imitation de positions de mains',
+    'imitationpositionmain':        'Imitation de positions de mains',
+    'imitationdepositionsdemain':   'Imitation de positions de mains',
+    'precisionvisuomotrice':        'Précision visuomotrice',
+    'precisionvisuo':               'Précision visuomotrice',
+    'pv':                           'Précision visuomotrice',
     'sm':                           'Séquences motrices manuelles',
     'sequencesmotricesmanuelles':   'Séquences motrices manuelles',
     'sequencemotrice':              'Séquences motrices manuelles',
@@ -145,9 +146,9 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'fingertapping':                'Tapotement des doigts',
 
     // Traitements visuospatiaux
-    'cb':                           'Construction avec Cubes',
-    'constructionaveccubes':        'Construction avec Cubes',
-    'constructioncube':             'Construction avec Cubes',
+    'cb':                           'Cubes',
+    'constructionaveccubes':        'Cubes',
+    'constructioncube':             'Cubes',
     'cube':                         'Cubes',
     'cf':                           'Copie de figures',
     'copiefigure':                  'Copie de figures',
@@ -156,21 +157,21 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'fl':                           'Flèches',
     'fleche':                       'Flèches',
     'arrows':                       'Flèches',
-    'horloge':                      'Horloge',
+    'horloge':                      'Horloges',
     'orientation':                  'Orientation',
     'or':                           'Orientation',
-    'pt':                           'Puzzles (Score Total)',
-    'puzzles':                      'Puzzles (Score Total)',
-    'puzzlesscoretotal':            'Puzzles (Score Total)',
+    'pt':                           'Puzzles géométriques',
+    'puzzles':                      'Puzzles géométriques',
+    'puzzlesscoretotal':            'Puzzles géométriques',
     'pi':                           'Puzzles d\'images',
     'puzzlesdimages':               'Puzzles d\'images',
     'puzzlesimage':                 'Puzzles d\'images',
     'pg':                           'Puzzles géométriques',
     'puzzlesgeometrique':           'Puzzles géométriques',
     'puzzlesgeometriques':          'Puzzles géométriques',
-    'ri':                           'Recherche d\'itinéraire',
-    'rechercheditineraire':         'Recherche d\'itinéraire',
-    'routefinding':                 'Recherche d\'itinéraire',
+    'ri':                           'Orientation',
+    'rechercheditineraire':         'Orientation',
+    'routefinding':                 'Orientation',
 
     // Perception sociale
     'ra':                           'Reconnaissance des affects',
@@ -306,14 +307,14 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
 
   // ──────────── Figure de Rey ────────────
   'figurecomplexerey': {
-    'copiedumodele':          'Copie du modèle',
+    'copiedumodele':          'Type de copie',
     'typecopie':              'Type de copie',
     'richesseexactitudecopie':'Richesse et exactitude de la copie',
     'tempscopie':             'Temps de copie',
     'reproductionmemoire':    'Reproduction de mémoire',
     'typereproduction':       'Type de reproduction',
     'richesseexactitudereproduction': 'Richesse et exactitude de la reproduction',
-    'copie':                  'Copie du modèle',
+    'copie':                  'Type de copie',
     'memoire':                'Reproduction de mémoire',
     'rappel':                 'Reproduction de mémoire',
     'reproduction':           'Reproduction de mémoire',
@@ -458,11 +459,32 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
   },
 };
 
-export const resolveSubtestAlias = (testName: string, subtestName: string): string => {
+type ResolveSubtestAliasOptions = {
+  abbreviation?: string | null;
+  domain?: string | null;
+};
+
+const normalizeAliasAbbreviation = (value?: string | null): string => (
+  String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9&/ -]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+);
+
+export const resolveSubtestAlias = (
+  testName: string,
+  subtestName: string,
+  options?: ResolveSubtestAliasOptions,
+): string => {
   const trimmed = subtestName.trim();
   if (!testName || !trimmed) return trimmed;
 
   const testKey = normalizeTestName(testName);
+
   const aliasTable = SUBTEST_ALIASES[testKey];
   if (!aliasTable) return trimmed;
 

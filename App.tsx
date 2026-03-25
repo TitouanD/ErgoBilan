@@ -61,7 +61,7 @@ const AppLoader = () => (
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
     const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
-    const { catalog } = useCatalog();
+    const { catalog, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
     const assessment = useAssessment();
     const toast = useToast();
 
@@ -168,6 +168,17 @@ const AppRouter = () => {
     useEffect(() => {
         setShowAccountMenu(false);
     }, [mode]);
+
+    useEffect(() => {
+        if (authState !== 'authenticated' || isDemoMode || hasCatalogLoaded) return;
+        if (mode !== 'dashboard' && mode !== 'detail' && mode !== 'assessment') return;
+
+        const timer = window.setTimeout(() => {
+            void ensureCatalogLoaded();
+        }, 1200);
+
+        return () => window.clearTimeout(timer);
+    }, [authState, isDemoMode, hasCatalogLoaded, mode, ensureCatalogLoaded]);
 
     // --- Simple action handlers ---
     const handleLogin = async (email: string, pass: string) => {
@@ -408,7 +419,7 @@ const AppRouter = () => {
     return (
         <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
             <header className="relative z-40 bg-[var(--card-bg)]/90 backdrop-blur-md border-b border-[var(--border-color)] px-6 h-20 flex items-center justify-between no-print shadow-sm">
-                <div className="font-serif font-bold text-xl text-[var(--text-main)] cursor-pointer flex items-center gap-2" onClick={() => { if (mode !== 'assessment') setMode('dashboard'); }}>
+                <div className="font-serif font-bold text-xl text-[var(--text-main)] cursor-pointer flex items-center gap-2" onClick={() => setMode('dashboard')}>
                     <Sparkles size={18} className="text-[#E07A5F]" /> ErgoBilan.
                 </div>
                 <div className="flex items-center gap-3">
@@ -463,7 +474,7 @@ const AppRouter = () => {
                 </div>
             </header>
 
-            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] py-2 px-6 sticky top-0 z-30 shadow-lg flex justify-center items-center gap-4 animate-in slide-in-from-top-2"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
+            {isDemoMode && <div className="bg-[#F2CC8F] text-[#78350f] min-h-11 py-2 px-6 sticky top-0 z-30 shadow-lg flex justify-center items-center gap-4"><div className="flex items-center gap-2 text-sm"><Info size={16} strokeWidth={3} /><span className="font-bold uppercase tracking-widest">MODE DÉMONSTRATION - Aucune donnée ne sera sauvegardée</span></div><button onClick={() => logout()} className="bg-[#3D405B] text-white px-4 py-1.5 rounded-full text-[10px] font-bold uppercase hover:bg-[#2c2e42] transition-colors flex items-center gap-2 shadow-md">S'inscrire gratuitement <ArrowRight size={12} /></button></div>}
 
             <GlobalErrorBoundary>
                 <OfflineIndicator />
@@ -574,7 +585,7 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     updateObservations={assessment.updateObservations}
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
-                                    onBack={() => assessment.setStep(1)}
+                                    onBack={() => setMode('dashboard')}
                                     onContribute={handleContributionAccess}
                                     userProfile={userProfile}
                                 />
@@ -589,13 +600,13 @@ const AppRouter = () => {
                                     observations={assessment.observations}
                                     patient={assessment.patient}
                                     onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
-                                    onBack={() => assessment.setStep(2)}
+                                    onBack={() => setMode('dashboard')}
                                     isGenerating={isGenerating}
                                 />
                             )}
 
                             {/* Step 4: Validation */}
-                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
+                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => setMode('dashboard')} />}
 
                             {/* Step 5: Export */}
                             {assessment.step === 5 && (
@@ -606,7 +617,7 @@ const AppRouter = () => {
                                     onValidate={onFinalize}
                                     onUpdateSection={assessment.updateSection}
                                     branding={userProfile.branding}
-                                    onUpdateBranding={(b) => updateUserProfile({ branding: b })}
+                                    onUpdateBranding={(newBranding) => updateUserProfile({ branding: newBranding })}
                                     isPremium={userProfile.subscriptionPlan !== 'free'}
                                     onShowPricing={() => setPricingModalMode('plans')}
                                     onBack={() => assessment.setStep(4)}
@@ -617,10 +628,8 @@ const AppRouter = () => {
                         </div>
                     )}
 
-                    {pricingModalMode && <PricingModal onClose={() => { if (pricingModalMode === 'paywall' && authState === 'subscription_locked') { logout(); } else { setPricingModalMode(null); } }} onSelectPlan={() => toast.info("Stripe à venir")} onUnlockOneOff={() => toast.info("Stripe à venir")} isPaywallMode={pricingModalMode === 'paywall'} />}
-                    {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
-                </Suspense>
-            </GlobalErrorBoundary>
+                {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
+            </Suspense>
 
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
             {generationError && generationError !== 'CREDIT_INSUFFICIENT' && <CriticalErrorModal error={generationError} onRetry={() => { setGenerationError(null); onTriggerGeneration(); }} onClose={() => setGenerationError(null)} />}
@@ -649,6 +658,7 @@ const AppRouter = () => {
             )}
 
             {demoConversion.show && <DemoConversionModal action={demoConversion.action} onClose={() => setDemoConversion({ show: false, action: '' })} onConvert={() => { setDemoConversion({ show: false, action: '' }); logout(); }} />}
+            </GlobalErrorBoundary>
         </div>
     );
 };

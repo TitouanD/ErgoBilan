@@ -59,10 +59,11 @@ body.dark-theme {
   color-scheme: dark;
 }
 
-/* Global smooth theme transition */
-*,
-*::before,
-*::after {
+/* Scoped smooth theme transition */
+.smooth-theme-transition,
+.smooth-theme-transition *,
+.smooth-theme-transition *::before,
+.smooth-theme-transition *::after {
   transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease;
 }
 

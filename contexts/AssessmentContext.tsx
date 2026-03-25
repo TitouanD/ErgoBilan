@@ -46,8 +46,14 @@ const initialPatient: Patient = {
   prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
   reason: '', familyExpectations: '',
   pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
+  crawlingFourPattes: '', crawlingRamper: '',
   meals: '', dressing: '', continence: '', timeSpace: '',
+  dressingAutonomy: '', dressingObservations: '',
+  hygieneTeeth: '', hygieneHands: '', hygieneBath: '', hygieneFace: '', hygieneHair: '', hygieneContinenceStatus: '', hygieneObservations: '',
+  timeSpaceClockReading: '', timeSpaceObservations: '',
   schoolAttention: '', schoolFavoriteSubjects: '', schoolDislikedSubjects: '', classroomBehavior: '', schoolOrganization: '', schoolMemory: '', schoolParticipation: '', peerRelations: '', homeworkHabits: '', writingIssues: '', writingDifficultyTags: '', toolUsage: '', schoolAccommodations: '',
+  emotionalGlobalTags: '', emotionalReactionTags: '', emotionalNotes: '',
+  prescribingDoctorProfession: '',
   remarks: '', priorities: ''
 };
 

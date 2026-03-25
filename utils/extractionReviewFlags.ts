@@ -28,6 +28,22 @@ type OrderedLookupEntry = {
   zValue: number | null;
 };
 
+type LookupBucket = {
+  bucketKey: string;
+  subtest: string;
+  groupLabel: string;
+  rows: ExtractedRow[];
+};
+
+type LookupBucketQuality = {
+  scoredCount: number;
+  standardCount: number;
+  maxStandard: number | null;
+  rawOverlapCount: number;
+  standardViolationRatio: number;
+  percentileViolationRatio: number;
+};
+
 type NumericStep = {
   prev: OrderedLookupEntry;
   curr: OrderedLookupEntry;
@@ -179,11 +195,19 @@ const normalizeAgeToken = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const AGE_QUALIFIER_AMBIGUOUS_PATTERNS = ['TEMPS', 'ITEM', 'ITEMS', 'ESSAI', 'ESSAIS', 'FOIS'];
+
+const hasAmbiguousAgeQualifierContext = (token: string): boolean => (
+  AGE_QUALIFIER_AMBIGUOUS_PATTERNS.some((pattern) => token.includes(pattern))
+);
+
 const isLikelyAgeQualifierToken = (value: unknown): boolean => {
   const token = normalizeAgeToken(value);
   if (!token) return false;
 
-  if ((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) {
+  const hasAmbiguousContext = hasAmbiguousAgeQualifierContext(token);
+
+  if (((/\bAGES?\b|\bANS?\b|\bMOIS\b/.test(token) && /\d/.test(token)) || /\bTHROUGH\b/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -191,7 +215,7 @@ const isLikelyAgeQualifierToken = (value: unknown): boolean => {
     return true;
   }
 
-  if (/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-\u2013\u2014]\s*\d+/.test(token)) {
+  if ((/\d+\s*[;:.]\s*\d+/.test(token) || /\d+\s*[-\u2013\u2014]\s*\d+/.test(token)) && !hasAmbiguousContext) {
     return true;
   }
 
@@ -236,6 +260,44 @@ const mad = (values: number[], med: number): number => {
   if (values.length === 0) return 0;
   const deviations = values.map((value) => Math.abs(value - med));
   return median(deviations);
+};
+
+const computeExpectedMaxStandard = (valuesByBucket: Map<string, Set<number>>): number | null => {
+  if (valuesByBucket.size < 3) return null;
+
+  const maxStandardPerBucket: number[] = [];
+  for (const values of valuesByBucket.values()) {
+    if (values.size === 0) continue;
+    maxStandardPerBucket.push(Math.max(...values));
+  }
+
+  if (maxStandardPerBucket.length < 3) return null;
+  const sortedMax = [...maxStandardPerBucket].sort((a, b) => a - b);
+  const expected = sortedMax[Math.floor(sortedMax.length * 0.75)];
+  if (!Number.isFinite(expected) || expected < 10) return null;
+  return expected;
+};
+
+const isSparseLookupLikely = (
+  quality: LookupBucketQuality | undefined,
+  standardSet: Set<number> | undefined,
+  expectedMaxNS: number | null,
+): boolean => {
+  if (!quality || !standardSet || expectedMaxNS === null) return false;
+  if (quality.scoredCount < 4 || standardSet.size < 4) return false;
+
+  const missingLevels = expectedMaxNS - standardSet.size;
+  if (missingLevels < 3) return false;
+
+  const monotonicStable =
+    quality.rawOverlapCount === 0 &&
+    quality.standardViolationRatio <= 0.2 &&
+    quality.percentileViolationRatio <= 0.25;
+  if (!monotonicStable) return false;
+
+  const reachesUpperBand = quality.maxStandard !== null && quality.maxStandard >= expectedMaxNS - 3;
+  const verySparseButStructured = missingLevels >= Math.ceil(expectedMaxNS * 0.45);
+  return reachesUpperBand || verySparseButStructured;
 };
 
 const detectNumericStepOutlier = (
@@ -370,14 +432,15 @@ const buildOrderedLookupEntries = (bucketRows: ExtractedRow[]): OrderedLookupEnt
   });
 };
 
-const buildLookupBucketMap = (rows: ExtractedRow[]): Map<string, { subtest: string; groupLabel: string; rows: ExtractedRow[] }> => {
-  const buckets = new Map<string, { subtest: string; groupLabel: string; rows: ExtractedRow[] }>();
+const buildLookupBucketMap = (rows: ExtractedRow[]): Map<string, LookupBucket> => {
+  const buckets = new Map<string, LookupBucket>();
   rows.forEach((row) => {
     if (!hasLookupRawValue(row) && !hasLookupScoreValue(row)) return;
     const groupLabel = cleanGroupLabel(row);
     const bucketKey = `${subtestBucketKey(row)}::${groupLabel}`;
     if (!buckets.has(bucketKey)) {
       buckets.set(bucketKey, {
+        bucketKey,
         subtest: row.subtest,
         groupLabel,
         rows: [],
@@ -581,6 +644,8 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     }
   });
 
+  const bucketQualityByKey = new Map<string, LookupBucketQuality>();
+
   // Bucket-level lookup diagnostics (missingness, monotonicity, outliers).
   for (const bucket of lookupBuckets.values()) {
     const ordered = buildOrderedLookupEntries(bucket.rows);
@@ -650,6 +715,7 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     }
 
     const orderedScored = ordered.filter((entry) => entry.rawBounds !== null && entry.hasScore);
+    const orderedWithRaw = ordered.filter((entry) => entry.rawBounds !== null);
     const standardSteps: NumericStep[] = [];
     const percentileSteps: NumericStep[] = [];
 
@@ -662,23 +728,63 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     let totalStandardChecks = 0;
     let percentileViolationCount = 0;
     let totalPercentileChecks = 0;
+    let rawOverlapCount = 0;
+
+    for (let i = 1; i < orderedWithRaw.length; i += 1) {
+      const prev = orderedWithRaw[i - 1];
+      const curr = orderedWithRaw[i];
+      if (!prev.rawBounds || !curr.rawBounds) continue;
+
+      // Raw ranges are inclusive in lookup tables; touching bounds are suspicious too (e.g. 19-20 then 20).
+      if (curr.rawBounds.min <= prev.rawBounds.max) {
+        rawOverlapCount += 1;
+        const sameBounds = curr.rawBounds.min === prev.rawBounds.min && curr.rawBounds.max === prev.rawBounds.max;
+        const conflictingScore = (
+          (prev.standardValue !== null && curr.standardValue !== null && Math.abs(prev.standardValue - curr.standardValue) > 0.5)
+          || (prev.percentileValue !== null && curr.percentileValue !== null && Math.abs(prev.percentileValue - curr.percentileValue) > 1)
+        );
+        const partialScoreConflict = sameBounds && (
+          (prev.standardValue === null) !== (curr.standardValue === null)
+          || (prev.percentileValue === null) !== (curr.percentileValue === null)
+          || (prev.zValue === null) !== (curr.zValue === null)
+        );
+        if (sameBounds && conflictingScore) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_RAW_DUPLICATE_CONFLICT',
+            severity: 'blocking',
+            message: `Lignes brutes dupliquees avec scores contradictoires pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.98,
+          }));
+        } else if (partialScoreConflict) {
+          flags.push(makeFlag({
+            code: 'LOOKUP_RAW_DUPLICATE_PARTIAL',
+            severity: 'blocking',
+            message: `Lignes brutes dupliquees avec metriques incomplètes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(curr.rawBounds)}.` ,
+            subtest: bucket.subtest,
+            groupLabel: bucket.groupLabel,
+            rowId: curr.row.id,
+            confidence: 0.96,
+          }));
+        }
+        flags.push(makeFlag({
+          code: 'LOOKUP_RAW_RANGE_OVERLAP',
+          severity: sameBounds && (conflictingScore || partialScoreConflict) ? 'blocking' : 'warning',
+          message: `Chevauchement de plages brutes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(prev.rawBounds)} puis ${formatRawBounds(curr.rawBounds)}.`,
+          subtest: bucket.subtest,
+          groupLabel: bucket.groupLabel,
+          rowId: curr.row.id,
+          confidence: sameBounds && (conflictingScore || partialScoreConflict) ? 0.97 : 0.92,
+        }));
+      }
+    }
 
     for (let i = 1; i < orderedScored.length; i += 1) {
       const prev = orderedScored[i - 1];
       const curr = orderedScored[i];
       if (!prev.rawBounds || !curr.rawBounds) continue;
-
-      if (curr.rawBounds.min < prev.rawBounds.max) {
-        flags.push(makeFlag({
-          code: 'LOOKUP_RAW_RANGE_OVERLAP',
-          severity: 'warning',
-          message: `Chevauchement de plages brutes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(prev.rawBounds)} puis ${formatRawBounds(curr.rawBounds)}.`,
-          subtest: bucket.subtest,
-          groupLabel: bucket.groupLabel,
-          rowId: curr.row.id,
-          confidence: 0.92,
-        }));
-      }
 
       if (prev.standardValue !== null && curr.standardValue !== null) {
         // For a decreasing-direction scale (higher raw = worse, e.g. error counts),
@@ -835,22 +941,95 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
         confidence: Math.min(0.99, 0.8 + Math.min(0.18, sample.normalized / Math.max(1, threshold) * 0.08)),
       }));
     }
+
+    const standardSet = new Set<number>();
+    orderedScored.forEach((entry) => {
+      if (entry.standardValue !== null) standardSet.add(entry.standardValue);
+    });
+
+    bucketQualityByKey.set(bucket.bucketKey, {
+      scoredCount: bucket.rows.filter((row) => hasLookupScoredRow(row)).length,
+      standardCount: standardSet.size,
+      maxStandard: standardSet.size > 0 ? Math.max(...standardSet) : null,
+      rawOverlapCount,
+      standardViolationRatio: totalStandardChecks > 0 ? standardViolationCount / totalStandardChecks : 0,
+      percentileViolationRatio: totalPercentileChecks > 0 ? percentileViolationCount / totalPercentileChecks : 0,
+    });
   }
 
-  const groupCounts = new Map<string, Map<string, { subtest: string; count: number }>>();
+  // Collect cross-subtest completeness signals.
+  const subtestRowCounts: { key: string; subtest: string; groupLabel: string; count: number }[] = [];
+  const subtestMaxRaw: { key: string; subtest: string; groupLabel: string; maxRaw: number; maxStandard: number }[] = [];
+  const subtestStandardValues = new Map<string, Set<number>>();
+  const bucketMetaByKey = new Map<string, { subtest: string; groupLabel: string }>();
+
+  for (const bucket of lookupBuckets.values()) {
+    const scoredRows = bucket.rows.filter((row) => hasLookupScoredRow(row));
+    subtestRowCounts.push({
+      key: bucket.bucketKey,
+      subtest: bucket.subtest,
+      groupLabel: bucket.groupLabel,
+      count: scoredRows.length,
+    });
+    bucketMetaByKey.set(bucket.bucketKey, { subtest: bucket.subtest, groupLabel: bucket.groupLabel });
+
+    const standardSet = new Set<number>();
+    let maxRaw = -Infinity;
+    let maxStandard = -Infinity;
+
+    for (const row of scoredRows) {
+      const stdVal = toFiniteNumber(cleanText(row.standard));
+      if (stdVal !== null) {
+        standardSet.add(stdVal);
+        if (stdVal > maxStandard) maxStandard = stdVal;
+      }
+
+      const rawBounds = getRawBounds(row);
+      if (rawBounds) {
+        const rawMax = rawBounds.max;
+        if (rawMax > maxRaw) maxRaw = rawMax;
+      }
+    }
+
+    subtestStandardValues.set(bucket.bucketKey, standardSet);
+
+    if (Number.isFinite(maxRaw) && Number.isFinite(maxStandard)) {
+      subtestMaxRaw.push({
+        key: bucket.bucketKey,
+        subtest: bucket.subtest,
+        groupLabel: bucket.groupLabel,
+        maxRaw,
+        maxStandard,
+      });
+    }
+  }
+
+  const expectedMaxNS = computeExpectedMaxStandard(subtestStandardValues);
+  const sparseLookupKeys = new Set<string>();
+  if (expectedMaxNS !== null) {
+    for (const [key, standardSet] of subtestStandardValues.entries()) {
+      const quality = bucketQualityByKey.get(key);
+      if (isSparseLookupLikely(quality, standardSet, expectedMaxNS)) {
+        sparseLookupKeys.add(key);
+      }
+    }
+  }
+
+  const groupCounts = new Map<string, Map<string, { subtest: string; bucketKey: string; count: number }>>();
   rows.forEach((row) => {
     if (!hasLookupRawValue(row)) return;
     const groupLabel = cleanGroupLabel(row);
     if (!groupCounts.has(groupLabel)) {
-      groupCounts.set(groupLabel, new Map<string, { subtest: string; count: number }>());
+      groupCounts.set(groupLabel, new Map<string, { subtest: string; bucketKey: string; count: number }>());
     }
     const perSubtest = groupCounts.get(groupLabel)!;
     const key = subtestBucketKey(row);
+    const bucketKey = `${key}::${groupLabel}`;
     const current = perSubtest.get(key);
     if (current) {
       current.count += 1;
     } else {
-      perSubtest.set(key, { subtest: row.subtest, count: 1 });
+      perSubtest.set(key, { subtest: row.subtest, bucketKey, count: 1 });
     }
   });
 
@@ -860,18 +1039,21 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     const expected = expectedCountForGroup(entries);
     const mismatch = entries.filter((entry) => entry.count !== expected);
     mismatch.forEach((entry) => {
-      // Small differences (≤ 3 rows) are common when some NS levels are marked
-      // as unreachable ("-"/"-") and not retained by extraction. Flag as warning
-      // only; reserve blocking for large gaps that suggest wholesale row loss.
       const missing = Math.max(0, expected - entry.count);
-      const severity: ReviewSeverity = missing > 3 ? 'blocking' : 'warning';
+      const sparseLikely = sparseLookupKeys.has(entry.bucketKey);
+      const severeLossThreshold = Math.max(10, Math.floor(expected * 0.7));
+      const severity: ReviewSeverity = sparseLikely
+        ? 'info'
+        : (missing <= 2 ? 'info' : (missing > severeLossThreshold ? 'blocking' : 'warning'));
       flags.push(makeFlag({
         code: 'GROUP_ROW_COUNT_MISMATCH',
         severity,
-        message: `Nombre de lignes incoherent pour "${entry.subtest}" dans "${groupLabel}" (${entry.count} au lieu de ${expected}).`,
+        message: sparseLikely
+          ? `Nombre de lignes plus faible pour "${entry.subtest}" dans "${groupLabel}" (${entry.count} au lieu de ${expected}) sur une colonne probablement clairsemée (valeurs '-' implicites).`
+          : `Nombre de lignes incoherent pour "${entry.subtest}" dans "${groupLabel}" (${entry.count} au lieu de ${expected}).`,
         subtest: entry.subtest,
         groupLabel,
-        confidence: severity === 'blocking' ? 1 : 0.85,
+        confidence: severity === 'blocking' ? 0.97 : 0.85,
       }));
     });
   }
@@ -923,45 +1105,13 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
 
   // ── Cross-subtest completeness checks for dense LOOKUP pages ──
 
-  // Collect row counts and max raw per subtest for cross-comparison
-  const subtestRowCounts: { subtest: string; groupLabel: string; count: number }[] = [];
-  const subtestMaxRaw: { subtest: string; groupLabel: string; maxRaw: number; maxStandard: number }[] = [];
-  const subtestStandardValues: Map<string, Set<number>> = new Map();
-
-  for (const bucket of lookupBuckets.values()) {
-    const scoredRows = bucket.rows.filter((r) => hasLookupScoredRow(r));
-    subtestRowCounts.push({ subtest: bucket.subtest, groupLabel: bucket.groupLabel, count: scoredRows.length });
-
-    // Track standard score values per subtest
-    const standardSet = new Set<number>();
-    let maxRaw = -Infinity;
-    let maxStandard = -Infinity;
-    for (const row of scoredRows) {
-      const stdVal = toFiniteNumber(cleanText(row.standard));
-      if (stdVal !== null) {
-        standardSet.add(stdVal);
-        if (stdVal > maxStandard) maxStandard = stdVal;
-      }
-      const rawBounds = getRawBounds(row);
-      if (rawBounds) {
-        const rawMax = rawBounds.max;
-        if (rawMax > maxRaw) maxRaw = rawMax;
-      }
-    }
-    subtestStandardValues.set(`${bucket.subtest}::${bucket.groupLabel}`, standardSet);
-
-    if (Number.isFinite(maxRaw) && Number.isFinite(maxStandard)) {
-      subtestMaxRaw.push({ subtest: bucket.subtest, groupLabel: bucket.groupLabel, maxRaw, maxStandard });
-    }
-  }
-
   // LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW: flag subtests with row count < 50% of median
   if (subtestRowCounts.length >= 3) {
     const counts = subtestRowCounts.map((e) => e.count).sort((a, b) => a - b);
     const medianCount = counts[Math.floor(counts.length / 2)];
     if (medianCount >= 4) {
       for (const entry of subtestRowCounts) {
-        if (entry.count > 0 && entry.count < medianCount * 0.5) {
+        if (entry.count > 0 && entry.count < medianCount * 0.5 && !sparseLookupKeys.has(entry.key)) {
           flags.push(makeFlag({
             code: 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW',
             severity: 'warning',
@@ -981,8 +1131,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
     const medianMaxRaw = maxRaws[Math.floor(maxRaws.length / 2)];
     if (medianMaxRaw > 0) {
       for (const entry of subtestMaxRaw) {
-        // Flag if max raw is < 40% of median AND the max standard score is suspiciously low
-        if (entry.maxRaw < medianMaxRaw * 0.4 && entry.maxRaw > 0) {
+        const sparseLikely = sparseLookupKeys.has(entry.key);
+        const reachesExpectedStandard = expectedMaxNS !== null && entry.maxStandard >= expectedMaxNS - 1;
+        if (entry.maxRaw < medianMaxRaw * 0.4 && entry.maxRaw > 0 && !sparseLikely && !reachesExpectedStandard) {
           flags.push(makeFlag({
             code: 'LOOKUP_MAX_RAW_OUTLIER',
             severity: 'warning',
@@ -997,34 +1148,25 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
   }
 
   // LOOKUP_NS_RANGE_INCOMPLETE: for pages where most subtests cover NS 1-19, flag subtests missing the upper range
-  if (subtestStandardValues.size >= 3) {
-    // Determine the most common max standard score across subtests
-    const maxStandardPerSubtest: number[] = [];
-    for (const standardSet of subtestStandardValues.values()) {
-      if (standardSet.size > 0) {
-        maxStandardPerSubtest.push(Math.max(...standardSet));
-      }
-    }
-    if (maxStandardPerSubtest.length >= 3) {
-      const sortedMax = [...maxStandardPerSubtest].sort((a, b) => a - b);
-      const expectedMaxNS = sortedMax[Math.floor(sortedMax.length * 0.75)]; // 75th percentile
-      if (expectedMaxNS >= 10) { // Only for NS-style scoring (1-19 or similar)
-        for (const [key, standardSet] of subtestStandardValues.entries()) {
-          if (standardSet.size === 0) continue;
-          const actualMax = Math.max(...standardSet);
-          const missing = expectedMaxNS - actualMax;
-          if (missing >= 3 && actualMax < expectedMaxNS * 0.8) {
-            const [subtest, groupLabel] = key.split('::');
-            flags.push(makeFlag({
-              code: 'LOOKUP_NS_RANGE_INCOMPLETE',
-              severity: 'blocking',
-              message: `Notes standard incomplètes pour "${subtest}": NS max ${actualMax} alors que les autres sous-tests atteignent NS ${expectedMaxNS}. ${missing} niveaux manquants.`,
-              subtest,
-              groupLabel: groupLabel || '',
-              confidence: 0.9,
-            }));
-          }
-        }
+  if (expectedMaxNS !== null) {
+    for (const [key, standardSet] of subtestStandardValues.entries()) {
+      if (standardSet.size === 0) continue;
+      const actualMax = Math.max(...standardSet);
+      const missing = expectedMaxNS - actualMax;
+      if (missing >= 3 && actualMax < expectedMaxNS * 0.8) {
+        const meta = bucketMetaByKey.get(key);
+        if (!meta) continue;
+        const sparseLikely = sparseLookupKeys.has(key);
+        flags.push(makeFlag({
+          code: 'LOOKUP_NS_RANGE_INCOMPLETE',
+          severity: sparseLikely ? 'info' : 'blocking',
+          message: sparseLikely
+            ? `Notes standard partiellement couvertes pour "${meta.subtest}": NS max ${actualMax} vs NS ${expectedMaxNS} sur la page, profil possiblement clairsemé.`
+            : `Notes standard incomplètes pour "${meta.subtest}": NS max ${actualMax} alors que les autres sous-tests atteignent NS ${expectedMaxNS}. ${missing} niveaux manquants.`,
+          subtest: meta.subtest,
+          groupLabel: meta.groupLabel,
+          confidence: sparseLikely ? 0.72 : 0.9,
+        }));
       }
     }
   }

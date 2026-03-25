@@ -42,8 +42,14 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
       prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
       reason: '', familyExpectations: '',
       pregnancyBirth: '', developmentMotor: '', developmentLanguage: '', sleep: '', sensory: '',
+      crawlingFourPattes: '', crawlingRamper: '',
       meals: '', dressing: '', continence: '', timeSpace: '',
+      dressingAutonomy: '', dressingObservations: '',
+      hygieneTeeth: '', hygieneHands: '', hygieneBath: '', hygieneFace: '', hygieneHair: '', hygieneContinenceStatus: '', hygieneObservations: '',
+      timeSpaceClockReading: '', timeSpaceObservations: '',
       schoolAttention: '', writingIssues: '', toolUsage: '', schoolAccommodations: '',
+      emotionalGlobalTags: '', emotionalReactionTags: '', emotionalNotes: '',
+      prescribingDoctorProfession: '',
       remarks: '', priorities: ''
   });
 

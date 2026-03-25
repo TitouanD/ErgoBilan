@@ -16,6 +16,8 @@ interface Props {
     pages: Array<{ rows: ExtractedRow[] }>;
     /** Official subtests for the current test (from Supabase catalog). May be empty. */
     officialSubtests?: OfficialSubtest[];
+    /** Additional extracted names that must be reviewed manually (forced queue). */
+    forcedNames?: string[];
     /**
      * Called when the user confirms the mapping.
      * Values are the new canonical name, the original name (to keep as-is),
@@ -39,6 +41,7 @@ interface SubtestGroup {
 function buildSubtestGroups(
     pages: Array<{ rows: ExtractedRow[] }>,
     officialSubtests: OfficialSubtest[],
+    forcedNames: string[] = [],
 ): SubtestGroup[] {
     const allRows: ExtractedRow[] = pages.flatMap((p) => p.rows);
 
@@ -57,7 +60,11 @@ function buildSubtestGroups(
               })
             : [];
 
-    const allNames = Array.from(new Set([...variantNames, ...lowConfidenceNonVariants]));
+    const allNames = Array.from(new Set([
+        ...variantNames,
+        ...lowConfidenceNonVariants,
+        ...forcedNames.map((value) => String(value || '').trim()).filter(Boolean),
+    ]));
 
     return allNames.map((extractedName) => {
         const rows = allRows.filter((r) => r.subtest === extractedName);
@@ -193,8 +200,8 @@ const SubtestCard: React.FC<{
 
 // ── Main modal ──────────────────────────────────────────────────────────────
 
-export const DisambiguationModal: React.FC<Props> = ({ pages, officialSubtests = [], onConfirm, onClose }) => {
-    const groups = useMemo(() => buildSubtestGroups(pages, officialSubtests), [pages, officialSubtests]);
+export const DisambiguationModal: React.FC<Props> = ({ pages, officialSubtests = [], forcedNames = [], onConfirm, onClose }) => {
+    const groups = useMemo(() => buildSubtestGroups(pages, officialSubtests, forcedNames), [pages, officialSubtests, forcedNames]);
 
     const [selections, setSelections] = useState<Record<string, string>>(() => {
         const init: Record<string, string> = {};

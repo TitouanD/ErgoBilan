@@ -3,8 +3,10 @@ export interface ParamedicalTracking {
     id: string;
     type: string;
     name: string;
+    profession?: string;
     frequency: string;
     since: string;
+    assessmentDate?: string;
     contact: string;
     reason: string;
     endDate?: string;
@@ -66,6 +68,8 @@ export interface Patient {
     developmentLanguage: string;
     walkingAge?: string;
     crawling?: string;
+    crawlingFourPattes?: string;
+    crawlingRamper?: string;
     cleanliness?: string;
     languageStatus?: string;
     sleep?: string;
@@ -74,11 +78,22 @@ export interface Patient {
     meals: string;
     eatingHabits?: string;
     dressing: string;
+    dressingAutonomy?: string;
     clothingButtons?: string;
     clothingLaces?: string;
     clothingZippers?: string;
+    dressingObservations?: string;
     continence: string;
+    hygieneTeeth?: string;
+    hygieneHands?: string;
+    hygieneBath?: string;
+    hygieneFace?: string;
+    hygieneHair?: string;
+    hygieneContinenceStatus?: string;
+    hygieneObservations?: string;
     timeSpace: string;
+    timeSpaceClockReading?: string;
+    timeSpaceObservations?: string;
     schoolAttention: string;
     schoolFavoriteSubjects?: string;
     schoolDislikedSubjects?: string;
@@ -105,6 +120,10 @@ export interface Patient {
     interviewNotes?: string;
     screenTime?: string;
     emotionalRegulation?: string;
+    emotionalGlobalTags?: string;
+    emotionalReactionTags?: string;
+    emotionalNotes?: string;
+    prescribingDoctorProfession?: string;
     organizationId?: string;
 }
 
@@ -379,6 +398,18 @@ export interface ExtractedRow {
     source_column_key?: string;
 }
 
+export type DisplayFilterMode = 'all' | 'flagged';
+
+export interface DisplayLookupRow {
+    id: string;
+    row?: ExtractedRow;
+    isPlaceholder: boolean;
+    displayRaw: string;
+    displayStandard: string;
+    displayZScore: string;
+    displayPercentile: string;
+}
+
 export type ReviewSeverity = 'blocking' | 'warning' | 'info';
 
 export type ReviewFlagCode =
@@ -396,16 +427,21 @@ export type ReviewFlagCode =
     | 'LOOKUP_STANDARD_NON_MONOTONIC'
     | 'LOOKUP_PERCENTILE_NON_MONOTONIC'
     | 'LOOKUP_RAW_RANGE_OVERLAP'
+    | 'LOOKUP_RAW_DUPLICATE_CONFLICT'
+    | 'LOOKUP_RAW_DUPLICATE_PARTIAL'
     | 'GROUP_ROW_COUNT_MISMATCH'
     | 'PARAMETRIC_REQUIRED_FIELD_MISSING'
     | 'AGE_RANGE_MISSING_OR_INVALID'
     | 'LOOKUP_ZERO_Z_PLATEAU'
     | 'LOOKUP_NON_INTEGER_SCORE'
     | 'SUBTEST_CONTENT_DUPLICATE'
+    | 'SUBTEST_CONTENT_REASSIGNED'
     | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED'
     | 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW'
     | 'LOOKUP_MAX_RAW_OUTLIER'
-    | 'LOOKUP_NS_RANGE_INCOMPLETE';
+    | 'LOOKUP_NS_RANGE_INCOMPLETE'
+    | 'LOOKUP_GROUP_AGE_MISMATCH'
+    | 'LOOKUP_COLUMN_SHIFT_SUSPECT';
 
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
@@ -462,6 +498,11 @@ export interface DraftPayload {
     sections?: ReportSection[];
     reportType?: 'initial' | 'reevaluation';
     step?: number;
+}
+
+export interface DashboardDraftMeta {
+    updatedAt: string;
+    step: number | null;
 }
 
 /** Row from the admin_candidates_promotion SQL view */
@@ -612,6 +653,9 @@ export interface AIExtractionResult {
 export interface ExtractionRepairFocusSubtest {
     name: string;
     abbreviation?: string | null;
+    domain?: string | null;
+    columnOrder?: number | null;
+    isInverted?: boolean | null;
 }
 
 export interface ExtractionRepairExpectedGroupCount {
@@ -624,15 +668,39 @@ export interface ExtractionRepairRequest {
     expectedGroupCounts: ExtractionRepairExpectedGroupCount[];
     includeNeighborColumns: boolean;
     existingSubtests: string[];
+    dominantAgeMin?: number | null;
+    dominantAgeMax?: number | null;
+}
+
+export interface ExtractionUncertaintyLowCoverageColumn {
+    column: string;
+    extractedRows: number;
+    medianRows: number;
+}
+
+export interface ExtractionUncertaintyFlags {
+    emptyExtractedColumns?: string[];
+    lowCoverageColumns?: ExtractionUncertaintyLowCoverageColumn[];
+    verificationMismatchColumns?: string[];
+    adjacentDuplicateColumns?: string[];
+    inventoryCoverageRatio?: number;
 }
 
 export interface ExtractionCallMeta {
     strategy: string;
     apiCalls: number;
     repairedSubtests?: string[];
-    inventoryMode?: 'off' | 'conditional';
+    inventoryMode?: 'off' | 'conditional' | 'required';
     verified?: boolean;
     verificationRepairs?: number;
+    verifiedSubtests?: string[];
+    inventoryColumnCount?: number;
+    isInvertedLookup?: boolean;
+    expectedSourceColumns?: string[];
+    missingSourceColumns?: string[];
+    expectedSourceColumnCount?: number;
+    uncertaintyFlags?: ExtractionUncertaintyFlags;
+    confidenceScore?: number;
 }
 
 // ── Deduplication types ──

@@ -1,5 +1,6 @@
 import { supabase } from './db';
 import type {
+  DashboardDraftMeta,
   DraftPayload,
   Patient,
   PatientAssessment,
@@ -65,12 +66,25 @@ const createEmptyPatient = (): Patient => ({
   sensory: '',
   walkingAge: '',
   crawling: '',
+  crawlingFourPattes: '',
+  crawlingRamper: '',
   cleanliness: '',
   handDominance: '',
   meals: '',
   dressing: '',
+  dressingAutonomy: '',
+  dressingObservations: '',
   continence: '',
+  hygieneTeeth: '',
+  hygieneHands: '',
+  hygieneBath: '',
+  hygieneFace: '',
+  hygieneHair: '',
+  hygieneContinenceStatus: '',
+  hygieneObservations: '',
   timeSpace: '',
+  timeSpaceClockReading: '',
+  timeSpaceObservations: '',
   clothingButtons: '',
   clothingLaces: '',
   clothingZippers: '',
@@ -80,6 +94,10 @@ const createEmptyPatient = (): Patient => ({
   schoolAccommodations: '',
   screenTime: '',
   emotionalRegulation: '',
+  emotionalGlobalTags: '',
+  emotionalReactionTags: '',
+  emotionalNotes: '',
+  prescribingDoctorProfession: '',
   remarks: '',
   priorities: '',
 });
@@ -605,7 +623,7 @@ export const StorageService = {
     else await supabase.from('drafts').insert(payload);
   },
 
-  getDraftsMetadata: async (): Promise<Record<string, string>> => {
+  getDraftsMetadata: async (sessionKey: CryptoKey): Promise<Record<string, DashboardDraftMeta>> => {
     if (_isDemoMode) return {};
 
     const {
@@ -613,13 +631,32 @@ export const StorageService = {
     } = await supabase.auth.getUser();
     if (!user) return {};
 
-    const { data, error } = await supabase.from('drafts').select('patient_id, updated_at').eq('user_id', user.id);
+    const { data, error } = await supabase
+      .from('drafts')
+      .select('patient_id, updated_at, iv, encrypted_data')
+      .eq('user_id', user.id);
     if (error || !data) return {};
 
-    const map: Record<string, string> = {};
-    data.forEach((row: { patient_id: string | null; updated_at: string }) => {
-      if (row.patient_id) map[row.patient_id] = row.updated_at;
-    });
+    const map: Record<string, DashboardDraftMeta> = {};
+
+    await Promise.all(
+      data.map(async (row: { patient_id: string | null; updated_at: string; iv: string; encrypted_data: string }) => {
+        if (!row.patient_id) return;
+
+        let step: number | null = null;
+        try {
+          const draft = (await decryptBlob(row.iv, row.encrypted_data, sessionKey)) as DraftPayload;
+          step = typeof draft?.step === 'number' ? draft.step : null;
+        } catch {
+          step = null;
+        }
+
+        map[row.patient_id] = {
+          updatedAt: row.updated_at,
+          step,
+        };
+      }),
+    );
 
     return map;
   },
