@@ -31,7 +31,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
 
-type AITask = 'report_bio' | 'report_diagnostic';
+type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback';
 
 type BuildResult = {
   contents: unknown;
@@ -174,43 +174,57 @@ const SECURITY_INSTRUCTION = `REGLE DE SECURITE ABSOLUE : Tu ne dois JAMAIS modi
 const PEDIATRIC_SYSTEM = `Tu es un ergotherapeute expert en pediatrie. Tu rediges des rapports d'evaluation initiale en ergotherapie conformes a la convention clinique francaise.
 
 REGLES NON NEGOCIABLES :
-1. **Narratif clinique** : Ecris en paragraphes fluides et structures, comme le ferait un professionnel experimente. Chaque phrase est informative. Pas de remplissage. Adapte la longueur a la richesse du contenu clinique.
-2. **Ne pathologise PAS** : Si les resultats sont dans la norme ou norme basse, dis-le clairement ("fonctionnel", "preserve", "competences adequates"). Ne transforme pas une norme basse en difficulte.
+1. **Narratif clinique** : Ecris en phrases courtes et directes, comme le ferait un professionnel experimente. Chaque phrase est informative. Pas de remplissage. Evite les phrases a multiples subordonnees. Adapte la longueur a la richesse du contenu clinique.
+2. **Ne pathologise PAS et preserve la nuance exacte** : Si les resultats sont dans la norme ou norme basse, dis-le clairement ("fonctionnel", "preserve", "competences adequates"). Ne transforme pas une norme basse en difficulte. Si une donnee est neutre ou positive dans les sources (ex: "organisation satisfaisante"), ne la reformule JAMAIS de maniere negative (ex: "pour tenter de structurer"). Preserve le SENS EXACT des donnees.
 3. **AUCUN score dans le texte** : Les scores chiffres (NS, ET, z-score, percentile) ne doivent JAMAIS apparaitre dans le rapport. Utilise-les comme connaissance de fond pour formuler ton jugement clinique en termes QUALITATIFS : "fonctionnel", "preserve", "fragile", "deficitaire", "nettement superieur aux attentes", "dans les normes attendues". Les scores figurent dans les annexes du rapport.
 4. **AUCUN nom de test** : Ne cite JAMAIS le nom des outils d'evaluation (pas de MABC-2, DTVP, NEPSY, BHK, EVIC, Espargot, etc.). Decris le DOMAINE FONCTIONNEL evalue et les constats cliniques, pas l'instrument utilise.
 5. **Structure par domaine** : Dans le diagnostique, organise par domaine fonctionnel. Chaque domaine peut contenir PLUSIEURS PARAGRAPHES si le contenu clinique le justifie (notamment le graphisme). Varie les introductions ("Sur le plan...", "Concernant...", "En ce qui concerne...").
 6. **Pas de diagnostic medical** : Tu ne poses JAMAIS de diagnostic (pas de TDA/H, dysgraphie, dyspraxie...) sauf si le praticien l'a explicitement fourni. Tu decris des observations et des constats fonctionnels. N'utilise JAMAIS le mot "troubles" (trop diagnostique) : prefere "difficultes", "fragilites", "points de vigilance".
-7. **Langage accessible et clinique** : Le rapport est lu par les parents et l'ecole. Si tu utilises un terme technique, explique-le entre parentheses UNE SEULE FOIS. Ne repete jamais la meme explication.
+7. **Langage accessible et simple** : Le rapport est lu par les parents et l'ecole. Privilegie les descriptions fonctionnelles aux termes anatomiques. Prefere "prise de stylo crispee" a "prise tridigitale avec hyperflexion". Prefere "exploration visuelle lente" a "defaut de saccade oculomotrice". Si un terme technique n'a pas d'equivalent simple, explique-le entre parentheses UNE SEULE FOIS. Quand tu mentionnes un outil de compensation (ex: compensation informatique), precise entre parentheses le terme concret : "compensation informatique (ordinateur)".
 8. **Format** : JSON valide strict. Valeurs = strings Markdown. Utilise des tirets "-" pour les listes a puces. Aere le texte (double saut de ligne entre paragraphes).
 9. **Manifestations fonctionnelles** : Apres chaque constat, decris ses MANIFESTATIONS OBSERVABLES dans la vie quotidienne ou scolaire ("ce qui se manifeste par des sauts de ligne lors de la copie", "engendrant une fatigue lors des productions ecrites"). INTERDIT : theoriser sur les causes neurologiques ou developpementales. AUTORISE : decrire l'impact fonctionnel observe ou rapporte.
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique (PPH, CIF, MCRO...) ni de protocole d'evaluation dans le rapport. Le rapport est centre sur l'enfant.
 11. **Orthographe francaise** : Ecris en francais correct avec accents obligatoires. Ne rends jamais un texte sans accents.
 12. **Reformulation des observations brutes** : Les observations par epreuve peuvent contenir des notes telegraphiques. Integre-les en les reformulant en phrases cliniques completes. Ne reproduis jamais le style brut.
 13. **Ton professionnel** : Utilise "je" pour les propositions de suivi et recommandations ("je propose", "je preconise"). Le reste du rapport est en troisieme personne factuelle.
+14. **INTERDICTION D'INVENTER** : Si un detail n'est pas explicitement present dans les donnees fournies, ne le mentionne pas. Ne deduis JAMAIS d'informations absentes. N'ajoute pas de details plausibles mais non fournis (horaires, qualite du sommeil, emotions non mentionnees, details sur l'origine des demarches). En cas de doute, omets.
+15. **Pas de softeners inutiles** : N'utilise pas "globalement", "relativement", "plutot" quand le resultat est clairement dans la norme. Dis simplement "preserve" ou "fonctionnel". Evite "vivement preconise" : prefere "est preconise".
+16. **Preserve les details specifiques** : Si les donnees contiennent des expressions du patient (ex: "dechicte" au lieu de couper), des preferences precises (matieres appreciees et non appreciees), des details colores ou des nuances relationnelles, integre-les tels quels. Ne generalise pas quand le detail specifique est plus informatif.
 
 EXEMPLES DE BON STYLE :
-- "{{PATIENT_PRENOM}} dispose d'une motricite fine fonctionnelle des deux mains. La coordination bi-manuelle est egalement preservee."
-- "La coordination visuo-motrice s'avere difficile, notamment en raison d'un manque d'efficacite dans le balayage visuel."
-- "Bien que l'ecrit reste fluide et fonctionnel, il exige un effort physique et cognitif couteux, limitant l'endurance sur le long terme."
+- "Les competences de {{PATIENT_PRENOM}} en motricite fine et coordination bi-manuelle sont preservees et fonctionnelles."
+- "L'exploration visuelle est lente et peu efficace. Elle est davantage difficile lorsqu'il y a beaucoup d'informations visuelles."
+- "{{PATIENT_PRENOM}} rapporte systematiquement une douleur durant l'ecriture, evaluee entre 1/10 et 6/10 selon les epreuves."
+- "Les relations avec ses camarades se passent bien. Avec ses amies proches, cela peut etre plus complexe."
 - "Un accompagnement en ergotherapie n'est pas preconise pour {{PATIENT_PRENOM}}."
+
+EXEMPLES A EVITER :
+- EVITE : "malgre des fragilites de concentration notees" → PREFERE : "a parfois des difficultes a se concentrer"
+- EVITE : "une mise sous tension emotionnelle pour l'adolescente" → PREFERE : "la mise au travail est plus difficile"
+- EVITE : "les relations avec ses pairs sont parfois decrites comme complexes" → PREFERE : "les relations se passent bien, meme si cela peut etre plus complexe avec certaines amies proches"
+- EVITE : "prise tridigitale avec hyperflexion du pouce" → PREFERE : "prise de stylo adequate, mais crispee et avec une forte pression"
+- EVITE : "pour tenter de structurer ses documents" → PREFERE : "son organisation est satisfaisante" (si c'est ce que disent les donnees)
 `;
 
 const ADULT_SYSTEM = `Tu es un ergotherapeute expert en readaptation adulte et maintien a domicile. Tu rediges des rapports d'evaluation en ergotherapie conformes a la convention clinique francaise.
 
 REGLES NON NEGOCIABLES :
-1. **Narratif clinique** : Ecris en paragraphes fluides. Adapte la longueur au contenu. Pas de remplissage.
-2. **Ne pathologise PAS** : Si les resultats sont dans la norme, dis-le clairement.
+1. **Narratif clinique** : Ecris en phrases courtes et directes. Adapte la longueur au contenu. Pas de remplissage. Evite les phrases a multiples subordonnees.
+2. **Ne pathologise PAS et preserve la nuance exacte** : Si les resultats sont dans la norme, dis-le clairement. Si une donnee est neutre ou positive, ne la reformule JAMAIS negativement. Preserve le sens exact des donnees sources.
 3. **AUCUN score dans le texte** : Les scores chiffres ne doivent JAMAIS apparaitre. Utilise-les comme connaissance de fond pour formuler le jugement clinique en termes qualitatifs. Les scores figurent dans les annexes.
 4. **AUCUN nom de test** : Ne cite JAMAIS le nom des outils d'evaluation. Decris le domaine evalue et les constats.
 5. **Structure par domaine** : Organise le diagnostique par domaine fonctionnel. Chaque domaine peut contenir plusieurs paragraphes.
 6. **Pas de diagnostic medical** : Decris des constats fonctionnels, pas de diagnostics. N'utilise JAMAIS le mot "troubles" (trop diagnostique) : prefere "difficultes", "fragilites", "points de vigilance".
-7. **Approche fonctionnelle** : Centre l'analyse sur les habitudes de vie (soins, travail, loisirs). Ton respectueux et collaboratif.
+7. **Approche fonctionnelle et langage simple** : Centre l'analyse sur les habitudes de vie (soins, travail, loisirs). Ton respectueux et collaboratif. Privilegie les descriptions fonctionnelles aux termes anatomiques. Quand tu mentionnes un outil de compensation, precise entre parentheses le terme concret.
 8. **Format** : JSON valide strict. Valeurs = strings Markdown. Tirets "-" pour les listes.
 9. **Manifestations fonctionnelles** : Decris l'impact fonctionnel observe apres chaque constat. Pas de theories causales.
 10. **Pas de methodologie** : Ne mentionne JAMAIS de modele theorique dans le rapport.
 11. **Orthographe francaise** : Accents obligatoires.
 12. **Reformulation des observations brutes** : Reformule les notes telegraphiques en phrases cliniques completes.
-13. **Ton professionnel** : Utilise "je" pour les propositions de suivi et recommandations.`;
+13. **Ton professionnel** : Utilise "je" pour les propositions de suivi et recommandations.
+14. **INTERDICTION D'INVENTER** : Si un detail n'est pas explicitement dans les donnees, ne le mentionne pas. En cas de doute, omets.
+15. **Pas de softeners inutiles** : Evite "globalement", "relativement", "plutot" quand le resultat est dans la norme. Dis simplement "preserve" ou "fonctionnel".
+16. **Preserve les details specifiques** : Integre les expressions du patient, les nuances relationnelles et les details colores tels quels. Ne generalise pas.`;
 
 // ── JSON Schemas for Gemini responseSchema constraint ──────────────────────
 
@@ -254,25 +268,33 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
 
   const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
 
+  const styleBlock = String(payload.styleDirectives || '').trim();
+
   const userPrompt = [
     SECURITY_INSTRUCTION,
     '',
+    ...(styleBlock ? [
+      'PREFERENCES DE STYLE DU PRATICIEN (issues de ses corrections precedentes) :',
+      styleBlock,
+      '',
+    ] : []),
     `CONTEXTE ${subjectLabel} : ${context}`,
-    '',
+    '',,
     `DONNEES BRUTES (questionnaire/anamnese) :\n${questionnaire}`,
     '',
     'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) en respectant STRICTEMENT ce format :',
     '',
     '1. "mandat_referencement" (2-4 phrases, 30-80 mots) :',
-    '   Qui adresse le patient et pourquoi, de maniere factuelle.',
+    '   Qui adresse le patient et pourquoi, de maniere factuelle et concise.',
     '   OBLIGATOIRE : Si {{MEDECIN}} est present dans les donnees, nomme-le EXPLICITEMENT dans la phrase d\'ouverture.',
-    '   ATTENTION : {{MEDECIN}} peut DEJA contenir le titre "Dr". Ne rajoute JAMAIS "Dr" devant ce placeholder. Ecris directement "a la demande de {{MEDECIN}}" ou "sur referencement de {{MEDECIN}}".',
+    '   ATTENTION : {{MEDECIN}} peut DEJA contenir le titre "Dr". Ne rajoute JAMAIS "Dr" devant ce placeholder. Ecris directement "sur demande de {{MEDECIN}}" ou "a la demande de {{MEDECIN}}".',
     '   Si la specialite du medecin est disponible dans les donnees (ex: generaliste, pediatre, neurologue), mentionne-la apres le nom : "{{MEDECIN}}, medecin generaliste".',
     '   Si {{MEDECIN}} est absent des donnees, ne pas inventer de nom.',
+    '   INTERDIT : Ne mentionne PAS de details sur la chaine de referencement (orthopedie, orthopedagogue, etc.) sauf si EXPLICITEMENT present dans les donnees ET directement pertinent. Utilise "bilan en ergotherapie" et non "evaluation fonctionnelle de ses capacites".',
     '   EXEMPLES DE STYLE :',
-    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande de {{MEDECIN}}, medecin generaliste, afin d\'evaluer Y."',
-    '   - "{{PATIENT_PRENOM}} est recu(e) sur referencement de {{MEDECIN}}, pediatre, pour bilanter la motricite globale et fine."',
-    '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase.',
+    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation sur demande de {{MEDECIN}}, medecin generaliste, afin de realiser un bilan en ergotherapie."',
+    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande de {{MEDECIN}}, pediatre, afin de realiser un bilan en ergotherapie."',
+    '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase simple et directe.',
     '',
     '2. "mandat_evaluation" (80-180 mots) :',
     '   Decris les DIFFICULTES CONCRETES qui motivent le bilan, en PLUSIEURS PARAGRAPHES COURTS (un paragraphe par theme).',
@@ -280,8 +302,10 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '   - Commence par une phrase de RESUME introduisant le theme principal des difficultes : "{{PATIENT_PRENOM}} rapporte des difficultes scolaires liees a..."',
     '   - Developpe ensuite chaque difficulte avec des LIENS CAUSE-CONSEQUENCE : "Elle se depeche pour ecrire, mais cela nuit a la lisibilite et augmente les douleurs."',
     '   - Chaque difficulte doit etre ATTRIBUEE a sa source : "Les parents rapportent que...", "{{PATIENT_PRENOM}} dit avoir...", "L\'enseignant signale que...", "Le conseil de classe demande..."',
-    '   - Si {{PATIENT_PRENOM}} a exprime ses PROPRES SOUHAITS ou objectifs (distincts de ceux des parents/ecole), les inclure en DERNIER PARAGRAPHE : "{{PATIENT_PRENOM}} souhaiterait egalement..."',
+    '   - Si {{PATIENT_PRENOM}} a exprime ses PROPRES SOUHAITS ou objectifs (distincts de ceux des parents/ecole), les inclure en DERNIER PARAGRAPHE. Formule-les SIMPLEMENT sans amplifier : "{{PATIENT_PRENOM}} souhaite faciliter son quotidien scolaire" et NON "{{PATIENT_PRENOM}} aspire a retrouver la serenite face aux apprentissages".',
+    '   RESPECT DU NIVEAU DE GRAVITE : Si les parents disent "parfois difficile", ne transforme PAS en "systematiquement conflictuel". Utilise les memes adverbes de frequence que les sources ("parfois", "souvent", "regulierement").',
     '   NE PAS interpreter ni theoriser (pas de "ecriture phonetique pour compenser ses doutes orthographiques").',
+    '   NE PAS dramatiser : "la mise au travail est plus difficile" et NON "une mise sous tension emotionnelle pour l\'adolescente".',
     '   INTERDIT : protocole, outils, modeles theoriques, objectifs du bilan.',
     '   NE REPETE PAS les informations deja dans le mandat de referencement.',
     '',
@@ -291,14 +315,15 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '   b) SUIVI THERAPEUTIQUE : prises en charge passees et en cours, avec dates si disponibles et motifs.',
     '   c) AUTONOMIE / VIE QUOTIDIENNE : autonomie dans les actes de la vie courante, difficultes spatiales ou autres mentionnees.',
     '   d) LOISIRS : activites extrascolaires, centres d\'interet, hobbies.',
-    '   e) COMPORTEMENT EN CLASSE : attention, investissement, participation (si mentionne dans les donnees).',
-    '   f) PROFIL SOCIAL ET EMOTIONNEL : relations avec les pairs, sensibilite, confiance en soi.',
+    '   e) COMPORTEMENT EN CLASSE : attention, investissement, participation, preferences de matieres (si mentionne dans les donnees). Si l\'organisation est fonctionnelle, dis-le positivement ("son organisation est satisfaisante"). Ne reformule PAS negativement un constat positif.',
+    '   f) PROFIL SOCIAL ET EMOTIONNEL : relations avec les pairs, sensibilite, confiance en soi. Sois PRECIS dans la nuance : si les relations sont bonnes en general mais complexes avec certaines personnes specifiques, decris cette nuance exacte au lieu de generaliser.',
     '   REGLES :',
     '   - Commence TOUJOURS par la situation scolaire actuelle, PAS par l\'historique developpemental.',
     '   - L\'historique developpemental precoce (age de marche, elocution...) ne doit etre mentionne QUE s\'il est directement pertinent pour la problematique actuelle.',
     '   - Omets les informations medicales sans rapport avec le referencement (somnambulisme, reflux...).',
     '   - Utilise des formulations ATTRIBUEES : "Selon les parents...", "{{PATIENT_PRENOM}} mentionne...".',
-    '   - Cite les details SPECIFIQUES : dates, noms d\'amenagements, activites precises.',
+    '   - Cite les details SPECIFIQUES : dates, noms d\'amenagements, activites precises, matieres appreciees et non appreciees, expressions du patient.',
+    '   - Si le patient utilise une expression particuliere ou imagee, conserve-la entre guillemets (ex: "dechicte" au lieu de couper).',
     '   - N\'invente AUCUN detail absent. Si une rubrique est vide, ne la mentionne pas.',
     '',
     'CONSIGNES DE STYLE :',
@@ -339,6 +364,8 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
       'Reste FACTUEL. Ne dramatise pas le diagnostic. Utilise le vocabulaire clinique ergo :',
       '"presente des difficultes de coordination bimanuelle" et NON "le diagnostic de X s\'illustre de maniere flagrante".',
       'Si le constat mentionne plusieurs diagnostics, traite chacun dans le domaine fonctionnel correspondant.',
+      'IMPORTANT : Integre TOUTES les observations specifiques mentionnees par le praticien, y compris les recommandations de bilans complementaires (orthoptique, neuropsychologique, etc.). Si le praticien mentionne une recommandation de bilan complementaire, elle DOIT apparaitre dans la synthese diagnostique.',
+      'Utilise les memes termes fonctionnels que le praticien plutot que des synonymes plus techniques.',
     ].join(' ');
   } else {
     diagnosticDirective = [
@@ -363,16 +390,23 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   // Directive recommandations conditionnelle
   let recommendationsDirective: string;
   if (recommendationsInput.length > 5) {
-    recommendationsDirective = `Le praticien propose les preconisations suivantes : "${recommendationsInput}". Integre ces elements et complete si pertinent.`;
+    recommendationsDirective = `Le praticien propose les preconisations suivantes : "${recommendationsInput}". Integre ces elements fidellement et complete si pertinent. Formule les recommandations de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses quand c'est utile.`;
   } else {
-    recommendationsDirective = 'Formule des preconisations concretes et proportionnees aux resultats. Chaque preconisation doit etre directement actionnable.';
+    recommendationsDirective = 'Formule des preconisations concretes et proportionnees aux resultats. Chaque preconisation doit etre directement actionnable. Formule-les de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses (ex: "textes a trous, supports de cours photocpies..."). Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte de la classe.';
   }
 
   const subjectLabel = profile === 'adult' ? 'la personne' : "l'enfant";
 
+  const styleBlock = String(payload.styleDirectives || '').trim();
+
   const userPrompt = [
     SECURITY_INSTRUCTION,
     '',
+    ...(styleBlock ? [
+      'PREFERENCES DE STYLE DU PRATICIEN (issues de ses corrections precedentes) :',
+      styleBlock,
+      '',
+    ] : []),
     `PROFIL OCCUPATIONNEL DEJA ETABLI :\n${profilContext}`,
     '',
     `OBSERVATIONS CLINIQUES :`,
@@ -407,11 +441,11 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     '   DOMAINES POSSIBLES (n\'utilise que ceux pour lesquels tu as des donnees) :',
     '   - "Sur le plan de la motricite fine et de la coordination bi-manuelle" : motricite fine, coordination bimanuelle, coordination oculo-manuelle. Decris ce qui est fonctionnel et ce qui est fragile.',
-    '   - "Concernant les capacites visuo-spatiales" : perception, construction, orientation spatiale, coordination visuo-motrice, balayage visuel. Traduis en impact fonctionnel : sauts de ligne, repetitions, dependance au modele visuel.',
+    '   - "Concernant les capacites visuo-spatiales" : Nomme EXPLICITEMENT les competences preservees (ex: integration visuo-motrice, constance des formes) ET celles en difficulte (ex: exploration visuelle, perception figure-fond) en termes fonctionnels pour que le lecteur comprenne la distinction. Traduis en impact fonctionnel : sauts de ligne, repetitions, dependance au modele visuel. Si le praticien recommande un bilan complementaire (orthoptique, etc.), mentionne-le dans ce domaine.',
     '   - "Concernant l\'ecriture manuscrite" : Section la plus DETAILLEE. Developpe en PLUSIEURS PARAGRAPHES :',
     '     (a) Vitesse et qualite generale : ce qui est dans les normes, comment la qualite evolue avec l\'acceleration.',
     '     (b) Comportements associes observes : hesitations orthographiques, dependance visuelle au modele, rapport entre la pensee et le flux scriptural, effort cognitif soutenu generant de la fatigue.',
-    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main (ex: flexion, position en crochet), mode de progression sur la ligne (rotation d\'epaule, compensation), type de prise de crayon avec particularites (ex: pouce en hyperextension), mobilite des doigts.',
+    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main, mode de progression sur la ligne, prise de crayon. Decris en termes FONCTIONNELS et simples : "prise de stylo adequate, mais crispee et avec une forte pression" plutot que "prise tridigitale avec hyperflexion du pouce". Le parent doit comprendre.',
     '     (d) DOULEURS : localisation precise (doigts, main, poignet, epaule...), cotation si disponible (ex: "que {{PATIENT_PRENOM}} evalue a X/10 sur l\'echelle de la douleur").',
     '     (e) CONCLUSION INTEGRATIVE du graphisme : lien entre posture, effort, et endurance ("Bien que l\'ecrit reste fluide et fonctionnel, il exige un effort physique et cognitif couteux, limitant l\'endurance sur le long terme").',
     '   - "Sur le plan attentionnel" : si donnees disponibles.',
@@ -419,9 +453,9 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   - "Sur le plan informatique" : si des donnees de frappe/informatique sont disponibles. Decris : comparaison qualitative avec la vitesse manuscrite, posture de frappe, utilisation des doigts, connaissance du clavier, maitrise des logiciels. Conclus sur le role de compensation dans le parcours.',
     '',
     '   PARAGRAPHE DE CONCLUSION (OBLIGATOIRE) :',
-    '   Termine par un PARAGRAPHE FINAL (hors tirets, 3-4 phrases) qui :',
-    '   1. Synthetise les enjeux fonctionnels principaux de maniere integree (douleurs + difficultes ortho + balayage visuel → fatigue + degradation des productions).',
-    '   2. Justifie EXPLICITEMENT la recommandation centrale en la reliant au contexte de vie (ex: filiere scolaire, projet professionnel).',
+    '   Termine par un PARAGRAPHE FINAL CONCIS (hors tirets, 2-3 phrases) qui :',
+    '   1. Synthetise les enjeux fonctionnels principaux sans repeter les details deja mentionnes.',
+    '   2. Justifie la recommandation centrale de maniere directe ("est preconise" et NON "est vivement preconise"). Pas de qualificatifs restrictifs inutiles ("pour les travaux de redaction longs" → "pour les productions ecrites") sauf si c\'est le constat specifique du praticien.',
     '   Ce paragraphe ne cite aucun nouveau score. Il conclut et oriente.',
     '',
     '   REGLES CRITIQUES pour cette section :',
@@ -447,8 +481,9 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   Chaque recommandation doit pouvoir etre mise en oeuvre immediatement par l\'ecole ou la famille.',
     '   INTERDIT : recommandations vagues ("sensibilisation de l\'equipe"), recommandations materielles trop specifiques (noms de produits) sauf si justifie par les observations.',
     '   Si tout est normal, mentionne que l\'accompagnement n\'est pas necessaire.',
+    '   STYLE : Formule LARGE et PRAGMATIQUE avec des exemples concrets entre parentheses. Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte.',
     '   EXEMPLE DE STYLE :',
-    '   "Adaptations pedagogiques recommandees :\\n- Utilisation de l\'outil informatique pour l\'ensemble des productions ecrites longues et les evaluations afin de prevenir les douleurs et la fatigue.\\n- Maintien des amenagements de type tiers-temps.\\n- Allegement de la charge de copie par la fourniture de supports de cours imprimes ou numeriques."',
+    '   "Adaptations pedagogiques recommandees :\\n- Utilisation preferentielle de l\'outil informatique pour l\'ensemble des productions ecrites, lorsque cela est possible.\\n- Limiter la charge de copie (fourniture de supports de cours photocpies, textes a trous...).\\n- Renforcement des reperes visuels sur les supports de travail (lignes de couleurs, aeration des documents).\\n- Poursuite du tiers-temps pour compenser la lenteur et la fatigue induite."',
     '',
     `4. "objectifs_generaux" (40-120 mots) :`,
     `   Si un suivi en ergotherapie est recommande :`,
@@ -493,9 +528,76 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 // NOTE: Vision/OCR extraction has been moved to dedicated 'extract-norms' edge function
 // for better performance (parallel processing), separate rate limits, and no credit consumption.
 
+// ── STYLE FEEDBACK EXTRACTION ──────────────────────
+
+const FEEDBACK_RESPONSE_SCHEMA = {
+  type: 'OBJECT' as const,
+  properties: {
+    style_preferences: { type: 'STRING' as const, description: 'Liste consolidee de regles de style du praticien, en bullet points. Maximum 500 caracteres. Aucune donnee clinique ou patient.' },
+  },
+  required: ['style_preferences'],
+};
+
+const FEEDBACK_SYSTEM = `Tu es un assistant specialise dans l'analyse de style redactionnel pour des rapports d'ergotherapie.
+Tu recois des textes ANONYMISES (les noms et donnees personnelles ont ete remplaces par des placeholders).
+
+REGLES ABSOLUES DE SECURITE DES DONNEES :
+- Tu ne dois JAMAIS inclure de donnees cliniques, medicales ou personnelles dans ta sortie.
+- Tu ne dois JAMAIS reproduire de contenu specifique a un patient (symptomes, diagnostics, situations).
+- Tu extrais UNIQUEMENT des regles de STYLE et de FORMULATION abstraites et generiques.
+- Si tu detectes des donnees patient dans ta sortie, supprime-les immediatement.
+
+Ton role : comparer les textes originaux (generes par IA) avec les corrections du praticien pour en deduire des PREFERENCES DE STYLE ABSTRAITES.`;
+
+const buildFeedbackTask = (payload: Record<string, unknown>): BuildResult => {
+  const diffs = payload.diffs as Array<{ sectionId: string; original: string; corrected: string }> || [];
+  const existingPreferences = String(payload.existingPreferences || '').trim();
+
+  if (diffs.length === 0) throw new Error('No diffs provided');
+
+  const diffBlocks = diffs.map((d, i) =>
+    `--- Section ${i + 1} (${d.sectionId}) ---\nORIGINAL :\n${d.original}\n\nCORRIGE PAR LE PRATICIEN :\n${d.corrected}`
+  ).join('\n\n');
+
+  const userPrompt = [
+    'REGLE DE SECURITE : Ne reproduis AUCUNE donnee clinique, medicale ou personnelle dans ta reponse. Extrais UNIQUEMENT des regles de style abstraites.',
+    '',
+    ...(existingPreferences ? [
+      'PREFERENCES DE STYLE EXISTANTES (a consolider avec les nouvelles observations) :',
+      existingPreferences,
+      '',
+    ] : []),
+    'CORRECTIONS DU PRATICIEN (textes anonymises) :',
+    diffBlocks,
+    '',
+    'TACHE : Analyse les differences entre les textes originaux et corriges. Extrais des REGLES DE STYLE ABSTRAITES et GENERIQUES que le praticien prefere.',
+    '',
+    'EXEMPLES de bonnes regles :',
+    '- Prefere les phrases courtes et directes aux formulations litteraires.',
+    '- Utilise "sur demande de" plutot que "sur referencement de".',
+    '- Decrit les relations sociales avec nuance plutot que de generaliser.',
+    '- Evite les softeners inutiles ("globalement", "relativement").',
+    '- Prefere "prise de stylo crispee" a "prise tridigitale".',
+    '',
+    'EXEMPLES de MAUVAISES regles (A EVITER car elles contiennent des donnees patient) :',
+    '- "Pour Teyla, mentionner le bilan orthoptique" ← contient un prenom',
+    '- "Quand l\'enfant a des douleurs 6/10, le dire" ← contient des donnees cliniques',
+    '',
+    'FORMAT : Retourne un JSON avec "style_preferences" contenant des bullet points (tirets "-"). Maximum 500 caracteres. Si des preferences existantes sont fournies, CONSOLIDE-les avec les nouvelles (pas de doublons, maximum 10 regles).',
+  ].join('\n');
+
+  return {
+    contents: userPrompt,
+    systemInstruction: FEEDBACK_SYSTEM,
+    responseMimeType: 'application/json',
+    responseSchema: FEEDBACK_RESPONSE_SCHEMA,
+  };
+};
+
 const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult => {
   if (task === 'report_bio') return buildBioTask(payload);
   if (task === 'report_diagnostic') return buildDiagnosticTask(payload);
+  if (task === 'extract_style_feedback') return buildFeedbackTask(payload);
   throw new Error(`Invalid task: ${task}`);
 };
 
@@ -576,8 +678,71 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!['report_bio', 'report_diagnostic'].includes(task)) {
+    if (!['report_bio', 'report_diagnostic', 'extract_style_feedback'].includes(task)) {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ── Style feedback task: no credits, no generation session ──
+    if (task === 'extract_style_feedback') {
+      if (!GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ error: 'AI service not configured' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const built = buildTask(task, payload);
+      const feedbackGeminiBody: Record<string, unknown> = {
+        contents: [{ role: 'user', parts: [{ text: String(built.contents || '') }] }],
+        generationConfig: {
+          responseMimeType: built.responseMimeType,
+          ...(built.responseSchema && { responseSchema: built.responseSchema }),
+        },
+        ...(built.systemInstruction && { system_instruction: { parts: [{ text: built.systemInstruction }] } }),
+      };
+
+      try {
+        const fbController = new AbortController();
+        const fbTimer = setTimeout(() => fbController.abort(), GEMINI_TIMEOUT_MS);
+        const fbResponse = await fetch(GEMINI_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+          body: JSON.stringify(feedbackGeminiBody),
+          signal: fbController.signal,
+        });
+        clearTimeout(fbTimer);
+
+        if (!fbResponse.ok) {
+          return new Response(JSON.stringify({ error: 'Feedback extraction failed' }), {
+            status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const fbData = await fbResponse.json();
+        const fbText = fbData?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+
+        if (fbText) {
+          try {
+            const parsed = JSON.parse(fbText);
+            const prefs = String(parsed?.style_preferences || '').slice(0, 2000);
+            if (prefs.length > 0) {
+              // Persist to practitioners table (admin client bypasses RLS)
+              await adminSupabase!.from('practitioners')
+                .update({ ai_style_preferences: prefs })
+                .eq('id', userId);
+            }
+          } catch {
+            // JSON parse failure — non-blocking
+          }
+        }
+
+        return new Response(JSON.stringify({ text: fbText, generationId: null }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: 'Feedback extraction error' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (providedGenId && !looksLikeUuid(providedGenId)) {

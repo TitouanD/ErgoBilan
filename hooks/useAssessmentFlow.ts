@@ -5,6 +5,7 @@
 
 import { useState, useCallback } from 'react';
 import { AIService, type GenerationPayload, type GenerationResult } from '../services/ai';
+import { callAIProxyTask } from '../services/aiProxy';
 import { StorageService } from '../services/storage';
 import { AdminService } from '../services/admin';
 import { ensureFreshSession } from '../services/db';
@@ -19,6 +20,7 @@ import type {
   ReportSection,
   PatientFile,
   ScoreResult,
+  PractitionerProfile,
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -57,6 +59,7 @@ interface UseAssessmentFlowParams {
   isDemoMode: boolean;
   catalog: CatalogCategory[];
   refreshProfile: () => Promise<void>;
+  practitioner: PractitionerProfile | null;
   patientFiles: PatientFile[];
   loadData: () => Promise<void>;
   toast: { success: (m: string) => void; error: (m: string) => void; info: (m: string) => void };
@@ -126,6 +129,7 @@ export const useAssessmentFlow = ({
   isDemoMode,
   catalog,
   refreshProfile,
+  practitioner,
   patientFiles,
   loadData,
   toast,
@@ -327,6 +331,7 @@ export const useAssessmentFlow = ({
         scoresEvidence,
         childContext: `L'enfant est ${genderString} de ${p.age}.`,
         synthesis: assessment.synthesis,
+        styleDirectives: practitioner?.aiStylePreferences || undefined,
       };
 
       const { sections, reformulatedObservations }: GenerationResult =
@@ -368,7 +373,7 @@ export const useAssessmentFlow = ({
     } finally {
       setIsGenerating(false);
     }
-  }, [assessment, isDemoMode, refreshProfile, toast]);
+  }, [assessment, isDemoMode, refreshProfile, practitioner, toast]);
 
   const ensurePatientIdentityPersisted = useCallback(
     async (action: 'save_quit' | 'finalize'): Promise<{ patientId: string; patientSnapshot: Patient } | null> => {
@@ -457,6 +462,32 @@ export const useAssessmentFlow = ({
       };
 
       await StorageService.saveFile(updatedFile, orgKey);
+
+      // ── Feedback loop: extract style preferences from practitioner corrections ──
+      try {
+        const editedSections = assessment.sections.filter(
+          (s) => s.isAiGenerated && s.originalContent && s.content !== s.originalContent,
+        );
+        if (editedSections.length > 0 && practitioner?.id) {
+          // Re-anonymize diffs to strip all PII before sending to server
+          const p = assessment.patient;
+          const diffs = editedSections.map((s) => ({
+            sectionId: s.id,
+            original: anonymizeData(s.originalContent!, p).text,
+            corrected: anonymizeData(s.content, p).text,
+          }));
+          // Include existing preferences so the AI can consolidate (not just overwrite)
+          const existingPrefs = practitioner.aiStylePreferences || '';
+          // Fire-and-forget: call edge function to extract style feedback
+          callAIProxyTask({
+            task: 'extract_style_feedback',
+            payload: { diffs, existingPreferences: existingPrefs },
+          }).catch((err) => Logger.warn('AI', 'Style feedback extraction failed (non-blocking)', err));
+        }
+      } catch {
+        // Feedback extraction is best effort and must not block finalization
+      }
+
       if (assessment.reportType === 'initial') {
         try {
           const dueAt = new Date(newAssessment.date);
@@ -489,7 +520,7 @@ export const useAssessmentFlow = ({
     } finally {
       setIsGenerating(false);
     }
-  }, [assessment, sessionKey, orgKey, isDemoMode, catalog, patientFiles, loadData, toast, ensurePatientIdentityPersisted]);
+  }, [assessment, sessionKey, orgKey, isDemoMode, catalog, practitioner, patientFiles, loadData, toast, ensurePatientIdentityPersisted]);
 
   // ------------------------------------------------------------------
   // Save draft and quit
