@@ -39,6 +39,7 @@ const CHUNK_MIN_COVERAGE_PERCENT = parsePositiveInt(Deno.env.get("EXTRACTION_CHU
 const CHUNK_MIN_COLUMN_COVERAGE_RATIO = Math.min(1, Math.max(0.1, CHUNK_MIN_COVERAGE_PERCENT / 100));
 const MAX_VERIFICATION_REPAIR_TARGETS = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_VERIFICATION_REPAIR_TARGETS"), 20);
 const MAX_COLUMNS_FOR_SYNC_VERIFICATION = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_COLUMNS_FOR_SYNC_VERIFICATION"), 28);
+const VERIFICATION_CHUNK_SIZE = parsePositiveInt(Deno.env.get("EXTRACTION_VERIFICATION_CHUNK_SIZE"), 15);
 const ENABLE_VERIFICATION_PASS = Deno.env.get("EXTRACTION_ENABLE_VERIFICATION") !== 'false'; // Lightweight verification after extraction
 const THINKING_BUDGET = parsePositiveInt(Deno.env.get("EXTRACTION_THINKING_BUDGET"), 2048); // Gemini thinking tokens
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("EXTRACTION_MAX_PAYLOAD_BYTES"), 10_000_000);
@@ -119,14 +120,7 @@ interface ExtractionResult {
   tables?: ExtractedTable[];
 }
 
-interface LegacyInventoryDomain {
-  domain: string;
-  subtests: string[];
-}
-
-interface InventoryResult extends InventoryScanResult {
-  domains?: LegacyInventoryDomain[];
-}
+interface InventoryResult extends InventoryScanResult {}
 
 interface RepairFocusSubtest {
   name: string;
@@ -220,15 +214,20 @@ const retryWithBackoff = async <T>(
 
 const callGemini = async (
   contents: unknown[],
-  responseMimeType: string = 'application/json'
+  responseMimeType: string = 'application/json',
+  responseSchema?: Record<string, unknown>,
 ): Promise<{ text: string | null; finishReason: string }> => {
+  const generationConfig: Record<string, unknown> = {
+    responseMimeType,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+  };
+  if (responseSchema) {
+    generationConfig.responseSchema = responseSchema;
+  }
   const geminiBody = {
     contents,
-    generationConfig: {
-      responseMimeType,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      thinkingConfig: { thinkingBudget: THINKING_BUDGET },
-    },
+    generationConfig,
   };
 
   const response = await retryWithBackoff(
@@ -561,6 +560,100 @@ OUTPUT RULES:
 - You MUST extract ALL subtests and ALL rows visible on the page. Do NOT stop early.
 `;
 
+// ── GEMINI STRUCTURED OUTPUT SCHEMA ────────────────────────────────────────
+// Constrains Gemini decoding to valid JSON matching our expected structure.
+// This eliminates truncation-recovery hacks and prevents hallucinated keys.
+
+const EXTRACTION_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'OBJECT',
+  properties: {
+    tc: { type: 'STRING', description: 'Detected test name' },
+    st: { type: 'STRING', enum: ['PARAMETRIC', 'LOOKUP'], description: 'Table structure type' },
+    pa0: { type: 'INTEGER', nullable: true, description: 'Page-level age_min in months' },
+    pa1: { type: 'INTEGER', nullable: true, description: 'Page-level age_max in months' },
+    tables: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          sid: { type: 'STRING', description: 'Full French subtest name' },
+          ab: { type: 'STRING', description: 'Original column abbreviation' },
+          rows: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                m: { type: 'STRING', description: 'Mean (PARAMETRIC)' },
+                s: { type: 'STRING', description: 'SD (PARAMETRIC)' },
+                r: { type: 'STRING', description: 'Raw score range (LOOKUP)' },
+                n: { type: 'STRING', description: 'Standard score (LOOKUP)' },
+                p: { type: 'STRING', description: 'Percentile' },
+                z: { type: 'STRING', description: 'Z-score' },
+                gl: { type: 'STRING', description: 'Grade/class label' },
+                a0: { type: 'INTEGER', description: 'Row age_min months' },
+                a1: { type: 'INTEGER', description: 'Row age_max months' },
+              },
+            },
+          },
+        },
+        required: ['sid', 'rows'],
+      },
+    },
+  },
+  required: ['st', 'tables'],
+};
+
+const INVENTORY_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'OBJECT',
+  properties: {
+    tc: { type: 'STRING' },
+    st: { type: 'STRING', enum: ['PARAMETRIC', 'LOOKUP'] },
+    isInverted: { type: 'BOOLEAN' },
+    columns: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          sid: { type: 'STRING' },
+          ab: { type: 'STRING' },
+          domain: { type: 'STRING' },
+          tableOrder: { type: 'INTEGER' },
+          columnOrder: { type: 'INTEGER' },
+          isInverted: { type: 'BOOLEAN' },
+        },
+        required: ['sid', 'ab'],
+      },
+    },
+  },
+  required: ['columns'],
+};
+
+const VERIFICATION_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'OBJECT',
+  properties: {
+    verify: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          sid: { type: 'STRING' },
+          ab: { type: 'STRING' },
+          domain: { type: 'STRING' },
+          columnOrder: { type: 'INTEGER' },
+          isInverted: { type: 'BOOLEAN' },
+          min_n: { type: 'INTEGER' },
+          max_n: { type: 'INTEGER' },
+          min_r: { type: 'STRING' },
+          max_r: { type: 'STRING' },
+          count: { type: 'INTEGER' },
+        },
+        required: ['ab', 'count'],
+      },
+    },
+  },
+  required: ['verify'],
+};
+
 // ── BUILD FULL EXTRACTION PROMPT ───────────────────────────────────────────
 
 const buildFullExtractionTask = (payload: Record<string, unknown>) => {
@@ -585,131 +678,8 @@ ${JSON_SCHEMA}`;
   };
 };
 
-// ── BUILD INVENTORY SCAN PROMPT (lightweight — discovers subtests) ──────────
-
-const buildInventoryScanTask = (payload: Record<string, unknown>) => {
-  const filename = String(payload.filename || 'document');
-  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
-  const imagePart = payload.imagePart;
-
-  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
-CONTEXT: The filename is "${filename}".
-${buildCanonicalNamesBlock(canonicalSubtestNames)}
-TASK: List ALL subtest column headers visible on this page image, grouped by their domain/section header.
-
-For each domain section visible (e.g. "Attention et fonctions exécutives", "Mémoire et apprentissage", etc.), list the subtests under it.
-
-IMPORTANT: Do NOT use abbreviated column headers (e.g. "AA", "FD", "MV"). You MUST expand each abbreviation to its FULL FRENCH clinical subtest name using your knowledge of the test. For example: AA → "Attention auditive", FD → "Fluidité de dessins", ST → "Statue", etc.
-If EXPECTED SUBTESTS are provided above, match abbreviations to those canonical names.
-
-Also detect the table structure type:
-- "PARAMETRIC" if the table contains Mean/SD statistical constants
-- "LOOKUP" if it maps raw scores to standard scores or percentiles
-
-JSON OUTPUT SCHEMA:
-{
-  "tc": "string (Name of the test, e.g. NEPSY-II)",
-  "st": "PARAMETRIC" | "LOOKUP",
-  "domains": [
-    {
-      "domain": "string (Domain section header)",
-      "subtests": ["string (FULL French subtest name, NOT abbreviation)", ...]
-    }
-  ]
-}
-
-OUTPUT RULES:
-- Output valid JSON only. No markdown.
-- Include ALL column headers from ALL tables on the page.
-- Be exhaustive — do not skip any section.
-- NEVER use abbreviations as subtest names.`;
-
-  return {
-    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-  };
-};
-
-// ── BUILD FOCUSED EXTRACTION PROMPT (extracts specific subtests only) ──────
-
-const buildFocusedExtractionTask = (
-  payload: Record<string, unknown>,
-  focusSubtests: string[],
-  domainHint: string
-) => {
-  const filename = String(payload.filename || 'document');
-  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
-  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
-  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
-  const imagePart = payload.imagePart;
-
-  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
-CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
-FOCUS CONSTRAINT: Extract data ONLY for these specific subtest columns: ${JSON.stringify(focusSubtests)}
-These belong to the domain section: "${domainHint}".
-IGNORE all other columns entirely. Only output data for the listed subtests.
-
-TASK: Extract and normalize data for the specified subtests only.
-${EXTRACTION_RULES}
-${JSON_SCHEMA}`;
-
-  return {
-    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-  };
-};
-
-// ── BUILD REPAIR EXTRACTION PROMPT (single-call targeted repair) ────────────
-
-const buildRepairExtractionTask = (
-  payload: Record<string, unknown>,
-  repairRequest: RepairRequestPayload
-) => {
-  const filename = String(payload.filename || 'document');
-  const knownSubtestNames = Array.isArray(payload.knownSubtestNames) ? payload.knownSubtestNames : [];
-  const canonicalSubtestNames = Array.isArray(payload.canonicalSubtestNames) ? payload.canonicalSubtestNames : [];
-  const scoreTypeHint = typeof payload.scoreTypeHint === 'string' ? payload.scoreTypeHint : undefined;
-  const imagePart = payload.imagePart;
-
-  const focusList = repairRequest.focusSubtests.map((entry) => ({
-    sid: entry.name,
-    ab: entry.abbreviation || null,
-  }));
-  const expectedCountsBlock = repairRequest.expectedGroupCounts.length > 0
-    ? `EXPECTED ROW COUNTS PER AGE/GROUP (must be respected):
-${repairRequest.expectedGroupCounts.map((entry) => `- "${entry.groupLabel}" => ${entry.expectedCount} rows per targeted subtest`).join('\n')}`
-    : 'EXPECTED ROW COUNTS PER AGE/GROUP: not provided.';
-  const existingSubtestsBlock = repairRequest.existingSubtests.length > 0
-    ? `EXISTING SUBTESTS ALREADY PRESENT ON THIS PAGE (for name consistency only): ${JSON.stringify(repairRequest.existingSubtests)}`
-    : '';
-  const neighborColumnsRule = repairRequest.includeNeighborColumns
-    ? 'If you detect clearly missing adjacent columns tied to the same domain block, include them as additional tables to recover omissions.'
-    : 'Do NOT include any non-targeted column. Restrict output strictly to targeted subtests.';
-
-  const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
-CONTEXT: The filename is "${filename}".
-IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
-REPAIR MODE: targeted re-extraction after quality issues.
-TARGET SUBTESTS (extract these first, exhaustively): ${JSON.stringify(focusList)}
-${expectedCountsBlock}
-${existingSubtestsBlock}
-${neighborColumnsRule}
-
-MANDATORY REPAIR RULES:
-- Extract ALL rows for each targeted subtest.
-- Respect expected row counts when provided. If the page has one age group header, that count applies to that group.
-- Keep one unique sid per physical source column variant and keep original abbreviation in "ab".
-- Reuse known/canonical names when possible. Avoid creating duplicate aliases for the same target.
-- Output valid JSON only.
-
-${EXTRACTION_RULES}
-${JSON_SCHEMA}`;
-
-  return {
-    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-  };
-};
+// V1 prompt builders (buildInventoryScanTask, buildFocusedExtractionTask,
+// buildRepairExtractionTask) removed — superseded by V2 variants below.
 
 const sanitizeInventoryColumns = (columns: unknown): InventoryColumnDescriptor[] => {
   if (!Array.isArray(columns)) return [];
@@ -1702,293 +1672,9 @@ const sanitizeExtractionResult = (result: ExtractionResult): ExtractionResult =>
   return result;
 };
 
-// ── VERIFICATION PASS ──────────────────────────────────────────────────────
-
-const buildVerificationTask = (
-  payload: Record<string, unknown>,
-  subtestsToVerify: { sid: string; ab: string }[]
-) => {
-  const imagePart = payload.imagePart;
-  const abList = subtestsToVerify.map((s) => s.ab).filter(Boolean);
-
-  const prompt = `Verify each column abbreviation in the image. For EACH, report boundary values only.
-Columns: ${JSON.stringify(abList)}
-Per column: ab, min_n (lowest NS with data), max_n (highest NS with data), min_r (raw at min_n), max_r (raw at max_n), count (visible cells, including dash-like placeholders).
-Treat "-", "–", "—" and ":" as visible data placeholders (count them and report min/max using the nearest numeric raw values when available).
-Read each column independently top-to-bottom. Do NOT confuse adjacent columns.
-JSON only, minified: {"verify":[{"ab":"XX","min_n":1,"min_r":"0-3","max_n":19,"max_r":"60-86","count":19},...]}`;
-
-  return {
-    contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-  };
-};
-
-interface LegacyVerificationMismatch {
-  sid: string;
-  ab: string;
-  reason: string;
-}
-
-const compareVerificationResultsLegacy = (
-  extraction: ExtractionResult,
-  verification: VerificationResult
-): LegacyVerificationMismatch[] => {
-  if (!verification?.verify || !Array.isArray(verification.verify)) return [];
-  if (!extraction?.tables || !Array.isArray(extraction.tables)) return [];
-
-  const mismatches: LegacyVerificationMismatch[] = [];
-  const verifyMap = new Map<string, VerificationResult['verify'][number]>();
-  for (const entry of verification.verify) {
-    if (entry.ab) verifyMap.set(entry.ab.toUpperCase().trim(), entry);
-  }
-
-  for (const table of extraction.tables) {
-    const ab = (table.ab || '').toUpperCase().trim();
-    if (!ab) continue;
-    const verified = verifyMap.get(ab);
-    if (!verified) continue;
-    const verifiedCount = Number.isFinite(Number(verified.count)) ? Number(verified.count) : null;
-    const verifiedMaxN = Number.isFinite(Number(verified.max_n)) ? Number(verified.max_n) : null;
-
-    const rows = table.rows || [];
-    const extractedCount = rows.length;
-
-    // Check row count mismatch (tolerance of 1)
-    if (verifiedCount !== null && Math.abs(extractedCount - verifiedCount) > 1) {
-      mismatches.push({
-        sid: table.sid,
-        ab: table.ab || ab,
-        reason: `row_count: extracted=${extractedCount}, verified=${verifiedCount}`,
-      });
-      continue;
-    }
-
-    // Check max standard score (n) — find extracted max
-    const extractedNValues = rows
-      .map((r) => Number(r.n))
-      .filter((n) => Number.isFinite(n));
-    const extractedMaxN = extractedNValues.length > 0 ? Math.max(...extractedNValues) : null;
-
-    if (extractedMaxN !== null && verifiedMaxN !== null && verifiedMaxN > 0 && Math.abs(extractedMaxN - verifiedMaxN) > 1) {
-      mismatches.push({
-        sid: table.sid,
-        ab: table.ab || ab,
-        reason: `max_standard: extracted=${extractedMaxN}, verified=${verifiedMaxN}`,
-      });
-      continue;
-    }
-
-    // Check max raw score at highest NS
-    if (verified.max_r && extractedMaxN !== null) {
-      const rowAtMaxN = rows.find((r) => Number(r.n) === extractedMaxN);
-      const extractedMaxR = rowAtMaxN ? String(rowAtMaxN.r || '').trim() : '';
-      const verifiedMaxR = String(verified.max_r).trim();
-      if (extractedMaxR && verifiedMaxR && extractedMaxR !== verifiedMaxR) {
-        mismatches.push({
-          sid: table.sid,
-          ab: table.ab || ab,
-          reason: `max_raw: extracted="${extractedMaxR}", verified="${verifiedMaxR}"`,
-        });
-      }
-    }
-  }
-
-  return mismatches;
-};
-
-// ── ORCHESTRATOR: Try single call, fallback to chunked ─────────────────────
-
-const extractWithFallback = async (
-  payload: Record<string, unknown>
-): Promise<ExtractionRunResult> => {
-  // ── PHASE 1: Try single full extraction ──
-  const fullTask = buildFullExtractionTask(payload);
-  const { text: fullText, finishReason } = await callGemini(fullTask.contents);
-
-  const wasTruncated = finishReason === 'MAX_TOKENS' || finishReason === 'LENGTH';
-
-  let baseResult: ExtractionRunResult;
-
-  if (!wasTruncated && fullText) {
-    // Single call succeeded without truncation — cheapest path
-    baseResult = { text: fullText, meta: { strategy: 'single', apiCalls: 1 } };
-  } else {
-    // Parse what we got (may be partial)
-    const partialResult = safeJsonParse(fullText);
-    const extractedSubtestCount = partialResult?.tables?.length ?? 0;
-
-    // If we got a reasonable number of subtests and no truncation signal, trust the result
-    if (!wasTruncated && extractedSubtestCount >= 3) {
-      baseResult = { text: fullText!, meta: { strategy: 'single', apiCalls: 1 } };
-    } else {
-      // ── PHASE 2: Inventory scan to discover all subtests ──
-      const inventoryTask = buildInventoryScanTask(payload);
-      const { text: inventoryText } = await callGemini(inventoryTask.contents);
-
-      let inventory: InventoryResult | null = null;
-      try {
-        inventory = inventoryText ? JSON.parse(inventoryText) : null;
-      } catch {
-        inventory = null;
-      }
-
-      if (!inventory || !Array.isArray(inventory.domains) || inventory.domains.length === 0) {
-        // Inventory failed — return the partial result from Phase 1 if we have anything
-        if (!wasTruncated && fullText) {
-          baseResult = { text: fullText, meta: { strategy: 'single-fallback', apiCalls: 2 } };
-        } else {
-          throw new Error('Both full extraction and inventory scan failed');
-        }
-      } else {
-        const totalSubtests = inventory.domains.reduce((sum: number, d: LegacyInventoryDomain) => sum + d.subtests.length, 0);
-
-        // If inventory shows few subtests, the single call should have been enough
-        if (!wasTruncated && totalSubtests <= PRECHECK_COLUMN_THRESHOLD && fullText) {
-          baseResult = { text: fullText, meta: { strategy: 'single-verified', apiCalls: 2 } };
-        } else {
-          // ── PHASE 3: Chunked extraction by domain ──
-          const chunks: { subtests: string[]; domainHint: string }[] = [];
-          let currentChunk: string[] = [];
-          let currentDomainHints: string[] = [];
-
-          for (const domain of inventory.domains) {
-            if (currentChunk.length + domain.subtests.length > MAX_SUBTESTS_PER_CHUNK && currentChunk.length > 0) {
-              chunks.push({ subtests: [...currentChunk], domainHint: currentDomainHints.join(' + ') });
-              currentChunk = [];
-              currentDomainHints = [];
-            }
-            currentChunk.push(...domain.subtests);
-            currentDomainHints.push(domain.domain);
-          }
-          if (currentChunk.length > 0) {
-            chunks.push({ subtests: currentChunk, domainHint: currentDomainHints.join(' + ') });
-          }
-
-          // Execute chunk extractions in parallel
-          const chunkResults = await Promise.all(
-            chunks.map(async (chunk) => {
-              const task = buildFocusedExtractionTask(payload, chunk.subtests, chunk.domainHint);
-              const { text: chunkText } = await callGemini(task.contents);
-              return safeJsonParse(chunkText);
-            })
-          );
-
-          const allResults: ExtractionResult[] = chunkResults.filter(Boolean) as ExtractionResult[];
-          if (partialResult && (partialResult.tables?.length ?? 0) > 0) {
-            allResults.push(partialResult);
-          }
-
-          const merged = mergeExtractionResultsStable(allResults);
-          baseResult = {
-            text: JSON.stringify(merged),
-            meta: {
-              strategy: `chunked-${chunks.length}`,
-              apiCalls: 2 + chunks.length,
-            },
-          };
-        }
-      }
-    }
-  }
-
-  // ── PHASE 4: Verification pass (optional, LOOKUP only) ──
-  if (!ENABLE_VERIFICATION_PASS) {
-    return baseResult;
-  }
-
-  const parsed = safeJsonParse(baseResult.text);
-  if (!parsed || String(parsed.st || '').toUpperCase() !== 'LOOKUP' || !Array.isArray(parsed.tables) || parsed.tables.length < 2) {
-    return baseResult;
-  }
-
-  // Build subtest list with abbreviations for verification
-  const subtestsToVerify = parsed.tables
-    .filter((t) => t.ab && t.rows && t.rows.length > 0)
-    .map((t) => ({ sid: t.sid, ab: t.ab! }));
-
-  if (subtestsToVerify.length < 2) {
-    return baseResult;
-  }
-
-  try {
-    const verifyTask = buildVerificationTask(payload, subtestsToVerify);
-    const { text: verifyText } = await callGemini(verifyTask.contents);
-    baseResult.meta.apiCalls += 1;
-
-    let verifyResult: VerificationResult | null = null;
-    try {
-      verifyResult = verifyText ? JSON.parse(verifyText) : null;
-    } catch {
-      verifyResult = null;
-    }
-
-    if (!verifyResult || !Array.isArray(verifyResult.verify)) {
-      baseResult.meta.verified = false;
-      return baseResult;
-    }
-
-    const mismatches = compareVerificationResultsLegacy(parsed, verifyResult);
-
-    if (mismatches.length === 0) {
-      baseResult.meta.verified = true;
-      baseResult.meta.verificationRepairs = 0;
-      return baseResult;
-    }
-
-    // Auto-repair mismatched subtests (up to 10 at once)
-    const repairTargets = mismatches.slice(0, MAX_VERIFICATION_REPAIR_TARGETS);
-    const repairRequest: RepairRequestPayload = {
-      focusSubtests: repairTargets.map((m) => ({ name: m.sid, abbreviation: m.ab })),
-      expectedGroupCounts: [],
-      includeNeighborColumns: false,
-      existingSubtests: parsed.tables.map((t) => t.sid),
-    };
-
-    const repairTask = buildRepairExtractionTask(payload, repairRequest);
-    const { text: repairText } = await callGemini(repairTask.contents);
-    baseResult.meta.apiCalls += 1;
-
-    const repairedResult = safeJsonParse(repairText);
-    if (repairedResult && Array.isArray(repairedResult.tables)) {
-      // Merge repairs into the base extraction (repairs take priority)
-      const merged = mergeExtractionResultsStable([parsed, repairedResult]);
-      baseResult.text = JSON.stringify(merged);
-    }
-
-    baseResult.meta.verified = true;
-    baseResult.meta.verificationRepairs = repairTargets.length;
-    baseResult.meta.strategy += '+verified';
-    return baseResult;
-  } catch {
-    // Verification failed — return base result without verification
-    baseResult.meta.verified = false;
-    return baseResult;
-  }
-};
-
-// ── MAIN HANDLER ───────────────────────────────────────────────────────────
-
-const extractWithRepair = async (
-  payload: Record<string, unknown>,
-  repairRequest: RepairRequestPayload
-): Promise<ExtractionRunResult> => {
-  const task = buildRepairExtractionTask(payload, repairRequest);
-  const { text } = await callGemini(task.contents);
-  if (!text) {
-    throw new Error('Repair extraction returned empty response');
-  }
-
-  const repairedSubtests = repairRequest.focusSubtests.map((entry) => entry.name);
-  return {
-    text,
-    meta: {
-      strategy: 'repair-focused',
-      apiCalls: 1,
-      repairedSubtests,
-      inventoryMode: repairRequest.includeNeighborColumns ? 'conditional' : 'off',
-    },
-  };
-};
+// V1 verification (buildVerificationTask, compareVerificationResultsLegacy),
+// V1 orchestrators (extractWithFallback, extractWithRepair) removed —
+// superseded by V2 variants with inventory-aware matching.
 
 const runChunkedInventoryExtraction = async (
   payload: Record<string, unknown>,
@@ -2001,7 +1687,7 @@ const runChunkedInventoryExtraction = async (
 
   const runChunk = async (chunk: { columns: InventoryColumnDescriptor[]; domainHint: string }) => {
     const task = buildFocusedExtractionTaskV2(payload, chunk.columns, chunk.domainHint);
-    const { text } = await callGemini(task.contents);
+    const { text } = await callGemini(task.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
     return safeJsonParse(text);
   };
 
@@ -2094,16 +1780,48 @@ const runChunkedInventoryExtraction = async (
   };
 };
 
+// ── CHUNKED VERIFICATION (for dense pages exceeding MAX_COLUMNS_FOR_SYNC_VERIFICATION) ──
+
+const runChunkedVerification = async (
+  payload: Record<string, unknown>,
+  columns: InventoryColumnDescriptor[],
+): Promise<{ result: VerificationResult; apiCalls: number }> => {
+  const chunks: InventoryColumnDescriptor[][] = [];
+  for (let i = 0; i < columns.length; i += VERIFICATION_CHUNK_SIZE) {
+    chunks.push(columns.slice(i, i + VERIFICATION_CHUNK_SIZE));
+  }
+
+  const allVerifyEntries: VerificationResult['verify'] = [];
+  let apiCalls = 0;
+
+  for (const chunk of chunks) {
+    const verifyTask = buildVerificationTaskV2(payload, chunk);
+    const { text: verifyText } = await callGemini(verifyTask.contents, 'application/json', VERIFICATION_RESPONSE_SCHEMA);
+    apiCalls += 1;
+
+    try {
+      const chunkResult: VerificationResult | null = verifyText ? JSON.parse(verifyText) : null;
+      if (chunkResult && Array.isArray(chunkResult.verify)) {
+        allVerifyEntries.push(...chunkResult.verify);
+      }
+    } catch {
+      // Chunk failed to parse — skip; missing entries will surface as mismatches
+    }
+  }
+
+  return { result: { verify: allVerifyEntries }, apiCalls };
+};
+
 const extractWithFallbackV2 = async (
   payload: Record<string, unknown>
 ): Promise<ExtractionRunResult> => {
   const inventoryTask = buildInventoryScanTaskV2(payload);
-  const { text: inventoryText } = await callGemini(inventoryTask.contents);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA);
   const inventory = parseInventoryResult(inventoryText);
 
   if (!inventory || !inventory.st) {
     const fullTask = buildFullExtractionTask(payload);
-    const { text: fullText } = await callGemini(fullTask.contents);
+    const { text: fullText } = await callGemini(fullTask.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
     if (!fullText) throw new Error('Full extraction returned empty response');
     return {
       text: fullText,
@@ -2137,7 +1855,7 @@ const extractWithFallbackV2 = async (
         throw chunkError;
       }
       const fullTask = buildFullExtractionTask(payload);
-      const { text: recoveryText, finishReason: recoveryFinishReason } = await callGemini(fullTask.contents);
+      const { text: recoveryText, finishReason: recoveryFinishReason } = await callGemini(fullTask.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
       baseMeta.apiCalls += 1;
       parsed = safeJsonParse(recoveryText);
       if (!parsed) {
@@ -2149,7 +1867,7 @@ const extractWithFallbackV2 = async (
     }
   } else {
     const fullTask = buildFullExtractionTask(payload);
-    const { text: fullText, finishReason } = await callGemini(fullTask.contents);
+    const { text: fullText, finishReason } = await callGemini(fullTask.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
     baseMeta.apiCalls += 1;
     parsed = safeJsonParse(fullText);
 
@@ -2190,29 +1908,30 @@ const extractWithFallbackV2 = async (
   };
 
   const isLookup = String(parsed.st || inventory.st || '').toUpperCase() === 'LOOKUP';
-  const shouldVerifySynchronously =
+  const shouldVerify =
     ENABLE_VERIFICATION_PASS
     && isLookup
-    && inventory.columns.length > 0
-    && inventory.columns.length <= MAX_COLUMNS_FOR_SYNC_VERIFICATION;
+    && inventory.columns.length > 0;
 
-  if (!shouldVerifySynchronously) {
-    if (ENABLE_VERIFICATION_PASS && isLookup && inventory.columns.length > MAX_COLUMNS_FOR_SYNC_VERIFICATION) {
-      baseResult.meta.strategy = `${baseResult.meta.strategy}+verify-skipped-dense`;
-      baseResult.meta.verified = false;
-    }
+  if (!shouldVerify) {
     return baseResult;
   }
 
-  const verifyTask = buildVerificationTaskV2(payload, inventory.columns);
-  const { text: verifyText } = await callGemini(verifyTask.contents);
-  baseResult.meta.apiCalls += 1;
-
   let verifyResult: VerificationResult | null = null;
-  try {
-    verifyResult = verifyText ? JSON.parse(verifyText) : null;
-  } catch {
-    verifyResult = null;
+  if (inventory.columns.length <= MAX_COLUMNS_FOR_SYNC_VERIFICATION) {
+    const verifyTask = buildVerificationTaskV2(payload, inventory.columns);
+    const { text: verifyText } = await callGemini(verifyTask.contents, 'application/json', VERIFICATION_RESPONSE_SCHEMA);
+    baseResult.meta.apiCalls += 1;
+    try {
+      verifyResult = verifyText ? JSON.parse(verifyText) : null;
+    } catch {
+      verifyResult = null;
+    }
+  } else {
+    const chunked = await runChunkedVerification(payload, inventory.columns);
+    baseResult.meta.apiCalls += chunked.apiCalls;
+    baseResult.meta.strategy = `${baseResult.meta.strategy}+verify-chunked`;
+    verifyResult = chunked.result;
   }
 
   if (!verifyResult || !Array.isArray(verifyResult.verify)) {
@@ -2266,7 +1985,7 @@ const extractWithFallbackV2 = async (
   };
 
   const repairTask = buildRepairExtractionTaskV2(payload, repairRequest);
-  const { text: repairText } = await callGemini(repairTask.contents);
+  const { text: repairText } = await callGemini(repairTask.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
   baseResult.meta.apiCalls += 1;
   const repairedResult = safeJsonParse(repairText);
 
@@ -2286,8 +2005,29 @@ const extractWithFallbackV2 = async (
     return baseResult;
   }
 
+  // Repair regression guard: ensure non-target subtests didn't lose rows
+  const repairedSids = new Set(repairColumns.map((c) => c.sid));
+  const originalRowCounts = new Map(
+    (parsed.tables || []).map((t) => [t.sid, (t.rows || []).length]),
+  );
+  const regressionSids: string[] = [];
+  for (const table of repairedMerged.tables || []) {
+    if (repairedSids.has(table.sid)) continue;
+    const original = originalRowCounts.get(table.sid) || 0;
+    const current = (table.rows || []).length;
+    if (original > 0 && current < original * 0.8) {
+      regressionSids.push(table.sid);
+    }
+  }
+  if (regressionSids.length > 0) {
+    baseResult.meta.verified = false;
+    baseResult.meta.strategy = `${baseResult.meta.strategy}+repair-regression`;
+    annotateExtractionQuality(baseResult.meta, parsed, inventory.columns, mismatches);
+    return baseResult;
+  }
+
   const reverifyTask = buildVerificationTaskV2(payload, repairColumns);
-  const { text: reverifyText } = await callGemini(reverifyTask.contents);
+  const { text: reverifyText } = await callGemini(reverifyTask.contents, 'application/json', VERIFICATION_RESPONSE_SCHEMA);
   baseResult.meta.apiCalls += 1;
   let reverifyResult: VerificationResult | null = null;
   try {
@@ -2333,7 +2073,7 @@ const extractWithRepairV2 = async (
   repairRequest: RepairRequestPayload
 ): Promise<ExtractionRunResult> => {
   const inventoryTask = buildInventoryScanTaskV2(payload);
-  const { text: inventoryText } = await callGemini(inventoryTask.contents);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA);
   const inventory = parseInventoryResult(inventoryText);
 
   const inventoryColumns = inventory?.columns || [];
@@ -2360,7 +2100,7 @@ const extractWithRepairV2 = async (
   };
 
   const repairTask = buildRepairExtractionTaskV2(payload, effectiveRepairRequest);
-  const { text } = await callGemini(repairTask.contents);
+  const { text } = await callGemini(repairTask.contents, 'application/json', EXTRACTION_RESPONSE_SCHEMA);
   if (!text) {
     throw new Error('Repair extraction returned empty response');
   }
@@ -2393,7 +2133,7 @@ const extractWithRepairV2 = async (
     && inventoryColumns.length <= MAX_COLUMNS_FOR_SYNC_VERIFICATION
   ) {
     const verifyTask = buildVerificationTaskV2(payload, matchedColumns);
-    const { text: verifyText } = await callGemini(verifyTask.contents);
+    const { text: verifyText } = await callGemini(verifyTask.contents, 'application/json', VERIFICATION_RESPONSE_SCHEMA);
     meta.apiCalls += 1;
 
     let verifyResult: VerificationResult | null = null;
@@ -2702,30 +2442,42 @@ Deno.serve(async (req: Request) => {
 
     let result: ExtractionRunResult;
 
+    const runExtraction = () =>
+      repairRequest
+        ? extractWithRepairV2(payload, repairRequest)
+        : extractWithFallbackV2(payload);
+
     try {
-      if (repairRequest) {
-        result = await extractWithRepairV2(payload, repairRequest);
-      } else {
-        result = await extractWithFallbackV2(payload);
+      result = await runExtraction();
+    } catch (firstErr) {
+      const firstMsg = String(firstErr);
+      const isRetryable = firstMsg.includes('timeout') || firstMsg.includes('429') || firstMsg.includes('503');
+      if (!isRetryable) {
+        await safeLogExtractionFailure(
+          adminSupabase, currentUserId, requestFilename,
+          remainingQuota, 'failed_ai', activeRepairRequest,
+        );
+        return new Response(
+          JSON.stringify({ error: 'AI extraction failed', details: firstMsg, retryable: false }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
       }
-    } catch (err) {
-      const errMsg = String(err);
-      const retryable = errMsg.includes('timeout') || errMsg.includes('429') || errMsg.includes('503');
-      await safeLogExtractionFailure(
-        adminSupabase,
-        currentUserId,
-        requestFilename,
-        remainingQuota,
-        'failed_ai',
-        activeRepairRequest,
-      );
-      return new Response(
-        JSON.stringify({ error: 'AI extraction failed', details: errMsg, retryable }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      // Single retry with back-off for transient errors
+      try {
+        await new Promise((r) => setTimeout(r, 2000));
+        result = await runExtraction();
+        result.meta.strategy = `${result.meta.strategy}+retried`;
+      } catch (retryErr) {
+        const retryMsg = String(retryErr);
+        await safeLogExtractionFailure(
+          adminSupabase, currentUserId, requestFilename,
+          remainingQuota, 'failed_ai', activeRepairRequest,
+        );
+        return new Response(
+          JSON.stringify({ error: 'AI extraction failed', details: retryMsg, retryable: true }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     const parsedResult = safeJsonParse(result.text);
@@ -2747,6 +2499,14 @@ Deno.serve(async (req: Request) => {
         api_calls: result.meta.apiCalls,
         repair_mode: repairRequest ? 'targeted' : 'none',
         repair_targets_count: repairRequest?.focusSubtests.length || 0,
+        metadata: {
+          confidence_score: result.meta.confidenceScore ?? null,
+          verified: result.meta.verified ?? null,
+          inventory_column_count: result.meta.inventoryColumnCount ?? null,
+          missing_columns_count: (result.meta.missingSourceColumns || []).length,
+          uncertainty_flags: result.meta.uncertaintyFlags ?? null,
+          repaired_subtests: result.meta.repairedSubtests ?? null,
+        },
       });
     } catch (_logErr) {
       // Non-blocking

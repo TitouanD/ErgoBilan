@@ -99,6 +99,32 @@ const buildTableKey = (table: Pick<ExtractionLikeTable, 'sid' | 'ab'>): string =
   `${normalizeStableKeyPart(table.sid)}::${normalizeStableKeyPart(table.ab || 'NOABBR')}`
 );
 
+// ── FUZZY TOKEN MATCHING ────────────────────────────────────────────────────
+// Handles slight name drift between inventory and extraction (accents,
+// casing, extra spaces, word-order differences).
+
+const tokenize = (value: string): Set<string> => {
+  const tokens = normalizeStableKeyPart(value)
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  return new Set(tokens);
+};
+
+/** Jaccard similarity on normalized token sets (0–1). */
+const fuzzyTokenScore = (a: string, b: string): number => {
+  const setA = tokenize(a);
+  const setB = tokenize(b);
+  if (setA.size === 0 && setB.size === 0) return 1;
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  setA.forEach((t) => { if (setB.has(t)) intersection += 1; });
+  return intersection / (setA.size + setB.size - intersection);
+};
+
+const FUZZY_MATCH_THRESHOLD = 0.6;
+
 const popByOccurrence = <T>(
   valuesByKey: Map<string, T[]>,
   cursorByKey: Map<string, number>,
@@ -275,13 +301,43 @@ export const summarizeInventoryCompleteness = (
     });
   }
 
+  // Build a list of extracted table entries for fuzzy fallback
+  const extractedEntries = Array.isArray(extraction?.tables)
+    ? extraction.tables.map((table) => ({
+        key: buildInventoryColumnKey({ sid: table.sid, ab: table.ab || null }),
+        sid: table.sid,
+        ab: table.ab || null,
+      }))
+    : [];
+  const extractedFuzzyCount = new Map<string, number>();
+  extractedEntries.forEach((e) => extractedFuzzyCount.set(e.key, (extractedFuzzyCount.get(e.key) || 0) + 1));
+
   const missingSourceColumns = inventoryColumns
     .filter((column) => {
       const key = buildInventoryColumnKey(column);
       const available = extractedCountByKey.get(key) || 0;
-      if (available <= 0) return true;
-      extractedCountByKey.set(key, available - 1);
-      return false;
+      if (available > 0) {
+        extractedCountByKey.set(key, available - 1);
+        // Keep fuzzy counts in sync so fuzzy fallback doesn't double-match
+        const fuzzyAvail = extractedFuzzyCount.get(key) || 0;
+        if (fuzzyAvail > 0) extractedFuzzyCount.set(key, fuzzyAvail - 1);
+        return false;
+      }
+      // Exact key miss → try fuzzy match on sid (abbreviation already matched via key)
+      const colSid = normalizeCellValue(column.sid);
+      const colAb = normalizeCellValue(column.ab);
+      for (const entry of extractedEntries) {
+        const entryAvailable = extractedFuzzyCount.get(entry.key) || 0;
+        if (entryAvailable <= 0) continue;
+        // Abbreviation must match if both are present
+        const abMatch = !colAb || !entry.ab || normalizeStableKeyPart(colAb) === normalizeStableKeyPart(entry.ab);
+        if (!abMatch) continue;
+        if (fuzzyTokenScore(colSid, entry.sid) >= FUZZY_MATCH_THRESHOLD) {
+          extractedFuzzyCount.set(entry.key, entryAvailable - 1);
+          return false;
+        }
+      }
+      return true;
     })
     .map((column) => getInventoryColumnLabel(column))
     .filter((label) => label.length > 0);

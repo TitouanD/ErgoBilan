@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -20,6 +21,8 @@ interface TipTapEditorProps {
     title?: string;
     /** When true, the editor is read-only (no toolbar, no editing). Avoids dangerouslySetInnerHTML. */
     readOnly?: boolean;
+    /** When true, renders inline (no border/shadow) with a floating BubbleMenu toolbar instead of static toolbar. */
+    inline?: boolean;
 }
 
 const ToolbarButton: React.FC<{
@@ -52,6 +55,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     isPerformance = false,
     title,
     readOnly = false,
+    inline = false,
 }) => {
     const editor = useEditor({
         extensions: [
@@ -71,7 +75,9 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
             attributes: {
                 class: readOnly
                     ? 'prose prose-sm max-w-none text-stone-700 leading-relaxed'
-                    : 'prose prose-sm max-w-none focus:outline-none min-h-[80px] text-[var(--text-main)] p-3 leading-relaxed',
+                    : inline
+                        ? 'prose prose-sm max-w-none focus:outline-none min-h-[1.5em] text-[var(--text-main)] leading-relaxed cursor-text'
+                        : 'prose prose-sm max-w-none focus:outline-none min-h-[80px] text-[var(--text-main)] p-3 leading-relaxed',
             },
         },
     });
@@ -79,6 +85,8 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     // Sync content when the prop changes externally (e.g. format switch or autosave)
     useEffect(() => {
         if (!editor || editor.isDestroyed) return;
+        // Don't reset content while the user is actively editing — this causes focus loss
+        if (editor.isFocused) return;
         const currentHTML = editor.getHTML();
         // Normalize TipTap empty state ('<p></p>') vs empty string
         const incomingNormalized = content || '';
@@ -91,7 +99,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     if (!editor) return null;
 
     return (
-        <div className={readOnly ? '' : 'border border-stone-200 rounded-xl overflow-hidden bg-[var(--card-bg)] shadow-sm'}>
+        <div className={readOnly ? '' : inline ? 'group/tiptap' : 'border border-stone-200 rounded-xl overflow-hidden bg-[var(--card-bg)] shadow-sm'}>
             {/* Title */}
             {title && (
                 <div className="px-4 py-2 bg-stone-50 border-b border-stone-100 text-xs font-bold text-stone-500 uppercase tracking-wider">
@@ -99,8 +107,39 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
                 </div>
             )}
 
-            {/* Toolbar – hidden in read-only mode */}
-            {!readOnly && (
+            {/* Floating BubbleMenu for inline mode */}
+            {!readOnly && inline && editor && (
+                <BubbleMenu editor={editor} options={{ placement: 'top', offset: 8 }}>
+                    <div className="flex items-center gap-0.5 bg-white border border-stone-200 rounded-xl shadow-2xl px-1.5 py-1 no-print">
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive('bold')} title="Gras">
+                            <Bold size={13} />
+                        </ToolbarButton>
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} isActive={editor.isActive('italic')} title="Italique">
+                            <Italic size={13} />
+                        </ToolbarButton>
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} isActive={editor.isActive('underline')} title="Souligné">
+                            <UnderlineIcon size={13} />
+                        </ToolbarButton>
+                        <Divider />
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} isActive={editor.isActive('heading', { level: 2 })} title="Titre">
+                            <Heading2 size={13} />
+                        </ToolbarButton>
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} isActive={editor.isActive('heading', { level: 3 })} title="Sous-titre">
+                            <Heading3 size={13} />
+                        </ToolbarButton>
+                        <Divider />
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} isActive={editor.isActive('bulletList')} title="Liste à puces">
+                            <List size={13} />
+                        </ToolbarButton>
+                        <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} isActive={editor.isActive('orderedList')} title="Liste numérotée">
+                            <ListOrdered size={13} />
+                        </ToolbarButton>
+                    </div>
+                </BubbleMenu>
+            )}
+
+            {/* Static Toolbar – hidden in read-only and inline modes */}
+            {!readOnly && !inline && (
                 <div className="flex items-center flex-wrap gap-0.5 px-2 py-1.5 border-b border-stone-100 bg-stone-50/50 no-print print:hidden">
                 {/* History */}
                 <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Annuler" disabled={!editor.can().undo()}>

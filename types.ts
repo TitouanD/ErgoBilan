@@ -445,7 +445,8 @@ export type ReviewFlagCode =
     | 'LOOKUP_ADJACENT_COLUMN_DUPLICATE'
     | 'EXTRACTION_MISSING_SOURCE_COLUMNS'
     | 'EXTRACTION_NOT_VERIFIED'
-    | 'EXTRACTION_LOW_CONFIDENCE';
+    | 'EXTRACTION_LOW_CONFIDENCE'
+    | 'CROSS_PAGE_CONFLICT';
 export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
 export interface ReviewSuggestedFix {

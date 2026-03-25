@@ -3,13 +3,9 @@ import type { Patient, ReportSection, TestData, ReportAttachment, BrandingConfig
 import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, Trash2, Check, Mail, Phone, ArrowDown, ArrowUp, Home, Star, Sparkles, PieChart, Bold, Italic, List, Heading2, Heading3, Type, Pencil } from 'lucide-react';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { sanitizeReportText } from '../../utils/textSanitizer';
-import { InfoBlock } from './InfoBlock';
-import { TipTapEditor } from './TipTapEditor';
+import { sanitizeReportText, decodeResidualEntities } from '../../utils/textSanitizer';
 
-/** Escapes special HTML characters to prevent injection when building HTML strings from plain text. */
-const escapeHtml = (s: string): string =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+import { TipTapEditor } from './TipTapEditor';
 
 interface Props {
     patient: Patient;
@@ -459,7 +455,7 @@ const ProfilePercentileChart: React.FC<{ tests: TestData; branding?: BrandingCon
                 <div className="p-4 space-y-2">
                     {pctItems.map((item, i) => (
                         <div key={i} className="flex items-center gap-3 text-xs">
-                            <span className="w-36 text-right text-stone-600 font-medium truncate shrink-0" title={item.label}>{item.label}</span>
+                            <span className="w-36 text-right text-stone-600 font-medium text-[10px] leading-tight break-words shrink-0" title={item.label}>{item.label}</span>
                             <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
                                 <div className="absolute inset-y-0 left-0 w-[2%] bg-rose-200"></div>
                                 <div className="absolute inset-y-0 left-[2%] w-[7%] bg-amber-100"></div>
@@ -489,6 +485,35 @@ const ProfilePercentileChart: React.FC<{ tests: TestData; branding?: BrandingCon
                 </ul>
             </div>
         </>
+    );
+};
+
+// AddPageMenu dropdown
+const AddPageMenu: React.FC<{ onAddBlank: () => void; onAddEcole: () => void }> = ({ onAddBlank, onAddEcole }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+    return (
+        <div ref={ref} className="relative inline-block">
+            <button onClick={() => setOpen(!open)} className="flex items-center gap-2 px-6 py-3 bg-stone-200 text-stone-500 hover:bg-stone-300 hover:text-stone-700 rounded-xl font-bold uppercase text-xs tracking-wider transition-colors">
+                <Plus size={16} /> Ajouter une page
+            </button>
+            {open && (
+                <div className="absolute left-0 mt-2 w-56 bg-white border border-stone-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                    <button onClick={() => { onAddBlank(); setOpen(false); }} className="w-full text-left px-4 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors flex items-center gap-3">
+                        <FileText size={16} className="text-stone-400" /> Page vide
+                    </button>
+                    <button onClick={() => { onAddEcole(); setOpen(false); }} className="w-full text-left px-4 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors flex items-center gap-3 border-t border-stone-100">
+                        <ClipboardList size={16} className="text-stone-400" /> Page École
+                    </button>
+                </div>
+            )}
+        </div>
     );
 };
 
@@ -640,124 +665,36 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     fontFamily={fontFamily}
                     editable={!!onUpdateSection}
                 />
-                {onUpdateSection && isPerformance && (
-                    <div className="mb-3 flex justify-end no-print print:hidden">
-                        <button
-                            onClick={() => {
-                                if (section.contentFormat !== 'html') {
-                                    const paras = sanitizedContent.split('\n').filter(l => l.trim());
-                                    const html = paras.map(p => {
-                                        // Escape first so that bold replacement operates on safe text only
-                                        const escaped = escapeHtml(p);
-                                        return `<p>${escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`;
-                                    }).join('');
-                                    onUpdateSection(section.id, { content: html, contentFormat: 'html' });
-                                } else {
-                                    const text = section.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                                    onUpdateSection(section.id, { content: text, contentFormat: 'plain' });
-                                }
-                            }}
-                            className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border border-stone-200 text-stone-400 hover:text-[#E07A5F] hover:border-[#E07A5F] transition-all gap-1 flex items-center"
-                        >
-                            {section.contentFormat === 'html' ? '↩ Mode Simple' : '✨ Mode Riche'}
-                        </button>
-                    </div>
-                )}
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                {section.contentFormat === 'html' ? (
-                    onUpdateSection ? (
+                {(() => {
+                    // Auto-convert plain content to HTML on first render
+                    const effectiveContent = (() => {
+                        if (section.contentFormat === 'html') return decodeResidualEntities(section.content);
+                        // Convert plain/markdown content to HTML
+                        const paras = sanitizedContent.split('\n').filter(l => l.trim());
+                        return paras.map(p => {
+                            if (p.startsWith('## ')) return `<h2>${p.slice(3)}</h2>`;
+                            if (p.startsWith('### ')) return `<h3>${p.slice(4)}</h3>`;
+                            if (p.startsWith('- ') || p.startsWith('* ')) return `<li>${p.replace(/^[*-]\s+/, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</li>`;
+                            return `<p>${p.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>`;
+                        }).join('');
+                    })();
+                    return onUpdateSection ? (
                         <TipTapEditor
-                            content={section.content}
+                            content={effectiveContent}
                             onChange={(html) => onUpdateSection(section.id, { content: html, contentFormat: 'html' })}
                             isPerformance={isPerformance}
+                            inline
                         />
                     ) : (
-                    <TipTapEditor
-                        content={section.content}
-                        onChange={() => {}}
-                        readOnly
-                        isPerformance={isPerformance}
-                    />
-                    )
-                ) : (
-                <div className="space-y-1">
-                    {paragraphs.map((para, idx) => {
-                        const attachmentsHere = section.attachments?.filter(a => a.positionIndex === idx) || [];
-                        const isEditing = editingIndex === idx;
-
-                        // PDF-matching typography classes
-                        let textStyle = "text-[10pt] leading-[1.6] text-stone-700 text-justify mb-1";
-                        let content = para;
-
-                        if (para.startsWith('## ')) {
-                            textStyle = "text-[13pt] font-bold mt-3 mb-1.5 uppercase tracking-wide border-b pb-1 border-stone-100";
-                            content = para.slice(3);
-                        } else if (para.startsWith('### ')) {
-                            textStyle = "text-[11pt] font-bold text-stone-800 mt-2 mb-1";
-                            content = para.slice(4);
-                        } else if (para.startsWith('- ') || para.startsWith('* ')) {
-                            textStyle = "text-[10pt] leading-[1.6] text-stone-700 text-justify ml-4 flex items-start gap-1.5 mb-0.5";
-                            content = para.replace(/^[*-]\s+/, '');
-                        }
-
-                        const isBullet = para.startsWith('- ') || para.startsWith('* ');
-                        const isHeading = para.startsWith('## ') || para.startsWith('### ');
-
-                        return (
-                            <div key={idx} className="relative group/block">
-                                {isEditing ? (
-                                    <InlineParagraphEditor
-                                        text={para}
-                                        onSave={(newText) => saveParagraph(idx, newText)}
-                                        onCancel={() => setEditingIndex(null)}
-                                        className={textStyle}
-                                        style={isHeading ? { color: primaryColor, fontFamily } : { fontFamily }}
-                                        roundedClass={roundedClass}
-                                    />
-                                ) : (
-                                    <div
-                                        onClick={() => onUpdateSection && setEditingIndex(idx)}
-                                        className={`${textStyle} ${onUpdateSection ? 'cursor-text hover:bg-[#fff5f2] rounded px-2 -mx-2 py-0.5 -my-0.5 transition-colors relative border border-transparent hover:border-[#E07A5F]/20 print:border-none print:px-0 print:mx-0 print:py-0 print:my-0' : ''}`}
-                                        style={isHeading ? { color: primaryColor, fontFamily } : { fontFamily }}
-                                    >
-                                        {isBullet && <span className="text-stone-400 select-none shrink-0">•</span>}
-                                        <span className="flex-1">{parseBold(content)}</span>
-                                        {onUpdateSection && <Pencil size={11} className="absolute top-0.5 right-0.5 text-[#E07A5F]/40 opacity-0 group-hover/block:opacity-100 print:hidden transition-opacity" />}
-                                    </div>
-                                )}
-                                {attachmentsHere.map(att => (
-                                    <div key={att.id} className="relative group my-6 break-inside-avoid">
-                                        {att.type === 'image-full' ? (
-                                            <img src={att.url} alt="" className={`w-full aspect-[4/3] max-h-[400px] object-contain ${roundedClass} border border-stone-200 bg-stone-50 print:border-none`} loading="lazy" decoding="async" />
-                                        ) : (
-                                            <div className={`flex gap-6 items-start bg-stone-50 p-4 ${roundedClass} border border-stone-100 print:bg-transparent print:border-none print:p-0`}>
-                                                <img src={att.url} alt="" className={`w-1/2 aspect-[4/3] object-contain shadow-sm bg-white border border-stone-100 print:border-none ${roundedClass}`} loading="lazy" decoding="async" />
-                                                <div className="w-1/2 pt-1">{onUpdateSection ? <CaptionEditor initialValue={att.caption || ''} onSave={(val) => updateCaption(att.id, val)} /> : <p className="text-sm text-stone-600 italic text-justify">{att.caption}</p>}</div>
-                                            </div>
-                                        )}
-                                        {onUpdateSection && <button onClick={() => removeAttachment(att.id)} className="absolute top-2 right-2 bg-white/90 text-rose-500 p-2 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity no-print"><Trash2 size={16} /></button>}
-                                    </div>
-                                ))}
-                                {onUpdateSection && (
-                                    <div className="h-4 -my-2 relative z-10 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center group/insert no-print print:hidden">
-                                        <div className="w-full h-px bg-[#E07A5F]/20 group-hover/insert:bg-[#E07A5F]/50 transition-colors"></div>
-                                        {insertIndex === idx ? (
-                                            <div className="absolute bg-[var(--card-bg)] shadow-xl border border-[var(--border-color)] rounded-xl p-2 flex gap-2 animate-in zoom-in-95 duration-200 z-50">
-                                                <button onClick={() => triggerFileSelect('image-full')} className="flex flex-col items-center gap-1 p-2 hover:bg-[var(--hover-bg)] rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:text-[#E07A5F]"><div className="p-2 bg-[var(--card-bg-raised)] rounded-lg text-[var(--text-disabled)] group-hover:text-[#E07A5F]"><ImageIcon size={18} /></div>Img</button>
-                                                <div className="w-px bg-[var(--border-color)]"></div>
-                                                <button onClick={() => triggerFileSelect('image-text')} className="flex flex-col items-center gap-1 p-2 hover:bg-[var(--hover-bg)] rounded-lg text-xs font-bold text-[var(--text-secondary)] hover:text-[#E07A5F]"><div className="p-2 bg-[var(--card-bg-raised)] rounded-lg text-[var(--text-disabled)] group-hover:text-[#E07A5F]"><LayoutTemplate size={18} /></div>Img+Txt</button>
-                                                <button onClick={() => setInsertIndex(null)} className="absolute -top-2 -right-2 bg-[var(--card-bg)] rounded-full p-1 border border-[var(--border-color)] shadow-sm text-[var(--text-secondary)]"><X size={12} /></button>
-                                            </div>
-                                        ) : (
-                                            <button onClick={() => setInsertIndex(idx)} className="absolute bg-white border border-[#E07A5F] text-[#E07A5F] rounded-full p-1 shadow-sm hover:scale-110 transition-transform"><Plus size={14} strokeWidth={3} /></button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-                )}
+                        <TipTapEditor
+                            content={effectiveContent}
+                            onChange={() => {}}
+                            readOnly
+                            isPerformance={isPerformance}
+                        />
+                    );
+                })()}
             </div>
         );
     };
@@ -814,7 +751,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                     else if (z <= -1) color = '#F2CC8F';
                                     return (
                                         <div key={`${testId}_${subId}`} className="flex items-center gap-3 text-xs">
-                                            <span className="w-32 text-right text-stone-600 font-medium truncate shrink-0" title={subDef?.displayName || subDef?.name}>{subDef?.displayName || subDef?.name || subId}</span>
+                                            <span className="w-32 text-right text-stone-600 font-medium text-[10px] leading-tight break-words shrink-0" title={subDef?.displayName || subDef?.name}>{subDef?.displayName || subDef?.name || subId}</span>
                                             <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
                                                 <div className="absolute inset-y-0 left-0 w-[21.4%] bg-rose-100"></div>
                                                 <div className="absolute inset-y-0 left-[21.4%] w-[14.3%] bg-amber-100"></div>
@@ -856,8 +793,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         // Fallback for private/custom tests absent from catalog — still display their data
                         const def = catalogDef || {
                             id: testId,
-                            name: testId.startsWith('priv_') ? `Test personnalisé` : testId,
-                            subtests: Object.keys(subtests).map(subId => ({ id: subId, name: subId, unit: 'pts', scoreType: 'standard' as const, lowerIsBetter: false, computationMode: 'LOOKUP' as const, inputModel: 'numeric_4mode' as const })),
+                            name: testId === 'custom_observations' ? 'Observations personnalisées' : testId.startsWith('priv_') ? `Test personnalisé` : testId,
+                            subtests: Object.keys(subtests).map(subId => ({ id: subId, name: (subtests[subId] as any)?.customLabel || subId, displayName: (subtests[subId] as any)?.customLabel || undefined, unit: 'pts', scoreType: 'standard' as const, lowerIsBetter: false, computationMode: 'LOOKUP' as const, inputModel: 'numeric_4mode' as const, inputConfig: undefined as any })),
                         };
                         // At Step 5, all tests have already been validated — show them unconditionally
                         const validSubtests = Object.entries(subtests);
@@ -877,6 +814,25 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         const currentMode = scoreDisplayModes?.[testId] || (hasScoreableSubtests ? 'ET' : 'Brut');
                         const showSelector = hasScoreableSubtests;
 
+                        // Custom observations: simple card layout (no score table)
+                        if (testId === 'custom_observations') {
+                            return (
+                                <div key={testId} className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
+                                    <div className="bg-stone-100 p-4 border-b border-stone-200" style={{ backgroundColor: primaryColor + '08' }}>
+                                        <h3 className="font-bold text-lg" style={titleStyleCss}>{def.name}</h3>
+                                    </div>
+                                    <div className="p-6 space-y-5">
+                                        {validSubtests.map(([subId, result]) => (
+                                            <div key={subId} className="border border-stone-100 rounded-lg p-4">
+                                                <h4 className="font-semibold text-sm text-stone-700 mb-2">{result.customLabel || 'Observation personnalisée'}</h4>
+                                                <p className="text-sm text-stone-600 whitespace-pre-wrap">{result.observation || '-'}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         return (
                             <div key={testId} className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
                                 <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center" style={{ backgroundColor: isCustom ? primaryColor + '08' : undefined }}>
@@ -895,7 +851,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                 <div className="p-6">
                                     {quantitativeSubtests.length > 0 && (
                                         <div className="overflow-x-auto w-full mb-6">
-                                            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">Quantitatif</div>
                                             <table className="w-full border-collapse text-sm">
                                                 <thead>
                                                     <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
@@ -980,16 +935,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     const HeaderRenderer = () => {
         const logoClass = logoSize === 'small' ? 'w-28 h-12' : logoSize === 'medium' ? 'w-40 h-20' : 'w-64 h-32';
 
-        const InfoBlockStrip = () => {
-            const pos = branding?.infoBlock?.position ?? 'right';
-            const justifyClass = pos === 'left' ? 'justify-start' : pos === 'right' ? 'justify-end' : 'justify-center';
-            return (
-                <div className={`flex w-full ${justifyClass} mt-3 pt-3 border-t border-stone-100`}>
-                    <InfoBlock branding={branding || {} as BrandingConfig} />
-                </div>
-            );
-        };
-
         // LOGIC LOGO
         const LogoBlock = () => {
             if (isCustom && branding?.logoUrl) {
@@ -1018,15 +963,14 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             );
         };
 
-        // LOGIC INFOS PRATICIEN (Détails)
-        // Toujours affiché, mais plus discret
+        // LOGIC INFOS PRATICIEN (Détails) — locked, linked to profile
         const PractitionerDetails = () => (
-            <div className={`text-xs space-y-1 mt-4 ${isCustom ? 'text-stone-500' : 'text-stone-600'}`}>
-                <p>{branding?.address}</p>
-                <div className="flex gap-4">
-                    {branding?.phone && <p className="flex items-center gap-1"><Phone size={10} /> {branding.phone}</p>}
-                    {branding?.email && <p className="flex items-center gap-1"><Mail size={10} /> {branding.email}</p>}
-                </div>
+            <div className={`text-xs space-y-1 mt-3 ${isCustom ? 'text-stone-500' : 'text-stone-600'}`}>
+                {branding?.practitionerName && <p className="flex items-center gap-1.5 font-semibold text-stone-700"><Star size={10} className="shrink-0" /> {branding.practitionerName}</p>}
+                {branding?.phone && <p className="flex items-center gap-1.5"><Phone size={10} className="shrink-0" /> {branding.phone}</p>}
+                {branding?.email && <p className="flex items-center gap-1.5"><Mail size={10} className="shrink-0" /> {branding.email}</p>}
+                {branding?.siret && <p className="flex items-center gap-1.5 text-stone-400"><Home size={10} className="shrink-0" /> SIRET : {branding.siret}</p>}
+                {branding?.address && <p className="flex items-center gap-1.5"><Home size={10} className="shrink-0" /> {branding.address}</p>}
             </div>
         );
 
@@ -1065,7 +1009,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             <PractitionerDetails />
                         </div>
                     </div>
-                    <InfoBlockStrip />
                 </header>
             );
         }
@@ -1080,7 +1023,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <div className="w-2/3 border-t border-stone-100 pt-6">
                         <PatientBlock align="center" />
                     </div>
-                    <InfoBlockStrip />
                 </header>
             );
         }
@@ -1098,7 +1040,6 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         <PatientBlock align="right" />
                     </div>
                 </div>
-                <InfoBlockStrip />
             </header>
         );
     };
@@ -1151,8 +1092,11 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 </div>
             ))}
             {onUpdateSection && (
-                <div className="no-print pb-20">
-                    <button onClick={() => setPages([...pages, []])} className="flex items-center gap-2 px-6 py-3 bg-stone-200 text-stone-500 hover:bg-stone-300 hover:text-stone-700 rounded-xl font-bold uppercase text-xs tracking-wider transition-colors"><Plus size={16} /> Ajouter une page vide</button>
+                <div className="no-print pb-20 relative">
+                    <AddPageMenu onAddBlank={() => setPages([...pages, []])} onAddEcole={() => {
+                        onUpdateSection('ecole', { title: 'Recommandations scolaires', content: '<p>Aménagements et recommandations pour le milieu scolaire.</p>' });
+                        setPages([...pages, ['ecole']]);
+                    }} />
                 </div>
             )}
         </div>

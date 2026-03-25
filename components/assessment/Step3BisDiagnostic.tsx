@@ -1,9 +1,10 @@
 ﻿
 import React, { useState, useCallback, useMemo } from 'react';
 import type { ClinicalSynthesis, TestData, Observations, Patient, ScoreResult } from '../../types';
-import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, AlertTriangle, Mic, MicOff, Check } from 'lucide-react';
-import { useVoiceDictation } from '../../hooks/useVoiceDictation';
+import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, AlertTriangle, Check } from 'lucide-react';
+import { VoiceTextarea } from '../shared/VoiceTextarea';
 import { useCatalog } from '../../contexts/CatalogContext';
+import { hasScoreValue, isReviewedScore } from '../../utils/scoring';
 
 interface Props {
     synthesis: ClinicalSynthesis;
@@ -15,48 +16,6 @@ interface Props {
     onBack: () => void;
     isGenerating: boolean;
 }
-
-// --- VOICE TEXTAREA (local version) ---
-const VoiceArea: React.FC<{
-    value: string;
-    onChange: (val: string) => void;
-    placeholder: string;
-    className?: string;
-    rows?: number;
-}> = ({ value, onChange, placeholder, className = '', rows = 4 }) => {
-    const handleTranscript = useCallback((text: string) => {
-        onChange(value ? `${value} ${text}` : text);
-    }, [value, onChange]);
-
-    const { isListening, isSupported, interimText, toggleListening } = useVoiceDictation({
-        onTranscript: handleTranscript,
-    });
-
-    return (
-        <div className="relative">
-            <textarea
-                value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-                className={className}
-                rows={rows}
-            />
-            {isSupported && (
-                <button
-                    type="button"
-                    onClick={toggleListening}
-                    className={`absolute top-3 right-3 p-2 rounded-xl transition-all ${isListening
-                        ? 'bg-red-100 text-red-500 animate-pulse shadow-sm'
-                        : 'text-[var(--text-disabled)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]'
-                        }`}
-                    title="Dictée vocale"
-                >
-                    {isListening ? <Mic size={16} /> : <MicOff size={16} />}
-                </button>
-            )}
-        </div>
-    );
-};
 
 // --- SCORES & OBSERVATIONS PANEL (merged, expandable) ---
 const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
@@ -345,20 +304,24 @@ const RECO_SUGGESTIONS = [
     { label: "Tiers-temps aux examens", category: "scolaire" },
 ];
 
+const CHIP_SEPARATOR = '\n';
+
 const ToggleChips: React.FC<{
     suggestions: { label: string; category: string }[];
     currentValue: string;
     onToggle: (val: string) => void;
     colorScheme: 'indigo' | 'emerald';
 }> = ({ suggestions, currentValue, onToggle, colorScheme }) => {
-    const activeLabels = currentValue.split(' - ').map(s => s.trim()).filter(Boolean);
+    // Parse: prefer newline separator, fallback to ' - ' for backward compat with old drafts
+    const activeLabels = (currentValue.includes('\n') ? currentValue.split('\n') : currentValue.split(' - '))
+        .map(s => s.trim()).filter(Boolean);
 
     const handleToggle = (label: string) => {
         if (activeLabels.includes(label)) {
             const newLabels = activeLabels.filter(l => l !== label);
-            onToggle(newLabels.join(' - '));
+            onToggle(newLabels.join(CHIP_SEPARATOR));
         } else {
-            onToggle([...activeLabels, label].join(' - '));
+            onToggle([...activeLabels, label].join(CHIP_SEPARATOR));
         }
     };
 
@@ -403,16 +366,6 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
     const handleProjectChange = (val: string) => updateSynthesis({ projectInput: val });
     const handleRecoChange = (val: string) => updateSynthesis({ recommendationsInput: val });
 
-    const hasScoreValue = (res: any) =>
-        !!(
-            (res.raw && String(res.raw).trim()) ||
-            (res.standard && String(res.standard).trim()) ||
-            (res.percentile && String(res.percentile).trim()) ||
-            (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) ||
-            (res.qualitativeCode && String(res.qualitativeCode).trim())
-        );
-    const isReviewed = (res: any) => res.reviewState === 'reviewed' || res.status === 'validated' || res.status === 'certified';
-
     // Review stats
     const reviewStats = useMemo(() => {
         let total = 0;
@@ -421,7 +374,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
             Object.values(subtests).forEach((res: any) => {
                 if (hasScoreValue(res)) {
                     total++;
-                    if (isReviewed(res)) reviewed++;
+                    if (isReviewedScore(res)) reviewed++;
                 }
             });
         });
@@ -462,11 +415,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceArea
+                        <VoiceTextarea
                             value={synthesis.diagnosticInput}
                             onChange={handleDiagChange}
                             placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all leading-relaxed mb-4"
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all mb-4"
                             rows={7}
                         />
 
@@ -488,11 +441,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceArea
+                        <VoiceTextarea
                             value={synthesis.projectInput || ''}
                             onChange={handleProjectChange}
                             placeholder="Ex: Suivi ergo hebdomadaire. Accompagnement parental. Coordination équipe pluridisciplinaire."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all leading-relaxed mb-4"
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all mb-4"
                             rows={7}
                         />
 
@@ -516,11 +469,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceArea
+                        <VoiceTextarea
                             value={synthesis.recommendationsInput}
                             onChange={handleRecoChange}
                             placeholder="Ex: Tiers-temps aux examens. Mise en place du clavier caché. PAP."
-                            className="w-full p-4 pr-14 bg-[var(--app-bg)] rounded-2xl border-2 border-transparent outline-none resize-none font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:bg-[var(--card-bg)] focus:border-teal-200 transition-all leading-relaxed mb-4"
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-teal-200 transition-all mb-4"
                             rows={7}
                         />
 
@@ -561,7 +514,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
 
                 <button
                     onClick={onNext}
-                    disabled={isGenerating}
+                    disabled={isGenerating || !synthesis.diagnosticInput.trim()}
                     className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
                 >
                     {isGenerating ? (
@@ -572,7 +525,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     ) : (
                         <>
                             <Sparkles size={20} />
-                            <span>Générer le Bilan</span>
+                            <span>{!synthesis.diagnosticInput.trim() ? 'Diagnostic requis' : 'Générer le Bilan'}</span>
                         </>
                     )}
                 </button>

@@ -139,3 +139,19 @@ export const calculateFromPercentile = (p: number, scoreType: 'standard' | 'scal
     const standard = Math.round(z * scale.sd + scale.mean);
     return { standard: standard.toString(), zScore: z, percentile: p.toString() };
 };
+
+// --- Score result inspection helpers (shared across Step2, Step3, QuickEntryModal) ---
+
+/** Returns true when a ScoreResult has at least one meaningful numeric/qualitative value */
+export const hasScoreValue = (r: any): boolean =>
+    !!(
+        (r?.raw && String(r.raw).trim()) ||
+        (r?.standard && String(r.standard).trim()) ||
+        (r?.percentile && String(r.percentile).trim()) ||
+        (typeof r?.zScore === 'number' && Number.isFinite(r.zScore)) ||
+        (r?.qualitativeCode && String(r.qualitativeCode).trim())
+    );
+
+/** Returns true when a ScoreResult has been reviewed/validated/certified */
+export const isReviewedScore = (r: any): boolean =>
+    r?.reviewState === 'reviewed' || r?.status === 'validated' || r?.status === 'certified';

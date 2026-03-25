@@ -1300,3 +1300,55 @@ export const applyAllSuggestedFixes = (flags: ReviewFlag[], rows: ExtractedRow[]
 };
 
 export type { AnalyzePageInput };
+
+// ── CROSS-PAGE CONFLICT DETECTION ──────────────────────────────────────────
+// Detects when two pages provide conflicting standard/percentile values for
+// the same (subtest, age_range, raw_score) triple.
+
+type CrossPageRow = { pageId: string; row: ExtractedRow };
+
+export const detectCrossPageConflicts = (
+  pagesRows: Array<{ pageId: string; rows: ExtractedRow[] }>,
+): ReviewFlag[] => {
+  const flags: ReviewFlag[] = [];
+  // Group rows by (subtest, age_min, age_max, raw) → list of page values
+  const byKey = new Map<string, CrossPageRow[]>();
+
+  for (const { pageId, rows } of pagesRows) {
+    for (const row of rows) {
+      const rawTrimmed = (row.raw || '').trim();
+      if (!rawTrimmed) continue;
+      const key = `${(row.subtest || '').trim()}||${row.hidden_age_min ?? ''}||${row.hidden_age_max ?? ''}||${rawTrimmed}`;
+      const list = byKey.get(key) || [];
+      list.push({ pageId, row });
+      byKey.set(key, list);
+    }
+  }
+
+  let flagIndex = 0;
+  for (const [, entries] of byKey) {
+    if (entries.length < 2) continue;
+    // Check if standard or percentile values diverge
+    const standards = entries.map((e) => (e.row.standard || '').trim()).filter((v) => v.length > 0);
+    const percentiles = entries.map((e) => (e.row.percentile || '').trim()).filter((v) => v.length > 0);
+    const uniqueStandards = new Set(standards);
+    const uniquePercentiles = new Set(percentiles);
+    if (uniqueStandards.size <= 1 && uniquePercentiles.size <= 1) continue;
+
+    const first = entries[0];
+    flagIndex += 1;
+    flags.push({
+      id: `cross-page::CROSS_PAGE_CONFLICT::${first.row.subtest}::${flagIndex}`,
+      pageId: first.pageId,
+      code: 'CROSS_PAGE_CONFLICT',
+      severity: 'warning',
+      message: `Conflit inter-pages pour "${first.row.subtest}" (raw=${first.row.raw || '?'}): valeurs divergentes sur ${entries.length} pages.`,
+      subtest: first.row.subtest,
+      groupLabel: first.row.label || 'Sans groupe',
+      blocking: false,
+      confidence: 0.9,
+    });
+  }
+
+  return flags;
+};

@@ -5,9 +5,10 @@ import { Check, User, Activity, Brain, FileCheck, Download } from 'lucide-react'
 interface Props {
     currentStep: number;
     onStepClick: (step: number) => void;
+    disabled?: boolean;
 }
 
-export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick }) => {
+export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick, disabled }) => {
     const STEPS = [
         { num: 1, label: 'Dossier', icon: User },
         { num: 2, label: 'Tests & Obs.', icon: Activity },
@@ -35,9 +36,9 @@ export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick })
                     return (
                         <button 
                             key={s.num}
-                            onClick={() => !isFuture && onStepClick(s.num)}
-                            disabled={isFuture}
-                            className={`flex flex-col items-center gap-3 group focus:outline-none ${isFuture ? 'cursor-default' : 'cursor-pointer'}`}
+                            onClick={() => !isFuture && !disabled && onStepClick(s.num)}
+                            disabled={isFuture || disabled}
+                            className={`flex flex-col items-center gap-3 group focus:outline-none ${(isFuture || disabled) ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
                         >
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm relative z-10 ${
                                 isActive ? 'bg-[#E07A5F] border-[#E07A5F] text-white scale-110 shadow-lg shadow-orange-200 dark:shadow-black/30' :
