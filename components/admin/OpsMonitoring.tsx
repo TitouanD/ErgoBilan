@@ -115,7 +115,7 @@ export const OpsMonitoring: React.FC = () => {
             {/* CHART: DAILY REQUESTS */}
             <div className="col-span-8 bg-[#1A1C23] border border-white/5 rounded-2xl p-6 relative">
                 <h3 className="text-white font-bold mb-6 flex items-center gap-2">
-                    <Activity size={18} className="text-[#E07A5F]" /> Générations IA — 30 derniers jours
+                    <Activity size={18} className="text-[var(--primary)]" /> Générations IA — 30 derniers jours
                 </h3>
                 <div className="h-[300px] w-full">
                     {stats.daily.length === 0 ? (

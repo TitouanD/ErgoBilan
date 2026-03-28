@@ -105,7 +105,7 @@ export const CommandPalette: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-[#3D405B]/40 p-4 backdrop-blur-sm md:p-8" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[70] bg-[var(--secondary)]/40 p-4 backdrop-blur-sm md:p-8" onMouseDown={onClose}>
       <div
         className="mx-auto mt-[8vh] w-full max-w-2xl rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
@@ -155,7 +155,7 @@ export const CommandPalette: React.FC<Props> = ({
                 onClick={() => closeAndRun(() => onOpenPatient(file.id))}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--hover-bg)]"
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3D405B] text-xs font-bold text-white">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--secondary)] text-xs font-bold text-white">
                   {(file.patient.firstName[0] || '').toUpperCase()}
                   {(file.patient.lastName[0] || '').toUpperCase()}
                 </div>

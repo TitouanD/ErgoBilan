@@ -154,7 +154,7 @@ const DirectionBadge: React.FC<{
       ? 'text-rose-500 bg-rose-500/10 border-rose-500/30'
       : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30';
     const title = getDirectionBadgeTooltip(direction, interactive);
-    const commonClass = `inline-flex items-center justify-center rounded-full border transition-colors ${toneClass} ${pending ? 'ring-1 ring-[#E07A5F]/50' : ''}`;
+    const commonClass = `inline-flex items-center justify-center rounded-full border transition-colors ${toneClass} ${pending ? 'ring-1 ring-[var(--primary)]/50' : ''}`;
 
     if (interactive) {
       return (
@@ -375,7 +375,7 @@ const VoiceObservation: React.FC<{
         onChange={(e) => !readOnly && onChange(e.target.value)}
         onFocus={onFocus}
         placeholder="Observation clinique rapide..."
-        className="w-full p-3 pl-9 pr-10 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:border-[#E07A5F] focus:bg-[var(--card-bg)] outline-none resize-none transition-all placeholder:text-[var(--text-disabled)]"
+        className="w-full p-3 pl-9 pr-10 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:border-[var(--primary)] focus:bg-[var(--card-bg)] outline-none resize-none transition-all placeholder:text-[var(--text-disabled)]"
         rows={2}
       />
       <MessageSquare size={14} className="absolute top-3 left-3 text-[var(--text-disabled)]" />
@@ -383,7 +383,7 @@ const VoiceObservation: React.FC<{
         <button
           type="button"
           onClick={toggleListening}
-          className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-[var(--text-disabled)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]'
+          className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-[var(--text-disabled)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]'
             }`}
         >
           {isListening ? <Mic size={12} /> : <MicOff size={12} />}
@@ -415,7 +415,7 @@ const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<Sc
         isReviewed
           ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
           : canReview
-            ? 'bg-[#E07A5F] text-white hover:brightness-105 shadow-sm'
+            ? 'bg-[var(--primary)] text-white hover:brightness-105 shadow-sm'
             : 'opacity-40 cursor-not-allowed bg-[var(--hover-bg)] text-[var(--text-secondary)] border border-[var(--border-color)]'
       }`}
     >
@@ -447,7 +447,7 @@ const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
         }}
       >
         <span
-          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[#3D405B] shadow-sm"
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[var(--secondary)] shadow-sm"
           style={{ left: `${left}%` }}
         />
       </div>
@@ -672,8 +672,8 @@ const NumericRow: React.FC<{
       const base = 'w-full text-center font-bold bg-transparent outline-none transition-all placeholder:text-[var(--text-disabled)]';
       const sizeClass = primary ? 'text-2xl py-2' : 'text-lg py-1.5';
       const borderClass = isSource(m)
-        ? 'border-b-2 border-[#E07A5F]'
-        : 'border-b border-[var(--border-color)] focus:border-[#E07A5F]';
+        ? 'border-b-2 border-[var(--primary)]'
+        : 'border-b border-[var(--border-color)] focus:border-[var(--primary)]';
       const colorClass = isSource(m) ? 'text-[var(--text-heading)]' : 'text-[var(--text-main)]';
       return `${base} ${sizeClass} ${borderClass} ${colorClass} ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`;
     };
@@ -694,7 +694,7 @@ const NumericRow: React.FC<{
                 <button
                   type="button"
                   onClick={() => onToggleExpand?.()}
-                  className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+                  className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
                   title={onToggleExpand ? 'Refermer le sous-test' : undefined}
                   aria-label="Refermer le sous-test"
                 >
@@ -729,7 +729,7 @@ const NumericRow: React.FC<{
                     type="button"
                     onClick={() => setPatch({ conversionMode: 'auto' })}
                     disabled={readOnly || conversionLocked}
-                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[#3D405B] text-white' : 'text-[var(--text-secondary)]'} ${(readOnly || conversionLocked) ? 'cursor-not-allowed opacity-60' : ''}`}
+                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[var(--secondary)] text-white' : 'text-[var(--text-secondary)]'} ${(readOnly || conversionLocked) ? 'cursor-not-allowed opacity-60' : ''}`}
                   >
                     Auto
                   </button>
@@ -737,7 +737,7 @@ const NumericRow: React.FC<{
                     type="button"
                     onClick={() => setPatch({ conversionMode: 'manual' })}
                     disabled={readOnly}
-                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[#E07A5F] text-white' : 'text-[var(--text-secondary)]'} ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
+                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[var(--primary)] text-white' : 'text-[var(--text-secondary)]'} ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
                   >
                     Manuel
                   </button>
@@ -753,7 +753,7 @@ const NumericRow: React.FC<{
                 )}
               </div>
             </div>
-            {isComputing && <Loader2 size={14} className="animate-spin text-[#E07A5F]" />}
+            {isComputing && <Loader2 size={14} className="animate-spin text-[var(--primary)]" />}
           </div>
 
           {/* === Inline score inputs === */}
@@ -765,7 +765,7 @@ const NumericRow: React.FC<{
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
                     BRUT
-                    {isSource('raw') && <span className="ml-1 text-[#E07A5F]">●</span>}
+                    {isSource('raw') && <span className="ml-1 text-[var(--primary)]">●</span>}
                   </label>
                   <input
                     value={metricValue('raw')}
@@ -782,7 +782,7 @@ const NumericRow: React.FC<{
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
                     {getMetricDisplayLabel('standard', subtest.scoreType)}
-                    {isSource('standard') && <span className="ml-1 text-[#E07A5F]">●</span>}
+                    {isSource('standard') && <span className="ml-1 text-[var(--primary)]">●</span>}
                   </label>
                   <input
                     value={metricValue('standard')}
@@ -799,7 +799,7 @@ const NumericRow: React.FC<{
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
                     ET
-                    {isSource('z') && <span className="ml-1 text-[#E07A5F]">●</span>}
+                    {isSource('z') && <span className="ml-1 text-[var(--primary)]">●</span>}
                   </label>
                   <input
                     value={metricValue('z')}
@@ -838,7 +838,7 @@ const NumericRow: React.FC<{
                     <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                       {getMetricDisplayLabel('standard', subtest.scoreType)}
                     </label>
-                    {(entryMetric === 'standard' || (!entryMetric && preferred === 'standard') || (entryMetric !== 'z' && preferred === 'standard')) && <span className="text-[#E07A5F] text-[10px]">●</span>}
+                    {(entryMetric === 'standard' || (!entryMetric && preferred === 'standard') || (entryMetric !== 'z' && preferred === 'standard')) && <span className="text-[var(--primary)] text-[10px]">●</span>}
                   </div>
                   <input
                     value={metricValue('standard')}
@@ -855,7 +855,7 @@ const NumericRow: React.FC<{
                 <div className="col-span-1">
                   <div className="flex items-center gap-1 mb-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">ET</label>
-                    {(entryMetric === 'z' || (!entryMetric && preferred === 'z') || (entryMetric !== 'standard' && preferred === 'z')) && <span className="text-[#E07A5F] text-[10px]">●</span>}
+                    {(entryMetric === 'z' || (!entryMetric && preferred === 'z') || (entryMetric !== 'standard' && preferred === 'z')) && <span className="text-[var(--primary)] text-[10px]">●</span>}
                   </div>
                   <input
                     value={metricValue('z')}
@@ -910,7 +910,7 @@ const NumericRow: React.FC<{
                         inputMode="decimal"
                         onChange={(e) => setPatch({ raw: e.target.value })}
                         onFocus={() => onFocus?.()}
-                        className="w-16 text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
+                        className="w-16 text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[var(--primary)] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
                         placeholder="–"
                         aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
                       />
@@ -923,7 +923,7 @@ const NumericRow: React.FC<{
                       inputMode="decimal"
                       onChange={(e) => setPatch({ raw: e.target.value })}
                       onFocus={() => onFocus?.()}
-                      className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[#E07A5F] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
+                      className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[var(--primary)] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
                       placeholder="(optionnel)"
                       aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
                     />
@@ -940,13 +940,13 @@ const NumericRow: React.FC<{
             </div>
           )}
           {conversionLocked && (
-            <div className="mt-2 rounded-lg border border-[#3D405B]/20 bg-[#3D405B]/5 px-3 py-1.5 text-[11px] font-medium text-[#3D405B] inline-flex items-center gap-1.5">
+            <div className="mt-2 rounded-lg border border-[var(--secondary)]/20 bg-[var(--secondary-opacity-5)] px-3 py-1.5 text-[11px] font-medium text-[var(--secondary)] inline-flex items-center gap-1.5">
               <AlertTriangle size={12} />
               score_type = none: saisie manuelle NS/ET/%, conversion auto désactivée.
             </div>
           )}
           {hasPendingDirectionOverride && (
-            <div className="mt-2 rounded-lg border border-[#E07A5F]/30 bg-[#E07A5F]/10 px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
+            <div className="mt-2 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-opacity-10)] px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
               <AlertTriangle size={12} />
               Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
             </div>
@@ -996,7 +996,7 @@ const QualitativeRow: React.FC<{
             <button
               type="button"
               onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
               title={onToggleExpand ? 'Refermer le sous-test' : undefined}
               aria-label="Refermer le sous-test"
             >
@@ -1028,8 +1028,8 @@ const QualitativeRow: React.FC<{
                   })
                 }
                 className={`text-left rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${active
-                    ? 'border-[#3D405B] bg-[#3D405B] text-white shadow-sm'
-                    : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-main)] hover:border-[#E07A5F]'
+                    ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white shadow-sm'
+                    : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-main)] hover:border-[var(--primary)]'
                   } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 <div className="flex items-start gap-2">
@@ -1070,7 +1070,7 @@ const RawOnlyRow: React.FC<{
             <button
               type="button"
               onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
               title={onToggleExpand ? 'Refermer le sous-test' : undefined}
               aria-label="Refermer le sous-test"
             >
@@ -1087,7 +1087,7 @@ const RawOnlyRow: React.FC<{
           onFocus={onFocus}
           disabled={readOnly}
           placeholder="Entrer la valeur brute"
-          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-3 text-center text-3xl font-bold text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
+          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-3 text-center text-3xl font-bold text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors"
         />
         <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
 
@@ -1118,7 +1118,7 @@ const CustomTextRow: React.FC<{
             <button
               type="button"
               onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
               title={onToggleExpand ? 'Refermer le sous-test' : undefined}
               aria-label="Refermer le sous-test"
             >
@@ -1135,7 +1135,7 @@ const CustomTextRow: React.FC<{
             onFocus={onFocus}
             disabled={readOnly}
             placeholder="Ex : Observation en classe, Bilan écologique..."
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm font-semibold text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors placeholder:text-[var(--text-disabled)] placeholder:font-normal"
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm font-semibold text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors placeholder:text-[var(--text-disabled)] placeholder:font-normal"
           />
         </div>
         <div>
@@ -1147,7 +1147,7 @@ const CustomTextRow: React.FC<{
             disabled={readOnly}
             placeholder="Décrivez vos observations..."
             rows={10}
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
           />
         </div>
         <div className="mt-3">
@@ -1357,7 +1357,7 @@ const CompositeItemsRow: React.FC<{
               <button
                 type="button"
                 onClick={() => onToggleExpand?.()}
-                className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[#E07A5F] hover:bg-[var(--hover-bg)]"
+                className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
                 title={onToggleExpand ? 'Refermer le sous-test' : undefined}
                 aria-label="Refermer le sous-test"
               >
@@ -1386,7 +1386,7 @@ const CompositeItemsRow: React.FC<{
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {isComputing && <Loader2 size={14} className="animate-spin text-[#E07A5F]" />}
+            {isComputing && <Loader2 size={14} className="animate-spin text-[var(--primary)]" />}
           </div>
         </div>
 
@@ -1445,7 +1445,7 @@ const CompositeItemsRow: React.FC<{
                           onFocus={() => onFocus?.()}
                           onChange={(e) => handleItemChange(item.id, e.target.value)}
                           placeholder="–"
-                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label={item.label}
                         />
                         {item.unit && (
@@ -1479,7 +1479,7 @@ const CompositeItemsRow: React.FC<{
                   setDirectMode(d => !d);
                   if (!directMode) { setLocalItemValues({}); setPatch({ rawItems: {} }); }
                 }}
-                className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[#E07A5F] transition-colors"
+                className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--primary)] transition-colors"
               >
                 {directMode ? '← Saisir par items' : 'Saisie directe →'}
               </button>
@@ -1494,10 +1494,10 @@ const CompositeItemsRow: React.FC<{
               onFocus={() => onFocus?.()}
               onChange={(e) => void handleDirectRaw(e.target.value)}
               placeholder="–"
-              className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[#E07A5F] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
+              className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
             />
           ) : (
-            <div className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 ${displayedRaw !== null ? 'bg-[#3D405B]/8 border border-[#3D405B]/15' : 'border border-dashed border-[var(--border-color)]'}`}>
+            <div className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 ${displayedRaw !== null ? 'bg-[var(--secondary-opacity-10)] border border-[var(--secondary)]/15' : 'border border-dashed border-[var(--border-color)]'}`}>
               <span className={`text-3xl font-bold tabular-nums ${displayedRaw !== null ? 'text-[var(--text-heading)]' : 'text-[var(--text-disabled)]'}`}>
                 {displayedRaw ?? '–'}
               </span>
@@ -1558,7 +1558,7 @@ const CompositeItemsRow: React.FC<{
           </div>
         )}
         {hasPendingDirectionOverride && (
-          <div className="mt-2 rounded-lg border border-[#E07A5F]/30 bg-[#E07A5F]/10 px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
+          <div className="mt-2 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-opacity-10)] px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
             <AlertTriangle size={12} />Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
           </div>
         )}
@@ -1660,7 +1660,7 @@ const CompactSubtestRow: React.FC<{
         onClick={onClick}
         className="flex-1 flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors min-w-0"
       >
-        <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] transition-colors shrink-0" />
+        <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[var(--primary)] transition-colors shrink-0" />
         <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">
           {subtest.inputModel === 'custom_text'
             ? (result.customLabel || 'Observation personnalisée')
@@ -1785,7 +1785,7 @@ const TableView: React.FC<{
     }
   };
 
-  const cellInput = 'w-full text-center text-xs font-semibold bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[#E07A5F] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors tabular-nums';
+  const cellInput = 'w-full text-center text-xs font-semibold bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors tabular-nums';
   const cellDisplay = 'text-center text-xs font-medium text-[var(--text-secondary)] py-1.5 tabular-nums';
 
   return (
@@ -1836,7 +1836,7 @@ const TableView: React.FC<{
                           zScore: undefined, derived: undefined, scoreSource: 'manual_ns',
                         }));
                       }}
-                      className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                      className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
                     >
                       <option value="">–</option>
                       {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
@@ -1846,7 +1846,7 @@ const TableView: React.FC<{
                     <input
                       value={res.observation || ''}
                       onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[#E07A5F] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
                       placeholder="Note..."
                     />
                   </td>
@@ -1874,14 +1874,14 @@ const TableView: React.FC<{
                         type="button"
                         disabled={conversionLocked}
                         onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'auto' }))}
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[#3D405B] text-white' : 'text-[var(--text-secondary)]'} ${conversionLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[var(--secondary)] text-white' : 'text-[var(--text-secondary)]'} ${conversionLocked ? 'cursor-not-allowed opacity-60' : ''}`}
                       >
                         A
                       </button>
                       <button
                         type="button"
                         onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'manual' }))}
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[#E07A5F] text-white' : 'text-[var(--text-secondary)]'}`}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[var(--primary)] text-white' : 'text-[var(--text-secondary)]'}`}
                       >
                         M
                       </button>
@@ -1895,7 +1895,7 @@ const TableView: React.FC<{
                       value={res.raw || ''}
                       inputMode="decimal"
                       onChange={(e) => void handleInput(st.id, 'raw', e.target.value, st)}
-                      className={`${cellInput} ${res.entryMetric === 'raw' || (!res.entryMetric && stHasNorms) ? 'border-b-[#E07A5F]' : ''}`}
+                      className={`${cellInput} ${res.entryMetric === 'raw' || (!res.entryMetric && stHasNorms) ? 'border-b-[var(--primary)]' : ''}`}
                       placeholder="–"
                     />
                   ) : (
@@ -1911,7 +1911,7 @@ const TableView: React.FC<{
                       value={res.standard || ''}
                       inputMode="decimal"
                       onChange={(e) => void handleInput(st.id, 'standard', e.target.value, st)}
-                      className={`${cellInput} ${res.entryMetric === 'standard' || (!res.entryMetric && !stHasNorms && pref === 'standard') ? 'border-b-[#E07A5F]' : ''}`}
+                      className={`${cellInput} ${res.entryMetric === 'standard' || (!res.entryMetric && !stHasNorms && pref === 'standard') ? 'border-b-[var(--primary)]' : ''}`}
                       placeholder="–"
                     />
                   )}
@@ -1934,7 +1934,7 @@ const TableView: React.FC<{
                           setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
                         }
                       }}
-                      className={`${cellInput} ${res.entryMetric === 'z' || (!res.entryMetric && !stHasNorms && pref === 'z') ? 'border-b-[#E07A5F]' : ''}`}
+                      className={`${cellInput} ${res.entryMetric === 'z' || (!res.entryMetric && !stHasNorms && pref === 'z') ? 'border-b-[var(--primary)]' : ''}`}
                       placeholder="–"
                     />
                   )}
@@ -1948,7 +1948,7 @@ const TableView: React.FC<{
                       value={res.percentile || ''}
                       inputMode="decimal"
                       onChange={(e) => void handleInput(st.id, 'percentile', e.target.value, st)}
-                      className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[#E07A5F]' : ''}`}
+                      className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[var(--primary)]' : ''}`}
                       placeholder="–"
                     />
                   ) : (
@@ -1960,7 +1960,7 @@ const TableView: React.FC<{
                   <input
                     value={res.observation || ''}
                     onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[#E07A5F] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
                     placeholder="Note..."
                   />
                 </td>
@@ -2044,7 +2044,7 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
                     }}
                   >
                     <span
-                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[#3D405B] shadow"
+                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[var(--secondary)] shadow"
                       style={{ left: `${markerLeft}%` }}
                     />
                   </div>
@@ -2105,13 +2105,13 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-md animate-in fade-in duration-300">
       <div className="w-full max-w-6xl h-[88vh] rounded-[34px] overflow-hidden bg-[var(--card-bg)] shadow-[0_35px_80px_rgba(0,0,0,0.28)] border border-[var(--border-color)] flex flex-col">
         <div className="px-6 py-5 border-b border-[var(--border-color)] bg-[var(--card-bg)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-serif font-bold text-2xl flex items-center gap-3">
-                <Layers size={24} className="text-[#E07A5F]" />
+                <Layers size={24} className="text-[var(--primary)]" />
                 Catalogue tests
               </h2>
               <p className="text-sm text-[var(--text-secondary)] mt-1">Sélection rapide des tests et sous-tests.</p>
@@ -2125,7 +2125,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-[var(--hover-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] text-sm font-bold hover:border-[#3D405B] hover:text-[var(--text-heading)] transition-colors"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-[var(--hover-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] text-sm font-bold hover:border-[var(--secondary)] hover:text-[var(--text-heading)] transition-colors"
               >
                 <ChevronLeft size={16} />
                 Catégories
@@ -2137,7 +2137,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Rechercher un test ou un sous-test..."
-                className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[#E07A5F]/20"
+                className="w-full pl-12 pr-4 py-3 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none text-[var(--text-heading)] font-semibold focus:ring-2 focus:ring-[var(--primary-opacity-20)]"
                 autoFocus
               />
             </div>
@@ -2150,7 +2150,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   type="button"
                   onClick={() => setActiveCategoryId(tab.id)}
                   className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all ${activeCategoryId === tab.id
-                      ? 'bg-[#3D405B] text-white shadow-sm'
+                      ? 'bg-[var(--secondary)] text-white shadow-sm'
                       : 'bg-[var(--progress-bg)] text-[var(--text-main)] hover:bg-[var(--border-color)]'
                     }`}
                 >
@@ -2178,7 +2178,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                 <div
                   key={test.id}
                   className={`rounded-2xl border overflow-hidden transition-all ${selectedCount > 0
-                      ? 'border-[#E07A5F]/40 bg-[#E07A5F]/5 shadow-sm'
+                      ? 'border-[var(--primary)]/40 bg-[var(--primary-opacity-5)] shadow-sm'
                       : 'border-[var(--border-color)] bg-[var(--card-bg)] hover:border-[var(--text-secondary)]'
                     } ${isExpanded ? 'xl:col-span-2' : ''}`}
                 >
@@ -2193,7 +2193,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {alreadyCount > 0 && <span className="rounded-full bg-[var(--progress-bg)] text-[var(--text-secondary)] px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
-                      {selectedCount > 0 && <span className="rounded-full bg-[#E07A5F] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
+                      {selectedCount > 0 && <span className="rounded-full bg-[var(--primary)] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
                       {isExpanded ? <ChevronDown size={16} className="text-[var(--text-secondary)]" /> : <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
                     </div>
                   </button>
@@ -2205,7 +2205,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                             value={subtestSearchByTest[test.id] || ''}
                             onChange={(e) => setSubtestSearchByTest((prev) => ({ ...prev, [test.id]: e.target.value }))}
                             placeholder="Rechercher un sous-test..."
-                            className="w-full rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none bg-[var(--input-bg)]"
+                            className="w-full rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none bg-[var(--input-bg)]"
                           />
                         </div>
                       )}
@@ -2226,7 +2226,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                             if (item.type === 'header') {
                               return (
                                 <div key={`grp-${item.gkey}`} className="col-span-full mt-2 first:mt-0 flex items-center gap-2 px-1">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#E07A5F]">{item.label}</span>
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">{item.label}</span>
                                   <div className="flex-1 h-px bg-[var(--border-color)]" />
                                 </div>
                               );
@@ -2239,7 +2239,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                                 key={st.id}
                                 className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${already
                                     ? 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[#E07A5F]'
+                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--primary)]'
                                   }`}
                               >
                                 <input
@@ -2247,7 +2247,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                                   checked={checked}
                                   disabled={already}
                                   onChange={() => toggleSubtest(test.id, st.id)}
-                                  className="accent-[#E07A5F]"
+                                  className="accent-[var(--primary)]"
                                 />
                                 <span className="truncate">{getSubtestDisplayName(st)}</span>
                                 {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
@@ -2271,12 +2271,12 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><FilePlus size={16} /> Test manquant ?</h3>
               <p className="text-xs text-[var(--text-secondary)]">Ajoutez-le via le studio contribution.</p>
             </div>
-            {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-heading)] hover:border-[#3D405B]">Contribuer</button>}
+            {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-heading)] hover:border-[var(--secondary)]">Contribuer</button>}
           </div>
 
           <div className="mt-3 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><MessageSquare size={16} className="text-[#E07A5F]" /> Observation personnalisée</h3>
+              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><MessageSquare size={16} className="text-[var(--primary)]" /> Observation personnalisée</h3>
               <p className="text-xs text-[var(--text-secondary)]">Zone de texte libre avec titre modifiable (bilan écologique, questionnaire...).</p>
             </div>
             <button
@@ -2287,7 +2287,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                 // can interfere with the batched state updates and trigger unexpected
                 // navigation away from Step 2. The user closes the modal manually.
               }}
-              className="shrink-0 px-4 py-2 bg-[#E07A5F] text-white border border-[#E07A5F] rounded-xl text-xs font-bold hover:brightness-105 transition-colors"
+              className="shrink-0 px-4 py-2 bg-[var(--primary)] text-white border border-[var(--primary)] rounded-xl text-xs font-bold hover:brightness-105 transition-colors"
             >
               + Ajouter
             </button>
@@ -2305,7 +2305,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                 onClose();
               }}
               disabled={totalSelected === 0}
-              className="px-5 py-2 rounded-xl bg-[#3D405B] text-white font-bold disabled:opacity-40"
+              className="px-5 py-2 rounded-xl bg-[var(--secondary)] text-white font-bold disabled:opacity-40"
             >
               Ajouter
             </button>
@@ -2724,7 +2724,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
         <div>
           <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
-            <Activity size={24} className="text-[#E07A5F]" />
+            <Activity size={24} className="text-[var(--primary)]" />
             Tests & mesures
           </h2>
           <p className="text-[var(--text-secondary)] font-medium mt-2">
@@ -2757,7 +2757,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
           )}
           <button
             onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
-            className="flex items-center gap-2 bg-[#3D405B] text-white px-5 py-2.5 rounded-xl font-bold hover:bg-[#2c2e42] transition-all text-sm"
+            className="flex items-center gap-2 bg-[var(--secondary)] text-white px-5 py-2.5 rounded-xl font-bold hover:brightness-90 transition-all text-sm"
           >
             <Plus size={16} />
             Ajouter
@@ -2773,7 +2773,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         <div className="flex-1 min-w-0 space-y-10">
           {Object.keys(tests).length === 0 && (
             <div className="rounded-[30px] border-2 border-dashed border-[var(--border-color)] bg-[var(--card-bg)] p-16 text-center shadow-sm">
-              <div className="mx-auto mb-4 h-14 w-14 rounded-2xl bg-[#E07A5F]/10 text-[#E07A5F] flex items-center justify-center">
+              <div className="mx-auto mb-4 h-14 w-14 rounded-2xl bg-[var(--primary-opacity-10)] text-[var(--primary)] flex items-center justify-center">
                 <Layers size={24} />
               </div>
               <p className="text-[var(--text-heading)] font-bold text-lg">Aucun test sélectionné</p>
@@ -2781,7 +2781,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
               <button
                 type="button"
                 onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#3D405B] px-4 py-2 text-sm font-bold text-white hover:bg-[#2c2e42]"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--secondary)] px-4 py-2 text-sm font-bold text-white hover:brightness-90"
               >
                 <Plus size={16} />
                 Ouvrir le catalogue
@@ -2833,12 +2833,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               onClick={() => setViewMode((p) => ({ ...p, [test.id]: p[test.id] === 'table' ? 'accordion' : 'table' }))}
-                              className={`hidden md:flex p-2 rounded-lg border transition-all ${viewMode[test.id] === 'table' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[#E07A5F] hover:border-[#E07A5F]/40'}`}
+                              className={`hidden md:flex p-2 rounded-lg border transition-all ${viewMode[test.id] === 'table' ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}
                               title={viewMode[test.id] === 'table' ? 'Vue détaillée' : 'Vue tableau'}
                             >
                               <Table2 size={14} />
                             </button>
-                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[#E07A5F] text-white border-[#E07A5F]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[#E07A5F] hover:border-[#E07A5F]/40'}`}>
+                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[var(--primary)] text-white border-[var(--primary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}>
                               <PenTool size={14} />
                             </button>
                             <button onClick={() => removeTest(test.id)} className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200">
@@ -2855,7 +2855,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                 value={subtestFilters[test.id] || ''}
                                 onChange={(e) => setSubtestFilters((prev) => ({ ...prev, [test.id]: e.target.value }))}
                                 placeholder="Filtrer les sous-tests..."
-                                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-xs text-[var(--text-heading)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none transition-colors"
+                                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-xs text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors"
                               />
                             </div>
                           )}
@@ -2894,8 +2894,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                   if (item.type === 'header') {
                                     return (
                                       <div key={`grp-${item.gkey}`} className="px-5 py-2 flex items-center gap-3 bg-[var(--hover-bg)] border-t border-[var(--border-color)]">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#E07A5F]">{item.label}</span>
-                                        <div className="flex-1 h-px bg-[#E07A5F]/20" />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">{item.label}</span>
+                                        <div className="flex-1 h-px bg-[var(--primary)]/20" />
                                       </div>
                                     );
                                   }
@@ -2971,7 +2971,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
             disabled={isPersistingDirectionOverrides}
-            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
+            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[var(--secondary)] hover:bg-[var(--primary)]"
           >
             <span>{isPersistingDirectionOverrides ? 'Enregistrement...' : 'Passer au diagnostic'}</span>
             <ArrowRight size={20} />
@@ -2981,11 +2981,11 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} onContribute={onContribute} initialExpandedTestId={catalogTargetTestId} />
 
       {showWarning && (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[#3D405B]/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[var(--secondary)]/75 backdrop-blur-sm">
           <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-[var(--border-color)]">
             <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Eléments non revus</h4></div>
             <p className="text-sm text-[var(--text-main)]">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); void handleProceedToNext(); }} className="px-4 py-2 rounded-xl bg-[#3D405B] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
+            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); void handleProceedToNext(); }} className="px-4 py-2 rounded-xl bg-[var(--secondary)] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
           </div>
         </div>
       )}

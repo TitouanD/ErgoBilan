@@ -257,7 +257,7 @@ export const AdminNormQualityBoard: React.FC<Props> = ({ onOpenInCatalog }) => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filtrer test/sous-test..."
-                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F]"
+                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-[var(--primary)]"
               />
             </div>
             {(['all', 'public', 'private'] as const).map((value) => (
@@ -266,7 +266,7 @@ export const AdminNormQualityBoard: React.FC<Props> = ({ onOpenInCatalog }) => {
                 onClick={() => setScope(value)}
                 className={`text-[11px] font-bold px-3 py-2 rounded-lg border transition-colors ${
                   scope === value
-                    ? 'bg-[#E07A5F]/20 text-[#ffd7ca] border-[#E07A5F]/40'
+                    ? 'bg-[var(--primary)]/20 text-[#ffd7ca] border-[var(--primary)]/40'
                     : 'bg-white/5 text-stone-400 border-white/10 hover:text-white'
                 }`}
               >
@@ -292,7 +292,7 @@ export const AdminNormQualityBoard: React.FC<Props> = ({ onOpenInCatalog }) => {
                 onClick={() => setSelectedSubtestId(audit.subtestId)}
                 className={`w-full text-left p-3 rounded-lg border transition-all ${
                   selectedSubtestId === audit.subtestId
-                    ? 'bg-white/10 border-[#E07A5F]'
+                    ? 'bg-white/10 border-[var(--primary)]'
                     : 'bg-white/5 border-white/10 hover:bg-white/10'
                 }`}
               >

@@ -84,7 +84,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                         className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider ${
                             variant === 'danger'
                                 ? 'bg-rose-500 hover:bg-rose-600'
-                                : 'bg-[#3D405B] hover:bg-[#2c2e42]'
+                                : 'bg-[var(--secondary)] hover:bg-[#2c2e42]'
                         }`}
                     >
                         {confirmLabel}

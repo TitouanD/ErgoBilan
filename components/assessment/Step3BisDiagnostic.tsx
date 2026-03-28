@@ -105,7 +105,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                         )}
                         {(Object.entries(groupedData) as [string, { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult }[] }[]][]).map(([categoryName, testEntries]) => (
                             <div key={categoryName} className="p-4">
-                                <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest mb-2 block">{categoryName}</span>
+                                <span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest mb-2 block">{categoryName}</span>
                                 {testEntries.map(({ testId, name: testName, subtests }) => (
                                     <div key={testId} className="mt-3">
                                         <h5 className="text-xs font-bold text-[var(--text-heading)] mb-3 leading-tight">{testName}</h5>
@@ -153,7 +153,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                 </div>
                 <button
                     onClick={() => setPanelExpanded(v => !v)}
-                    className="p-1 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[#E07A5F] transition-colors"
+                    className="p-1 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] hover:text-[var(--primary)] transition-colors"
                     title={panelExpanded ? 'Réduire' : 'Agrandir'}
                 >
                     {panelExpanded ? (
@@ -189,7 +189,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                             {/* Category row */}
                             <tr>
                                 <td colSpan={3} className="px-4 py-1.5 bg-[var(--hover-bg)] border-y border-[var(--border-color)]">
-                                    <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-widest">{categoryName}</span>
+                                    <span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest">{categoryName}</span>
                                 </td>
                             </tr>
 
@@ -515,7 +515,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                 <button
                     onClick={onNext}
                     disabled={isGenerating || !synthesis.diagnosticInput.trim()}
-                    className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
+                    className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[var(--secondary)] hover:bg-[var(--primary)]"
                 >
                     {isGenerating ? (
                         <>

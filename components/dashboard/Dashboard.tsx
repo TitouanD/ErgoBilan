@@ -113,7 +113,7 @@ const nextActionLabelMap: Record<PatientDashboardPreviewMeta['workflow']['nextAc
 const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTone']) => {
   if (tone === 'success') return { badge: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700/40', progress: 'bg-emerald-500' };
   if (tone === 'warning') return { badge: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700/40', progress: 'bg-amber-500' };
-  return { badge: 'bg-[#3D405B]/10 text-[var(--text-heading)] border-[#3D405B]/20', progress: 'bg-[#3D405B]' };
+  return { badge: 'bg-[var(--secondary)]/10 text-[var(--text-heading)] border-[var(--secondary)]/20', progress: 'bg-[var(--secondary)]' };
 };
 
 const getUrgencyTone = (kind: UrgencyKind) => {
@@ -524,7 +524,7 @@ export const Dashboard: React.FC<Props> = ({
       <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} patientFiles={patientFiles} draftsIndex={draftsIndex} onOpenPatient={onOpenPatient} onOpenNewPatientChoice={() => setIsNewPatientChoiceOpen(true)} onResumeDraft={onResumeDraft} />
       <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} />
       {pendingLinkConfirmation && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-[#3D405B]/45 p-4 backdrop-blur-sm" onMouseDown={handleLinkConfirmationKeep}>
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-[var(--secondary)]/45 p-4 backdrop-blur-sm" onMouseDown={handleLinkConfirmationKeep}>
           <div className="w-full max-w-[520px] rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
             <h3 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Lien copié</h3>
             <p className="mt-2 text-sm text-[var(--text-main)]">Avez-vous bien envoyé le lien au parent pour <span className="font-semibold text-[var(--text-heading)]">{pendingLinkConfirmation.title}</span> ?</p>
@@ -539,7 +539,7 @@ export const Dashboard: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={handleLinkConfirmationDone}
-                className="rounded-xl bg-[#E07A5F] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#d0694e]"
+                className="rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#d0694e]"
               >
                 Oui, retirer la tâche
               </button>
@@ -549,13 +549,13 @@ export const Dashboard: React.FC<Props> = ({
       )}
 
       {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
-        <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[#3D405B] px-6 py-3 text-white shadow-lg">
+        <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[var(--secondary)] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
-            <Clock size={16} className="animate-pulse text-[#E07A5F] motion-reduce:animate-none" />
+            <Clock size={16} className="animate-pulse text-[var(--primary)] motion-reduce:animate-none" />
             <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
             <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
           </div>
-          <button onClick={onShowPricing} className="flex items-center gap-2 rounded-full bg-[#E07A5F] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white hover:text-[#E07A5F] motion-reduce:transition-none"><Crown size={14} /> Passer en premium</button>
+          <button onClick={onShowPricing} className="flex items-center gap-2 rounded-full bg-[var(--primary)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white hover:text-[var(--primary)] motion-reduce:transition-none"><Crown size={14} /> Passer en premium</button>
         </div>
       )}
 
@@ -568,16 +568,16 @@ export const Dashboard: React.FC<Props> = ({
           <div className="w-full lg:pt-1"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <div className="relative w-full md:flex-1">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" size={18} />
-              <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] pl-10 pr-24 text-sm font-medium text-[var(--text-main)] shadow-sm outline-none transition-all focus:border-[#E07A5F] focus:ring-4 focus:ring-[#E07A5F]/10 motion-reduce:transition-none" />
-              <button type="button" onClick={() => setIsPaletteOpen(true)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--border-color)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] transition-colors hover:border-[#E07A5F] hover:text-[#E07A5F] motion-reduce:transition-none">{shortcutLabel}</button>
+              <input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Rechercher un patient" className="h-11 w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] pl-10 pr-24 text-sm font-medium text-[var(--text-main)] shadow-sm outline-none transition-all focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary-opacity-10)] motion-reduce:transition-none" />
+              <button type="button" onClick={() => setIsPaletteOpen(true)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--border-color)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] motion-reduce:transition-none">{shortcutLabel}</button>
             </div>
-            <button onClick={() => setIsNewPatientChoiceOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#E07A5F] px-5 text-sm font-bold text-white shadow-lg shadow-orange-200 dark:shadow-black/30 transition-all hover:-translate-y-0.5 hover:bg-[#d0694e] motion-reduce:transform-none motion-reduce:transition-none"><Plus size={18} /> Nouveau patient</button>
+            <button onClick={() => setIsNewPatientChoiceOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-bold text-white shadow-lg shadow-orange-200 dark:shadow-black/30 transition-all hover:-translate-y-0.5 hover:bg-[#d0694e] motion-reduce:transform-none motion-reduce:transition-none"><Plus size={18} /> Nouveau patient</button>
           </div></div>
         </section>
 
         <section className="mb-10 grid grid-cols-1 gap-5 md:grid-cols-3">
           <KpiCard icon={Clock} value={`${kpis.hoursSaved}h`} label="Temps économisé" subtext="Ce mois-ci" colorClass="bg-blue-500/10 text-blue-500" />
-          <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-[#E07A5F]/10 text-[#E07A5F]" />
+          <KpiCard icon={Users} value={`${kpis.activeCount}`} label="Patients actifs" subtext={`Dont ${kpis.newThisMonth} nouveaux`} colorClass="bg-[var(--primary)]/10 text-[var(--primary)]" />
           <KpiCard icon={Calendar} value={`${kpis.dueFollowups}`} label="Rappels actifs" subtext={`${kpis.reevaluationOpportunities} opportunités de suivi`} colorClass="bg-emerald-500/10 text-emerald-500" />
         </section>
 
@@ -585,7 +585,7 @@ export const Dashboard: React.FC<Props> = ({
           <div className="mb-4 flex items-center justify-between gap-3 px-1">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-3xl font-bold text-[var(--text-heading)]">À traiter</h2>
-              {visibleUrgencyItems.length > 0 && <span className="rounded-full bg-[#3D405B] px-2 py-0.5 text-[10px] font-bold text-white">{visibleUrgencyItems.length}</span>}
+              {visibleUrgencyItems.length > 0 && <span className="rounded-full bg-[var(--secondary)] px-2 py-0.5 text-[10px] font-bold text-white">{visibleUrgencyItems.length}</span>}
             </div>
             {railCanScroll && (
               <div className="hidden items-center gap-1.5 sm:flex">
@@ -703,11 +703,11 @@ export const Dashboard: React.FC<Props> = ({
               const statusBadgeLabel = isInitialCompleted ? null : hasDraft ? 'Brouillon' : 'En cours';
 
               return (
-                <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-[var(--card-bg)] p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-[var(--border-color)] opacity-80 hover:opacity-100' : 'border-[var(--border-color)] hover:border-[#E07A5F]/30'}`}>
+                <div key={file.id} onClick={() => onOpenPatient(file.id)} className={`group rounded-2xl border bg-[var(--card-bg)] p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${file.archived ? 'border-[var(--border-color)] opacity-80 hover:opacity-100' : 'border-[var(--border-color)] hover:border-[var(--primary)]/30'}`}>
                   <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(220px,1.55fr)_minmax(220px,1.1fr)_minmax(170px,0.95fr)_auto] lg:items-center lg:gap-4">
                     <div className="flex items-center gap-3">
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-[var(--hover-bg)] text-[var(--text-secondary)]' : 'bg-[#3D405B] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
-                      <div className="min-w-0"><h3 className="truncate text-base font-bold text-[var(--text-heading)] transition-colors group-hover:text-[#E07A5F]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold ${file.archived ? 'bg-[var(--hover-bg)] text-[var(--text-secondary)]' : 'bg-[var(--secondary)] text-white'}`}>{(file.patient.firstName[0] || '').toUpperCase()}{(file.patient.lastName[0] || '').toUpperCase()}</div>
+                      <div className="min-w-0"><h3 className="truncate text-base font-bold text-[var(--text-heading)] transition-colors group-hover:text-[var(--primary)]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3><p className="truncate text-[11px] text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p></div>
                     </div>
                     <div>
                       {showProgress ? (
@@ -727,7 +727,7 @@ export const Dashboard: React.FC<Props> = ({
                       {hasDraft && !file.archived && !isInitialCompleted && onResumeDraft ? (
                         <button onClick={(event) => { event.stopPropagation(); onResumeDraft(file.id); }} className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"><Edit3 size={12} /> Reprendre</button>
                       ) : (
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)] transition-all group-hover:bg-[#E07A5F] group-hover:text-white"><ArrowRight size={16} /></div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)] transition-all group-hover:bg-[var(--primary)] group-hover:text-white"><ArrowRight size={16} /></div>
                       )}
                     </div>
                   </div>
@@ -739,7 +739,7 @@ export const Dashboard: React.FC<Props> = ({
               <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--card-bg)] py-10 text-center">
                 <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--hover-bg)] text-[var(--text-disabled)]"><Search size={22} /></div>
                 <p className="text-sm font-medium text-[var(--text-secondary)]">{showArchived ? 'Aucun patient archivé.' : searchQuery ? `Aucun patient trouvé pour "${searchQuery}".` : 'Aucun patient enregistré pour le moment.'}</p>
-                {!showArchived && <button onClick={() => setIsNewPatientChoiceOpen(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#E07A5F]/30 bg-[#E07A5F]/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-[#E07A5F] transition-colors hover:bg-[#E07A5F] hover:text-white"><Plus size={14} /> Nouveau patient</button>}
+                {!showArchived && <button onClick={() => setIsNewPatientChoiceOpen(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-[var(--primary)] transition-colors hover:bg-[var(--primary)] hover:text-white"><Plus size={14} /> Nouveau patient</button>}
               </div>
             )}
 

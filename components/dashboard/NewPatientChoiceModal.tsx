@@ -44,7 +44,7 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#3D405B]/45 p-4 backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--secondary)]/45 p-4 backdrop-blur-sm" onMouseDown={onClose}>
       <div
         className="w-full max-w-[560px] rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl md:p-7"
         onMouseDown={(event) => event.stopPropagation()}
@@ -69,9 +69,9 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
             ref={firstButtonRef}
             type="button"
             onClick={handleFamily}
-            className="group flex min-h-[140px] flex-col items-start justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left transition-all hover:border-[#E07A5F] hover:bg-[#E07A5F]/5 focus:outline-none focus:ring-4 focus:ring-[#E07A5F]/15"
+            className="group flex min-h-[140px] flex-col items-start justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left transition-all hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 focus:outline-none focus:ring-4 focus:ring-[#E07A5F]/15"
           >
-            <span className="rounded-xl bg-[var(--hover-bg)] p-2.5 text-[var(--text-main)] transition-colors group-hover:bg-[#E07A5F]/15 group-hover:text-[#E07A5F]">
+            <span className="rounded-xl bg-[var(--hover-bg)] p-2.5 text-[var(--text-main)] transition-colors group-hover:bg-[var(--primary)]/15 group-hover:text-[var(--primary)]">
               <LinkIcon size={18} />
             </span>
             <div>
@@ -83,9 +83,9 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={handleManual}
-            className="group flex min-h-[140px] flex-col items-start justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left transition-all hover:border-[#E07A5F] hover:bg-[#E07A5F]/5 focus:outline-none focus:ring-4 focus:ring-[#E07A5F]/15"
+            className="group flex min-h-[140px] flex-col items-start justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left transition-all hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 focus:outline-none focus:ring-4 focus:ring-[#E07A5F]/15"
           >
-            <span className="rounded-xl bg-[var(--hover-bg)] p-2.5 text-[var(--text-main)] transition-colors group-hover:bg-[#E07A5F]/15 group-hover:text-[#E07A5F]">
+            <span className="rounded-xl bg-[var(--hover-bg)] p-2.5 text-[var(--text-main)] transition-colors group-hover:bg-[var(--primary)]/15 group-hover:text-[var(--primary)]">
               <UserPlus size={18} />
             </span>
             <div>

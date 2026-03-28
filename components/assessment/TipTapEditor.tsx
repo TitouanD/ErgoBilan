@@ -39,7 +39,7 @@ const ToolbarButton: React.FC<{
         title={title}
         className={`p-1.5 rounded text-xs transition-all ${
             isActive
-                ? 'bg-[#3D405B] text-white'
+                ? 'bg-[var(--secondary)] text-white'
                 : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
         } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
     >

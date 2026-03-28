@@ -46,7 +46,7 @@ const CaptionEditor: React.FC<{
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onBlur={() => onSave(value)}
-            className="w-full bg-transparent border border-transparent hover:border-stone-200 outline-none text-sm text-stone-700 italic resize-none focus:bg-white focus:ring-2 focus:ring-[#E07A5F]/20 focus:border-[#E07A5F]/20 rounded p-2 transition-all leading-relaxed print:resize-none print:border-none print:p-0"
+            className="w-full bg-transparent border border-transparent hover:border-stone-200 outline-none text-sm text-stone-700 italic resize-none focus:bg-white focus:ring-2 focus:ring-[var(--primary-opacity-20)] focus:border-[var(--primary)]/20 rounded p-2 transition-all leading-relaxed print:resize-none print:border-none print:p-0"
             rows={4}
             placeholder="Ajoutez une légende..."
         />
@@ -61,7 +61,7 @@ const FloatingToolbar: React.FC<{
 }> = ({ position, onFormat: onFmt, activeFormats }) => {
     if (!position) return null;
     const btnClass = (active?: boolean) =>
-        `p-1.5 rounded-md transition-all ${active ? 'bg-[#E07A5F] text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700'}`;
+        `p-1.5 rounded-md transition-all ${active ? 'bg-[var(--primary)] text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700'}`;
     return (
         <div
             className="fixed z-[200] bg-white border border-stone-200 rounded-xl shadow-2xl px-1.5 py-1 flex items-center gap-0.5 animate-in zoom-in-95 fade-in duration-150 no-print"
@@ -220,7 +220,7 @@ const InlineParagraphEditor: React.FC<{
                     suppressContentEditableWarning
                     onKeyDown={handleKeyDown}
                     onBlur={save}
-                    className={`outline-none min-h-[1.5em] px-3 py-2 -mx-3 -my-2 border-2 border-[#E07A5F]/40 ${roundedClass} bg-[#fff8f6] shadow-inner ring-2 ring-[#E07A5F]/10 transition-all ${className || ''}`}
+                    className={`outline-none min-h-[1.5em] px-3 py-2 -mx-3 -my-2 border-2 border-[var(--primary)]/40 ${roundedClass} bg-[#fff8f6] shadow-inner ring-2 ring-[var(--primary-opacity-10)] transition-all ${className || ''}`}
                     style={{ ...style, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                 />
                 <div className="absolute -top-8 right-0 flex items-center gap-1 no-print opacity-80">
@@ -267,10 +267,10 @@ const EditableSectionTitle: React.FC<{
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={save}
                     onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
-                    className="text-xl font-bold uppercase tracking-wide bg-transparent outline-none border-b-2 border-[#E07A5F] flex-1"
+                    className="text-xl font-bold uppercase tracking-wide bg-transparent outline-none border-b-2 border-[var(--primary)] flex-1"
                     style={{ fontFamily, color: primaryColor }}
                 />
-                <button onClick={save} className="p-1 bg-[#E07A5F] rounded-md text-white no-print"><Check size={14} /></button>
+                <button onClick={save} className="p-1 bg-[var(--primary)] rounded-md text-white no-print"><Check size={14} /></button>
             </div>
         );
     }
@@ -481,7 +481,7 @@ const ProfilePercentileChart: React.FC<{ tests: TestData; branding?: BrandingCon
                 <ul className="list-disc ml-4 space-y-1">
                     <li><span className="font-bold text-[#81B29A]">Vert :</span> Rang percentile ≥ 9 (zone normale).</li>
                     <li><span className="font-bold text-[#F2CC8F]">Orange :</span> Rang percentile 2–9 (norme basse).</li>
-                    <li><span className="font-bold text-[#E07A5F]">Rouge :</span> Rang percentile {"<"} 2 (zone de difficulté).</li>
+                    <li><span className="font-bold text-[var(--primary)]">Rouge :</span> Rang percentile {"<"} 2 (zone de difficulté).</li>
                 </ul>
             </div>
         </>
@@ -534,7 +534,7 @@ const ScoreSelector: React.FC<{
             <select
                 value={selected}
                 onChange={(e) => onChange(e.target.value as 'Brut' | 'NS' | 'ET' | '%')}
-                className="block w-full pl-3 pr-8 py-1 text-xs font-bold text-[var(--text-main)] bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-[#E07A5F] focus:border-[#E07A5F] sm:text-sm cursor-pointer"
+                className="block w-full pl-3 pr-8 py-1 text-xs font-bold text-[var(--text-main)] bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:text-sm cursor-pointer"
             >
                 {modes.map(mode => (
                     <option key={mode} value={mode}>{mode}</option>
@@ -716,7 +716,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             onClick={() => onChartTypeChange?.(type)}
                             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
                                 chartType === type
-                                    ? 'bg-[#3D405B] text-white border-[#3D405B]'
+                                    ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]'
                                     : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
                             }`}
                         >
@@ -779,7 +779,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     <ul className="list-disc ml-4 space-y-1">
                         <li><span className="font-bold text-[#81B29A]">Vert :</span> Dans la moyenne (-1 à +1 ET).</li>
                         <li><span className="font-bold text-[#F2CC8F]">Orange :</span> Zone de fragilité (-1 à -2 ET).</li>
-                        <li><span className="font-bold text-[#E07A5F]">Rouge :</span> Zone de difficulté (Inférieur à -2 ET).</li>
+                        <li><span className="font-bold text-[var(--primary)]">Rouge :</span> Zone de difficulté (Inférieur à -2 ET).</li>
                     </ul>
                 </div>
                 </>
@@ -864,7 +864,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                                         const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
                                                         const isPathological = z !== null && z <= -2;
                                                         const isFragile = z !== null && z <= -1 && z > -2;
-                                                        const colorClass = isPathological ? "text-[#E07A5F] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
+                                                        const colorClass = isPathological ? "text-[var(--primary)] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
 
                                                         let displayScore: string | number = '-';
                                                         if (currentMode === 'Brut') displayScore = result.raw || '-';
@@ -913,7 +913,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
                                                                 <td className="py-3 pr-4 font-medium">• {subDef?.displayName || subDef?.name}</td>
-                                                                <td className="py-3 text-center font-semibold text-[#3D405B]">{displayCategory}</td>
+                                                                <td className="py-3 text-center font-semibold text-[var(--secondary)]">{displayCategory}</td>
                                                                 <td className="py-3 pl-3 text-xs text-stone-600">{displayInterpretation}</td>
                                                                 <td className="py-3 pl-3 italic text-xs text-stone-500">{result.observation || "-"}</td>
                                                             </tr>

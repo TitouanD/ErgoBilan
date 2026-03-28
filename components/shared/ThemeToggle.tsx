@@ -13,7 +13,7 @@ export const ThemeToggle: React.FC = () => {
       aria-label={theme === 'light' ? 'Activer le mode nuit' : 'Activer le mode jour'}
     >
       {theme === 'light' ? (
-        <Moon size={18} className="text-[#3D405B] transition-transform hover:scale-110" />
+        <Moon size={18} className="text-[var(--secondary)] transition-transform hover:scale-110" />
       ) : (
         <Sun size={18} className="text-[#F2CC8F] transition-transform hover:scale-110" />
       )}

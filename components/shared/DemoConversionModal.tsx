@@ -8,12 +8,12 @@ interface Props {
 }
 
 export const DemoConversionModal: React.FC<Props> = ({ action, onClose, onConvert }) => (
-  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-md animate-in fade-in duration-300">
     <div className="bg-[var(--card-bg)] max-w-md w-full rounded-[32px] p-8 shadow-2xl text-center relative">
       <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors">
         <X size={20} />
       </button>
-      <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]">
+      <div className="w-20 h-20 bg-[var(--primary)]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[var(--primary)]">
         <Rocket size={40} />
       </div>
       <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Convaincu(e) ?</h3>
@@ -23,7 +23,7 @@ export const DemoConversionModal: React.FC<Props> = ({ action, onClose, onConver
       <div className="space-y-3">
         <button
           onClick={onConvert}
-          className="w-full py-4 bg-[#E07A5F] text-white rounded-xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2"
+          className="w-full py-4 bg-[var(--primary)] text-white rounded-xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center justify-center gap-2"
         >
           Créer mon compte gratuit <ArrowRight size={18} />
         </button>

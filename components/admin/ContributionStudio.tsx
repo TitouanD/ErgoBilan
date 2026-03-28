@@ -3329,14 +3329,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     // --- RENDER ---
     if (step === 'intro') {
         return (
-            <div className="fixed inset-0 z-[50] bg-[#3D405B]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
+            <div className="fixed inset-0 z-[50] bg-[var(--secondary)]/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-500">
                 <div className="bg-[var(--card-bg)] max-w-4xl w-full rounded-[40px] overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
                     <button onClick={onClose} className="absolute top-6 right-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] z-10"><X size={24} /></button>
                     <div className="w-full md:w-2/5 bg-[var(--app-bg)] p-10 flex flex-col justify-center items-center relative overflow-hidden">
-                        <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-[#E07A5F]/10 rounded-full blur-3xl"></div>
+                        <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-[var(--primary)]/10 rounded-full blur-3xl"></div>
                         <div className="relative z-10 text-center">
                             <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-8 mx-auto transform -rotate-6">
-                                <Scan size={48} className="text-[#E07A5F]" />
+                                <Scan size={48} className="text-[var(--primary)]" />
                             </div>
                             <h2 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Studio de Numérisation</h2>
                             <p className="text-[var(--text-secondary)] text-sm font-medium">Transformez vos manuels papiers en outils numériques interactifs.</p>
@@ -3382,7 +3382,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             )}
                             <div className="flex justify-end">
-                                <button onClick={() => setStep('upload')} className="bg-[#3D405B] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
+                                <button onClick={() => setStep('upload')} className="bg-[var(--secondary)] text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center gap-2 group">
                                     Numériser un test <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                                 </button>
                             </div>
@@ -3401,7 +3401,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <ArrowLeft size={16} /> Annuler
                     </button>
                     <div className="mb-8 flex justify-center">
-                        <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-3xl flex items-center justify-center transform -rotate-3 shadow-lg shadow-orange-200 dark:shadow-black/30">
+                        <div className="w-20 h-20 bg-[var(--primary)] text-white rounded-3xl flex items-center justify-center transform -rotate-3 shadow-lg shadow-orange-200 dark:shadow-black/30">
                             <Camera size={40} />
                         </div>
                     </div>
@@ -3415,14 +3415,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                     value={testName}
                                     onChange={(e) => { setTestName(e.target.value); setTestNameError(false); }}
                                     placeholder="Ex: Mon Test Perso"
-                                    className={`w-full p-4 bg-[var(--input-bg)] rounded-xl border outline-none focus:border-[#E07A5F] font-bold text-[var(--text-heading)] ${testNameError ? 'border-rose-500 bg-rose-50' : 'border-[var(--input-border)]'}`}
+                                    className={`w-full p-4 bg-[var(--input-bg)] rounded-xl border outline-none focus:border-[var(--primary)] font-bold text-[var(--text-heading)] ${testNameError ? 'border-rose-500 bg-rose-50' : 'border-[var(--input-border)]'}`}
                                 />
                                 {testNameError && <p className="text-xs text-rose-500 font-bold mt-1 ml-1">Le nom est obligatoire.</p>}
                             </div>
-                            <div className="border-3 border-dashed border-[var(--border-color)] rounded-[24px] p-10 hover:border-[#E07A5F] hover:bg-[#fff5f2] transition-all cursor-pointer group relative">
+                            <div className="border-3 border-dashed border-[var(--border-color)] rounded-[24px] p-10 hover:border-[var(--primary)] hover:bg-[#fff5f2] transition-all cursor-pointer group relative">
                                 <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" multiple />
                                 <div className="relative z-10 pointer-events-none">
-                                    <Upload size={32} className="text-[var(--text-disabled)] group-hover:text-[#E07A5F] mx-auto mb-2 transition-colors" />
+                                    <Upload size={32} className="text-[var(--text-disabled)] group-hover:text-[var(--primary)] mx-auto mb-2 transition-colors" />
                                     <p className="font-bold text-[var(--text-heading)]">Importer la photo</p>
                                     <p className="text-xs text-[var(--text-secondary)] mt-1">Plusieurs images possibles. L'IA détectera la structure.</p>
                                 </div>
@@ -3430,7 +3430,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         </div>
                     ) : (
                         <div className="py-12">
-                            <Loader2 size={48} className="text-[#E07A5F] animate-spin mx-auto mb-4" />
+                            <Loader2 size={48} className="text-[var(--primary)] animate-spin mx-auto mb-4" />
                             <p className="font-bold text-[var(--text-heading)]">Extraction des données...</p>
                             <p className="text-xs text-[var(--text-secondary)]">Analyse en parallèle pour un traitement ultra-rapide</p>
                             {files.length > 1 && (
@@ -3452,7 +3452,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     </div>
                     <h2 className="font-serif text-4xl font-bold text-[var(--text-heading)] mb-4">Test Numérisé !</h2>
                     <p className="text-[var(--text-secondary)] text-lg mb-8 max-w-md mx-auto">Ce test est désormais disponible dans votre catalogue personnel.</p>
-                    <button onClick={onClose} className="bg-[#3D405B] text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all">Retour au Dashboard</button>
+                    <button onClick={onClose} className="bg-[var(--secondary)] text-white px-10 py-4 rounded-2xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all">Retour au Dashboard</button>
                 </div>
             </div>
         );
@@ -3477,14 +3477,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </span>
                             )}
                         </div>
-                        <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1"><ShieldAlert size={10} className="text-[#E07A5F]" /> Test Privé (Chiffré)</p>
+                        <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1"><ShieldAlert size={10} className="text-[var(--primary)]" /> Test Privé (Chiffré)</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handlePreSave}
                         disabled={canonicalInvalidAmbiguous.length > 0}
-                        className="bg-[#E07A5F] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="bg-[var(--primary)] text-white px-6 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d0694e] transition-all flex items-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                         title={canonicalInvalidAmbiguous.length > 0 ? 'Corrigez les variantes ambiguës sans abréviation dans le catalogue canonique.' : undefined}
                     >
                         <Save size={16} /> Enregistrer le test
@@ -3532,7 +3532,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         <div className="max-w-3xl mx-auto space-y-12">
 
                             <div className={`p-4 rounded-xl border flex items-center gap-3 bg-[var(--hover-bg)] border-[var(--border-color)]`}>
-                                <div className="p-2 rounded-lg bg-[var(--card-bg)] text-[#E07A5F]">
+                                <div className="p-2 rounded-lg bg-[var(--card-bg)] text-[var(--primary)]">
                                     <FileText size={20} />
                                 </div>
                                 <div className="flex-1">
@@ -3556,7 +3556,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 key={cat.id}
                                                 onClick={() => setSelectedCategory(cat.id)}
                                                 className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedCategory === cat.id
-                                                    ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
+                                                    ? 'bg-[var(--secondary)] text-white border-[var(--secondary)] shadow-md'
                                                     : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
                                                     }`}
                                             >
@@ -3624,7 +3624,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             <button
                                                 key={page.id}
                                                 onClick={() => setCurrentFileIndex(index)}
-                                                className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'}`}
+                                                className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${index === currentFileIndex ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'}`}
                                             >
                                                 {`Page ${index + 1}`}
                                                 {page.status === 'validated' && <Check size={12} className="text-emerald-200" />}
@@ -3698,7 +3698,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 space-y-3">
                                     <div className="flex items-center justify-between gap-3 flex-wrap">
                                         <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-heading)]">
-                                            <ListChecks size={16} className="text-[#E07A5F]" />
+                                            <ListChecks size={16} className="text-[var(--primary)]" />
                                             Issues de la page
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -3706,7 +3706,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 <button
                                                     onClick={() => setDisplayFilterMode('all')}
                                                     className={`px-3 py-1 text-xs font-bold transition-colors ${displayFilterMode === 'all'
-                                                        ? 'bg-[#E07A5F] text-white'
+                                                        ? 'bg-[var(--primary)] text-white'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
                                                         }`}
                                                 >
@@ -3715,7 +3715,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 <button
                                                     onClick={() => setDisplayFilterMode('flagged')}
                                                     className={`px-3 py-1 text-xs font-bold transition-colors ${displayFilterMode === 'flagged'
-                                                        ? 'bg-[#E07A5F] text-white'
+                                                        ? 'bg-[var(--primary)] text-white'
                                                         : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
                                                         }`}
                                                 >
@@ -3858,7 +3858,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                                     <input
                                                                         value={batch.label}
                                                                         onChange={(e) => handleBatchLabelChange(subtest, batch.label, e.target.value)}
-                                                                        className="font-bold text-[var(--text-heading)] text-sm bg-transparent outline-none focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[#E07A5F]/20"
+                                                                        className="font-bold text-[var(--text-heading)] text-sm bg-transparent outline-none focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-[#E07A5F]/20 rounded px-2 py-1 w-full transition-all border border-transparent focus:border-[var(--primary)]/20"
                                                                         placeholder="Ex: 4;0 à 4;5 ans"
                                                                     />
                                                                 </div>
@@ -3926,16 +3926,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                                                 }`}
                                                                         >
                                                                             <div className="col-span-2">
-                                                                                <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
+                                                                                <input value={row.raw} onChange={(e) => handleRowChange(row.id, 'raw', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-medium text-[var(--text-main)] transition-all" />
                                                                             </div>
                                                                             <div className="col-span-2">
-                                                                                <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[var(--text-heading)] transition-all" />
+                                                                                <input value={row.standard} onChange={(e) => handleRowChange(row.id, 'standard', e.target.value)} className="w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold text-[var(--text-heading)] transition-all" />
                                                                             </div>
                                                                             <div className="col-span-2">
-                                                                                <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
+                                                                                <input value={row.zScore} onChange={(e) => handleRowChange(row.id, 'zScore', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
                                                                             </div>
                                                                             <div className="col-span-2">
-                                                                                <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
+                                                                                <input value={row.percentile} onChange={(e) => handleRowChange(row.id, 'percentile', e.target.value)} className={`w-full p-1.5 text-center bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F]/20 outline-none text-xs font-bold transition-all ${!isConsistent ? 'text-rose-500' : 'text-[var(--text-heading)]'}`} />
                                                                             </div>
                                                                             <div className="col-span-1 text-center">
                                                                                 <button onClick={() => handleDeleteRow(row.id)} className="text-[var(--text-disabled)] hover:text-rose-500 p-1.5 rounded hover:bg-rose-50 transition-all"><Trash2 size={14} /></button>
@@ -3944,7 +3944,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                                     );
                                                                 })}
 
-                                                                <button onClick={() => handleAddRowToBatch(subtest, batch.label)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-[10px] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
+                                                                <button onClick={() => handleAddRowToBatch(subtest, batch.label)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-[10px] font-bold hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-1">
                                                                     <Plus size={12} /> Ajouter une ligne à ce groupe
                                                                 </button>
                                                             </div>
@@ -3966,7 +3966,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                                 }`}
                                                         >
                                                             <div className="col-span-3">
-                                                                <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[#E07A5F] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
+                                                                <input value={row.label || ''} onChange={(e) => handleRowChange(row.id, 'label', e.target.value)} className="w-full p-2 bg-[var(--input-bg)] rounded-lg border border-[var(--input-border)] focus:border-[var(--primary)] outline-none text-sm font-bold text-[var(--text-heading)] transition-all" />
                                                             </div>
                                                             <div className="col-span-4">
                                                                 <input value={row.mean || ''} onChange={(e) => handleRowChange(row.id, 'mean', e.target.value)} className="w-full p-2 text-center bg-indigo-50/30 rounded-lg border border-indigo-100 focus:bg-white focus:border-indigo-500 outline-none text-sm font-bold text-indigo-900 transition-all" placeholder="Moyenne" />
@@ -3980,7 +3980,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                         </div>
                                                     ))}
 
-                                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] transition-all flex items-center justify-center gap-1">
+                                                    <button onClick={() => handleAddRowToSubtest(subtest)} className="mt-2 w-full py-2 border border-dashed border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs font-bold hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all flex items-center justify-center gap-1">
                                                         <Plus size={12} /> Ajouter une ligne
                                                     </button>
                                                 </>
@@ -3990,7 +3990,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 );
                             })}
 
-                            <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-secondary)] font-bold hover:border-[#E07A5F] hover:text-[#E07A5F] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
+                            <button onClick={handleAddSubtest} className="w-full py-4 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-secondary)] font-bold hover:border-[var(--primary)] hover:text-[var(--primary)] hover:bg-[#fff5f2] transition-all flex items-center justify-center gap-2">
                                 <Plus size={18} /> Créer un nouveau bloc (Sous-test)
                             </button>
 
@@ -4001,10 +4001,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             {/* --- MODAL CONFIRMATION LÉGALE --- */}
             {showSaveModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
-                            <div className="w-16 h-16 bg-[#3D405B] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-stone-300">
+                            <div className="w-16 h-16 bg-[var(--secondary)] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-stone-300">
                                 <Scale size={32} className="text-white" />
                             </div>
                             <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] text-center mb-2">Certification Légale</h3>
@@ -4032,7 +4032,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 <button
                                     onClick={handleFinalSave}
                                     disabled={!legalConsent || isSaving}
-                                    className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${legalConsent ? 'bg-[#E07A5F] hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-300 cursor-not-allowed'}`}
+                                    className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${legalConsent ? 'bg-[var(--primary)] hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-stone-300 cursor-not-allowed'}`}
                                 >
                                     {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
                                     Confirmer
@@ -4047,7 +4047,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             )}
 
             {showUnmappedModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-amber-100">
@@ -4084,7 +4084,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             {/* --- MODAL MERGE / ATTACH CONFIRMATION --- */}
             {showMergeModal && mergeTarget && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-[var(--card-bg)] w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg ${mergeTarget.isPublic ? 'bg-blue-100 shadow-blue-100' : 'bg-amber-100 shadow-amber-100'}`}>
@@ -4140,7 +4140,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             {/* --- MODAL FUZZY MATCHES (multiple similar tests found) --- */}
             {showFuzzyModal && fuzzyMatches.length > 0 && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
                         <div className="p-6">
                             <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-indigo-100">

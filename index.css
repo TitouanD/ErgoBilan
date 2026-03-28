@@ -28,6 +28,14 @@ body.light-theme {
   --btn-secondary-text: #374151;
   --progress-bg: #e5e7eb;
   --modal-overlay: rgba(61, 64, 91, 0.7);
+  /* Opacity modifiers for primary and secondary colors */
+  --primary-opacity-5: rgba(224, 122, 95, 0.05);
+  --primary-opacity-10: rgba(224, 122, 95, 0.1);
+  --primary-opacity-15: rgba(224, 122, 95, 0.15);
+  --primary-opacity-20: rgba(224, 122, 95, 0.2);
+  --secondary-opacity-5: rgba(61, 64, 91, 0.05);
+  --secondary-opacity-10: rgba(61, 64, 91, 0.1);
+  --secondary-opacity-20: rgba(61, 64, 91, 0.2);
   color-scheme: light;
 }
 
@@ -56,6 +64,14 @@ body.dark-theme {
   --btn-secondary-text: #c8cfe0;
   --progress-bg: #1e2038;
   --modal-overlay: rgba(12, 13, 25, 0.8);
+  /* Opacity modifiers for primary and secondary colors in dark theme */
+  --primary-opacity-5: rgba(224, 122, 95, 0.05);
+  --primary-opacity-10: rgba(224, 122, 95, 0.1);
+  --primary-opacity-15: rgba(224, 122, 95, 0.15);
+  --primary-opacity-20: rgba(224, 122, 95, 0.2);
+  --secondary-opacity-5: rgba(139, 157, 195, 0.05);
+  --secondary-opacity-10: rgba(139, 157, 195, 0.1);
+  --secondary-opacity-20: rgba(139, 157, 195, 0.2);
   color-scheme: dark;
 }
 

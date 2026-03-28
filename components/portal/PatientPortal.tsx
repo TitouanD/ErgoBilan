@@ -199,7 +199,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               </button>
 
               <div className="w-full max-w-md bg-[var(--card-bg)] p-10 rounded-[32px] shadow-xl border border-[var(--border-color)]">
-                  <div className="w-16 h-16 bg-[#3D405B] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#3D405B]/20">
+                  <div className="w-16 h-16 bg-[var(--secondary)] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#3D405B]/20">
                       <Key size={32} />
                   </div>
                   <h1 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">Accès Sécurisé</h1>
@@ -214,7 +214,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                               value={pastedLink}
                               onChange={(e) => { setPastedLink(e.target.value); setErrorMessage(''); }}
                               placeholder="https://app.com/?q_id=..."
-                              className="w-full p-4 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] outline-none focus:border-[#E07A5F] focus:bg-[var(--card-bg)] transition-all text-sm font-medium text-[var(--text-main)]"
+                              className="w-full p-4 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] outline-none focus:border-[var(--primary)] focus:bg-[var(--card-bg)] transition-all text-sm font-medium text-[var(--text-main)]"
                           />
                       </div>
                       
@@ -224,7 +224,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                           </div>
                       )}
 
-                      <button type="submit" disabled={!pastedLink} className="w-full py-4 bg-[#3D405B] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all disabled:opacity-50">
+                      <button type="submit" disabled={!pastedLink} className="w-full py-4 bg-[var(--secondary)] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all disabled:opacity-50">
                           Accéder au questionnaire
                       </button>
                   </form>
@@ -241,7 +241,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               <button onClick={onBack} className="absolute top-6 left-6 text-[var(--text-secondary)] hover:text-[var(--text-heading)] flex items-center gap-2 font-bold text-sm uppercase tracking-widest transition-colors z-50">
                   <ArrowLeft size={16} /> Annuler
               </button>
-              <Loader2 size={48} className="text-[#E07A5F] animate-spin mb-4" />
+              <Loader2 size={48} className="text-[var(--primary)] animate-spin mb-4" />
               <p className="text-[var(--text-secondary)] font-medium animate-pulse">Déchiffrement sécurisé...</p>
           </div>
       );
@@ -277,14 +277,14 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
     <div className="min-h-screen bg-[var(--app-bg)] pb-24 font-sans">
         
         {/* BANDEAU SÉCURITÉ */}
-        <div className="bg-[#3D405B] text-white px-4 py-2 text-center text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+        <div className="bg-[var(--secondary)] text-white px-4 py-2 text-center text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
             <ShieldCheck size={14} className="text-[#81B29A]" /> Connexion Sécurisée Chiffrée
         </div>
 
         <header className="bg-[var(--card-bg)]/80 backdrop-blur-md border-b border-[var(--border-color)] sticky top-0 z-40">
             <div className="max-w-4xl mx-auto px-6 h-20 flex justify-between items-center">
                 <div className="flex items-center gap-3 font-serif text-lg text-[var(--text-heading)] font-bold">
-                    <div className="w-8 h-8 bg-[#E07A5F] text-white rounded-lg flex items-center justify-center">
+                    <div className="w-8 h-8 bg-[var(--primary)] text-white rounded-lg flex items-center justify-center">
                         <Sparkles size={16} />
                     </div>
                     Espace Famille
@@ -328,7 +328,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
                     <button 
                         onClick={handleSaveData} 
                         disabled={!isAdministrativeReady}
-                        className="bg-[#E07A5F] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#E07A5F] disabled:hover:translate-y-0"
+                        className="bg-[var(--primary)] text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1 transition-all flex items-center gap-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--primary)] disabled:hover:translate-y-0"
                     >
                         <Send size={20} /> 
                         Chiffrer et Envoyer

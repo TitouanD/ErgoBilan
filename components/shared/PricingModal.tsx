@@ -24,7 +24,7 @@ const FeatureWithTooltip: React.FC<{
             <div className="flex-1">{children}</div>
 
             {/* Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-4 bg-[#3D405B] text-white text-xs rounded-xl shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 text-center leading-relaxed transform translate-y-2 group-hover:translate-y-0">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-4 bg-[var(--secondary)] text-white text-xs rounded-xl shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 text-center leading-relaxed transform translate-y-2 group-hover:translate-y-0">
                 <div className="font-bold mb-1 flex justify-center"><Info size={12} className="mb-1" /></div>
                 {tooltip}
                 {/* Arrow */}
@@ -40,7 +40,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
   // --- VUE 1 : LE PAYWALL (COMPARATEUR CHOC) ---
   if (view === 'paywall') {
       return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-md animate-in fade-in duration-300">
             <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative p-8">
                 <button onClick={onClose} className="absolute top-4 right-4 text-[var(--text-disabled)] hover:text-[var(--text-secondary)]"><X size={24} /></button>
                 
@@ -58,20 +58,20 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                     {/* Option A : Upgrade (Promo) */}
                     <div 
                         onClick={() => setView('plans')}
-                        className="bg-[#fff5f2] rounded-2xl p-5 border-2 border-[#E07A5F] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
+                        className="bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
                     >
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#E07A5F] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase whitespace-nowrap shadow-sm">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--primary)] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase whitespace-nowrap shadow-sm">
                             Offre Spéciale -50%
                         </div>
                         <div className="flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-[#E07A5F] text-white rounded-lg"><Zap size={20} fill="currentColor"/></div>
+                                <div className="p-2 bg-[var(--primary)] text-white rounded-lg"><Zap size={20} fill="currentColor"/></div>
                                 <div>
-                                    <h3 className="font-bold text-[#3D405B] text-sm">Passer en Abonnement</h3>
-                                    <p className="text-xs text-[#E07A5F] font-bold">Dès 19€ / mois</p>
+                                    <h3 className="font-bold text-[var(--secondary)] text-sm">Passer en Abonnement</h3>
+                                    <p className="text-xs text-[var(--primary)] font-bold">Dès 19€ / mois</p>
                                 </div>
                             </div>
-                            <ArrowRight size={20} className="text-[#E07A5F] group-hover:translate-x-1 transition-transform"/>
+                            <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform"/>
                         </div>
                     </div>
 
@@ -103,7 +103,7 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
 
   // --- VUE 2 : LES PLANS (Pricing Table Responsive) ---
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/60 backdrop-blur-sm animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[var(--secondary)]/60 backdrop-blur-sm animate-in fade-in duration-300">
         <div className="bg-[var(--card-bg)] backdrop-blur-xl w-full max-w-7xl rounded-[32px] shadow-2xl relative flex flex-col h-auto max-h-[95vh]">
             
             {/* Header Sticky Mobile */}
@@ -174,27 +174,27 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                     </div>
 
                     {/* COLONNE 2: PERFORMANCE (LE BEST-SELLER) */}
-                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-8 rounded-[32px] bg-[#fff5f2] border-2 border-[#E07A5F] shadow-2xl relative flex flex-col items-center text-center transform lg:scale-105 z-10 order-1 lg:order-2">
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-[#E07A5F] text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-b-xl whitespace-nowrap shadow-md">
+                    <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-8 rounded-[32px] bg-[#fff5f2] border-2 border-[var(--primary)] shadow-2xl relative flex flex-col items-center text-center transform lg:scale-105 z-10 order-1 lg:order-2">
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-[var(--primary)] text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-b-xl whitespace-nowrap shadow-md">
                             Le Choix Malin
                         </div>
                         
-                        <div className="mb-3 p-4 bg-[#E07A5F] text-white rounded-3xl shadow-lg shadow-orange-200 dark:shadow-black/30 mt-2">
+                        <div className="mb-3 p-4 bg-[var(--primary)] text-white rounded-3xl shadow-lg shadow-orange-200 dark:shadow-black/30 mt-2">
                             <Rocket size={32} />
                         </div>
                         
-                        <h3 className="font-bold text-3xl text-[#E07A5F]">Performance</h3>
+                        <h3 className="font-bold text-3xl text-[var(--primary)]">Performance</h3>
                         <div className="my-3">
-                            <span className="text-6xl font-serif font-bold text-[#3D405B]">34€</span><span className="text-stone-400 text-sm">/mois</span>
+                            <span className="text-6xl font-serif font-bold text-[var(--secondary)]">34€</span><span className="text-stone-400 text-sm">/mois</span>
                         </div>
-                        <p className="text-xs font-bold text-[#E07A5F] mb-8 bg-[#E07A5F]/10 px-3 py-1 rounded-full">
+                        <p className="text-xs font-bold text-[var(--primary)] mb-8 bg-[var(--primary)]/10 px-3 py-1 rounded-full">
                             Rentabilité maximale
                         </p>
                         
-                        <ul className="space-y-5 text-sm text-[#3D405B] mb-10 text-left w-full px-2 font-medium">
+                        <ul className="space-y-5 text-sm text-[var(--secondary)] mb-10 text-left w-full px-2 font-medium">
                             <FeatureWithTooltip 
                                 icon={Check} 
-                                highlightColor="text-[#E07A5F]"
+                                highlightColor="text-[var(--primary)]"
                                 tooltip="Couvre la majorité des activités libérales. Coût par bilan : seulement 5,60€ (remboursé x10 par le patient)."
                             >
                                 <span className="text-lg"><strong>6 bilans</strong> inclus / mois</span>
@@ -202,21 +202,21 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
 
                             <FeatureWithTooltip 
                                 icon={Sparkles} 
-                                highlightColor="text-[#E07A5F]"
+                                highlightColor="text-[var(--primary)]"
                                 bgColor="bg-white/60"
-                                borderColor="border-[#E07A5F]/20"
+                                borderColor="border-[var(--primary)]/20"
                                 tooltip={<span><strong>Droit à la flexibilité :</strong> Vos crédits non utilisés sont reportés. Vacances, maladie, mois creux... vous ne perdez rien.</span>}
                             >
-                                <span className="font-bold text-[#E07A5F]">Reports de crédits inclus</span>
+                                <span className="font-bold text-[var(--primary)]">Reports de crédits inclus</span>
                             </FeatureWithTooltip>
 
-                            <li className="flex gap-3"><Coins size={20} className="text-[#E07A5F] shrink-0"/> <span>Hors-forfait : <strong>8€</strong> / bilan</span></li>
+                            <li className="flex gap-3"><Coins size={20} className="text-[var(--primary)] shrink-0"/> <span>Hors-forfait : <strong>8€</strong> / bilan</span></li>
                             
-                            <div className="w-full h-px bg-[#E07A5F]/20 my-2"></div>
+                            <div className="w-full h-px bg-[var(--primary)]/20 my-2"></div>
                             
                             <FeatureWithTooltip 
                                 icon={Palette} 
-                                highlightColor="text-[#E07A5F]"
+                                highlightColor="text-[var(--primary)]"
                                 tooltip="Ajoutez votre Logo, vos couleurs et choisissez la police. Votre image de marque est essentielle."
                             >
                                 <span><strong>Personnalisation Complète</strong> (Logo, Couleurs...)</span>
@@ -225,13 +225,13 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                             {/* THE SEXY FEATURE */}
                             <FeatureWithTooltip 
                                 icon={Zap} 
-                                highlightColor="text-[#E07A5F]"
+                                highlightColor="text-[var(--primary)]"
                                 tooltip={<span>Rangez vos manuels et vos tableaux Excel. <br/>Saisissez le score brut, le système vous donne <strong>instantanément</strong> la Note Standard, le Percentile et l'interprétation.</span>}
                             >
                                 <span className="text-base"><strong>Finie la corvée des normes</strong></span>
                             </FeatureWithTooltip>
                         </ul>
-                        <button onClick={() => onSelectPlan('performance')} className="mt-auto w-full py-5 bg-[#E07A5F] text-white font-bold text-lg rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02]">
+                        <button onClick={() => onSelectPlan('performance')} className="mt-auto w-full py-5 bg-[var(--primary)] text-white font-bold text-lg rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02]">
                             Activer Performance
                         </button>
                     </div>

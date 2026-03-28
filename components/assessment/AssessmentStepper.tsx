@@ -41,7 +41,7 @@ export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick, d
                             className={`flex flex-col items-center gap-3 group focus:outline-none ${(isFuture || disabled) ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
                         >
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm relative z-10 ${
-                                isActive ? 'bg-[#E07A5F] border-[#E07A5F] text-white scale-110 shadow-lg shadow-orange-200 dark:shadow-black/30' :
+                                isActive ? 'bg-[var(--primary)] border-[var(--primary)] text-white scale-110 shadow-lg shadow-orange-200 dark:shadow-black/30' :
                                 isCompleted ? 'bg-[var(--card-bg)] border-emerald-400 text-emerald-500' :
                                 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'
                             }`}>

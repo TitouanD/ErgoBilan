@@ -79,13 +79,13 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
             <ShieldAlert size={16} className="text-rose-500" />
             <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Zone Restreinte</span>
           </div>
-          <h1 className="font-serif font-bold text-xl text-white tracking-wide">Panel <span className="text-[#E07A5F]">Admin</span></h1>
+          <h1 className="font-serif font-bold text-xl text-white tracking-wide">Panel <span className="text-[var(--primary)]">Admin</span></h1>
         </div>
 
         <nav className="flex-1 p-4 space-y-2">
           <button
             onClick={() => setActiveTab('catalogue')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'catalogue' ? 'bg-[#3D405B] text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'catalogue' ? 'bg-[var(--secondary)] text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Layers size={18} /> Catalogue Officiel
           </button>

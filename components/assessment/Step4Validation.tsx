@@ -103,7 +103,7 @@ const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: stri
     const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed";
     
     return (
-        <div className="mb-3 inline-flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 animate-in fade-in duration-200">
+        <div className="mb-3 inline-flex items-center gap-1 bg-[var(--secondary)] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 animate-in fade-in duration-200">
             <button onMouseDown={(e) => { e.preventDefault(); onAction('undo'); }} className={btnClass} title="Annuler (Ctrl+Z)" disabled={!canUndo}>
                 <Undo size={16} />
             </button>
@@ -216,7 +216,7 @@ const SectionCard: React.FC<{
             {/* Header Style Harmonisé avec ReportView */}
             <div className="flex justify-between items-center mb-6 border-b-2 border-[var(--border-color)] pb-2">
                 <div className="flex items-center gap-2">
-                    <div className="text-[#E07A5F]">
+                    <div className="text-[var(--primary)]">
                         <FileText size={18} />
                     </div>
                     <h3 className="text-lg font-bold text-[var(--text-heading)] uppercase tracking-wide">
@@ -246,7 +246,7 @@ const SectionCard: React.FC<{
                             autoCorrect="on"
                             autoCapitalize="sentences"
                             lang="fr"
-                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-medium resize-y shadow-inner transition-all"
+                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[var(--primary-opacity-10)] focus:border-[var(--primary)]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-medium resize-y shadow-inner transition-all"
                             value={history.value}
                             onChange={(e) => history.set(e.target.value)}
                             onKeyDown={(e) => {
@@ -386,7 +386,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
           <button 
               onClick={onNext}
               disabled={displayedSections.length === 0}
-              className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[#3D405B] hover:bg-[#E07A5F]"
+              className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[var(--secondary)] hover:bg-[var(--primary)]"
           >
               <Download size={18} />
               <span className="uppercase tracking-wider">Visualiser le document</span>

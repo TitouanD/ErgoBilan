@@ -65,15 +65,15 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
     if (!isVisible) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] bg-[#3D405B]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
+        <div className="fixed inset-0 z-[200] bg-[var(--secondary)]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
             
             <div className="w-full max-w-md bg-[var(--card-bg)] rounded-[40px] p-8 shadow-2xl relative overflow-hidden">
                 
                 {/* Header Animé */}
                 <div className="flex flex-col items-center mb-10">
-                    <div className="w-24 h-24 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mb-6 relative">
-                        <div className="absolute inset-0 border-4 border-[#E07A5F]/20 rounded-full border-t-[#E07A5F] animate-spin"></div>
-                        <Sparkles size={40} className="text-[#E07A5F] animate-pulse" />
+                    <div className="w-24 h-24 bg-[var(--primary)]/10 rounded-full flex items-center justify-center mb-6 relative">
+                        <div className="absolute inset-0 border-4 border-[var(--primary)]/20 rounded-full border-t-[#E07A5F] animate-spin"></div>
+                        <Sparkles size={40} className="text-[var(--primary)] animate-pulse" />
                     </div>
                     <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)] text-center">Génération en cours</h2>
                     <div className="flex items-center gap-2 mt-2 text-[var(--text-secondary)] text-xs font-mono bg-[var(--hover-bg)] px-3 py-1 rounded-full">
@@ -94,7 +94,7 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                         return (
                             <div key={step.id} className={`flex items-center gap-4 transition-all duration-500 ${isActive || isDone ? 'opacity-100' : 'opacity-40'}`}>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all shadow-sm z-10 ${
-                                    isActive ? 'bg-[#E07A5F] border-[#E07A5F] text-white scale-110' : 
+                                    isActive ? 'bg-[var(--primary)] border-[var(--primary)] text-white scale-110' : 
                                     isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 
                                     'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-disabled)]'
                                 }`}>
@@ -102,7 +102,7 @@ export const GenerationLoader: React.FC<Props> = ({ isVisible, onCancel }) => {
                                 </div>
                                 <div>
                                     <p className={`text-sm font-bold ${isActive ? 'text-[var(--text-heading)]' : 'text-[var(--text-secondary)]'}`}>{step.label}</p>
-                                    {isActive && <p className="text-[10px] text-[#E07A5F] font-bold animate-pulse">Traitement...</p>}
+                                    {isActive && <p className="text-[10px] text-[var(--primary)] font-bold animate-pulse">Traitement...</p>}
                                 </div>
                             </div>
                         );
