@@ -135,11 +135,11 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
 
     return (
         <div 
-            className="min-h-screen bg-[#3D405B] flex flex-col items-center justify-center p-6 relative overflow-hidden"
+            className="min-h-screen bg-[var(--secondary)] flex flex-col items-center justify-center p-6 relative overflow-hidden"
             onClick={() => inputRef.current?.focus()} 
         >
             {/* Background Abstract */}
-            <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#E07A5F]/10 rounded-full blur-[100px]"></div>
+            <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[var(--primary)]/10 rounded-full blur-[100px]"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#81B29A]/10 rounded-full blur-[100px]"></div>
 
             <div className="bg-white/10 backdrop-blur-md border border-white/10 p-12 rounded-[40px] shadow-2xl w-full max-w-md text-center relative animate-in zoom-in-95 duration-500">
@@ -164,7 +164,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                             key={idx}
                             className={`w-4 h-4 rounded-full transition-all duration-300 border border-white/20 ${
                                 pin.length > idx 
-                                    ? 'bg-[#E07A5F] scale-125 shadow-[0_0_15px_rgba(224,122,95,0.6)] border-[#E07A5F]' 
+                                    ? 'bg-[var(--primary)] scale-125 shadow-[0_0_15px_rgba(224,122,95,0.6)] border-[var(--primary)]' 
                                     : 'bg-white/10'
                             } ${error ? 'bg-rose-500 animate-shake shadow-none border-rose-500' : ''}`}
                         ></div>

@@ -149,11 +149,11 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
   const safePatient = patient || ({} as Patient);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-md animate-in fade-in duration-300">
       <div className="bg-[var(--app-bg)] w-full max-w-5xl h-[90vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative">
         <div className="p-8 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--card-bg)] sticky top-0 z-10 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#E07A5F]/10 rounded-2xl text-[#E07A5F]">
+            <div className="p-3 bg-[var(--primary)]/10 rounded-2xl text-[var(--primary)]">
               <Zap size={28} fill="currentColor" />
             </div>
             <div>
@@ -185,7 +185,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
                 <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)]">1. Tests suivis</h3>
                 <button
                   onClick={() => setShowCatalog(true)}
-                  className="flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[#E07A5F] hover:text-[#E07A5F]"
+                  className="flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)]"
                 >
                   <Plus size={14} />
                   Ajouter un test
@@ -269,7 +269,7 @@ export const QuickEntryModal: React.FC<Props> = ({ onClose, onSave, patient }) =
             <button
               onClick={handleSave}
               disabled={!canSave}
-              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[#E07A5F] text-white shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-[var(--card-bg-raised)] text-[var(--text-disabled)] cursor-not-allowed'}`}
+              className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-bold transition-all ${canSave ? 'bg-[var(--primary)] text-white shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:-translate-y-1' : 'bg-[var(--card-bg-raised)] text-[var(--text-disabled)] cursor-not-allowed'}`}
             >
               <Save size={20} /> Enregistrer la mini-réévaluation
             </button>

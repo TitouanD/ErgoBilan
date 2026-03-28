@@ -28,7 +28,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
             {/* PROGRESS BAR */}
             <div className="absolute top-0 left-0 w-full h-2 bg-[var(--progress-bg)]">
                 <div 
-                    className="h-full bg-[#E07A5F] transition-all duration-700 ease-out"
+                    className="h-full bg-[var(--primary)] transition-all duration-700 ease-out"
                     style={{ width: `${(step / maxSteps) * 100}%` }}
                 ></div>
             </div>
@@ -37,8 +37,8 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                 
                 {/* PARTIE VISUELLE (GAUCHE) */}
                 <div className="hidden lg:flex flex-col items-center justify-center h-[600px] bg-[var(--card-bg-raised)] rounded-[40px] p-10 relative overflow-hidden shadow-inner order-2 lg:order-1">
-                    <div className="absolute top-[-20%] left-[-20%] w-96 h-96 bg-[#E07A5F]/10 rounded-full blur-3xl"></div>
-                    <div className="absolute bottom-[-20%] right-[-20%] w-96 h-96 bg-[#3D405B]/10 rounded-full blur-3xl"></div>
+                    <div className="absolute top-[-20%] left-[-20%] w-96 h-96 bg-[var(--primary)]/10 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-[-20%] right-[-20%] w-96 h-96 bg-[var(--secondary)]/10 rounded-full blur-3xl"></div>
                     
                     {/* VISUEL ÉTAPE 1 : PROMESSE (Transformation) */}
                     {step === 1 && (
@@ -64,7 +64,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 {/* Carte Avant (Rédigée) qui arrive */}
                                 <div className="absolute inset-0 bg-[var(--card-bg)] border border-[var(--border-color)] shadow-2xl rounded-2xl p-6 transform rotate-3 flex flex-col z-10">
                                     <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2 bg-[#E07A5F] text-white rounded-lg shadow-md shadow-orange-200 dark:shadow-black/30">
+                                        <div className="p-2 bg-[var(--primary)] text-white rounded-lg shadow-md shadow-orange-200 dark:shadow-black/30">
                                             <Sparkles size={20} />
                                         </div>
                                         <div className="text-xs font-bold text-[var(--text-main)]">Rédaction IA</div>
@@ -82,7 +82,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </div>
 
                                 {/* Flèche de transformation */}
-                                <div className="absolute top-1/2 -right-12 transform -translate-y-1/2 translate-x-1/2 z-20 bg-[#3D405B] text-white p-3 rounded-full shadow-xl">
+                                <div className="absolute top-1/2 -right-12 transform -translate-y-1/2 translate-x-1/2 z-20 bg-[var(--secondary)] text-white p-3 rounded-full shadow-xl">
                                     <ArrowRight size={24} />
                                 </div>
                             </div>
@@ -92,10 +92,10 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                     {/* VISUEL ÉTAPE 2 : SÉCURITÉ (Coffre-fort) */}
                     {step === 2 && (
                         <div className="relative animate-in slide-in-from-right duration-500 flex flex-col items-center">
-                            <div className="w-64 h-64 bg-[#3D405B] rounded-[40px] shadow-2xl flex items-center justify-center relative border-4 border-[#4a4e69]">
+                            <div className="w-64 h-64 bg-[var(--secondary)] rounded-[40px] shadow-2xl flex items-center justify-center relative border-4 border-[#4a4e69]">
                                 <ShieldCheck size={100} className="text-[#81B29A]" />
                                 <div className="absolute -bottom-6 -right-6 bg-[var(--card-bg)] p-4 rounded-2xl shadow-lg border border-[var(--border-color)]">
-                                    <Lock size={32} className="text-[#E07A5F]" />
+                                    <Lock size={32} className="text-[var(--primary)]" />
                                 </div>
                             </div>
                             <div className="mt-8 flex items-center gap-3 bg-[var(--card-bg)] px-4 py-2 rounded-full shadow-sm border border-[var(--border-color)]">
@@ -110,8 +110,8 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                         <div className="relative animate-in slide-in-from-right duration-500">
                             <div className="relative w-80 h-80">
                                 {/* Central Node */}
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-white rounded-full shadow-xl flex items-center justify-center z-20 border-4 border-[#E07A5F]">
-                                    <Database size={40} className="text-[#3D405B]" />
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-white rounded-full shadow-xl flex items-center justify-center z-20 border-4 border-[var(--primary)]">
+                                    <Database size={40} className="text-[var(--secondary)]" />
                                 </div>
                                 
                                 {/* Satellites */}
@@ -136,11 +136,11 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
                             <div className="text-center mt-4">
                                 {isDemoMode ? (
-                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
+                                    <div className="inline-block bg-[var(--primary)] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
                                         Données vérifiées
                                     </div>
                                 ) : (
-                                    <div className="inline-block bg-[#E07A5F] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
+                                    <div className="inline-block bg-[var(--primary)] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
                                         +1 Crédit / Contribution
                                     </div>
                                 )}
@@ -153,10 +153,10 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                         <div className="relative animate-in slide-in-from-right duration-500 w-full max-w-md flex flex-col items-center">
                             <div className="relative">
                                 {/* Effet de lueur */}
-                                <div className="absolute inset-0 bg-[#E07A5F]/20 blur-2xl rounded-full"></div>
+                                <div className="absolute inset-0 bg-[var(--primary)]/20 blur-2xl rounded-full"></div>
                                 {/* Carte Cadeau */}
                                 <div className="bg-[var(--card-bg)] rounded-[32px] p-8 shadow-2xl border border-[var(--border-color)] relative z-10 w-80 text-center">
-                                    <div className="w-20 h-20 bg-[#E07A5F] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 dark:shadow-black/30 transform -rotate-6">
+                                    <div className="w-20 h-20 bg-[var(--primary)] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-200 dark:shadow-black/30 transform -rotate-6">
                                         <Gift size={40} />
                                     </div>
                                     <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Offre de Bienvenue</h3>
@@ -165,11 +165,11 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                     </div>
                                     <div className="space-y-3 text-left">
                                         <div className="flex items-center gap-3 p-3 bg-[var(--hover-bg)] rounded-xl">
-                                            <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[#E07A5F]"><Check size={14} strokeWidth={3}/></div>
+                                            <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[var(--primary)]"><Check size={14} strokeWidth={3}/></div>
                                             <span className="text-sm font-bold text-[var(--text-main)]">3 Crédits Offerts</span>
                                         </div>
                                         <div className="flex items-center gap-3 p-3 bg-[var(--hover-bg)] rounded-xl">
-                                            <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[#E07A5F]"><Check size={14} strokeWidth={3}/></div>
+                                            <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[var(--primary)]"><Check size={14} strokeWidth={3}/></div>
                                             <span className="text-sm font-bold text-[var(--text-main)]">Valable 30 jours</span>
                                         </div>
                                     </div>
@@ -185,11 +185,11 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                     {/* --- ÉTAPE 1 : PROMESSE --- */}
                     {step === 1 && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                            <div className="w-16 h-16 bg-[#3D405B] text-white rounded-2xl flex items-center justify-center shadow-xl shadow-[#3D405B]/20 mb-6">
+                            <div className="w-16 h-16 bg-[var(--secondary)] text-white rounded-2xl flex items-center justify-center shadow-xl shadow-[#3D405B]/20 mb-6">
                                 <Sparkles size={32} />
                             </div>
                             
-                            <h1 className="font-serif text-4xl md:text-5xl font-bold text-[#3D405B] leading-tight">
+                            <h1 className="font-serif text-4xl md:text-5xl font-bold text-[var(--secondary)] leading-tight">
                                 Votre demo clinique, en 3 minutes.
                             </h1>
                             
@@ -207,7 +207,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </div>
                             </div>
                             
-                            <button onClick={handleNext} className="w-full md:w-auto px-10 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3 mt-4 group">
+                            <button onClick={handleNext} className="w-full md:w-auto px-10 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3 mt-4 group">
                                 C'est parti <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                             </button>
                         </div>
@@ -220,17 +220,17 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 <Lock size={32} />
                             </div>
 
-                            <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B]">
+                            <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">
                                 Vous seul avez la clé.
                             </h2>
                             
                             <p className="text-stone-500 leading-relaxed">
-                                Vos données patients sont chiffrées de bout en bout (E2EE). <strong className="text-[#3D405B]">Vous avez défini un code PIN à 6 chiffres</strong> qui servira de clé de déchiffrement unique.
+                                Vos données patients sont chiffrées de bout en bout (E2EE). <strong className="text-[var(--secondary)]">Vous avez défini un code PIN à 6 chiffres</strong> qui servira de clé de déchiffrement unique.
                             </p>
 
                             <div className="bg-[var(--card-bg-raised)] border border-[var(--border-color)] p-6 rounded-2xl shadow-inner">
                                 <p className="text-sm font-medium text-[var(--text-main)] mb-2">
-                                    <Key size={16} className="inline mr-2 text-[#E07A5F]" /> 
+                                    <Key size={16} className="inline mr-2 text-[var(--primary)]" /> 
                                     Fonctionnement du coffre-fort :
                                 </p>
                                 <ul className="text-xs text-[var(--text-secondary)] space-y-2 ml-6 list-disc">
@@ -240,7 +240,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </ul>
                             </div>
 
-                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
+                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
                                 <ShieldCheck size={20} /> J'ai compris
                             </button>
                         </div>
@@ -253,7 +253,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 <Share2 size={32} />
                             </div>
 
-                            <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B]">
+                            <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">
                                 {isDemoMode ? "Des normes prêtes a l'emploi" : "L'intelligence collective."}
                             </h2>
 
@@ -265,7 +265,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
 
                             <div className="space-y-3">
                                 <div className="flex items-start gap-4 p-4 bg-[var(--hover-bg)] rounded-xl">
-                                    <Database size={20} className="text-[#E07A5F] mt-1 shrink-0" />
+                                    <Database size={20} className="text-[var(--primary)] mt-1 shrink-0" />
                                     <div>
                                         <h4 className="font-bold text-[var(--text-heading)] text-sm">Données à jour</h4>
                                         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Plus besoin de chercher dans vos manuels. Les conversions sont intégrées.</p>
@@ -273,7 +273,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </div>
                                 {!isDemoMode && (
                                     <div className="flex items-start gap-4 p-4 bg-[var(--hover-bg)] rounded-xl">
-                                        <Zap size={20} className="text-[#E07A5F] mt-1 shrink-0" />
+                                        <Zap size={20} className="text-[var(--primary)] mt-1 shrink-0" />
                                         <div>
                                             <h4 className="font-bold text-[var(--text-heading)] text-sm">Gagnez des crédits</h4>
                                             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">1 contribution validée = 1 crédit. Un modèle gagnant-gagnant.</p>
@@ -282,7 +282,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 )}
                             </div>
 
-                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
+                            <button onClick={handleNext} className="w-full px-8 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">
                                 {isDemoMode ? "Accéder à l'espace démo" : "Suivant"} <ArrowRight size={20} />
                             </button>
                         </div>
@@ -292,11 +292,11 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                     {step === 4 && !isDemoMode && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500 w-full">
                              <div className="mb-4">
-                                <h2 className="font-serif text-3xl md:text-4xl font-bold text-[#3D405B] mb-4">
+                                <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)] mb-4">
                                     Démarrez maintenant <br/> sans contrainte.
                                 </h2>
                                 <p className="text-lg text-stone-500 leading-relaxed">
-                                    Nous avons crédité votre compte de <strong className="text-[#E07A5F]">3 bilans offerts</strong>. 
+                                    Nous avons crédité votre compte de <strong className="text-[var(--primary)]">3 bilans offerts</strong>. 
                                     Aucun engagement, aucune carte bancaire requise.
                                 </p>
                              </div>
@@ -319,7 +319,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                              <div>
                                 <button 
                                     onClick={onComplete}
-                                    className="w-full px-8 py-4 bg-[#3D405B] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] hover:scale-[1.01] transition-all flex items-center justify-center gap-3 group"
+                                    className="w-full px-8 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] hover:scale-[1.01] transition-all flex items-center justify-center gap-3 group"
                                 >
                                     Accéder à mon espace <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                                 </button>

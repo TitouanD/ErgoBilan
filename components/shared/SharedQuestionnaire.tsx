@@ -79,7 +79,7 @@ const ChipGroup = ({
                     onClick={() => handleClick(opt.value)}
                     className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
                         isSelected(opt.value) 
-                        ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md' 
+                        ? 'bg-[var(--secondary)] text-white border-[var(--secondary)] shadow-md' 
                         : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-heading)]'
                     }`}
                 >
@@ -107,7 +107,7 @@ const SelectCard = ({
         onClick={onClick}
         className={`flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 text-center ${
             selected 
-            ? 'border-[#E07A5F] bg-[#fff5f2] dark:bg-[#E07A5F]/15 text-[#E07A5F]' 
+            ? 'border-[var(--primary)] bg-[#fff5f2] dark:bg-[var(--primary)]/15 text-[var(--primary)]' 
             : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] hover:border-[var(--text-secondary)]'
         }`}
     >
@@ -129,7 +129,7 @@ const ToggleSwitch = ({
         <span className="font-bold text-[var(--text-heading)] text-sm">{label}</span>
         <button 
             onClick={() => onChange(!checked)}
-            className={`w-12 h-6 rounded-full relative transition-colors ${checked ? 'bg-[#E07A5F]' : 'bg-[var(--progress-bg)]'}`}
+            className={`w-12 h-6 rounded-full relative transition-colors ${checked ? 'bg-[var(--primary)]' : 'bg-[var(--progress-bg)]'}`}
         >
             <div className={`absolute top-1 w-4 h-4 bg-[var(--card-bg)] rounded-full transition-transform shadow-sm ${checked ? 'left-7' : 'left-1'}`}></div>
         </button>
@@ -328,7 +328,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   };
   const [tempGoal, setTempGoal] = useState('');
 
-  const inputClass = "w-full p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--input-border)] outline-none focus:border-[#E07A5F] focus:bg-[var(--card-bg)] transition-all font-bold text-[var(--text-heading)] text-sm";
+  const inputClass = "w-full p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--input-border)] outline-none focus:border-[var(--primary)] focus:bg-[var(--card-bg)] transition-all font-bold text-[var(--text-heading)] text-sm";
   const labelClass = "text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider ml-1 mb-1 block";
 
   const FamilyNextButton = ({ sectionId }: { sectionId: SectionKey }) => {
@@ -338,7 +338,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           <div className="flex justify-end mt-6 pt-4 border-t border-[var(--border-color)]">
               <button 
                   onClick={() => openNextSection(sectionId)}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all ${isLast ? 'bg-emerald-500' : 'bg-[#3D405B] hover:bg-[#E07A5F]'}`}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all ${isLast ? 'bg-emerald-500' : 'bg-[var(--secondary)] hover:bg-[var(--primary)]'}`}
               >
                   {isLast ? "Valider" : "Valider et Suivant"}
                   {!isLast && <ArrowRight size={16} />}
@@ -356,7 +356,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                     <span>{progress}%</span>
                 </div>
                 <div className="h-2 bg-[var(--progress-bg)] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#E07A5F] transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                    <div className="h-full bg-[var(--primary)] transition-all duration-500" style={{ width: `${progress}%` }}></div>
                 </div>
             </div>
         )}
@@ -367,20 +367,20 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
             
             return (
                 <React.Fragment key={section.id}>
-                <div id={`section-${section.id}`} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isAdministrativeSection ? (isOpen ? 'shadow-md border-[#E07A5F]/40' : 'shadow-sm hover:shadow border-[#E07A5F]/25') : (isOpen ? 'shadow-md border-[#E07A5F]/30' : 'shadow-sm hover:shadow border-[var(--border-color)]')} ${isAdministrativeSection ? 'bg-[var(--hover-bg)]' : 'bg-[var(--card-bg)]'}`}>
+                <div id={`section-${section.id}`} className={`rounded-[24px] border transition-all duration-300 overflow-hidden ${isAdministrativeSection ? (isOpen ? 'shadow-md border-[var(--primary)]/40' : 'shadow-sm hover:shadow border-[var(--primary)]/25') : (isOpen ? 'shadow-md border-[var(--primary)]/30' : 'shadow-sm hover:shadow border-[var(--border-color)]')} ${isAdministrativeSection ? 'bg-[var(--hover-bg)]' : 'bg-[var(--card-bg)]'}`}>
                     <button 
                         onClick={() => toggleSection(section.id)}
                         className={`w-full flex items-center justify-between p-5 transition-colors ${isAdministrativeSection ? 'bg-[var(--card-bg-raised)]' : isOpen ? 'bg-[var(--card-bg)]' : 'bg-[var(--card-bg-raised)]'}`}
                     >
                         <div className="flex items-center gap-4">
-                            <div className={`p-2.5 rounded-xl ${isOpen ? 'bg-[#fff5f2] dark:bg-[#E07A5F]/15 text-[#E07A5F]' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'}`}>
+                            <div className={`p-2.5 rounded-xl ${isOpen ? 'bg-[#fff5f2] dark:bg-[var(--primary)]/15 text-[var(--primary)]' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'}`}>
                                 <section.icon size={20} />
                             </div>
                             <h3 className={`font-serif font-bold text-lg ${isOpen ? 'text-[var(--text-heading)]' : 'text-[var(--text-secondary)]'}`}>
                                 {section.title}
                             </h3>
                         </div>
-                        <div className={`p-2 rounded-full ${isOpen ? 'text-[#E07A5F] bg-[#fff5f2] dark:bg-[#E07A5F]/15' : 'text-[var(--text-disabled)]'}`}>
+                        <div className={`p-2 rounded-full ${isOpen ? 'text-[var(--primary)] bg-[#fff5f2] dark:bg-[var(--primary)]/15' : 'text-[var(--text-disabled)]'}`}>
                             {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                         </div>
                     </button>
@@ -529,14 +529,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)]">
                                         <div className="flex justify-between items-center mb-3">
                                             <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><HeartHandshake size={14}/> Fratrie</span>
-                                            <button onClick={addSibling} className="text-[10px] bg-[var(--card-bg)] border border-[var(--border-color)] px-3 py-1.5 rounded-full uppercase font-bold tracking-wider hover:bg-[#3D405B] hover:text-white transition-all flex items-center gap-1 text-[var(--text-secondary)]"><Plus size={12}/> Ajouter</button>
+                                            <button onClick={addSibling} className="text-[10px] bg-[var(--card-bg)] border border-[var(--border-color)] px-3 py-1.5 rounded-full uppercase font-bold tracking-wider hover:bg-[var(--secondary)] hover:text-white transition-all flex items-center gap-1 text-[var(--text-secondary)]"><Plus size={12}/> Ajouter</button>
                                         </div>
                                         <div className="space-y-2">
                                             {(data.siblings || []).map((sib, idx) => (
                                                 <div key={idx} className="flex gap-2 items-center animate-in slide-in-from-left-2">
-                                                    <input placeholder="Prénom" value={sib.firstName} onChange={e => updateSibling(idx, 'firstName', e.target.value)} className="flex-1 p-2 bg-[var(--input-bg)] rounded-lg text-sm border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]" />
-                                                    <input placeholder="Âge" value={sib.age} onChange={e => updateSibling(idx, 'age', e.target.value)} className="w-16 p-2 bg-[var(--input-bg)] rounded-lg text-sm border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]" />
-                                                    <select value={sib.relation} onChange={e => updateSibling(idx, 'relation', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]">
+                                                    <input placeholder="Prénom" value={sib.firstName} onChange={e => updateSibling(idx, 'firstName', e.target.value)} className="flex-1 p-2 bg-[var(--input-bg)] rounded-lg text-sm border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]" />
+                                                    <input placeholder="Âge" value={sib.age} onChange={e => updateSibling(idx, 'age', e.target.value)} className="w-16 p-2 bg-[var(--input-bg)] rounded-lg text-sm border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]" />
+                                                    <select value={sib.relation} onChange={e => updateSibling(idx, 'relation', e.target.value)} className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]">
                                                         <option value="Frère">Frère</option>
                                                         <option value="Sœur">Sœur</option>
                                                         <option value="Demi-frère">Demi-frère</option>
@@ -546,7 +546,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     <select 
                                                         value={getSiblingResidence(sib)}
                                                         onChange={(e) => setSiblingResidence(idx, e.target.value as 'with' | 'partial' | 'away' | 'other')}
-                                                        className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                                                        className="p-2 bg-[var(--input-bg)] rounded-lg text-xs font-bold border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
                                                     >
                                                         <option value="with">Vit au domicile</option>
                                                         <option value="partial">Vit partiellement</option>
@@ -563,7 +563,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                                 onChange({ siblings: newSiblings });
                                                             }}
                                                             placeholder="Préciser..."
-                                                            className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]"
+                                                            className="p-2 bg-[var(--input-bg)] rounded-lg text-xs border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
                                                         />
                                                     )}
 
@@ -863,7 +863,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <div>
                                                     <label className={labelClass}>Âge de la marche</label>
                                                     <div className="flex items-center gap-2">
-                                                        <input type="number" value={parseInt(data.walkingAge || '0') || ''} onChange={(e) => handleFieldChange('walkingAge', e.target.value + ' mois')} className="w-20 p-2 bg-[var(--input-bg)] rounded-lg font-bold text-center border border-[var(--input-border)] outline-none focus:border-[#E07A5F] text-[var(--text-heading)]" placeholder="Mois" />
+                                                        <input type="number" value={parseInt(data.walkingAge || '0') || ''} onChange={(e) => handleFieldChange('walkingAge', e.target.value + ' mois')} className="w-20 p-2 bg-[var(--input-bg)] rounded-lg font-bold text-center border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]" placeholder="Mois" />
                                                         <span className="text-sm font-bold text-[var(--text-secondary)]">mois</span>
                                                     </div>
                                                 </div>
@@ -1041,7 +1041,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
                                                             <label key={opt} className="cursor-pointer">
                                                                 <input type="radio" name={item.key} value={opt} checked={(data as any)[item.key] === opt} onChange={handleChange} className="peer sr-only"/>
-                                                                <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
+                                                                <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
                                                                     {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
                                                                 </div>
                                                             </label>
@@ -1081,7 +1081,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
                                                             <label key={opt} className="cursor-pointer">
                                                                 <input type="radio" name={item.key} value={opt} checked={(data as any)[item.key] === opt} onChange={handleChange} className="peer sr-only"/>
-                                                                <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
+                                                                <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
                                                                     {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
                                                                 </div>
                                                             </label>
@@ -1121,7 +1121,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
                                                         <label key={opt} className="cursor-pointer">
                                                             <input type="radio" name="timeSpaceClockReading" value={opt} checked={data.timeSpaceClockReading === opt} onChange={handleChange} className="peer sr-only"/>
-                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[#E07A5F] peer-checked:text-white peer-checked:border-[#E07A5F] transition-all">
+                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
                                                                 {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
                                                             </div>
                                                         </label>

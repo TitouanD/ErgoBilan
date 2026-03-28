@@ -75,7 +75,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-xl overflow-hidden">
                 <div className="px-8 py-6 border-b border-[var(--border-color)] bg-[var(--card-bg-raised)]">
                     <h2 className="text-xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
-                        <User size={22} className="text-[#E07A5F]" /> Mon Profil
+                        <User size={22} className="text-[var(--primary)]" /> Mon Profil
                     </h2>
                     <p className="text-sm text-[var(--text-secondary)] mt-1">Ces informations apparaissent sur vos bilans.</p>
                 </div>
@@ -85,13 +85,13 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                         <div>
                             <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Prénom</label>
                             <input name="firstName" value={form.firstName} onChange={handleChange}
-                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                                 placeholder="Prénom" />
                         </div>
                         <div>
                             <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Nom</label>
                             <input name="lastName" value={form.lastName} onChange={handleChange}
-                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                                 placeholder="Nom" />
                         </div>
                     </div>
@@ -99,7 +99,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                     <div>
                         <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Sous-titre (profession)</label>
                         <input name="brandSubtitle" value={form.brandSubtitle} onChange={handleChange}
-                            className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                            className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                             placeholder="Ergothérapeute" />
                     </div>
 
@@ -109,7 +109,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                             <div className="relative mt-1">
                                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
                                 <input name="phone" value={form.phone} onChange={handleChange}
-                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                                     placeholder="06..." />
                             </div>
                         </div>
@@ -118,7 +118,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                             <div className="relative mt-1">
                                 <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
                                 <input name="siret" value={form.siret} onChange={handleChange}
-                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                                     placeholder="123 456 789..." />
                             </div>
                         </div>
@@ -129,7 +129,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                         <div className="relative mt-1">
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
                             <input name="address" value={form.address} onChange={handleChange}
-                                className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/10 outline-none font-bold text-[var(--text-main)]"
+                                className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
                                 placeholder="10 Rue de la Santé, 75000 Paris" />
                         </div>
                     </div>
@@ -141,7 +141,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="w-full bg-[#E07A5F] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-0.5 disabled:opacity-70 flex items-center justify-center gap-2"
+                        className="w-full bg-[var(--primary)] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-0.5 disabled:opacity-70 flex items-center justify-center gap-2"
                     >
                         {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                         Enregistrer

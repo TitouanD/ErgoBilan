@@ -36,7 +36,7 @@ export const NetworkErrorScreen: React.FC<Props> = ({ onRetry, onLogout }) => {
                     <button
                         onClick={handleRetry}
                         disabled={isRetrying}
-                        className="w-full py-3.5 bg-[#E07A5F] text-white rounded-2xl font-bold shadow-lg shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                        className="w-full py-3.5 bg-[var(--primary)] text-white rounded-2xl font-bold shadow-lg shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
                     >
                         {isRetrying ? (
                             <Loader2 size={20} className="animate-spin" />

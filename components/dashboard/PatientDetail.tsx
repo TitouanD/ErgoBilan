@@ -106,7 +106,7 @@ const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () =>
   const [input, setInput] = useState('');
   const isValid = input.toLowerCase() === 'supprimer';
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#3D405B]/80 p-4 backdrop-blur-md">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--secondary)]/80 p-4 backdrop-blur-md">
       <div className="relative w-full max-w-md rounded-[32px] bg-[var(--card-bg)] p-8 text-center shadow-2xl">
         <button onClick={onCancel} className="absolute right-6 top-6 text-[var(--text-disabled)] hover:text-[var(--text-secondary)]">
           <X size={24} />
@@ -357,10 +357,10 @@ export const PatientDetail: React.FC<Props> = ({
           {followup && <p className="mt-2 text-sm font-semibold text-[var(--text-heading)]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
         </div>
         <div className="flex gap-3">
-          <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-4 text-sm font-bold text-[var(--text-heading)] hover:border-[#E07A5F]">
-            <Plus size={18} className="text-[#E07A5F]" /> Mini-réévaluation
+          <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-4 text-sm font-bold text-[var(--text-heading)] hover:border-[var(--primary)]">
+            <Plus size={18} className="text-[var(--primary)]" /> Mini-réévaluation
           </button>
-          <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[#3D405B] px-8 py-4 text-sm font-bold text-white hover:bg-[#2c2e42]">
+          <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[var(--secondary)] px-8 py-4 text-sm font-bold text-white hover:brightness-90">
             <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation formelle
           </button>
         </div>
@@ -369,7 +369,7 @@ export const PatientDetail: React.FC<Props> = ({
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-8 lg:col-span-2">
           <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><TrendingUp size={22} className="text-[#E07A5F]" /> Evolution</h2>
+            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><TrendingUp size={22} className="text-[var(--primary)]" /> Evolution</h2>
             {chartData.length >= 3 ? (
               <div className="h-[280px] w-full">
                 <Suspense fallback={<div className="h-full w-full rounded-lg bg-[var(--hover-bg)] animate-pulse" />}>
@@ -420,7 +420,7 @@ export const PatientDetail: React.FC<Props> = ({
               <h2 className="flex items-center gap-2 font-serif text-2xl font-bold text-[var(--text-heading)]"><Calendar size={22} /> Evenements cliniques</h2>
               <div className="flex gap-2">
                 {(['all', 'formal', 'mini'] as const).map((tab) => (
-                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[#3D405B] bg-[#3D405B] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}>
+                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}>
                     {tab === 'all' ? 'Tout' : tab === 'formal' ? 'Formels' : 'Mini'}
                   </button>
                 ))}
@@ -437,7 +437,7 @@ export const PatientDetail: React.FC<Props> = ({
                       <p className="text-xs text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} • {item.testName || 'Sans libelle'}</p>
                     </div>
                     {item.hasFormalReport ? (
-                      <button onClick={() => onOpenReport(item.id)} className="flex items-center gap-2 rounded-lg bg-[#E07A5F]/10 px-3 py-1 text-[10px] font-bold uppercase text-[#E07A5F]">
+                      <button onClick={() => onOpenReport(item.id)} className="flex items-center gap-2 rounded-lg bg-[var(--primary)]/10 px-3 py-1 text-[10px] font-bold uppercase text-[var(--primary)]">
                         <FileText size={12} /> Document
                       </button>
                     ) : (
@@ -450,7 +450,7 @@ export const PatientDetail: React.FC<Props> = ({
           </div>
           {hasMoreHistory && onLoadMoreHistory && (
             <div className="flex justify-center">
-              <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-[var(--border-color)] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[#E07A5F] hover:text-[var(--text-heading)] disabled:opacity-50">
+              <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-[var(--border-color)] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-heading)] disabled:opacity-50">
                 {isLoadingMoreHistory ? 'Chargement...' : 'Charger plus'}
               </button>
             </div>
@@ -464,7 +464,7 @@ export const PatientDetail: React.FC<Props> = ({
               <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)]">Aucun document formel.</p>
             ) : (
               formalAssessments.map((item) => (
-                <button key={item.id} onClick={() => onOpenReport(item.id)} className="flex w-full items-center justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left hover:border-[#E07A5F]">
+                <button key={item.id} onClick={() => onOpenReport(item.id)} className="flex w-full items-center justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left hover:border-[var(--primary)]">
                   <div>
                     <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
                     <p className="text-[10px] font-bold text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>

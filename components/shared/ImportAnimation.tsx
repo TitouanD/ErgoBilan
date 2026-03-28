@@ -30,7 +30,7 @@ export const ImportAnimation: React.FC<Props> = ({ isOpen, onComplete }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] bg-[#3D405B]/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[200] bg-[var(--secondary)]/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
             <div className="relative w-full max-w-lg p-10 flex flex-col items-center">
                 
                 {/* ZONE D'ANIMATION CENTRALE */}
@@ -39,8 +39,8 @@ export const ImportAnimation: React.FC<Props> = ({ isOpen, onComplete }) => {
                     {/* GAUCHE : SOURCE (FAMILLE) */}
                     <div className={`absolute left-10 transition-all duration-700 ${step >= 2 ? 'opacity-0 -translate-x-10' : 'opacity-100'}`}>
                         <div className="w-24 h-20 bg-white rounded-lg shadow-xl flex items-center justify-center relative border border-stone-200">
-                            <Mail size={40} className="text-[#3D405B]" />
-                            <div className="absolute -top-2 -right-2 bg-[#E07A5F] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            <Mail size={40} className="text-[var(--secondary)]" />
+                            <div className="absolute -top-2 -right-2 bg-[var(--primary)] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                                 Reçu
                             </div>
                         </div>
@@ -51,7 +51,7 @@ export const ImportAnimation: React.FC<Props> = ({ isOpen, onComplete }) => {
                     {step === 1 && (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#E07A5F] w-1/3 animate-[shimmer_1s_infinite]"></div>
+                                <div className="h-full bg-[var(--primary)] w-1/3 animate-[shimmer_1s_infinite]"></div>
                             </div>
                         </div>
                     )}
@@ -73,8 +73,8 @@ export const ImportAnimation: React.FC<Props> = ({ isOpen, onComplete }) => {
                                     {/* Items qui rentrent */}
                                     {step === 2 && (
                                         <>
-                                            <div className="absolute top-10 left-[-40px] text-[#3D405B] animate-[flyIn_0.4s_ease-out_forwards]"><UserCheck size={16}/></div>
-                                            <div className="absolute top-14 left-[-60px] text-[#E07A5F] animate-[flyIn_0.5s_ease-out_0.2s_forwards]"><GraduationCap size={16}/></div>
+                                            <div className="absolute top-10 left-[-40px] text-[var(--secondary)] animate-[flyIn_0.4s_ease-out_forwards]"><UserCheck size={16}/></div>
+                                            <div className="absolute top-14 left-[-60px] text-[var(--primary)] animate-[flyIn_0.5s_ease-out_0.2s_forwards]"><GraduationCap size={16}/></div>
                                             <div className="absolute top-18 left-[-30px] text-[#81B29A] animate-[flyIn_0.6s_ease-out_0.4s_forwards]"><Stethoscope size={16}/></div>
                                         </>
                                     )}

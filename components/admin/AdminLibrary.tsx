@@ -1323,13 +1323,13 @@ export const AdminLibrary: React.FC<Props> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher un test"
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs text-stone-200 outline-none focus:border-[#E07A5F]"
+              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs text-stone-200 outline-none focus:border-[var(--primary)]"
             />
           </div>
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as any)}
-            className="bg-white/5 border border-white/10 rounded-xl px-3 text-xs text-stone-200 outline-none focus:border-[#E07A5F]"
+            className="bg-white/5 border border-white/10 rounded-xl px-3 text-xs text-stone-200 outline-none focus:border-[var(--primary)]"
           >
             <option value="public" className="bg-[#23252F] text-stone-200">Public</option>
             <option value="private" className="bg-[#23252F] text-stone-200">Privé</option>
@@ -1362,7 +1362,7 @@ export const AdminLibrary: React.FC<Props> = ({
                 setSelectedTestId(t.id);
                 loadBundle(t.id);
               }}
-              className={`w-full text-left p-3 rounded-xl border transition-all ${selectedTestId === t.id ? 'bg-white/10 border-[#E07A5F] ring-1 ring-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+              className={`w-full text-left p-3 rounded-xl border transition-all ${selectedTestId === t.id ? 'bg-white/10 border-[var(--primary)] ring-1 ring-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
             >
               <div className="flex justify-between items-center">
                 <span className="text-sm font-bold text-white truncate">{t.name}</span>
@@ -1516,7 +1516,7 @@ export const AdminLibrary: React.FC<Props> = ({
                 <button
                   onClick={handleSave}
                   disabled={isSaving || hasInvalidAmbiguousSubtests}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-[#E07A5F] text-white hover:bg-[#d0694e] flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-xs font-bold rounded-lg bg-[var(--primary)] text-white hover:bg-[#d0694e] flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   Sauvegarder
@@ -1628,7 +1628,7 @@ export const AdminLibrary: React.FC<Props> = ({
                           setDraggingSubtestId(null);
                           setDropTargetSubtestId(null);
                         }}
-                        className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[#E07A5F]' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${dropTargetSubtestId === s.id ? 'ring-1 ring-[#E07A5F]/60' : ''}`}
+                        className={`p-3 rounded-lg border cursor-pointer ${selectedSubtestId === s.id ? 'bg-white/10 border-[var(--primary)]' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${dropTargetSubtestId === s.id ? 'ring-1 ring-[#E07A5F]/60' : ''}`}
                         onClick={() => setSelectedSubtestId(s.id)}
                       >
                         <div className="flex items-center justify-between">
@@ -2191,7 +2191,7 @@ export const AdminLibrary: React.FC<Props> = ({
                       <select
                         value={bulkScoreScope}
                         onChange={(e) => setBulkScoreScope(e.target.value as BulkScoreScope)}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F]"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[var(--primary)]"
                       >
                         <option value="all_subtests" className="bg-[#23252F] text-stone-200">Tous les sous-tests</option>
                         <option value="selected_subtest" className="bg-[#23252F] text-stone-200">Sous-test selectionne</option>
@@ -2206,7 +2206,7 @@ export const AdminLibrary: React.FC<Props> = ({
                         value={bulkScoreFlagCode}
                         onChange={(e) => setBulkScoreFlagCode(e.target.value)}
                         disabled={bulkScoreScope !== 'flag_type' || qualityFlagTypeOptions.length === 0}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F] disabled:opacity-50"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[var(--primary)] disabled:opacity-50"
                       >
                         {qualityFlagTypeOptions.length === 0 && (
                           <option value="" className="bg-[#23252F] text-stone-200">Aucun flag</option>
@@ -2223,7 +2223,7 @@ export const AdminLibrary: React.FC<Props> = ({
                       <select
                         value={bulkRawDirection}
                         onChange={(e) => setBulkRawDirection(e.target.value as 'higher_better' | 'lower_better')}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#E07A5F]"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[var(--primary)]"
                       >
                         <option value="lower_better" className="bg-[#23252F] text-stone-200">lower_better</option>
                         <option value="higher_better" className="bg-[#23252F] text-stone-200">higher_better</option>
@@ -2647,7 +2647,7 @@ export const AdminLibrary: React.FC<Props> = ({
               <select
                 value={dismissByTypeCode}
                 onChange={(e) => setDismissByTypeCode(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#E07A5F]"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[var(--primary)]"
               >
                 {qualityFlagTypeOptions.map((option) => (
                   <option key={option.code} value={option.code} className="bg-[#23252F] text-stone-200">
@@ -2668,7 +2668,7 @@ export const AdminLibrary: React.FC<Props> = ({
               <button
                 onClick={() => void handleConfirmDismissByType()}
                 disabled={isDismissingAllQuality || !dismissByTypeCode}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E07A5F] text-white hover:bg-[#d0694e] disabled:opacity-50"
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--primary)] text-white hover:bg-[#d0694e] disabled:opacity-50"
               >
                 {isDismissingAllQuality ? 'Ignorer...' : 'Ignorer ce type'}
               </button>

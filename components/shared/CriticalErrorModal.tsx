@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const CriticalErrorModal: React.FC<Props> = ({ error, onRetry, onClose }) => (
-  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#3D405B]/90 backdrop-blur-md animate-in fade-in duration-300">
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--secondary)]/90 backdrop-blur-md animate-in fade-in duration-300">
     <div className="bg-[var(--card-bg)] max-w-md w-full rounded-[32px] p-8 shadow-2xl text-center relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-2 bg-rose-500" />
       <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500 animate-pulse">
@@ -25,7 +25,7 @@ export const CriticalErrorModal: React.FC<Props> = ({ error, onRetry, onClose })
         </button>
         <button
           onClick={onRetry}
-          className="flex-1 py-4 bg-[#3D405B] text-white rounded-xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
+          className="flex-1 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
         >
           <RefreshCw size={18} /> Réessayer
         </button>

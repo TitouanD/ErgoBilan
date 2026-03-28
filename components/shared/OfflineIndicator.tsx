@@ -29,7 +29,7 @@ export const OfflineIndicator: React.FC = () => {
 
     if (!isOnline) {
         return (
-            <div className="fixed bottom-0 left-0 right-0 bg-[#3D405B] text-white z-[9999] animate-in slide-in-from-bottom-full duration-500 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
+            <div className="fixed bottom-0 left-0 right-0 bg-[var(--secondary)] text-white z-[9999] animate-in slide-in-from-bottom-full duration-500 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
                 <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-center md:justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="p-1.5 bg-rose-500 rounded-full animate-pulse">

@@ -235,7 +235,7 @@ export const DisambiguationModal: React.FC<Props> = ({ pages, officialSubtests =
     const lowCount = groups.filter((g) => !g.isVariant).length;
 
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-[var(--card-bg)] w-full max-w-xl rounded-[24px] shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[var(--border-color)] shrink-0">

@@ -73,7 +73,7 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
                 <div className="flex flex-col gap-3">
                     <button
                         onClick={this.handleReload}
-                        className="w-full py-4 bg-[#3D405B] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
+                        className="w-full py-4 bg-[var(--secondary)] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
                     >
                         <RefreshCw size={18} /> Recharger l'application
                     </button>

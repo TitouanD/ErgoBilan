@@ -108,7 +108,7 @@ export const ClinicalInsights: React.FC = () => {
                 {/* SÉLECTEUR */}
                 <div className="bg-[#1A1C23] border border-white/5 p-6 rounded-2xl">
                     <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                        <Search size={18} className="text-[#E07A5F]" /> Sélection du Test
+                        <Search size={18} className="text-[var(--primary)]" /> Sélection du Test
                     </h3>
                     
                     <div className="space-y-4">
@@ -121,7 +121,7 @@ export const ClinicalInsights: React.FC = () => {
                                     const t = catalog.flatMap(c => c.tests).find(x => x.id === e.target.value);
                                     if(t && t.subtests.length > 0) setSelectedSubtestId(t.subtests[0].id);
                                 }}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[#E07A5F]"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[var(--primary)]"
                             >
                                 {catalog.map(cat => (
                                     <optgroup key={cat.id} label={cat.name}>
@@ -137,7 +137,7 @@ export const ClinicalInsights: React.FC = () => {
                                 <select 
                                     value={selectedSubtestId}
                                     onChange={(e) => setSelectedSubtestId(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[#E07A5F]"
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-[var(--primary)]"
                                 >
                                     {activeTest.subtests.map(s => (
                                         <option key={s.id} value={s.id} className="bg-[#23252F] text-stone-200">{s.displayName || s.name}</option>
@@ -184,13 +184,13 @@ export const ClinicalInsights: React.FC = () => {
                 <div className="flex justify-between items-center mb-8 relative z-10">
                     <div>
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                            <TrendingUp size={24} className="text-[#E07A5F]" /> Comparateur de Courbes
+                            <TrendingUp size={24} className="text-[var(--primary)]" /> Comparateur de Courbes
                         </h2>
                         <p className="text-stone-500 text-xs mt-1">Overlay : Théorie (Courbe) vs Réalité Terrain (Barres).</p>
                     </div>
                     <div className="flex gap-4 text-xs font-bold">
-                        <div className="flex items-center gap-2 text-[#E07A5F]">
-                            <div className="w-3 h-3 bg-[#E07A5F] rounded-full"></div> Théorie (Gauss)
+                        <div className="flex items-center gap-2 text-[var(--primary)]">
+                            <div className="w-3 h-3 bg-[var(--primary)] rounded-full"></div> Théorie (Gauss)
                         </div>
                         <div className="flex items-center gap-2 text-[#81B29A]">
                             <div className="w-3 h-3 bg-[#81B29A] rounded-sm"></div> Réalité (Data)
