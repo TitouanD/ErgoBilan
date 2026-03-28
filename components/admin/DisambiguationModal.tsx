@@ -9,6 +9,7 @@ export const SKIP_SENTINEL = '__skip__';
 interface OfficialSubtest {
     id: string;
     name: string;
+    abbreviation?: string | null;
 }
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
 }
 
 const VARIANT_PATTERN = /\(variante \d+\)$/;
+const COLONNE_SUFFIX = /\s*-\s*Colonne\s*\d+\s*$/i;
 
 interface SubtestGroup {
     extractedName: string;
@@ -45,37 +47,22 @@ function buildSubtestGroups(
 ): SubtestGroup[] {
     const allRows: ExtractedRow[] = pages.flatMap((p) => p.rows);
 
-    const variantNames = Array.from(
-        new Set(allRows.map((r) => r.subtest).filter((s) => VARIANT_PATTERN.test(s))),
-    );
-
-    // Surface non-variant names with weak catalog match (only when catalog is available)
-    const allUniqueNames = Array.from(new Set(allRows.map((r) => r.subtest)));
-    const lowConfidenceNonVariants =
-        officialSubtests.length > 0
-            ? allUniqueNames.filter((name) => {
-                  if (VARIANT_PATTERN.test(name)) return false;
-                  const top = findBestMatches(name, officialSubtests, 1, 0);
-                  return (top[0]?.score ?? 0) < 0.7;
-              })
-            : [];
-
-    const allNames = Array.from(new Set([
-        ...variantNames,
-        ...lowConfidenceNonVariants,
-        ...forcedNames.map((value) => String(value || '').trim()).filter(Boolean),
-    ]));
+    // Include ALL forced names (all extracted column names for DB-backed tests)
+    const allNames = Array.from(new Set(
+        forcedNames.map((value) => String(value || '').trim()).filter(Boolean),
+    ));
 
     return allNames.map((extractedName) => {
         const rows = allRows.filter((r) => r.subtest === extractedName);
         const sourceAbbr = rows.find((r) => r.source_abbreviation)?.source_abbreviation ?? '';
-        const baseName = extractedName.replace(VARIANT_PATTERN, '').trim();
+        const baseName = extractedName.replace(VARIANT_PATTERN, '').replace(COLONNE_SUFFIX, '').trim();
         const sample = rows
             .slice(0, 3)
             .map((r) => [r.raw, r.standard, r.mean, r.sd].filter(Boolean).join(' / '))
             .filter(Boolean);
         const query = sourceAbbr ? `${baseName} ${sourceAbbr}` : baseName;
-        const matches = findBestMatches(query, officialSubtests);
+        // Return ALL catalog subtests sorted by relevance — user picks manually
+        const matches = findBestMatches(query, officialSubtests, officialSubtests.length, 0, sourceAbbr);
         return { extractedName, baseName, sourceAbbr, sample, isVariant: VARIANT_PATTERN.test(extractedName), matches };
     });
 }
@@ -157,6 +144,7 @@ const SubtestCard: React.FC<{
                             onChange={handleSelectChange}
                             className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-sm text-[var(--text-main)] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/10 outline-none transition-colors"
                         >
+                            <option value="" disabled>— Choisir —</option>
                             {group.matches.length > 0 && (
                                 <optgroup label="Correspondances catalogue">
                                     {group.matches.map((m) => (
@@ -207,7 +195,7 @@ export const DisambiguationModal: React.FC<Props> = ({ pages, officialSubtests =
         const init: Record<string, string> = {};
         groups.forEach((g) => {
             const top = g.matches[0];
-            init[g.extractedName] = top && confidenceLabel(top.score) !== 'low' ? top.name : g.baseName;
+            init[g.extractedName] = (top && top.score >= 0.95) ? top.name : '';
         });
         return init;
     });
@@ -246,9 +234,7 @@ export const DisambiguationModal: React.FC<Props> = ({ pages, officialSubtests =
                         <div>
                             <h3 className="font-serif font-bold text-lg text-[var(--text-heading)]">Correspondance des sous-tests</h3>
                             <p className="text-xs text-[var(--text-secondary)]">
-                                {variantCount > 0 && <span className="text-amber-600 font-semibold">{variantCount} colonne{variantCount > 1 ? 's' : ''} ambiguë{variantCount > 1 ? 's' : ''}</span>}
-                                {variantCount > 0 && lowCount > 0 && ' · '}
-                                {lowCount > 0 && <span>{lowCount} correspondance{lowCount > 1 ? 's' : ''} incertaine{lowCount > 1 ? 's' : ''}</span>}
+                                {groups.length} colonne{groups.length > 1 ? 's' : ''} extraite{groups.length > 1 ? 's' : ''} à mapper
                             </p>
                         </div>
                     </div>

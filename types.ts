@@ -445,6 +445,8 @@ export type ReviewFlagCode =
     | 'LOOKUP_GROUP_AGE_MISMATCH'
     | 'LOOKUP_COLUMN_SHIFT_SUSPECT'
     | 'LOOKUP_ADJACENT_COLUMN_DUPLICATE'
+    | 'LOOKUP_SUBTEST_LOW_RAW_COVERAGE'
+    | 'LOOKUP_RAW_WITHOUT_SCORE'
     | 'EXTRACTION_MISSING_SOURCE_COLUMNS'
     | 'EXTRACTION_NOT_VERIFIED'
     | 'EXTRACTION_LOW_CONFIDENCE'
@@ -688,8 +690,6 @@ export interface ExtractionUncertaintyLowCoverageColumn {
 export interface ExtractionUncertaintyFlags {
     emptyExtractedColumns?: string[];
     lowCoverageColumns?: ExtractionUncertaintyLowCoverageColumn[];
-    verificationMismatchColumns?: string[];
-    adjacentDuplicateColumns?: string[];
     inventoryCoverageRatio?: number;
 }
 
@@ -698,9 +698,6 @@ export interface ExtractionCallMeta {
     apiCalls: number;
     repairedSubtests?: string[];
     inventoryMode?: 'off' | 'conditional' | 'required';
-    verified?: boolean;
-    verificationRepairs?: number;
-    verifiedSubtests?: string[];
     inventoryColumnCount?: number;
     isInvertedLookup?: boolean;
     expectedSourceColumns?: string[];

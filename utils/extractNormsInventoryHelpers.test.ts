@@ -1,18 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   chunkInventoryColumns,
-  compareVerificationResults,
   decideExtractionRouting,
   matchRepairColumns,
   sortTablesByInventoryOrder,
   summarizeInventoryCompleteness,
   type ExtractionLikeResult,
   type InventoryColumnDescriptor,
-  type VerificationScanResult,
 } from '../supabase/functions/extract-norms/extractionUtils';
 
 describe('extract-norms inventory helpers', () => {
-  it('routes inverted or dense lookup pages to chunked verified mode', () => {
+  it('routes inverted or dense lookup pages to chunked mode', () => {
     const denseColumns: InventoryColumnDescriptor[] = Array.from({ length: 9 }, (_, index) => ({
       sid: `Sous-test ${index + 1}`,
       ab: `S${index + 1}`,
@@ -25,7 +23,7 @@ describe('extract-norms inventory helpers', () => {
       { st: 'LOOKUP', isInverted: false, columns: denseColumns },
       8,
     );
-    expect(denseDecision.mode).toBe('lookup-chunked-verified');
+    expect(denseDecision.mode).toBe('lookup-chunked');
     expect(denseDecision.isInverted).toBe(true);
 
     const simpleDecision = decideExtractionRouting(
@@ -35,7 +33,7 @@ describe('extract-norms inventory helpers', () => {
       },
       8,
     );
-    expect(simpleDecision.mode).toBe('lookup-full-verified');
+    expect(simpleDecision.mode).toBe('lookup-full');
   });
 
   it('chunks inventory columns by domain and max size while preserving order', () => {
@@ -52,29 +50,6 @@ describe('extract-norms inventory helpers', () => {
     expect(chunks[0].columns.map((column) => column.ab)).toEqual(['AA', 'FD']);
     expect(chunks[1].columns.map((column) => column.ab)).toEqual(['IND']);
     expect(chunks[2].columns.map((column) => column.ab)).toEqual(['IP', 'PV']);
-  });
-
-  it('forces verification mismatch when adjacent columns duplicate each other', () => {
-    const inventoryColumns: InventoryColumnDescriptor[] = [
-      { sid: 'Attention Auditive', ab: 'AA', domain: 'Attention', columnOrder: 1, isInverted: true },
-      { sid: 'Precision visuo-motrice', ab: 'PV', domain: 'Attention', columnOrder: 2, isInverted: true },
-    ];
-    const extraction: ExtractionLikeResult = {
-      st: 'LOOKUP',
-      tables: [
-        { sid: 'Attention Auditive', ab: 'AA', rows: [{ r: '0-3', n: '1' }, { r: '4-5', n: '2' }] },
-        { sid: 'Precision visuo-motrice', ab: 'PV', rows: [{ r: '0-3', n: '1' }, { r: '4-5', n: '2' }] },
-      ],
-    };
-    const verification: VerificationScanResult = {
-      verify: [
-        { sid: 'Attention Auditive', ab: 'AA', columnOrder: 1, count: 2, min_n: 1, max_n: 2, min_r: '0-3', max_r: '4-5' },
-        { sid: 'Precision visuo-motrice', ab: 'PV', columnOrder: 2, count: 2, min_n: 1, max_n: 2, min_r: '0-3', max_r: '4-5' },
-      ],
-    };
-
-    const mismatches = compareVerificationResults(extraction, verification, inventoryColumns);
-    expect(mismatches.some((entry) => entry.ab === 'PV' && entry.reason.startsWith('adjacent_duplicate'))).toBe(true);
   });
 
   it('matches repair targets by sid or abbreviation and includes same-domain neighbors when requested', () => {
@@ -152,28 +127,5 @@ describe('extract-norms inventory helpers', () => {
     const summary = summarizeInventoryCompleteness(extraction, inventoryColumns);
     expect(summary.expectedSourceColumnCount).toBe(3);
     expect(summary.missingSourceColumns).toEqual(['AA']);
-  });
-
-  it('flags duplicate inventory columns as missing when only one occurrence is extracted', () => {
-    const inventoryColumns: InventoryColumnDescriptor[] = [
-      { sid: 'Attention Auditive', ab: 'AA', domain: 'Attention', columnOrder: 1, isInverted: true },
-      { sid: 'Attention Auditive', ab: 'AA', domain: 'Attention', columnOrder: 2, isInverted: true },
-    ];
-
-    const extraction: ExtractionLikeResult = {
-      st: 'LOOKUP',
-      tables: [
-        { sid: 'Attention Auditive', ab: 'AA', rows: [{ r: '0-3', n: '1' }, { r: '4-5', n: '2' }] },
-      ],
-    };
-
-    const verification: VerificationScanResult = {
-      verify: [
-        { sid: 'Attention Auditive', ab: 'AA', columnOrder: 1, count: 2, min_n: 1, max_n: 2, min_r: '0-3', max_r: '4-5' },
-      ],
-    };
-
-    const mismatches = compareVerificationResults(extraction, verification, inventoryColumns);
-    expect(mismatches.some((entry) => entry.reason === 'missing_table')).toBe(true);
   });
 });

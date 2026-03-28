@@ -14,23 +14,6 @@ export interface InventoryScanResult {
   columns: InventoryColumnDescriptor[];
 }
 
-export interface VerificationEntry {
-  sid?: string | null;
-  ab?: string | null;
-  domain?: string | null;
-  columnOrder?: number | null;
-  isInverted?: boolean | null;
-  min_n?: number | null;
-  max_n?: number | null;
-  min_r?: string | null;
-  max_r?: string | null;
-  count?: number | null;
-}
-
-export interface VerificationScanResult {
-  verify: VerificationEntry[];
-}
-
 export interface ExtractionLikeTable {
   sid: string;
   ab?: string | null;
@@ -42,22 +25,13 @@ export interface ExtractionLikeResult {
   tables?: ExtractionLikeTable[];
 }
 
-export interface VerificationMismatch {
-  sid: string;
-  ab: string;
-  domain?: string | null;
-  columnOrder?: number | null;
-  isInverted?: boolean | null;
-  reason: string;
-}
-
 export interface InventoryChunk {
   domainHint: string;
   columns: InventoryColumnDescriptor[];
 }
 
 export interface ExtractionRoutingDecision {
-  mode: 'parametric-full' | 'lookup-full-verified' | 'lookup-chunked-verified';
+  mode: 'parametric-full' | 'lookup-full' | 'lookup-chunked';
   inventoryColumnCount: number;
   isInverted: boolean;
   reason: string;
@@ -76,6 +50,10 @@ const normalizeStableKeyPart = (value: unknown): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase();
 
+/** Like normalizeStableKeyPart but also strips non-alphanumeric chars for tolerant matching (e.g. "MP & MPD" → "MPMPD"). */
+export const normalizeKeyTolerant = (value: unknown): string =>
+  normalizeStableKeyPart(value).replace(/[^A-Z0-9]/g, '');
+
 const normalizeCellValue = (value: unknown): string =>
   String(value ?? '')
     .trim()
@@ -91,13 +69,17 @@ const toFiniteNumber = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export const buildInventoryColumnKey = (column: Pick<InventoryColumnDescriptor, 'sid' | 'ab'>): string => (
-  `${normalizeStableKeyPart(column.sid)}::${normalizeStableKeyPart(column.ab || 'NOABBR')}`
-);
+export const buildInventoryColumnKey = (column: Pick<InventoryColumnDescriptor, 'sid' | 'ab'>): string => {
+  const ab = String(column.ab ?? '').trim();
+  const sid = String(column.sid ?? '').trim();
+  return normalizeKeyTolerant(ab || sid);
+};
 
-const buildTableKey = (table: Pick<ExtractionLikeTable, 'sid' | 'ab'>): string => (
-  `${normalizeStableKeyPart(table.sid)}::${normalizeStableKeyPart(table.ab || 'NOABBR')}`
-);
+const buildTableKey = (table: Pick<ExtractionLikeTable, 'sid' | 'ab'>): string => {
+  const ab = String(table.ab ?? '').trim();
+  const sid = String(table.sid ?? '').trim();
+  return normalizeKeyTolerant(ab || sid);
+};
 
 // ── FUZZY TOKEN MATCHING ────────────────────────────────────────────────────
 // Handles slight name drift between inventory and extraction (accents,
@@ -157,7 +139,7 @@ export const decideExtractionRouting = (
 
   if (isInverted) {
     return {
-      mode: 'lookup-chunked-verified',
+      mode: 'lookup-chunked',
       inventoryColumnCount,
       isInverted: true,
       reason: 'inverted-lookup',
@@ -166,7 +148,7 @@ export const decideExtractionRouting = (
 
   if (inventoryColumnCount > chunkedThreshold) {
     return {
-      mode: 'lookup-chunked-verified',
+      mode: 'lookup-chunked',
       inventoryColumnCount,
       isInverted: false,
       reason: 'dense-lookup',
@@ -174,7 +156,7 @@ export const decideExtractionRouting = (
   }
 
   return {
-    mode: 'lookup-full-verified',
+    mode: 'lookup-full',
     inventoryColumnCount,
     isInverted: false,
     reason: 'simple-lookup',
@@ -329,8 +311,9 @@ export const summarizeInventoryCompleteness = (
       for (const entry of extractedEntries) {
         const entryAvailable = extractedFuzzyCount.get(entry.key) || 0;
         if (entryAvailable <= 0) continue;
-        // Abbreviation must match if both are present
-        const abMatch = !colAb || !entry.ab || normalizeStableKeyPart(colAb) === normalizeStableKeyPart(entry.ab);
+        // Abbreviation must match if both are present (strip non-alphanumeric for tolerance)
+        const stripNonAlpha = (s: string) => normalizeStableKeyPart(s).replace(/[^A-Z0-9]/g, '');
+        const abMatch = !colAb || !entry.ab || stripNonAlpha(colAb) === stripNonAlpha(entry.ab);
         if (!abMatch) continue;
         if (fuzzyTokenScore(colSid, entry.sid) >= FUZZY_MATCH_THRESHOLD) {
           extractedFuzzyCount.set(entry.key, entryAvailable - 1);
@@ -347,221 +330,6 @@ export const summarizeInventoryCompleteness = (
     missingSourceColumns,
     expectedSourceColumnCount: expectedSourceColumns.length,
   };
-};
-
-const buildRowSignature = (row: Record<string, unknown>): string => {
-  const raw = normalizeCellValue(row.r);
-  const standard = normalizeCellValue(row.n);
-  const percentile = normalizeCellValue(row.p);
-  const zScore = normalizeCellValue(row.z);
-  return `${raw}|${standard}|${percentile}|${zScore}`;
-};
-
-const countIntersection = (left: Set<string>, right: Set<string>): number => {
-  const [smaller, larger] = left.size <= right.size ? [left, right] : [right, left];
-  let count = 0;
-  smaller.forEach((value) => {
-    if (larger.has(value)) count += 1;
-  });
-  return count;
-};
-
-const extractNumericBoundaries = (rows: Record<string, unknown>[]) => {
-  const nValues = rows
-    .map((row) => toFiniteNumber(row.n))
-    .filter((value): value is number => value !== null);
-
-  const minN = nValues.length > 0 ? Math.min(...nValues) : null;
-  const maxN = nValues.length > 0 ? Math.max(...nValues) : null;
-  const rowAtMinN = minN !== null ? rows.find((row) => toFiniteNumber(row.n) === minN) : undefined;
-  const rowAtMaxN = maxN !== null ? rows.find((row) => toFiniteNumber(row.n) === maxN) : undefined;
-
-  return {
-    count: rows.length,
-    minN,
-    maxN,
-    minR: normalizeCellValue(rowAtMinN?.r),
-    maxR: normalizeCellValue(rowAtMaxN?.r),
-  };
-};
-
-export const compareVerificationResults = (
-  extraction: ExtractionLikeResult,
-  verification: VerificationScanResult,
-  inventoryColumns: InventoryColumnDescriptor[],
-): VerificationMismatch[] => {
-  if (!Array.isArray(inventoryColumns) || inventoryColumns.length === 0) return [];
-  if (!verification?.verify || !Array.isArray(verification.verify)) return [];
-  if (!Array.isArray(extraction?.tables)) return [];
-
-  const mismatches: VerificationMismatch[] = [];
-  const inventoryByKey = new Map<string, InventoryColumnDescriptor>();
-  inventoryColumns.forEach((column) => inventoryByKey.set(buildInventoryColumnKey(column), column));
-
-  const verificationByKey = new Map<string, VerificationEntry[]>();
-  verification.verify.forEach((entry) => {
-    const sid = normalizeCellValue(entry.sid);
-    const ab = normalizeCellValue(entry.ab);
-    if (!ab) return;
-    const inventoryMatch = inventoryColumns.find((column) => {
-      const sameAb = normalizeStableKeyPart(column.ab || '') === normalizeStableKeyPart(ab);
-      if (!sameAb) return false;
-      if (sid) return normalizeStableKeyPart(column.sid) === normalizeStableKeyPart(sid);
-      if (entry.columnOrder != null && column.columnOrder != null) {
-        return Number(column.columnOrder) === Number(entry.columnOrder);
-      }
-      return true;
-    });
-    const key = inventoryMatch ? buildInventoryColumnKey(inventoryMatch) : `${normalizeStableKeyPart(sid || 'UNKNOWN')}::${normalizeStableKeyPart(ab)}`;
-    if (!verificationByKey.has(key)) verificationByKey.set(key, []);
-    verificationByKey.get(key)!.push(entry);
-  });
-
-  const extractionByKey = new Map<string, ExtractionLikeTable[]>();
-  extraction.tables.forEach((table) => {
-    const key = buildTableKey(table);
-    if (!extractionByKey.has(key)) extractionByKey.set(key, []);
-    extractionByKey.get(key)!.push(table);
-  });
-
-  const extractedCursorByKey = new Map<string, number>();
-  const verifiedCursorByKey = new Map<string, number>();
-  const extractedByInventoryIndex = new Map<number, ExtractionLikeTable>();
-  const indexedColumns = inventoryColumns.map((column, index) => ({ column, index }));
-
-  indexedColumns.forEach(({ column, index }) => {
-    const key = buildInventoryColumnKey(column);
-    const verified = popByOccurrence(verificationByKey, verifiedCursorByKey, key);
-    const extracted = popByOccurrence(extractionByKey, extractedCursorByKey, key);
-
-    if (extracted) extractedByInventoryIndex.set(index, extracted);
-
-    if (!extracted || !Array.isArray(extracted.rows) || extracted.rows.length === 0) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: 'missing_table',
-      });
-      return;
-    }
-
-    if (!verified) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: 'missing_verification_entry',
-      });
-      return;
-    }
-
-    const extractedBoundaries = extractNumericBoundaries(extracted.rows);
-    const verifiedCount = Number.isFinite(Number(verified.count)) ? Number(verified.count) : null;
-    const verifiedMinN = Number.isFinite(Number(verified.min_n)) ? Number(verified.min_n) : null;
-    const verifiedMaxN = Number.isFinite(Number(verified.max_n)) ? Number(verified.max_n) : null;
-    const verifiedMinR = normalizeCellValue(verified.min_r);
-    const verifiedMaxR = normalizeCellValue(verified.max_r);
-
-    if (verifiedCount !== null && Math.abs(extractedBoundaries.count - verifiedCount) > 0) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: `row_count:${extractedBoundaries.count}:${verifiedCount}`,
-      });
-      return;
-    }
-
-    if (verifiedMinN !== null && extractedBoundaries.minN !== null && extractedBoundaries.minN !== verifiedMinN) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: `min_n:${extractedBoundaries.minN}:${verifiedMinN}`,
-      });
-      return;
-    }
-
-    if (verifiedMaxN !== null && extractedBoundaries.maxN !== null && extractedBoundaries.maxN !== verifiedMaxN) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: `max_n:${extractedBoundaries.maxN}:${verifiedMaxN}`,
-      });
-      return;
-    }
-
-    if (verifiedMinR && extractedBoundaries.minR && extractedBoundaries.minR !== verifiedMinR) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: `min_r:${extractedBoundaries.minR}:${verifiedMinR}`,
-      });
-      return;
-    }
-
-    if (verifiedMaxR && extractedBoundaries.maxR && extractedBoundaries.maxR !== verifiedMaxR) {
-      mismatches.push({
-        sid: column.sid,
-        ab: normalizeCellValue(column.ab),
-        domain: column.domain || null,
-        columnOrder: column.columnOrder ?? null,
-        isInverted: column.isInverted ?? null,
-        reason: `max_r:${extractedBoundaries.maxR}:${verifiedMaxR}`,
-      });
-    }
-  });
-
-  const orderedColumns = [...indexedColumns].sort((left, right) => {
-    const leftOrder = Number.isFinite(Number(left.column.columnOrder)) ? Number(left.column.columnOrder) : Number.MAX_SAFE_INTEGER;
-    const rightOrder = Number.isFinite(Number(right.column.columnOrder)) ? Number(right.column.columnOrder) : Number.MAX_SAFE_INTEGER;
-    return leftOrder - rightOrder;
-  });
-
-  for (let index = 1; index < orderedColumns.length; index += 1) {
-    const previous = orderedColumns[index - 1];
-    const current = orderedColumns[index];
-    const sameDomain = normalizeStableKeyPart(previous.column.domain || '') === normalizeStableKeyPart(current.column.domain || '');
-    if (!sameDomain) continue;
-
-    const previousTable = extractedByInventoryIndex.get(previous.index);
-    const currentTable = extractedByInventoryIndex.get(current.index);
-    if (!previousTable?.rows || !currentTable?.rows || previousTable.rows.length === 0 || currentTable.rows.length === 0) {
-      continue;
-    }
-
-    const previousSignatures = new Set(previousTable.rows.map((row) => buildRowSignature(row)));
-    const currentSignatures = new Set(currentTable.rows.map((row) => buildRowSignature(row)));
-    const sharedCount = countIntersection(previousSignatures, currentSignatures);
-    const overlapRatio = sharedCount / Math.max(1, Math.min(previousSignatures.size, currentSignatures.size));
-    if (overlapRatio < 0.9) continue;
-
-    mismatches.push({
-      sid: current.column.sid,
-      ab: normalizeCellValue(current.column.ab),
-      domain: current.column.domain || null,
-      columnOrder: current.column.columnOrder ?? null,
-      isInverted: current.column.isInverted ?? null,
-      reason: `adjacent_duplicate:${normalizeCellValue(previous.column.ab)}:${sharedCount}`,
-    });
-  }
-
-  return mismatches;
 };
 
 export const matchRepairColumns = (

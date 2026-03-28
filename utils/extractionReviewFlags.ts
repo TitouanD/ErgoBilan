@@ -104,6 +104,13 @@ const subtestBucketKey = (row: ExtractedRow): string => {
 };
 
 const hasLookupRawValue = (row: ExtractedRow): boolean => cleanText(row.raw).length > 0;
+
+/** Returns true only if the raw value is non-empty AND not a dash-like placeholder. */
+const hasRealRawValue = (row: ExtractedRow): boolean => {
+  const raw = cleanText(row.raw);
+  return raw.length > 0 && !/^[-\u2013\u2014:]+$/.test(raw);
+};
+
 const hasLookupScoreValue = (row: ExtractedRow): boolean => {
   return [row.standard, row.percentile, row.zScore].some((value) => cleanText(value).length > 0);
 };
@@ -791,6 +798,26 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
       }
     }
 
+    // LOOKUP_RAW_WITHOUT_SCORE: rows that have real raw data but NO score values at all
+    {
+      const realRawNoScore = bucket.rows.filter((row) => hasRealRawValue(row) && !hasLookupScoreValue(row));
+      if (realRawNoScore.length > 0) {
+        const totalReal = bucket.rows.filter((row) => hasRealRawValue(row)).length;
+        const ratio = realRawNoScore.length / Math.max(totalReal, 1);
+        // Blocking when ALL real-raw rows lack scores, warning otherwise
+        const severity: ReviewSeverity = ratio >= 0.8 ? 'blocking' : 'warning';
+        flags.push(makeFlag({
+          code: 'LOOKUP_RAW_WITHOUT_SCORE',
+          severity,
+          message: `${realRawNoScore.length} ligne(s) avec un score brut réel mais aucune note standard pour "${bucket.subtest}" (${bucket.groupLabel}). Notes probablement non extraites.`,
+          subtest: bucket.subtest,
+          groupLabel: bucket.groupLabel,
+          rowId: realRawNoScore[0].id,
+          confidence: 0.95,
+        }));
+      }
+    }
+
     const orderedScored = ordered.filter((entry) => entry.rawBounds !== null && entry.hasScore);
     const orderedWithRaw = ordered.filter((entry) => entry.rawBounds !== null);
     const standardSteps: NumericStep[] = [];
@@ -846,6 +873,15 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
             confidence: 0.96,
           }));
         }
+        // Off-by-one boundary overlap: curr.min === prev.max (touching/overlap by 1)
+        // Suggest fixing curr's raw range to start at prev.max + 1
+        const isOffByOne = !sameBounds
+          && curr.rawBounds.min === prev.rawBounds.max
+          && curr.rawBounds.max > curr.rawBounds.min;
+        const fixedRaw = isOffByOne
+          ? `${prev.rawBounds.max + 1}-${curr.rawBounds.max}`
+          : undefined;
+
         flags.push(makeFlag({
           code: 'LOOKUP_RAW_RANGE_OVERLAP',
           severity: sameBounds && (conflictingScore || partialScoreConflict) ? 'blocking' : 'warning',
@@ -854,6 +890,14 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
           groupLabel: bucket.groupLabel,
           rowId: curr.row.id,
           confidence: sameBounds && (conflictingScore || partialScoreConflict) ? 0.97 : 0.92,
+          ...(isOffByOne && fixedRaw ? {
+            suggestedFix: {
+              rowId: curr.row.id,
+              field: 'raw' as const,
+              value: fixedRaw,
+              reason: `Correction off-by-one: ${formatRawBounds(curr.rawBounds)} → ${fixedRaw}`,
+            },
+          } : {}),
         }));
       }
     }
@@ -1182,6 +1226,26 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
 
   // ── Cross-subtest completeness checks for dense LOOKUP pages ──
 
+  // LOOKUP_SUBTEST_LOW_RAW_COVERAGE: detect subtests where most rows are dashes (real raw data < 30%)
+  if (subtestRowCounts.length >= 3) {
+    for (const bucket of lookupBuckets.values()) {
+      const totalRows = bucket.rows.filter((row) => hasLookupRawValue(row)).length;
+      if (totalRows < 10) continue;
+      const realRawRows = bucket.rows.filter((row) => hasRealRawValue(row)).length;
+      const ratio = realRawRows / totalRows;
+      if (ratio < 0.3) {
+        flags.push(makeFlag({
+          code: 'LOOKUP_SUBTEST_LOW_RAW_COVERAGE',
+          severity: 'blocking',
+          message: `Couverture brute très faible pour "${bucket.subtest}" (${bucket.groupLabel}): seulement ${realRawRows}/${totalRows} lignes avec des données réelles (${Math.round(ratio * 100)}%). Extraction probablement incomplète.`,
+          subtest: bucket.subtest,
+          groupLabel: bucket.groupLabel,
+          confidence: 0.95,
+        }));
+      }
+    }
+  }
+
   // LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW: flag subtests with row count < 50% of median
   if (subtestRowCounts.length >= 3) {
     const counts = subtestRowCounts.map((e) => e.count).sort((a, b) => a - b);
@@ -1318,6 +1382,8 @@ export const detectCrossPageConflicts = (
     for (const row of rows) {
       const rawTrimmed = (row.raw || '').trim();
       if (!rawTrimmed) continue;
+      // Skip dash-like raw values — they naturally differ across age-group pages
+      if (/^[-–—:]+$/.test(rawTrimmed)) continue;
       const key = `${(row.subtest || '').trim()}||${row.hidden_age_min ?? ''}||${row.hidden_age_max ?? ''}||${rawTrimmed}`;
       const list = byKey.get(key) || [];
       list.push({ pageId, row });
