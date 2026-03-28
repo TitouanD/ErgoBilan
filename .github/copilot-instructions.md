@@ -13,7 +13,7 @@ YOU LIKELY HAVE ACCESS TO SUPABASE MCP, PLEASE USE IT TO REVIEW THE DATABASE SCH
 - Global providers order is fixed: `AuthProvider` â†’ `CatalogProvider` â†’ `ToastProvider` â†’ `AssessmentProvider` â†’ `AppRouter` (see [App.tsx](App.tsx#L506-L516)).
 
 ## Data, security, and storage flow
-- Supabase client lives in [services/db.ts](services/db.ts); tables/RLS/functions are the **source of truth** in [Supabase.csv](Supabase.csv) (with [db_schema.md](db_schema.md) as a human-readable summary).
+- Supabase client lives in [services/db.ts](services/db.ts); tables/RLS/functions are the **source of truth** in Supabase MCP or Supabase CLI : use "npx supabase" to inspect schema and policies.
 - Key hierarchy: **MasterKey (PIN)** â†’ **OrgKey** â†’ **FileKey**; questionnaire links use URL hash keys (see [utils/crypto.ts](utils/crypto.ts)).
 - `AssessmentContext` auto-save is draftâ€‘first: it creates the patient server-side first (`StorageService.createPatient`), then saves drafts and file metadata (see [contexts/AssessmentContext.tsx](contexts/AssessmentContext.tsx)).
 - Archived status is stored inside the encrypted identity blob (no clear column); preserve this â€œsoft logicâ€ when editing storage logic (see [devlog.md](devlog.md)).

@@ -297,18 +297,6 @@ const stripSourceColumnSuffix = (name: string): string => (
     name.replace(SOURCE_COLUMN_SUFFIX_REGEX, '').trim()
 );
 
-const getSourceColumnIndexFromName = (name: string): number | null => {
-    const match = name.match(SOURCE_COLUMN_SUFFIX_REGEX);
-    if (!match) return null;
-    const parsed = parseInt(match[1], 10);
-    return Number.isFinite(parsed) ? parsed : null;
-};
-
-const withSourceColumnSuffix = (name: string, columnIndex: number | null): string => {
-    if (!columnIndex || !Number.isFinite(columnIndex)) return name;
-    return `${name} - Colonne ${columnIndex}`;
-};
-
 const normalizeAgeQualifierToken = (value?: string | null): string => (
     String(value || '')
         .normalize('NFD')
@@ -406,19 +394,18 @@ const MAX_DRAFT_IMAGE_BYTES = 1 * 1024 * 1024;
 const MAX_DRAFT_IMAGES_TOTAL_BYTES = 6 * 1024 * 1024;
 const PAGE_REPAIR_BUDGET_BASE = 1;
 const PAGE_REPAIR_BUDGET_MAX = 3;
-const AUTO_REPAIR_MISMATCH_THRESHOLD = 3;
+const AUTO_REPAIR_MISMATCH_THRESHOLD = 1;
 const FEATURE_CONTRIB_AUTO_REPAIR = featureFlag('VITE_FEATURE_CONTRIB_AUTO_REPAIR', true);
 const FEATURE_CONTRIB_FORCED_DISAMBIG = featureFlag('VITE_FEATURE_CONTRIB_FORCED_DISAMBIG', true);
 const FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN = featureFlag('VITE_FEATURE_CONTRIB_CROSS_PAGE_DUP_WARN', true);
 const FEATURE_CONTRIB_ALIAS_LEARNING = featureFlag('VITE_FEATURE_CONTRIB_ALIAS_LEARNING', true);
-const CONTRIBUTION_MIN_CONFIDENCE_SCORE = 0.72;
+const CONTRIBUTION_MIN_CONFIDENCE_SCORE = 0.65;
 
 const buildExtractionIntegritySignature = (page: ExtractionPage): string => {
     const missingSourceColumns = (page.missingSourceColumns || []).join('|');
-    const verified = page.extractionMeta?.verified === true ? '1' : '0';
     const confidenceRaw = page.extractionMeta?.confidenceScore;
     const confidence = typeof confidenceRaw === 'number' ? confidenceRaw.toFixed(4) : 'na';
-    return `${missingSourceColumns}::${verified}::${confidence}`;
+    return `${missingSourceColumns}::${confidence}`;
 };
 
 const buildExtractionIntegrityFlags = (page: ExtractionPage): ReviewFlag[] => {
@@ -435,20 +422,6 @@ const buildExtractionIntegrityFlags = (page: ExtractionPage): ReviewFlag[] => {
             subtest: 'Global',
             groupLabel: 'Page',
             confidence: 1,
-            blocking: true,
-        });
-    }
-
-    if (page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true) {
-        flags.push({
-            id: `${page.id}::EXTRACTION_NOT_VERIFIED::meta`,
-            code: 'EXTRACTION_NOT_VERIFIED',
-            severity: 'blocking',
-            message: `La page LOOKUP n'a pas été validée par la passe de vérification edge.`,
-            pageId: page.id,
-            subtest: 'Global',
-            groupLabel: 'Page',
-            confidence: 0.98,
             blocking: true,
         });
     }
@@ -878,79 +851,7 @@ const reDisambiguateByAbbreviation = (pages: ExtractionPage[]): void => {
  * (same name and same abbreviation), keep them separate by appending a stable
  * column suffix. This prevents downstream regrouping/fusion.
  */
-const preserveDistinctSourceColumns = (pages: ExtractionPage[]): void => {
-    const subtestSourceKeys = new Map<string, Set<string>>();
-    pages.forEach((page) => {
-        page.rows.forEach((row) => {
-            if (isLikelyAgeQualifier(row.source_abbreviation)) return;
-            const sourceKey = (row.source_column_key || '').trim();
-            if (!sourceKey) return;
-            const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
-            if (!baseSubtest) return;
-            if (!subtestSourceKeys.has(baseSubtest)) subtestSourceKeys.set(baseSubtest, new Set());
-            subtestSourceKeys.get(baseSubtest)!.add(sourceKey);
-        });
-    });
 
-    const sourceIndexBySubtest = new Map<string, Map<string, number>>();
-    subtestSourceKeys.forEach((sourceKeys, subtestName) => {
-        if (sourceKeys.size <= 1) return;
-        const sorted = Array.from(sourceKeys).sort((a, b) => a.localeCompare(b));
-        const indexMap = new Map<string, number>();
-        sorted.forEach((sourceKey, index) => {
-            indexMap.set(sourceKey, index + 1);
-        });
-        sourceIndexBySubtest.set(subtestName, indexMap);
-    });
-
-    if (sourceIndexBySubtest.size === 0) return;
-
-    // Build a map from sourceKey → full column name extracted from source_column_key.
-    // source_column_key format: "Full Column Name::ABBREVIATION::index"
-    // When the extracted full names differ between columns, use them directly as
-    // subtest names instead of the generic "- Colonne N" suffix.
-    const fullNameBySourceKey = new Map<string, string>();
-    pages.forEach((page) => {
-        page.rows.forEach((row) => {
-            const sourceKey = (row.source_column_key || '').trim();
-            if (!sourceKey || fullNameBySourceKey.has(sourceKey)) return;
-            const fullName = sourceKey.split('::')[0].trim();
-            if (fullName) fullNameBySourceKey.set(sourceKey, fullName);
-        });
-    });
-
-    pages.forEach((page) => {
-        page.rows.forEach((row) => {
-            if (isLikelyAgeQualifier(row.source_abbreviation)) return;
-            const sourceKey = (row.source_column_key || '').trim();
-            if (!sourceKey) return;
-            const baseSubtest = stripSourceColumnSuffix(row.subtest || '').trim();
-            const perSourceIndex = sourceIndexBySubtest.get(baseSubtest);
-            if (!perSourceIndex) return;
-            const columnIndex = perSourceIndex.get(sourceKey);
-            if (!columnIndex) return;
-
-            // Prefer using the full column name from source_column_key when it provides
-            // a meaningful distinction (e.g. "meilleure main" vs "autre main"),
-            // rather than the opaque "- Colonne N" suffix.
-            const extractedFullName = fullNameBySourceKey.get(sourceKey) || '';
-            const normalizedExtracted = extractedFullName.toLowerCase().trim();
-            const normalizedBase = baseSubtest.toLowerCase().trim();
-            const isMoreInformative = extractedFullName.length > 0
-                && normalizedExtracted !== normalizedBase
-                && !normalizedExtracted.startsWith(normalizedBase.slice(0, 6))  // not just leading few chars
-                && extractedFullName.length <= baseSubtest.length + 40;           // don't use excessively long keys
-
-            if (isMoreInformative) {
-                // Use the full name from source_column_key, preserving the abbreviation tag.
-                const parsed = splitSubtestDisplayName(baseSubtest);
-                row.subtest = formatSubtestDisplayName(extractedFullName, parsed.abbreviation || row.source_abbreviation, true);
-            } else {
-                row.subtest = withSourceColumnSuffix(baseSubtest, columnIndex);
-            }
-        });
-    });
-};
 
 export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [step, setStep] = useState<'intro' | 'upload' | 'processing' | 'editor' | 'success'>('intro');
@@ -998,8 +899,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const [showDisambiguationModal, setShowDisambiguationModal] = useState(false);
     const [displayFilterMode, setDisplayFilterMode] = useState<DisplayFilterMode>('all');
     const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
-    const [isRepairingPage, setIsRepairingPage] = useState(false);
-
     const toast = useToast();
 
     const withPageReview = useCallback((page: ExtractionPage): ExtractionPage => {
@@ -1141,7 +1040,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             previewDataUrl: draftImagesRef.current[page.id] || page.previewDataUrl,
         }));
         reDisambiguateByAbbreviation(restoredPages);
-        preserveDistinctSourceColumns(restoredPages);
         setTestName(d.testName);
         setSelectedCategory(d.selectedCategory);
         setTableStructure(d.tableStructure);
@@ -1274,7 +1172,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             try {
                 const { data: tests, error: testsError } = await supabase
                     .from('view_unified_catalog')
-                    .select('id, label')
+                    .select('id, label, category_id')
                     .ilike('label', `%${trimmed}%`);
 
                 if (testsError) throw testsError;
@@ -1300,6 +1198,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
                 if (!canceled) {
                     setCanonicalTest({ id: matchedTest.id, name: matchedTest.label });
+                    if (matchedTest.category_id) {
+                        setSelectedCategory(matchedTest.category_id);
+                    }
                     setCanonicalSubtests(
                         (subs || []).map((sub: { id: string; name: string; abbreviation?: string | null; score_type?: string | null }) => ({
                             id: sub.id,
@@ -1903,6 +1804,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             || flag.code === 'LOOKUP_COLUMN_SHIFT_SUSPECT'
             || flag.code === 'SUBTEST_CONTENT_REASSIGNED'
             || flag.code === 'LOOKUP_GROUP_AGE_MISMATCH'
+            || flag.code === 'LOOKUP_RAW_DUPLICATE_CONFLICT'
+            || flag.code === 'LOOKUP_RAW_DUPLICATE_PARTIAL'
+            || flag.code === 'LOOKUP_RAW_RANGE_OVERLAP'
+            || flag.code === 'SUBTEST_CONTENT_DUPLICATE'
+            || flag.code === 'LOOKUP_SUBTEST_LOW_RAW_COVERAGE'
+            || flag.code === 'LOOKUP_RAW_WITHOUT_SCORE'
+            || flag.code === 'LOOKUP_NS_RANGE_INCOMPLETE'
+            || flag.code === 'EXTRACTION_MISSING_SOURCE_COLUMNS'
         ));
         if (repairRelevantFlags.length === 0) return null;
 
@@ -1913,7 +1822,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             bySubtest.set(row.subtest, list);
         });
 
-        const targetSubtests = Array.from(new Set(repairRelevantFlags.map((flag) => flag.subtest).filter(Boolean)));
+        const targetSubtests = Array.from(new Set(
+            repairRelevantFlags
+                .map((flag) => flag.subtest)
+                .filter((s) => Boolean(s) && s !== 'Global')
+        ));
         const focusSubtests = targetSubtests.map((subtest) => {
             const rows = bySubtest.get(subtest) || [];
             const rawSourceAbbreviation = normalizeAbbreviation(rows[0]?.source_abbreviation);
@@ -1927,6 +1840,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 abbreviation: sourceAbbreviation || fallbackAbbr || null,
             };
         });
+
+        // Add missing source columns (from EXTRACTION_MISSING_SOURCE_COLUMNS flag) as repair targets
+        if (Array.isArray(page.missingSourceColumns) && page.missingSourceColumns.length > 0) {
+            const existingNames = new Set(focusSubtests.map((s) => (s.name || '').trim().toLowerCase()));
+            for (const colName of page.missingSourceColumns) {
+                const name = String(colName || '').trim();
+                if (name && !existingNames.has(name.toLowerCase())) {
+                    focusSubtests.push({ name, abbreviation: name });
+                    existingNames.add(name.toLowerCase());
+                }
+            }
+        }
 
         const expectedByGroup = new Map<string, number>();
         repairRelevantFlags.forEach((flag) => {
@@ -1942,8 +1867,10 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }));
 
         const existingSubtests = Array.from(new Set(page.rows.map((row) => row.subtest).filter(Boolean)));
+        const hasMissingColumns = Array.isArray(page.missingSourceColumns) && page.missingSourceColumns.length > 0;
         const includeNeighborColumns =
-            targetSubtests.length / Math.max(existingSubtests.length, 1) >= 0.5
+            hasMissingColumns
+            || targetSubtests.length / Math.max(existingSubtests.length, 1) >= 0.5
             || repairRelevantFlags.some((flag) => (
                 flag.code === 'LOOKUP_COLUMN_SHIFT_SUSPECT' || flag.code === 'SUBTEST_CONTENT_REASSIGNED'
             ));
@@ -2077,19 +2004,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 },
             });
 
-            if (response.meta?.verified !== true) {
-                const reviewedPage = withPageReview(attemptedPage);
-                return {
-                    page: reviewedPage,
-                    attempted: true,
-                    failed: true,
-                    reason: 'Réparation non vérifiée par la passe de contrôle edge.',
-                    beforeBlocking,
-                    afterBlocking: reviewedPage.flagCounts.blocking,
-                    targetCount: repairPayload.focusSubtests.length,
-                };
-            }
-
             const repaired = buildRowsFromExtractionText(response.text, filename, response.meta);
             const mergedRows = mergeRepairedRowsForTargets(
                 page.rows,
@@ -2101,16 +2015,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             const repairedPageCandidate: ExtractionPage = {
                 ...attemptedPage,
                 rows: mergedRows,
-                extractionMeta: repaired.extractionMeta || attemptedPage.extractionMeta,
-                expectedSourceColumns: repaired.extractionMeta ? repaired.expectedSourceColumns : attemptedPage.expectedSourceColumns,
-                missingSourceColumns: repaired.extractionMeta ? repaired.missingSourceColumns : attemptedPage.missingSourceColumns,
-                expectedSourceColumnCount: repaired.extractionMeta
-                    ? repaired.expectedSourceColumnCount
-                    : attemptedPage.expectedSourceColumnCount,
             };
             const normalizedPages = [{ ...repairedPageCandidate, rows: repairedPageCandidate.rows.map((row) => ({ ...row })) }];
             reDisambiguateByAbbreviation(normalizedPages);
-            preserveDistinctSourceColumns(normalizedPages);
             const reviewedPage = withPageReview(normalizedPages[0]);
 
             const afterBlocking = reviewedPage.flagCounts.blocking;
@@ -2311,108 +2218,21 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             let forcedDisambiguationNamesNext: string[] = [];
 
             if (canonicalSubtestsNormalized.length > 0) {
-                // DB-backed test → soft canonical mapping: normalize recognized rows, keep unknown rows.
-                // This avoids destructive drops when OCR labels differ slightly from catalog labels.
-                let unmatchedCount = 0;
-                let ambiguousWithoutAbbrCount = 0;
-                let mappedCount = 0;
-                const forcedDisambiguationQueue = new Set<string>();
-
+                // DB-backed test → send ALL extracted names to disambiguation modal.
+                // User maps each extracted column to a catalog subtest manually.
+                const allExtractedNames = new Set<string>();
                 nextPages.forEach(page => {
-                    const remapped: ExtractedRow[] = [];
                     page.rows.forEach(row => {
-                        const parsed = splitSubtestDisplayName(row.subtest);
-                        const rawRowAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
-                        const rowAbbr = isLikelyAgeQualifier(rawRowAbbr) ? '' : rawRowAbbr;
-                        const aliased = resolveSubtestAlias(
-                            resolvedTestName,
-                            stripSourceColumnSuffix(parsed.baseName || row.subtest),
-                            { abbreviation: rowAbbr || null },
-                        );
-
-                        let matchedCanonical: CanonicalSubtestEntry | null = null;
-
-                        // 1) Abbreviation-first match when available (most reliable for variants)
-                        if (rowAbbr) {
-                            const abbrCandidates = canonicalSubtestsByAbbreviation.get(rowAbbr) || [];
-                            if (abbrCandidates.length === 1) {
-                                matchedCanonical = abbrCandidates[0];
-                            } else if (abbrCandidates.length > 1) {
-                                const scored = abbrCandidates
-                                    .map((candidate) => ({
-                                        candidate,
-                                        score: scoreCandidate(aliased, candidate.name),
-                                    }))
-                                    .sort((left, right) => right.score - left.score);
-                                const top = scored[0] || null;
-                                const second = scored[1] || null;
-                                const hasHighConfidence = !!top
-                                    && top.score >= 0.70
-                                    && (!second || (top.score - second.score) >= 0.08);
-
-                                if (hasHighConfidence && top) {
-                                    matchedCanonical = top.candidate;
-                                } else {
-                                    forcedDisambiguationQueue.add((row.subtest || '').trim());
-                                }
-                            }
-                        }
-
-                        // 2) Fallback to name-based canonical match
-                        if (!matchedCanonical) {
-                            const matchName = findBestCanonicalMatch(aliased, canonicalNames);
-                            if (matchName) {
-                                const candidates = canonicalSubtestsByName.get(normalizeSubtestName(matchName)) || [];
-                                if (candidates.length === 1) {
-                                    matchedCanonical = candidates[0];
-                                } else if (candidates.length > 1) {
-                                    if (rowAbbr) {
-                                        matchedCanonical = candidates.find(c => normalizeAbbreviation(c.abbreviation) === rowAbbr) || null;
-                                        if (!matchedCanonical) {
-                                            forcedDisambiguationQueue.add((row.subtest || '').trim());
-                                        }
-                                    } else {
-                                        forcedDisambiguationQueue.add((row.subtest || '').trim());
-                                    }
-                                }
-                            }
-                        }
-
-                        if (!matchedCanonical) {
-                            unmatchedCount++;
-                            remapped.push(row);
-                            return;
-                        }
-
-                        const canonicalAbbr = normalizeAbbreviation(matchedCanonical.abbreviation);
-                        const resolvedAbbr = canonicalAbbr || rowAbbr || null;
-                        const canonicalNameKey = normalizeSubtestName(matchedCanonical.name);
-                        const isAmbiguousCanonical = !!canonicalNameKey && canonicalAmbiguousNameKeys.has(canonicalNameKey);
-                        if (isAmbiguousCanonical && !resolvedAbbr) {
-                            ambiguousWithoutAbbrCount++;
-                            unmatchedCount++;
-                            remapped.push(row);
-                            return;
-                        }
-
-                        mappedCount++;
-                        remapped.push({
-                            ...row,
-                            subtest: formatSubtestDisplayName(matchedCanonical.name, resolvedAbbr, isAmbiguousCanonical),
-                            source_abbreviation: rowAbbr || canonicalAbbr || undefined,
-                        });
+                        const name = (row.subtest || '').trim();
+                        if (name) allExtractedNames.add(name);
                     });
-                    page.rows = remapped;
                 });
 
-                Logger.info(
-                    'AI',
-                    `Canonical soft-mapping: mapped=${mappedCount}, unmatched_kept=${unmatchedCount}, ambiguous_without_abbr_kept=${ambiguousWithoutAbbrCount}`,
-                );
-                if (ambiguousWithoutAbbrCount > 0) {
-                    toast.info(`${ambiguousWithoutAbbrCount} ligne(s) ambiguë(s) conservée(s) sans abréviation canonique.`);
-                }
-                forcedDisambiguationNamesNext = Array.from(forcedDisambiguationQueue).filter(Boolean);
+                // Exclude names that already match a canonical subtest (e.g. resolved by learned aliases)
+                const canonicalNameSet = new Set(canonicalNameInventory.map(n => n.toLowerCase()));
+                const unmappedNames = Array.from(allExtractedNames).filter(n => !canonicalNameSet.has(n.toLowerCase()));
+                Logger.info('AI', `Canonical mapping: ${allExtractedNames.size} extracted, ${unmappedNames.length} unmapped sent to disambiguation modal.`);
+                forcedDisambiguationNamesNext = unmappedNames;
             } else {
                 // Unknown test → legacy dedup: unify subtest names across pages
                 const nameMapping = new Map<string, string>();
@@ -2450,7 +2270,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
             // Re-disambiguate variant subtests collapsed by canonical matching
             reDisambiguateByAbbreviation(nextPages);
-            preserveDistinctSourceColumns(nextPages);
 
             const finalPages = nextPages.map(withPageReview);
             const crossPageDuplicates = detectCrossPageLookupDuplicates(finalPages);
@@ -2580,10 +2399,6 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         () => suggestFixes(currentPageFlags, currentRows),
         [currentPageFlags, currentRows],
     );
-    const currentPageRepairRemaining = useMemo(() => {
-        if (!currentPage) return 0;
-        return Math.max(0, currentPage.repairBudgetMax - currentPage.repairAttemptsUsed);
-    }, [currentPage]);
     const currentPageBlockingSubtests = useMemo(() => {
         if (!currentPage) return [];
         return Array.from(
@@ -2626,35 +2441,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         toast.success(`${currentPageFixableFlags.length} correction(s) appliquée(s).`);
     };
 
-    const handleRepairCurrentPage = async () => {
-        if (!currentPage) return;
-        setIsRepairingPage(true);
-        try {
-            toast.info(`Relance ciblée lancée (bloquantes actuelles: ${currentPage.flagCounts.blocking}).`);
-            const repair = await runTargetedRepairForPage(currentPage, 'manual');
-            if (!repair.attempted) {
-                toast.error(repair.reason || 'Relance ciblée indisponible pour cette page.');
-                return;
-            }
 
-            setPages((prev) => prev.map((page, index) => (
-                index === currentFileIndex ? repair.page : page
-            )));
-            if (repair.failed) {
-                toast.error(`Relance ciblée échouée: ${repair.reason || 'erreur inconnue'}`);
-                return;
-            }
-            toast.success(
-                `Relance ciblée terminée: bloquantes ${repair.beforeBlocking} -> ${repair.afterBlocking} (cibles: ${repair.targetCount}).`
-            );
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            Logger.error('AI', 'Manual targeted repair failed', error);
-            toast.error(`Relance ciblée échouée: ${message}`);
-        } finally {
-            setIsRepairingPage(false);
-        }
-    };
 
     const stripAgeQualifier = useCallback((name: string): string => {
         const trimmed = name.trim();
@@ -2674,16 +2461,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
 
     const resolveCanonicalSubtest = useCallback((row: ExtractedRow) => {
         const parsed = splitSubtestDisplayName(row.subtest);
-        const sourceColumnIndex = getSourceColumnIndexFromName(parsed.baseName || row.subtest);
-        const baseWithoutColumnSuffix = stripSourceColumnSuffix(parsed.baseName || row.subtest);
+        const baseParsed = stripSourceColumnSuffix(parsed.baseName || row.subtest);
         const rawSourceAbbr = normalizeAbbreviation(row.source_abbreviation || parsed.abbreviation);
         const sourceAbbr = isLikelyAgeQualifier(rawSourceAbbr) ? '' : rawSourceAbbr;
         const baseName = canonicalSubtestsNormalized.length > 0
-            ? stripAgeQualifier(baseWithoutColumnSuffix)
-            : baseWithoutColumnSuffix;
+            ? stripAgeQualifier(baseParsed)
+            : baseParsed;
         const alias = resolveSubtestAlias(testName, baseName, { abbreviation: sourceAbbr || null }).trim();
-        const fallbackBaseName = alias || baseWithoutColumnSuffix || row.subtest;
-        const fallbackName = withSourceColumnSuffix(fallbackBaseName, sourceColumnIndex);
+        const fallbackName = alias || baseParsed || row.subtest;
         const normalized = normalizeSubtestName(alias);
 
         if (canonicalSubtestsNormalized.length === 0 || !normalized) {
@@ -2701,17 +2486,16 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         const candidates = canonicalSubtestsByName.get(normalized) || [];
         if (candidates.length === 1) {
             const candidate = candidates[0];
-            const candidateName = withSourceColumnSuffix(candidate.name, sourceColumnIndex);
             const candidateAbbr = normalizeAbbreviation(candidate.abbreviation);
             const displayAbbr = candidateAbbr || sourceAbbr || null;
             const normalizedCandidateName = normalizeSubtestName(candidate.name);
             const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
             const isHiddenInvalidAmbiguous = isAmbiguous && !displayAbbr;
             return {
-                name: candidateName,
+                name: candidate.name,
                 abbreviation: displayAbbr,
                 scoreType: candidate.scoreType || null,
-                displayName: formatSubtestDisplayName(candidateName, displayAbbr, isAmbiguous),
+                displayName: formatSubtestDisplayName(candidate.name, displayAbbr, isAmbiguous),
                 isAmbiguous,
                 isHiddenInvalidAmbiguous,
                 isMapped: !isHiddenInvalidAmbiguous,
@@ -2722,16 +2506,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             if (sourceAbbr) {
                 const exact = candidates.find(c => normalizeAbbreviation(c.abbreviation) === sourceAbbr);
                 if (exact) {
-                    const exactName = withSourceColumnSuffix(exact.name, sourceColumnIndex);
                     const exactAbbr = normalizeAbbreviation(exact.abbreviation) || sourceAbbr;
                     const normalizedCandidateName = normalizeSubtestName(exact.name);
                     const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
                     const isHiddenInvalidAmbiguous = isAmbiguous && !exactAbbr;
                     return {
-                        name: exactName,
+                        name: exact.name,
                         abbreviation: exactAbbr || null,
                         scoreType: exact.scoreType || null,
-                        displayName: formatSubtestDisplayName(exactName, exactAbbr || null, isAmbiguous),
+                        displayName: formatSubtestDisplayName(exact.name, exactAbbr || null, isAmbiguous),
                         isAmbiguous,
                         isHiddenInvalidAmbiguous,
                         isMapped: !isHiddenInvalidAmbiguous,
@@ -2753,16 +2536,15 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         isMapped: false,
                     };
                 }
-                const narrowedDisplayName = withSourceColumnSuffix(narrowed.name, sourceColumnIndex);
                 const narrowedAbbr = normalizeAbbreviation(narrowed.abbreviation) || sourceAbbr;
                 const normalizedCandidateName = normalizeSubtestName(narrowed.name);
                 const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
                 const isHiddenInvalidAmbiguous = isAmbiguous && !narrowedAbbr;
                 return {
-                    name: narrowedDisplayName,
+                    name: narrowed.name,
                     abbreviation: narrowedAbbr || null,
                     scoreType: narrowed.scoreType || null,
-                    displayName: formatSubtestDisplayName(narrowedDisplayName, narrowedAbbr || null, isAmbiguous),
+                    displayName: formatSubtestDisplayName(narrowed.name, narrowedAbbr || null, isAmbiguous),
                     isAmbiguous,
                     isHiddenInvalidAmbiguous,
                     isMapped: !isHiddenInvalidAmbiguous,
@@ -3144,13 +2926,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             return;
         }
 
-        const unverifiedLookupPages = validatedPages.filter((page) => (
-            page.detectedStructure === 'LOOKUP' && page.extractionMeta?.verified !== true
-        ));
-        if (unverifiedLookupPages.length > 0) {
-            toast.error(`${unverifiedLookupPages.length} page(s) LOOKUP non vérifiée(s) par la passe de contrôle edge.`);
-            return;
-        }
+
 
         const lowConfidencePages = validatedPages.filter((page) => {
             const confidence = page.extractionMeta?.confidenceScore;
@@ -3770,29 +3546,31 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             </div>
 
-                            {/* CATEGORY SELECTOR */}
-                            <div>
-                                <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-[var(--text-secondary)]">Catégorie du Test</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {categoryOptions.map(cat => (
-                                        <button
-                                            key={cat.id}
-                                            onClick={() => setSelectedCategory(cat.id)}
-                                            className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedCategory === cat.id
-                                                ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
-                                                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
-                                                }`}
-                                        >
-                                            {cat.label}
-                                        </button>
-                                    ))}
+                            {/* CATEGORY SELECTOR — locked when test already exists in DB */}
+                            {!canonicalTest && (
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block text-[var(--text-secondary)]">Catégorie du Test</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {categoryOptions.map(cat => (
+                                            <button
+                                                key={cat.id}
+                                                onClick={() => setSelectedCategory(cat.id)}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedCategory === cat.id
+                                                    ? 'bg-[#3D405B] text-white border-[#3D405B] shadow-md'
+                                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-secondary)]'
+                                                    }`}
+                                            >
+                                                {cat.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {!isCategoryLoading && categoryOptions.length === 0 && (
+                                        <p className="text-[10px] text-rose-500 mt-2 font-semibold">
+                                            Aucune catégorie disponible (vérifiez la table `official_categories`).
+                                        </p>
+                                    )}
                                 </div>
-                                {!isCategoryLoading && categoryOptions.length === 0 && (
-                                    <p className="text-[10px] text-rose-500 mt-2 font-semibold">
-                                        Aucune catégorie disponible (vérifiez la table `official_categories`).
-                                    </p>
-                                )}
-                            </div>
+                            )}
 
                             {pages.length > 0 && (
                                 <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 flex flex-col gap-3">
@@ -3951,22 +3729,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                             >
                                                 Appliquer corrections suggérées (page)
                                             </button>
-                                            <button
-                                                onClick={handleRepairCurrentPage}
-                                                disabled={!currentPage || currentPageRepairRemaining <= 0 || isRepairingPage}
-                                                className="text-xs px-3 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                                title={
-                                                    currentPageRepairRemaining <= 0
-                                                        ? 'Budget de relance atteint pour cette page.'
-                                                        : 'Relance ciblée sur les sous-tests en mismatch'
-                                                }
-                                            >
-                                                {isRepairingPage ? <Loader2 size={12} className="animate-spin" /> : null}
-                                                Relancer extraction ciblée (page)
-                                            </button>
-                                            <span className="text-[10px] text-[var(--text-secondary)]">
-                                                Budget relance: {currentPageRepairRemaining}/{currentPage?.repairBudgetMax || PAGE_REPAIR_BUDGET_MAX}
-                                            </span>
+
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between gap-3 flex-wrap text-[11px] text-[var(--text-secondary)]">
@@ -3992,11 +3755,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                     Colonnes vides détectées: {currentUncertaintyFlags.emptyExtractedColumns.join(', ')}
                                                 </span>
                                             )}
-                                            {Array.isArray(currentUncertaintyFlags.adjacentDuplicateColumns) && currentUncertaintyFlags.adjacentDuplicateColumns.length > 0 && (
-                                                <span>
-                                                    Colonnes potentiellement décalées: {currentUncertaintyFlags.adjacentDuplicateColumns.join(', ')}
-                                                </span>
-                                            )}
+
                                             {typeof currentUncertaintyFlags.inventoryCoverageRatio === 'number' && (
                                                 <span>
                                                     Couverture inventaire: {Math.round(currentUncertaintyFlags.inventoryCoverageRatio * 100)}%

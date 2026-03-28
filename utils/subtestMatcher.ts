@@ -107,12 +107,25 @@ export function scoreCandidate(query: string, candidateName: string): number {
  */
 export function findBestMatches(
   query: string,
-  candidates: ReadonlyArray<{ id: string; name: string }>,
+  candidates: ReadonlyArray<{ id: string; name: string; abbreviation?: string | null }>,
   maxResults = 6,
   minScore = 0.25,
+  sourceAbbr?: string,
 ): MatchCandidate[] {
+  const nq = normalizeForMatch(query);
+  const nAbbr = sourceAbbr ? normalizeForMatch(sourceAbbr) : '';
   return candidates
-    .map((c) => ({ id: c.id, name: c.name, score: scoreCandidate(query, c.name) }))
+    .map((c) => {
+      let score = scoreCandidate(query, c.name);
+      // Boost when query or source abbreviation exactly matches the candidate's abbreviation
+      if (c.abbreviation && nq) {
+        const nCandAbbr = normalizeForMatch(c.abbreviation);
+        if (nCandAbbr === nq || (nAbbr && nCandAbbr === nAbbr)) {
+          score = Math.max(score, 0.95);
+        }
+      }
+      return { id: c.id, name: c.name, score };
+    })
     .filter((c) => c.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, maxResults);
