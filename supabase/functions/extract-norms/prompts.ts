@@ -389,12 +389,16 @@ const sanitizeInventoryColumns = (columns: unknown): InventoryColumnDescriptor[]
       const columnOrderRaw = Number(value.columnOrder);
       const tableOrderRaw = Number(value.tableOrder);
 
+      // Clamp order values — Gemini occasionally hallucinates astronomically large
+      // integers (e.g. 1e120). In IEEE 754 these are finite, so Math.trunc passes
+      // but the value is useless for sorting. Cap to a safe display range.
+      const MAX_ORDER = 10_000;
       return {
         sid,
         ab,
         domain: domain || null,
-        columnOrder: Number.isFinite(columnOrderRaw) ? Math.trunc(columnOrderRaw) : null,
-        tableOrder: Number.isFinite(tableOrderRaw) ? Math.trunc(tableOrderRaw) : null,
+        columnOrder: Number.isFinite(columnOrderRaw) ? Math.min(Math.trunc(columnOrderRaw), MAX_ORDER) : null,
+        tableOrder: Number.isFinite(tableOrderRaw) ? Math.min(Math.trunc(tableOrderRaw), MAX_ORDER) : null,
         isInverted: value.isInverted === true,
       };
     });
@@ -591,10 +595,16 @@ export const buildFocusedExtractionTaskV2 = (
     isInverted: column.isInverted === true,
   }));
 
+  // When canonical names are provided (test known in DB), they are authoritative.
+  // Skip known-names-from-history block to avoid token bloat as page count grows.
+  const knownNamesBlock = canonicalSubtestNames.length > 0
+    ? ''
+    : buildKnownNamesBlock(knownSubtestNames);
+
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
 IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${knownNamesBlock}${buildScoreTypeHintBlock(scoreTypeHint)}
 FOCUS CONSTRAINT: Extract data ONLY for these specific physical columns: ${JSON.stringify(serializedColumns)}
 These belong to the domain section: "${domainHint}".
 IGNORE all other columns entirely. Only output data for the listed columns.

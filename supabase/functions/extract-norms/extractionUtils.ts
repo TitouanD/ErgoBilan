@@ -75,6 +75,25 @@ export const buildInventoryColumnKey = (column: Pick<InventoryColumnDescriptor, 
   return normalizeKeyTolerant(ab || sid);
 };
 
+/**
+ * For PARAMETRIC tables the extractor produces one Moyenne+ET pair per subtest,
+ * regardless of how many historical/duplicate visual columns appear in the image.
+ * Deduplicating to unique sids lets quality metrics measure "did we cover every
+ * subtest" instead of "did we fill every visual column" — avoiding false alarms
+ * on tables that show two norm sets side-by-side (e.g. Lespargot 1981 vs 3p).
+ */
+export const deduplicateInventoryColumnsForParametric = (
+  columns: InventoryColumnDescriptor[],
+): InventoryColumnDescriptor[] => {
+  const seen = new Set<string>();
+  return columns.filter((col) => {
+    const key = normalizeStableKeyPart(col.sid);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 const buildTableKey = (table: Pick<ExtractionLikeTable, 'sid' | 'ab'>): string => {
   const ab = String(table.ab ?? '').trim();
   const sid = String(table.sid ?? '').trim();

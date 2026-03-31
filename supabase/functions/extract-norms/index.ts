@@ -4,6 +4,7 @@ import { captureEdgeException } from "../_shared/sentry.ts";
 import {
   chunkInventoryColumns,
   decideExtractionRouting,
+  deduplicateInventoryColumnsForParametric,
   matchRepairColumns,
   sortTablesByInventoryOrder,
   summarizeInventoryCompleteness,
@@ -33,16 +34,18 @@ const MAX_EXTRACTIONS_PER_DAY = Number(Deno.env.get("EXTRACTION_MAX_PER_DAY")) |
 // â”€â”€ HARDCODED CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = 30_000;
+const GEMINI_TIMEOUT_MS = 45_000;
 const GEMINI_MAX_RETRIES = 1;
 const GEMINI_RETRY_BASE_MS = 2_000;
 const MAX_OUTPUT_TOKENS = 65_536;
 const PRECHECK_COLUMN_THRESHOLD = 8;
-const MAX_SUBTESTS_PER_CHUNK = 7;
+const MAX_SUBTESTS_PER_CHUNK = 12;
 const CHUNK_MIN_COLUMN_COVERAGE_RATIO = 0.4;
 const MAX_REPAIR_TARGETS = 20;
-const THINKING_BUDGET = 2048;
-const INVENTORY_THINKING_BUDGET = 512;
+// Extraction is mechanical table-reading — thinking tokens add latency with no benefit.
+// Keep thinking only for inventory (structure analysis) and set to 0 for all other calls.
+const THINKING_BUDGET = 0;
+const INVENTORY_THINKING_BUDGET = 1024;
 const MAX_PAYLOAD_BYTES = 10_000_000;
 const MAX_IMAGE_PART_BYTES = 8_000_000;
 
@@ -244,6 +247,12 @@ const callGemini = async (
   const candidate = data?.candidates?.[0];
   const text = candidate?.content?.parts?.[0]?.text ?? null;
   const finishReason = candidate?.finishReason ?? 'UNKNOWN';
+
+  // content:{} with HTTP 200 = Gemini overloaded ("high demand") — treat as retryable
+  // so retryWithBackoff handles it the same way as a 503.
+  if (text === null) {
+    throw new Error('Retryable Gemini empty content');
+  }
 
   return { text, finishReason };
 };
@@ -481,7 +490,6 @@ const stableLookupRowKey = (row: Record<string, unknown>): string => (
     stableRowValue(row.a0),
     stableRowValue(row.a1),
     stableRowValue(row.r),
-    stableRowValue(row.n),
     stableRowValue(row.gl),
   ].join('|')}`
 );
@@ -963,7 +971,10 @@ const runChunkedInventoryExtraction = async (
   };
 
   const assessed = await Promise.all(
-    chunks.map(async (chunk) => {
+    chunks.map(async (chunk, i) => {
+      // Stagger chunk starts by 300ms each to avoid a simultaneous burst
+      // that causes Gemini 503s (e.g. 15 chunks × 0ms = 15 parallel calls).
+      if (i > 0) await sleep(i * 300);
       const parsed = await runChunk(chunk);
       return {
         chunk,
@@ -976,7 +987,10 @@ const runChunkedInventoryExtraction = async (
 
   const retryCandidates = assessed.filter((entry) => !entry.parsed || entry.coverage < CHUNK_MIN_COLUMN_COVERAGE_RATIO);
   if (retryCandidates.length > 0) {
-    const retried = await Promise.all(retryCandidates.map(async (entry) => runChunk(entry.chunk)));
+    const retried = await Promise.all(retryCandidates.map(async (entry, i) => {
+      if (i > 0) await sleep(i * 500);
+      return runChunk(entry.chunk);
+    }));
     apiCalls += retryCandidates.length;
     retryCandidates.forEach((entry, index) => {
       const parsed = retried[index];
@@ -1148,11 +1162,17 @@ const extractWithFallbackV2 = async (
   if (!parsed) {
     throw new Error('Extraction ordering failed');
   }
-  const completeness = summarizeInventoryCompleteness(parsed, inventory.columns);
+  // For PARAMETRIC, deduplicate columns to one per unique subtest before quality checks.
+  // The extractor produces one Moyenne+ET pair per subtest regardless of how many
+  // historical/duplicate visual columns the table contains.
+  const qualityColumns = routing.mode === 'parametric-full'
+    ? deduplicateInventoryColumnsForParametric(inventory.columns)
+    : inventory.columns;
+  const completeness = summarizeInventoryCompleteness(parsed, qualityColumns);
   baseMeta.expectedSourceColumns = completeness.expectedSourceColumns;
   baseMeta.missingSourceColumns = completeness.missingSourceColumns;
   baseMeta.expectedSourceColumnCount = completeness.expectedSourceColumnCount;
-  annotateExtractionQuality(baseMeta, parsed, inventory.columns);
+  annotateExtractionQuality(baseMeta, parsed, qualityColumns);
   let baseResult: ExtractionRunResult = {
     text: JSON.stringify(parsed),
     meta: baseMeta,
@@ -1203,7 +1223,7 @@ const extractWithFallbackV2 = async (
 
   baseMeta.strategy = `${baseMeta.strategy}+repaired`;
   baseMeta.repairedSubtests = retryColumns.map((col) => col.sid);
-  annotateExtractionQuality(baseMeta, merged, inventory.columns);
+  annotateExtractionQuality(baseMeta, merged, qualityColumns);
 
   return {
     text: JSON.stringify(merged),
@@ -1256,7 +1276,11 @@ const extractWithRepairV2 = async (
 
   const orderedParsed = applyInventoryOrdering(parsed, inventoryColumns) || parsed;
   const repairedSubtests = effectiveRepairRequest.focusSubtests.map((entry) => entry.name);
-  const completeness = summarizeInventoryCompleteness(orderedParsed, inventoryColumns);
+  const repairIsParametric = String(inventory?.st || '').toUpperCase() === 'PARAMETRIC';
+  const repairQualityColumns = repairIsParametric
+    ? deduplicateInventoryColumnsForParametric(inventoryColumns)
+    : inventoryColumns;
+  const completeness = summarizeInventoryCompleteness(orderedParsed, repairQualityColumns);
   const meta: ExtractionMeta = {
     strategy: 'repair-focused-v2',
     apiCalls: 2,
@@ -1268,7 +1292,7 @@ const extractWithRepairV2 = async (
     missingSourceColumns: completeness.missingSourceColumns,
     expectedSourceColumnCount: completeness.expectedSourceColumnCount,
   };
-  annotateExtractionQuality(meta, orderedParsed, inventoryColumns);
+  annotateExtractionQuality(meta, orderedParsed, repairQualityColumns);
 
 
   return {
