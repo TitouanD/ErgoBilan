@@ -677,7 +677,19 @@ const buildLookupIssues = (
   const stepSamples = Array.from(grouped.values())
     .flatMap((group) => group
       .map((entry, index) => ({ entry, index }))
-      .slice(1)
+      .slice(1)        // skip first entry (no previous to compare)
+      // Exclude boundary transitions on both ends of each series.
+      // Standard score LOOKUP tables exhibit a "ramp-up" acceleration zone in
+      // approximately the top and bottom 20% of raw scores: the mapping becomes
+      // steep near the extremes because very few subjects score at those levels,
+      // compressing many percentile points into a single raw-score step.
+      // Excluding the outermost ~20% (minimum 2) on each side prevents false-
+      // positive step outlier flags on well-formed tables while still catching
+      // genuine mid-table extraction errors (e.g. a transposed digit).
+      .filter(({ index }) => {
+        const boundary = Math.max(2, Math.round(group.length * 0.20));
+        return index > boundary && index < group.length - boundary;
+      })
       .map(({ entry, index }) => {
         const prev = group[index - 1];
         const deltaRaw = entry.order - prev.order;
@@ -963,14 +975,28 @@ export const analyzeFitting = (input: AnalyzeFittingInput): FittingResult => {
     inferenceGap = inferred.meta.gap;
 
     if (!suggestedScoreType) {
-      const noneFallback = inferNoneForParametricRows(input.rows, currentScoreType, inferenceBestScore);
-      if (noneFallback) {
-        suggestedScoreType = 'none';
-        confidenceOverride = noneFallback.confidence;
+      // For PARAMETRIC subtests, mean/sd store raw-score population norms —
+      // values inherently outside standardized scale ranges (e.g. mean=27, sd=5
+      // for Barrage des H). If the subtest already carries an explicit
+      // standardized score_type, do NOT infer 'none': compute_score will
+      // z-score against these raw-domain values and convert to the target scale
+      // at runtime. Only run the none-fallback when score_type is not yet set.
+      const skipNoneFallback = isStandardizedScoreType(currentScoreType as FittingScoreType);
+      if (!skipNoneFallback) {
+        const noneFallback = inferNoneForParametricRows(input.rows, currentScoreType, inferenceBestScore);
+        if (noneFallback) {
+          suggestedScoreType = 'none';
+          confidenceOverride = noneFallback.confidence;
+        }
       }
     }
 
-    issues = buildParametricIssues(input.rows, suggestedScoreType || currentScoreType);
+    // Only run the drift check when the inference engine positively identified a
+    // matching scale. If suggestedScoreType is null it means the observed mean/sd
+    // are raw-domain population statistics (e.g. mean=28 for Barrage des H) —
+    // comparing them against a standardized scale target (mean=100 for 'standard')
+    // would always produce a false-positive drift issue.
+    issues = buildParametricIssues(input.rows, suggestedScoreType);
   }
 
   const confidence = confidenceOverride ?? (

@@ -97,7 +97,7 @@ const AppRouter = () => {
     const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, setDraftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, orgKey, orgId, authState, practitioner, isDemoMode });
 
     const { isGenerating, setIsGenerating, generationError, setGenerationError, handleGenerateReport, handleFinalize, handleSaveAndQuit, handleResumeDraft } = useAssessmentFlow({
-        assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, practitioner, patientFiles, loadData, toast,
+        assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
     });
 
     const { handleGenerateLink, handleCopyLink } = useLinkManager({

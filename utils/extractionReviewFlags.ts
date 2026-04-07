@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { zScoreToPercentile } from './scoring';
 
-type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
+type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION' | 'UNKNOWN';
 
 type AnalyzePageInput = {
   pageId: string;
@@ -361,6 +361,27 @@ const expectedCountForGroup = (entries: CountEntry[]): number => {
       if (a[1] !== b[1]) return b[1] - a[1];
       return b[0] - a[0];
     })[0]?.[0] || 0;
+};
+
+/**
+ * Detect all significant count modes for a group.
+ * A mode is significant when at least MIN_MODE_SUPPORT subtests share it.
+ * When multiple physical tables with different row structures live on the
+ * same page, each table produces its own mode and we should not flag subtests
+ * that match any of them.
+ */
+const MIN_MODE_SUPPORT = 2;
+const validCountModes = (entries: CountEntry[]): Set<number> => {
+  const freq = new Map<number, number>();
+  entries.forEach((entry) => {
+    freq.set(entry.count, (freq.get(entry.count) || 0) + 1);
+  });
+  const modes = new Set<number>();
+  for (const [count, frequency] of freq.entries()) {
+    if (frequency >= MIN_MODE_SUPPORT) modes.add(count);
+  }
+  if (modes.size === 0) modes.add(expectedCountForGroup(entries));
+  return modes;
 };
 
 const flagCodeSortOrder: Record<ReviewSeverity, number> = {
@@ -873,14 +894,33 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
             confidence: 0.96,
           }));
         }
-        // Off-by-one boundary overlap: curr.min === prev.max (touching/overlap by 1)
-        // Suggest fixing curr's raw range to start at prev.max + 1
-        const isOffByOne = !sameBounds
+        // Ghost-value pattern: prev is a single value X and curr is a range starting at X (e.g. prev=0, curr=0-1).
+        // This means Gemini misread a dash "—" as the lower bound of the next range. Fix: replace prev with "-".
+        const isGhostValue = !sameBounds
+          && prev.rawBounds.min === prev.rawBounds.max        // prev is a single value
+          && curr.rawBounds.min === prev.rawBounds.min         // curr starts at same value
+          && curr.rawBounds.max > curr.rawBounds.min;          // curr is a range
+        // Off-by-one boundary overlap: curr.min === prev.max (touching/overlap by 1), but NOT ghost-value
+        const isOffByOne = !sameBounds && !isGhostValue
           && curr.rawBounds.min === prev.rawBounds.max
           && curr.rawBounds.max > curr.rawBounds.min;
-        const fixedRaw = isOffByOne
-          ? `${prev.rawBounds.max + 1}-${curr.rawBounds.max}`
-          : undefined;
+
+        let fixTarget: { rowId: string; field: 'raw'; value: string; reason: string } | undefined;
+        if (isGhostValue) {
+          fixTarget = {
+            rowId: prev.row.id,
+            field: 'raw' as const,
+            value: '-',
+            reason: `Valeur fantôme: ${formatRawBounds(prev.rawBounds)} est probablement un tiret (la plage suivante ${formatRawBounds(curr.rawBounds)} commence à la même valeur).`,
+          };
+        } else if (isOffByOne) {
+          fixTarget = {
+            rowId: curr.row.id,
+            field: 'raw' as const,
+            value: `${prev.rawBounds.max + 1}-${curr.rawBounds.max}`,
+            reason: `Correction off-by-one: ${formatRawBounds(curr.rawBounds)} → ${prev.rawBounds.max + 1}-${curr.rawBounds.max}`,
+          };
+        }
 
         flags.push(makeFlag({
           code: 'LOOKUP_RAW_RANGE_OVERLAP',
@@ -890,16 +930,65 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
           groupLabel: bucket.groupLabel,
           rowId: curr.row.id,
           confidence: sameBounds && (conflictingScore || partialScoreConflict) ? 0.97 : 0.92,
-          ...(isOffByOne && fixedRaw ? {
-            suggestedFix: {
-              rowId: curr.row.id,
-              field: 'raw' as const,
-              value: fixedRaw,
-              reason: `Correction off-by-one: ${formatRawBounds(curr.rawBounds)} → ${fixedRaw}`,
-            },
-          } : {}),
+          ...(fixTarget ? { suggestedFix: fixTarget } : {}),
         }));
       }
+    }
+
+    // ── LOOKUP_RAW_RANGE_GAP: detect non-contiguous raw ranges ──
+    // When consecutive scored rows have a numeric gap (prev.max + 1 < curr.min),
+    // check if a dash row in between could be the missing range.
+    for (let i = 1; i < orderedWithRaw.length; i += 1) {
+      const prev = orderedWithRaw[i - 1];
+      const curr = orderedWithRaw[i];
+      if (!prev.rawBounds || !curr.rawBounds) continue;
+
+      const gapSize = curr.rawBounds.min - prev.rawBounds.max - 1;
+      if (gapSize < 1) continue; // no gap or overlap (already handled above)
+
+      // Look for dash rows between prev and curr in standard-value order
+      // that could explain the gap (one dash row = one NS with missing raw).
+      // Use min/max to handle both normal (std increases with raw) and inverted scales.
+      const prevStd = prev.standardValue ?? -Infinity;
+      const currStd = curr.standardValue ?? Infinity;
+      const minStd = Math.min(prevStd, currStd);
+      const maxStd = Math.max(prevStd, currStd);
+      const dashRowsBetween = ordered.filter((entry) => {
+        if (entry.rawBounds !== null) return false; // has numeric raw — not a dash
+        if (!entry.hasRaw) return false;            // truly empty — not a dash
+        const entryStd = entry.standardValue;
+        if (entryStd === null) return false;
+        return entryStd > minStd && entryStd < maxStd;
+      });
+
+      // If there are as many or more dash rows as the gap size, the test intentionally
+      // leaves those raw scores unmapped — this is normal test design, not an extraction error.
+      if (dashRowsBetween.length >= gapSize) continue;
+
+      const missingRange = gapSize === 1
+        ? `${prev.rawBounds.max + 1}`
+        : `${prev.rawBounds.max + 1}-${curr.rawBounds.min - 1}`;
+
+      // If exactly one dash row sits in the gap, suggest replacing its raw with the missing range
+      const suggestedFix = dashRowsBetween.length === 1
+        ? {
+            rowId: dashRowsBetween[0].row.id,
+            field: 'raw' as const,
+            value: missingRange,
+            reason: `Plage manquante détectée: ${missingRange} (entre ${formatRawBounds(prev.rawBounds)} et ${formatRawBounds(curr.rawBounds)}).`,
+          }
+        : undefined;
+
+      flags.push(makeFlag({
+        code: 'LOOKUP_RAW_RANGE_GAP',
+        severity: 'warning',
+        message: `Trou dans les plages brutes pour "${bucket.subtest}" (${bucket.groupLabel}): ${formatRawBounds(prev.rawBounds)} puis ${formatRawBounds(curr.rawBounds)} — ${gapSize} valeur(s) brute(s) non couvertes (${missingRange}).`,
+        subtest: bucket.subtest,
+        groupLabel: bucket.groupLabel,
+        rowId: curr.row.id,
+        confidence: dashRowsBetween.length === 1 ? 0.93 : 0.88,
+        ...(suggestedFix ? { suggestedFix } : {}),
+      }));
     }
 
     for (let i = 1; i < orderedScored.length; i += 1) {
@@ -1157,8 +1246,9 @@ export const analyzePageRows = ({ pageId, rows, structure }: AnalyzePageInput): 
   for (const [groupLabel, perSubtest] of groupCounts.entries()) {
     if (perSubtest.size < 2) continue;
     const entries = Array.from(perSubtest.values());
+    const validModes = validCountModes(entries);
     const expected = expectedCountForGroup(entries);
-    const mismatch = entries.filter((entry) => entry.count !== expected);
+    const mismatch = entries.filter((entry) => !validModes.has(entry.count));
     mismatch.forEach((entry) => {
       const missing = Math.max(0, expected - entry.count);
       const sparseLikely = sparseLookupKeys.has(entry.bucketKey);

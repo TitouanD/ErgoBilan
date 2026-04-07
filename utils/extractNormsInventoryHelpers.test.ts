@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chunkInventoryColumns,
   decideExtractionRouting,
+  isCombinedScoreColumn,
   matchRepairColumns,
   sortTablesByInventoryOrder,
   summarizeInventoryCompleteness,
@@ -127,5 +128,13 @@ describe('extract-norms inventory helpers', () => {
     const summary = summarizeInventoryCompleteness(extraction, inventoryColumns);
     expect(summary.expectedSourceColumnCount).toBe(3);
     expect(summary.missingSourceColumns).toEqual(['AA']);
+  });
+
+  it('detects combined-score columns by ampersand or keyword', () => {
+    expect(isCombinedScoreColumn({ sid: 'MP & MPD', ab: 'MP & MPD' })).toBe(true);
+    expect(isCombinedScoreColumn({ sid: 'MF & MFD', ab: 'MFMFD' })).toBe(true);
+    expect(isCombinedScoreColumn({ sid: 'Total combiné', ab: 'MPMMPD' })).toBe(true);
+    expect(isCombinedScoreColumn({ sid: 'MF', ab: 'MF' })).toBe(false);
+    expect(isCombinedScoreColumn({ sid: 'Attention Auditive', ab: 'AA' })).toBe(false);
   });
 });

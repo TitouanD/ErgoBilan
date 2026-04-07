@@ -65,7 +65,7 @@ const ReportToolbar: React.FC<{
     return (
         <div className="fixed left-4 top-1/2 -translate-y-1/2 z-[100] animate-in slide-in-from-left-10 fade-in duration-700 bg-[var(--card-bg)] rounded-2xl p-2 shadow-2xl border border-[var(--border-color)] flex flex-col items-center gap-3 print:hidden">
             <div className="flex flex-col items-center gap-1 text-sm font-bold text-[var(--text-heading)]">
-                <Palette size={16} className="text-[var(--primary)]" />
+                <Palette size={16} className="text-[#E07A5F]" />
             </div>
 
             <div className="flex flex-col gap-2">
@@ -95,7 +95,7 @@ const ReportToolbar: React.FC<{
 
             <div className="h-px w-6 bg-[var(--border-color)] my-1"></div>
 
-            <button onClick={onOpenEditor} className="bg-[var(--secondary)] text-white p-2 rounded-full text-xs font-bold hover:brightness-90 transition-colors flex items-center gap-2" title="Éditeur Complet">
+            <button onClick={onOpenEditor} className="bg-[#3D405B] text-white p-2 rounded-full text-xs font-bold hover:bg-[#2c2e42] transition-colors flex items-center gap-2" title="Éditeur Complet">
                 <Brush size={12} />
             </button>
         </div>
@@ -125,7 +125,7 @@ const BrandingEditor: React.FC<{
         <div className="fixed inset-y-0 right-0 w-96 bg-[var(--card-bg)] shadow-2xl z-[150] animate-in slide-in-from-right duration-300 flex flex-col no-print border-l border-[var(--border-color)]">
             <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--card-bg-raised)]">
                 <h3 className="font-serif font-bold text-xl text-[var(--text-heading)] flex items-center gap-2">
-                    <Palette size={24} className="text-[var(--primary)]" /> Studio Design
+                    <Palette size={24} className="text-[#E07A5F]" /> Studio Design
                 </h3>
                 <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] p-2 hover:bg-[var(--border-color)] rounded-full transition-colors"><X size={20} /></button>
             </div>
@@ -133,11 +133,11 @@ const BrandingEditor: React.FC<{
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
 
                 {/* 1. ACTIVATION */}
-                <div className="flex items-center justify-between p-4 bg-[var(--primary)]/10 rounded-xl border border-[var(--primary)]/20">
-                    <span className="text-sm font-bold text-[var(--primary)]">Mode Personnalisé</span>
+                <div className="flex items-center justify-between p-4 bg-[#E07A5F]/10 rounded-xl border border-[#E07A5F]/20">
+                    <span className="text-sm font-bold text-[#E07A5F]">Mode Personnalisé</span>
                     <button
                         onClick={() => onUpdate({ ...branding, isEnabled: !branding.isEnabled })}
-                        className={`w-12 h-6 rounded-full transition-colors relative ${branding.isEnabled ? 'bg-[var(--primary)]' : 'bg-[var(--border-color)]'}`}
+                        className={`w-12 h-6 rounded-full transition-colors relative ${branding.isEnabled ? 'bg-[#E07A5F]' : 'bg-[var(--border-color)]'}`}
                     >
                         <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform shadow-sm ${branding.isEnabled ? 'left-7' : 'left-1'}`}></div>
                     </button>
@@ -153,7 +153,7 @@ const BrandingEditor: React.FC<{
                                 value={branding.documentTitle || "Bilan d'Ergothérapie"}
                                 onChange={(e) => onUpdate({ ...branding, documentTitle: e.target.value })}
                                 placeholder="Bilan d'Ergothérapie"
-                                className="w-full p-3 text-sm border border-[var(--border-color)] rounded-xl bg-[var(--input-bg)] focus:bg-[var(--card-bg)] outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F] text-[var(--text-heading)] font-bold"
+                                className="w-full p-3 text-sm border border-[var(--border-color)] rounded-xl bg-[var(--input-bg)] focus:bg-[var(--card-bg)] outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[var(--text-heading)] font-bold"
                             />
                         </div>
 
@@ -168,35 +168,35 @@ const BrandingEditor: React.FC<{
                             <div className="grid grid-cols-2 gap-3 mb-4">
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'classic', headerLayout: 'row', headerAlignment: 'left' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[var(--primary)] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'classic' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-[var(--card-bg)] rounded border border-[var(--border-color)] p-1 flex items-center gap-1">
                                         <div className="w-4 h-4 bg-[var(--border-color)] rounded-sm"></div>
                                         <div className="w-full h-2 bg-[var(--hover-bg)] rounded-sm"></div>
                                     </div>
-                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'classic' ? 'text-[var(--primary)]' : 'text-[var(--text-secondary)]'}`}>Classique</span>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'classic' ? 'text-[#E07A5F]' : 'text-[var(--text-secondary)]'}`}>Classique</span>
                                 </button>
 
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'corporate', headerLayout: 'row', headerAlignment: 'right' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[var(--primary)] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'corporate' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-[var(--card-bg)] rounded border border-[var(--border-color)] p-1 flex items-center justify-between gap-1">
                                         <div className="w-1/2 h-2 bg-[var(--hover-bg)] rounded-sm"></div>
                                         <div className="w-4 h-4 bg-[var(--border-color)] rounded-sm"></div>
                                     </div>
-                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'corporate' ? 'text-[var(--primary)]' : 'text-[var(--text-secondary)]'}`}>Corporate</span>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'corporate' ? 'text-[#E07A5F]' : 'text-[var(--text-secondary)]'}`}>Corporate</span>
                                 </button>
 
                                 <button
                                     onClick={() => onUpdate({ ...branding, headerTemplate: 'centered', headerLayout: 'column', headerAlignment: 'center' })}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[var(--primary)] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'centered' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
                                 >
                                     <div className="w-full h-10 bg-[var(--card-bg)] rounded border border-[var(--border-color)] p-1 flex flex-col items-center justify-center gap-1">
                                         <div className="w-4 h-4 bg-[var(--border-color)] rounded-sm"></div>
                                         <div className="w-2/3 h-1.5 bg-[var(--hover-bg)] rounded-sm"></div>
                                     </div>
-                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'centered' ? 'text-[var(--primary)]' : 'text-[var(--text-secondary)]'}`}>Centré</span>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'centered' ? 'text-[#E07A5F]' : 'text-[var(--text-secondary)]'}`}>Centré</span>
                                 </button>
                             </div>
                         </div>
@@ -235,7 +235,7 @@ const BrandingEditor: React.FC<{
 
                             <button
                                 onClick={() => onOpenProfile?.()}
-                                className="w-full text-[11px] text-[var(--primary)] hover:text-[#d0694e] text-center font-bold py-1.5 hover:underline transition-colors"
+                                className="w-full text-[11px] text-[#E07A5F] hover:text-[#d0694e] text-center font-bold py-1.5 hover:underline transition-colors"
                             >
                                 Modifier ces informations dans Mon Profil →
                             </button>
@@ -247,13 +247,13 @@ const BrandingEditor: React.FC<{
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => onUpdate({ ...branding, patientBlockStyle: 'modern' })}
-                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'modern' ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'}`}
+                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'modern' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'}`}
                                 >
                                     Encadré (Défaut)
                                 </button>
                                 <button
                                     onClick={() => onUpdate({ ...branding, patientBlockStyle: 'minimal' })}
-                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'minimal' ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'}`}
+                                    className={`flex-1 p-2 rounded-lg border text-xs font-bold transition-all ${branding.patientBlockStyle === 'minimal' ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'}`}
                                 >
                                     Minimaliste (Texte)
                                 </button>
@@ -267,11 +267,11 @@ const BrandingEditor: React.FC<{
                             <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3 flex items-center gap-2"><Upload size={14} /> Logo Cabinet</label>
 
                             <div className="flex items-center gap-4 mb-3">
-                                <div className="w-20 h-20 bg-[var(--hover-bg)] border-2 border-dashed border-[var(--border-color)] rounded-xl flex items-center justify-center overflow-hidden relative group hover:border-[var(--primary)] transition-colors cursor-pointer">
+                                <div className="w-20 h-20 bg-[var(--hover-bg)] border-2 border-dashed border-[var(--border-color)] rounded-xl flex items-center justify-center overflow-hidden relative group hover:border-[#E07A5F] transition-colors cursor-pointer">
                                     {branding.logoUrl ? (
                                         <img src={branding.logoUrl} className="w-full h-full object-contain p-1" alt="Logo" width={80} height={80} />
                                     ) : (
-                                        <div className="text-center text-[var(--text-disabled)] group-hover:text-[var(--primary)]">
+                                        <div className="text-center text-[var(--text-disabled)] group-hover:text-[#E07A5F]">
                                             <Upload size={20} className="mx-auto mb-1" />
                                             <span className="text-[9px] font-bold">Ajouter</span>
                                         </div>
@@ -299,7 +299,7 @@ const BrandingEditor: React.FC<{
                                                 const val = parseInt(e.target.value);
                                                 onUpdate({ ...branding, logoSize: val === 0 ? 'small' : val === 1 ? 'medium' : 'large' });
                                             }}
-                                            className="w-full h-2 bg-[var(--hover-bg)] rounded-lg appearance-none cursor-pointer accent-[var(--primary)]"
+                                            className="w-full h-2 bg-[var(--hover-bg)] rounded-lg appearance-none cursor-pointer accent-[#E07A5F]"
                                         />
                                         <span className="text-xs text-[var(--text-secondary)]">L</span>
                                     </div>
@@ -323,7 +323,7 @@ const BrandingEditor: React.FC<{
                                     <button
                                         key={style.id}
                                         onClick={() => onUpdate({ ...branding, titleStyle: style.id as any })}
-                                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${branding.titleStyle === style.id ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--hover-bg)]'}`}
+                                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex items-center gap-2 ${branding.titleStyle === style.id ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--hover-bg)]'}`}
                                     >
                                         {style.icon && <style.icon size={12} />}
                                         {style.label}
@@ -359,7 +359,7 @@ const BrandingEditor: React.FC<{
                             <select
                                 value={branding.fontFamily}
                                 onChange={(e) => onUpdate({ ...branding, fontFamily: e.target.value as any })}
-                                className="w-full p-3 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-[var(--text-heading)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-20)]"
+                                className="w-full p-3 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-[var(--text-heading)] outline-none focus:border-[#E07A5F] focus:ring-2 focus:ring-[#E07A5F]/20"
                             >
                                 <option value="Merriweather">Merriweather</option>
                                 <option value="Quicksand">Quicksand</option>
@@ -378,14 +378,14 @@ const BrandingEditor: React.FC<{
                                 onChange={(e) => onUpdate({ ...branding, footerText: e.target.value })}
                                 placeholder="Texte personnalisé (ex: Confidentiel)"
                                 rows={3}
-                                className="w-full p-3 text-sm border border-[var(--border-color)] rounded-xl bg-[var(--card-bg)] focus:bg-[var(--card-bg)] outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[#E07A5F] text-[var(--text-heading)] resize-y"
+                                className="w-full p-3 text-sm border border-[var(--border-color)] rounded-xl bg-[var(--card-bg)] focus:bg-[var(--card-bg)] outline-none focus:border-[#E07A5F] focus:ring-1 focus:ring-[#E07A5F] text-[var(--text-heading)] resize-y"
                             />
                             <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={branding.showPageNumbers}
                                     onChange={(e) => onUpdate({ ...branding, showPageNumbers: e.target.checked })}
-                                    className="accent-[var(--primary)] w-4 h-4"
+                                    className="accent-[#E07A5F] w-4 h-4"
                                 />
                                 Afficher la numérotation des pages
                             </label>
@@ -568,7 +568,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     <button
                         onClick={handleExportPDF}
                         disabled={isExporting}
-                        className="flex items-center gap-2 px-5 py-3 bg-[var(--secondary)] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:brightness-90 transition-all disabled:opacity-70"
+                        className="flex items-center gap-2 px-5 py-3 bg-[#3D405B] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#2c2e42] transition-all disabled:opacity-70"
                     >
                         {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                         {isExporting ? 'Export...' : 'Télécharger PDF'}
@@ -576,7 +576,7 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     <button
                         onClick={handleFinalValidate}
                         disabled={isValidating}
-                        className="flex items-center gap-2 px-8 py-3 bg-[var(--primary)] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="flex items-center gap-2 px-8 py-3 bg-[#E07A5F] text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[#d0694e] transition-all shadow-lg hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isValidating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                         Terminer & Archiver

@@ -1,5 +1,6 @@
 import { getVerifiedAccessToken, SUPABASE_ANON_KEY, SUPABASE_URL } from './db';
 import { Logger } from '../utils/logger';
+import { captureAppException } from './sentryService';
 import type { ExtractionCallMeta, ExtractionRepairRequest } from '../types';
 
 const FUNCTION_NAME = 'extract-norms';
@@ -181,6 +182,7 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
 
     const edgeBody = getEdgeBody(data, error);
     const edgeError: string | undefined = edgeBody?.error;
+    const httpStatus: number | undefined = error?.status ?? error?.context?.status;
 
     if (edgeError === 'RATE_LIMITED') throw new Error('RATE_LIMITED');
     if (edgeError === 'PAID_PLAN_REQUIRED') throw new Error('PAID_PLAN_REQUIRED');
@@ -189,10 +191,20 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
 
     const retryable = isRetryable(edgeBody, error);
     if ((error || edgeError) && !retryable) {
-      throw new Error(`Extraction error: ${edgeError || error?.message}`);
+      const nonRetryableErr = new Error(`Extraction error: ${edgeError || error?.message}`);
+      captureAppException(nonRetryableErr, {
+        surface: 'extraction_proxy',
+        filename: params.filename,
+        http_status: httpStatus,
+        edge_error: edgeError,
+        attempt,
+        is_repair: !!params.repairRequest,
+      });
+      throw nonRetryableErr;
     }
 
     if (error || edgeError) {
+      Logger.warn('AI', `Extraction attempt ${attempt + 1} failed (status ${httpStatus ?? 'n/a'}): ${edgeError || error?.message}`);
       lastError = new Error(`Extraction error: ${edgeError || error?.message}`);
       continue;
     }
@@ -203,7 +215,14 @@ export const callExtractionTask = async (params: ExtractionParams): Promise<Extr
     };
   }
 
-  throw lastError ?? new Error('Extraction failed after retries');
+  const finalError = lastError ?? new Error('Extraction failed after retries');
+  captureAppException(finalError, {
+    surface: 'extraction_proxy',
+    filename: params.filename,
+    retries: CLIENT_MAX_RETRIES,
+    isRepair: !!params.repairRequest,
+  });
+  throw finalError;
 };
 
 export const callExtractionBatch = async (

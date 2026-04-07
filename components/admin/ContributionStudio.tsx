@@ -231,7 +231,7 @@ const parseAgeFromFilename = (filename: string): { min: number; max: number } | 
     return null;
 };
 
-type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
+type TableStructure = 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION' | 'UNKNOWN';
 type PageStatus = 'pending' | 'validated' | 'rejected';
 type RepairMode = 'auto' | 'manual';
 type ExtractionPage = {
@@ -244,6 +244,7 @@ type ExtractionPage = {
     rejectionReason?: string;
     flags: ReviewFlag[];
     flagCounts: ReviewFlagCounts;
+    dismissedFlagKeys?: string[];
     previewDataUrl?: string;
     repairAttemptsUsed: number;
     repairBudgetMax: number;
@@ -277,6 +278,9 @@ type CanonicalGroupedEntry = {
 };
 
 const normalizeAbbreviation = (value?: string | null): string => normalizeSubtestAbbreviationTag(value);
+
+const buildFlagStableKey = (flag: ReviewFlag): string =>
+    `${flag.code}::${flag.subtest}::${flag.groupLabel}::${flag.message}`;
 
 const splitSubtestDisplayName = (name: string): { baseName: string; abbreviation?: string } => {
     const parsed = splitTrailingTag(name);
@@ -934,7 +938,9 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         });
         const integrityFlags = buildExtractionIntegrityFlags(page);
         const mergedFlags = [...flags, ...integrityFlags];
-        const flagCounts = computeFlagCounts(mergedFlags);
+        const dismissed = new Set(page.dismissedFlagKeys || []);
+        const activeFlags = mergedFlags.filter(f => !dismissed.has(buildFlagStableKey(f)));
+        const flagCounts = computeFlagCounts(activeFlags);
         const nextStatus: PageStatus =
             page.status === 'validated' && flagCounts.blocking > 0
                 ? 'pending'
@@ -1711,8 +1717,8 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                         const rawRow: ExtractedRow = {
                             id: crypto.randomUUID(),
                             subtest: effectiveSid,
-                            raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range) : '') : '',
-                            standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard) : '') : '',
+                            raw: detectedStructure === 'LOOKUP' ? (r.raw_range ? String(r.raw_range).replace(/^[\s\n]+|[\s\n]+$/g, '') : '') : '',
+                            standard: detectedStructure === 'LOOKUP' ? (r.standard ? String(r.standard).replace(/^[\s\n]+|[\s\n]+$/g, '') : '') : '',
                             mean: detectedStructure === 'PARAMETRIC' ? (r.mean ? String(r.mean) : '') : undefined,
                             sd: detectedStructure === 'PARAMETRIC' ? (r.sd ? String(r.sd) : '') : undefined,
                             zScore: r.z_score ? String(r.z_score) : '',
@@ -1742,7 +1748,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             });
         }
 
-        if (flatRows.length === 0) {
+        if (flatRows.length === 0 && detectedStructure !== 'CONVERSION') {
             flatRows.push({ id: crypto.randomUUID(), subtest: 'Nouveau Sous-test', label: '', raw: '', standard: '', zScore: '', percentile: '' });
         }
 
@@ -2118,8 +2124,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                 extractedPages += 1;
 
                 if (resolvedStructure === 'UNKNOWN') {
-                    resolvedStructure = result.detectedStructure;
-                } else if (result.detectedStructure !== resolvedStructure) {
+                    // CONVERSION pages don't define the overall structure
+                    if (result.detectedStructure !== 'CONVERSION') {
+                        resolvedStructure = result.detectedStructure;
+                    }
+                } else if (result.detectedStructure !== resolvedStructure && result.detectedStructure !== 'CONVERSION') {
                     toast.error("Structure différente détectée entre pages. Vérifiez les documents.");
                 }
 
@@ -2135,7 +2144,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     fileIndex: i,
                     sourceFilename: inputFiles[i]?.name,
                     rows: result.rows,
-                    status: 'pending',
+                    status: result.detectedStructure === 'CONVERSION' ? 'validated' : 'pending',
                     detectedStructure: result.detectedStructure,
                     flags: [],
                     flagCounts: EMPTY_FLAG_COUNTS,
@@ -2149,7 +2158,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                     expectedSourceColumnCount: result.expectedSourceColumnCount,
                 });
 
-                if (FEATURE_CONTRIB_AUTO_REPAIR) {
+                if (FEATURE_CONTRIB_AUTO_REPAIR && result.detectedStructure !== 'CONVERSION') {
                     try {
                         const autoRepair = await runTargetedRepairForPage(page, 'auto', inputFiles[i]);
                         if (autoRepair.attempted) {
@@ -2366,7 +2375,12 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         }
     };
 
-    const currentPageFlags = currentPage?.flags || [];
+    const currentPageFlags = useMemo(() => {
+        const allFlags = currentPage?.flags || [];
+        const dismissed = new Set(currentPage?.dismissedFlagKeys || []);
+        if (dismissed.size === 0) return allFlags;
+        return allFlags.filter(f => !dismissed.has(buildFlagStableKey(f)));
+    }, [currentPage?.flags, currentPage?.dismissedFlagKeys]);
     const rowFlagsMap = useMemo(() => {
         const map = new Map<string, ReviewFlag[]>();
         currentPageFlags.forEach((flag) => {
@@ -2403,13 +2417,13 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         if (!currentPage) return [];
         return Array.from(
             new Set(
-                currentPage.flags
+                currentPageFlags
                     .filter((flag) => flag.severity === 'blocking')
                     .map((flag) => (flag.subtest || '').trim())
                     .filter((name) => name.length > 0),
             ),
         );
-    }, [currentPage]);
+    }, [currentPage, currentPageFlags]);
     const currentPageCanPartialValidate = useMemo(() => {
         if (!currentPage) return false;
         if (currentPageBlockingSubtests.length === 0) return false;
@@ -2430,6 +2444,22 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
         if (!flag.suggestedFix) return;
         updateCurrentPageRows((prev) => applySuggestedFix(flag, prev));
         toast.success('Correction appliquée.');
+    };
+
+    const handleDismissFlag = (flag: ReviewFlag) => {
+        const key = buildFlagStableKey(flag);
+        setPages(prev => prev.map((page, index) => {
+            if (index !== currentFileIndex) return page;
+            const dismissed = new Set(page.dismissedFlagKeys || []);
+            dismissed.add(key);
+            const nextPage = { ...page, dismissedFlagKeys: Array.from(dismissed) };
+            // Recompute counts excluding newly dismissed flag
+            const activeFlags = page.flags.filter(f => !dismissed.has(buildFlagStableKey(f)));
+            nextPage.flagCounts = computeFlagCounts(activeFlags);
+            // If no more blocking flags, keep status as-is (don't force pending)
+            return nextPage;
+        }));
+        toast.success('Flag ignoré.');
     };
 
     const handleApplyAllPageFixes = () => {
@@ -2552,6 +2582,27 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             }
         }
 
+        // Abbreviation-based fallback: when name lookup found nothing, try matching by DB abbreviation
+        if (sourceAbbr) {
+            const abbrCandidates = canonicalSubtestsByAbbreviation.get(sourceAbbr) || [];
+            if (abbrCandidates.length === 1) {
+                const candidate = abbrCandidates[0];
+                const candidateAbbr = normalizeAbbreviation(candidate.abbreviation) || sourceAbbr;
+                const normalizedCandidateName = normalizeSubtestName(candidate.name);
+                const isAmbiguous = !!normalizedCandidateName && canonicalAmbiguousNameKeys.has(normalizedCandidateName);
+                const isHiddenInvalidAmbiguous = isAmbiguous && !candidateAbbr;
+                return {
+                    name: candidate.name,
+                    abbreviation: candidateAbbr || null,
+                    scoreType: candidate.scoreType || null,
+                    displayName: formatSubtestDisplayName(candidate.name, candidateAbbr || null, isAmbiguous),
+                    isAmbiguous,
+                    isHiddenInvalidAmbiguous,
+                    isMapped: !isHiddenInvalidAmbiguous,
+                };
+            }
+        }
+
         return {
             name: fallbackName,
             abbreviation: sourceAbbr || null,
@@ -2561,7 +2612,7 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
             isHiddenInvalidAmbiguous: false,
             isMapped: false,
         };
-    }, [canonicalSubtestsNormalized.length, canonicalSubtestsByName, stripAgeQualifier, testName, canonicalAmbiguousNameKeys]);
+    }, [canonicalSubtestsNormalized.length, canonicalSubtestsByName, canonicalSubtestsByAbbreviation, stripAgeQualifier, testName, canonicalAmbiguousNameKeys]);
 
     const VARIANT_PATTERN = /\(variante \d+\)$/;
     const unrenamedVariants = useMemo(() => {
@@ -2767,16 +2818,30 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
     const handleRejectCurrentPage = () => {
         const page = pages[currentFileIndex];
         if (!page) return;
-        const reason = window.prompt('Motif de refus de cette page (optionnel)', page.rejectionReason || '');
-        if (reason === null) return;
         setPages(prev => prev.map((candidate, index) => {
             if (index !== currentFileIndex) return candidate;
             return {
                 ...candidate,
                 status: 'rejected',
-                rejectionReason: reason.trim() || undefined,
             };
         }));
+    };
+
+    const handleMarkAsConversion = () => {
+        const page = pages[currentFileIndex];
+        if (!page) return;
+        setPages(prev => prev.map((candidate, index) => {
+            if (index !== currentFileIndex) return candidate;
+            return {
+                ...candidate,
+                detectedStructure: 'CONVERSION' as TableStructure,
+                rows: [],
+                status: 'validated',
+                flags: [],
+                flagCounts: { blocking: 0, warning: 0, info: 0, total: 0, withFix: 0 },
+            };
+        }));
+        toast.info('Page marquée comme table de conversion (ignorée).');
     };
 
     const handleReopenCurrentPage = () => {
@@ -3473,6 +3538,11 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                             )}
                             {tableStructure === 'LOOKUP' && (
                                 <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded flex items-center gap-1">
+                                    <TableIcon size={10} /> Table de Normes
+                                </span>
+                            )}
+                            {tableStructure === 'CONVERSION' && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded flex items-center gap-1">
                                     <TableIcon size={10} /> Table de Conversion
                                 </span>
                             )}
@@ -3611,6 +3681,14 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                 Refuser
                                             </button>
                                             <button
+                                                onClick={handleMarkAsConversion}
+                                                disabled={!currentPage || currentPage.detectedStructure === 'CONVERSION'}
+                                                className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-amber-100 text-amber-700 border-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                title="Marquer cette page comme table de conversion (non nécessaire pour le scoring)"
+                                            >
+                                                Conversion
+                                            </button>
+                                            <button
                                                 onClick={handleReopenCurrentPage}
                                                 disabled={!currentPage || currentPage.status === 'pending'}
                                                 className="text-xs font-bold px-3 py-1 rounded-full border transition-all bg-stone-100 text-stone-700 border-stone-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -3694,7 +3772,21 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                 </div>
                             )}
 
-                            {currentPage && (
+                            {currentPage && currentPage.detectedStructure === 'CONVERSION' && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center space-y-2">
+                                    <div className="flex items-center justify-center gap-2 text-amber-700 font-bold">
+                                        <TableIcon size={18} />
+                                        Table de Conversion détectée
+                                    </div>
+                                    <p className="text-sm text-amber-600 max-w-lg mx-auto">
+                                        Cette page contient une table de conversion entre échelles de scores (NS → Percentile, etc.).
+                                        Elle n'est pas nécessaire pour le scoring — les conversions sont calculées automatiquement par ErgoBilan.
+                                    </p>
+                                    <p className="text-xs text-amber-500">Aucune donnée extraite. Cette page sera ignorée à l'enregistrement.</p>
+                                </div>
+                            )}
+
+                            {currentPage && currentPage.detectedStructure !== 'CONVERSION' && (
                                 <div className="bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4 space-y-3">
                                     <div className="flex items-center justify-between gap-3 flex-wrap">
                                         <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-heading)]">
@@ -3768,9 +3860,18 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                         <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                                             Aucune issue détectée sur cette page.
                                         </div>
-                                    ) : (
+                                    ) : (() => {
+                                        const dismissed = new Set(currentPage.dismissedFlagKeys || []);
+                                        const activeFlags = currentPage.flags.filter(f => !dismissed.has(buildFlagStableKey(f)));
+                                        const dismissedCount = currentPage.flags.length - activeFlags.length;
+                                        return (
+                                        <div className="space-y-2">
                                         <div className="max-h-60 overflow-auto space-y-2 pr-1">
-                                            {currentPage.flags.map((flag) => (
+                                            {activeFlags.length === 0 ? (
+                                                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                                                    Toutes les issues ont été ignorées.
+                                                </div>
+                                            ) : activeFlags.map((flag) => (
                                                 <div
                                                     key={flag.id}
                                                     className={`rounded-lg border px-3 py-2 text-xs ${flag.severity === 'blocking'
@@ -3803,15 +3904,29 @@ export const ContributionStudio: React.FC<Props> = ({ onClose, onSubmit }) => {
                                                             </button>
                                                         )}
                                                         <span className="text-[10px] opacity-70">Confiance: {(flag.confidence * 100).toFixed(0)}%</span>
+                                                        <button
+                                                            onClick={() => handleDismissFlag(flag)}
+                                                            className="px-2 py-1 rounded border border-current/30 text-[10px] font-bold opacity-60 hover:opacity-100"
+                                                            title="Ignorer ce flag (faux positif)"
+                                                        >
+                                                            Ignorer
+                                                        </button>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
-                                    )}
+                                        {dismissedCount > 0 && (
+                                            <div className="text-[10px] text-[var(--text-secondary)] opacity-70 px-1">
+                                                {dismissedCount} flag(s) ignoré(s)
+                                            </div>
+                                        )}
+                                        </div>
+                                    );
+                                    })()}
                                 </div>
                             )}
 
-                            {currentGroupedEntries.length === 0 && (
+                            {currentGroupedEntries.length === 0 && currentPage?.detectedStructure !== 'CONVERSION' && (
                                 <div className="text-xs text-[var(--text-secondary)] bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl p-4">
                                     Aucun bloc affiché avec le mode actuel. Passez sur "Tout" pour revoir l'extraction complète.
                                 </div>

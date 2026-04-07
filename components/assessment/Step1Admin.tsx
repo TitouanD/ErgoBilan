@@ -91,7 +91,7 @@ const SectionSummary: React.FC<{
                         {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </div>
                 </div>
-                <button onClick={onEditSection} className="p-2 hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-[var(--text-secondary)] hover:text-[var(--primary)] ml-2" title="Modifier cette section">
+                <button onClick={onEditSection} className="p-2 hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-[var(--text-secondary)] hover:text-[#E07A5F] ml-2" title="Modifier cette section">
                     <Edit3 size={16} />
                 </button>
             </div>
@@ -365,7 +365,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
                           setViewMode('edit');
                           setUserSwitchedToReview(false);
                       }}
-                      className="text-xs font-bold text-[var(--primary)] hover:underline flex items-center gap-1"
+                      className="text-xs font-bold text-[#E07A5F] hover:underline flex items-center gap-1"
                   >
                       <Edit3 size={12} /> Tout modifier
                   </button>
@@ -416,7 +416,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
         <button
             onClick={handleNextStep}
             disabled={!isAdministrativeReady}
-            className="px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[var(--secondary)] hover:bg-[var(--primary)]"
+            className="px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
         >
             Suivant : Tests & Mesures
         </button>

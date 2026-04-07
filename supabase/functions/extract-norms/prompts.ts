@@ -134,7 +134,7 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
 --- STEP 2: EXTRACTION RULES ---
 1. PIVOT: If columns represent Ages/Grades and rows represent Stats (M, SD), YOU MUST PIVOT. Create ONE object per Age/Grade.
 2. INVERTED / TRANSPOSED LOOKUP: Some LOOKUP tables are printed TRANSPOSED — ROWS = standard/scaled scores (e.g. NS 1-19 or "Note Standard" column on the left) and COLUMNS = subtests (or age groups).
-   Detection: if the leftmost column header is "NS", "Note Standard", "Note Étalonnée", or a descending/ascending sequence of integers (1-19), the table IS inverted.
+   Detection: if the leftmost column header is "NS", "Note Standard", "Note Étalonnée", "Rang Percentiles", "Centile", "%ile", or a descending/ascending sequence of integers (1-19) or percentile bands (<2, 2-5, 6-10, ..., >75), the table IS inverted.
    The cell value is the raw score (single value or range). You MUST output one "sid" table entry per DATA COLUMN, with:
    - "r" = cell value (the raw score read from the cell)
    - "n" = row header (the NS/standard score from the left column) — MANDATORY, NEVER EMPTY
@@ -162,10 +162,10 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
   - After extracting each column, VERIFY the count of extracted values matches the number of visible cells in that column.
    - Common error on dense tables: reading a neighboring column's value instead of the target column. To prevent this, mentally trace a strict vertical line from the column header down to each cell.
    - The LAST columns (rightmost) are just as important as the first. Do NOT stop reading early.
-4c. RANGE BOUNDARY CONTINUITY (CRITICAL for inverted LOOKUP):
-   - Consecutive NS rows for the SAME column must have CONTIGUOUS, non-overlapping raw ranges.
-   - If you read "A-Y" at NS k then "Y-Z" at NS k+1 (overlap at Y), re-read — the correct value is likely "Y+1-Z" (off-by-one boundary error).
-   - After extracting all rows for a column, scan the raw ranges from NS 1 to NS 19 and verify NO boundary overlaps.
+4c. RANGE BOUNDARY CONTINUITY (CRITICAL for ALL dense LOOKUP tables, not just inverted):
+   - Consecutive rows for the SAME column must have CONTIGUOUS, non-overlapping raw ranges.
+   - If you read "A-Y" at row k then "Y-Z" at row k+1 (overlap at Y), re-read — the correct value is likely "Y+1-Z" (off-by-one boundary error).
+   - After extracting all rows for a column, scan the raw ranges and verify NO boundary overlaps.
 4d. RANGE vs SINGLE VALUE:
    - When a cell contains a dash-range "X-Y" (e.g. "8-9"), you MUST output BOTH bounds as a single string "8-9".
    - Common error: reading only "9" instead of "8-9". If adjacent cells in the same column have ranges, this cell likely has a range too — re-check.
@@ -177,9 +177,6 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - The shared left NS column (1, 2, 3, ..., 19) provides the "n" value for EVERY row of EVERY subtest column.
    - You MUST set n = the NS integer from the leftmost column for EVERY row you output. No row may have an empty n.
    - VALIDATION: After generating all rows for a column, verify that n values form a complete or near-complete sequence (1, 2, 3, ..., up to 19). If any row is missing n, you have a bug — go back and re-read the leftmost column.
-4g. SPECIAL CHARACTERS:
-   - Preserve ≥, ≤, >, < symbols EXACTLY as they appear in the image. Do NOT replace them with letters (e.g. do NOT write "da45" instead of "≥ 45").
-   - Common prefixes: "≥" (greater or equal), "≤" (less or equal). Copy them verbatim into the r field.
 5. SUBTEST NAMING:
    - DISAMBIGUATION POLICY BY STRUCTURE:
      PARAMETRIC:
@@ -197,17 +194,20 @@ B) "LOOKUP": Maps Raw Scores (ranges or single values) to Standard Scores (NS, S
    - For LOOKUP: Each "sid" entry groups all rows for ONE subtest. If the page covers a single age group (visible in the header), ALL rows under that subtest share the same a0/a1.
    - For PARAMETRIC: Each "sid" entry groups all age/grade rows for ONE subtest.
    COMPLETENESS CHECK (LOOKUP):
-  - For inverted/transposed LOOKUP tables with NS rows (1-19 or similar), each subtest column should produce up to 19 rows.
+  - For inverted/transposed LOOKUP tables with NS rows (1-19 or similar), you MUST output EXACTLY 19 rows per column (one for each NS value 1 through 19). Never skip a row.
   - If a cell is a dash-like token ("-", "–", "—", ":"), output r:"-" for that NS row (do NOT skip it).
-  - Skip only truly blank/absent cells where no glyph is visible.
+  - If a cell appears blank/absent, output r:"-" with the corresponding n anyway — the client expects exactly 19 rows per column.
    - If you extracted significantly fewer rows for one column than for its neighbors, re-scan that column before finalizing.
    - The highest raw score for a subtest is typically at the highest NS (e.g. NS 19). Verify you did not stop reading a column early or confuse it with an adjacent column.
    - After generating the full output, do a final spot-check: compare the LAST two columns' max raw scores with what you see in the image. If they differ, re-read those columns.
-4h. DUPLICATE RAW VALUE CHECK (CRITICAL):
-   - For inverted LOOKUP: if the SAME single raw value (e.g. "0") appears at two consecutive NS rows in the same column, this is almost always an error. Re-read that cell pair carefully — one is usually a dash or a different value.
-   - Exception: dash values ("-") may legitimately repeat across consecutive NS rows.
+4h. DUPLICATE RAW VALUE CHECK: For inverted LOOKUP, if the SAME single raw value appears at two consecutive NS rows, re-read — one is usually a dash.
 4i. COLUMN UNIQUENESS CHECK:
    - After extracting all columns, verify that no two columns have identical data arrays. If two columns produce the exact same rows (same r values for every NS), you have column drift — re-read both columns independently, paying strict attention to their physical position.
+4j. GHOST VALUE DETECTION (CRITICAL for inverted LOOKUP):
+   - Pattern: if a column shows single value X at NS k, then range X-Y at NS k+1, you almost certainly misread a dash "—" as X at NS k.
+   - Before outputting a single numeric value, cross-check: if the NEXT NS row has a range starting at that SAME value, the current cell is a dash — output r:"-" instead.
+   - Apply the same check in reverse: if value Y at NS k+1, then range X-Y at NS k, re-check NS k+1 — it may be a dash.
+   - This error is extremely common at low NS values (1-3) where dashes and small numbers coexist.
 
 --- STEP 3: NORMALIZATION RULES (CRITICAL FOR DATABASE) ---
 You must calculate specific numeric values for the database:
@@ -228,42 +228,39 @@ You must calculate specific numeric values for the database:
    - Do NOT output r0 or r1 — the client parses raw bounds from "r" automatically.
 `;
 
+// Slim version of EXTRACTION_RULES for focused/repair calls.
+// Classification rules are removed (already handled at inventory step).
+// Only data reading, accuracy, and normalization rules are kept.
+const EXTRACTION_RULES_FOCUSED = `
+--- EXTRACTION RULES (FOCUSED) ---
+1. INVERTED / TRANSPOSED LOOKUP: If the leftmost column is "NS", "Note Standard", "Rang Percentiles", "Centile", or score bands (<2, 2-5, ..., >75), the table is inverted.
+   - "r" = cell value (raw score), "n" = row header (NS/standard from left column) — MANDATORY, NEVER EMPTY.
+   - Cells with "-", "–", "—" are NOT empty — output as r:"-" with the corresponding n.
+   - Read each column independently top to bottom. Trace a vertical line from header to prevent drift.
+2. DENSE TABLE STRATEGY (>8 columns): Read COLUMN BY COLUMN, not row by row.
+   - After each column, VERIFY extracted value count matches visible cells.
+   - Common error: reading a neighboring column's value. Trace a strict vertical line from header.
+3. RANGE BOUNDARY CONTINUITY: Consecutive rows for the SAME column must have CONTIGUOUS, non-overlapping raw ranges.
+   - Overlap at boundary (e.g. "A-Y" then "Y-Z") = off-by-one error. Re-read.
+   - After all rows for a column, verify NO boundary overlaps.
+4. DUPLICATE CHECK: If two columns produce identical data arrays, you have column drift — re-read both independently.
+5. ACCURACY: Keep decimals, raw ranges as strings ("0-5").
+   - Dash "—" ≠ zero "0". Never swap them.
+   - Range "X-Y" must include both bounds — do NOT read only "Y".
+   - GHOST VALUE: if value X at row k, then range X-Y at row k+1, row k is almost certainly a dash — output r:"-".
+6. COMPLETENESS: For inverted LOOKUP, output EXACTLY 19 rows per column (NS 1-19). Never skip a row. Dashes/blanks → r:"-".
+7. NAMING (LOOKUP): sid = ab = original column header. Do NOT expand or translate. One sid per data column.
+7. AGE: Convert to months (a0/a1). Omit row-level a0/a1 when pa0/pa1 is set.
+   - Primary: CP=72-83, CE1=84-95, CE2=96-107, CM1=108-119, CM2=120-131.
+   - Secondary: 6e=132-143, 5e=144-155, 4e=156-167, 3e=168-179.
+8. OUTPUT: Valid minified JSON. Extract ALL subtests, ALL rows. Do NOT stop early.
+`;
+
 const JSON_SCHEMA = `
---- JSON OUTPUT SCHEMA (compact keys to save tokens) ---
-{
-  "tc": "string (Detected name of the test)",
-  "st": "PARAMETRIC" | "LOOKUP",
-  "pa0": number | null (page-level age_min in months — from the page header/title age group),
-  "pa1": number | null (page-level age_max in months — from the page header/title age group),
-  "tables": [
-    {
-      "sid": "string (Subtest name — FULL French clinical name, or raw abbreviation if expansion would duplicate)",
-      "ab": "string (Original column abbreviation exactly as printed in the image, e.g. 'MF', 'MFDC')",
-      "rows": [
-        {
-          "m": "string (Only if PARAMETRIC: Mean)",
-          "s": "string (Only if PARAMETRIC: SD)",
-          "r": "string (Only if LOOKUP: Raw Score as displayed, e.g. '0-3', '7', '<5')",
-          "n": "string (Only if LOOKUP: Standard Score / Note Étalonnée)",
-          "p": "string (Percentile if explicit)",
-          "z": "string (Z-Score if explicit)",
-          "gl": "string (Optional source class/grade label such as CE1, 6e, 2nde)",
-          "a0": number (ONLY if rows have different ages — omit when pa0/pa1 covers all rows),
-          "a1": number (ONLY if rows have different ages — omit when pa0/pa1 covers all rows)
-        }
-      ]
-    }
-  ]
-}
-
-KEY LEGEND: tc=test_context, st=structure_type, pa0=page_age_min_months, pa1=page_age_max_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, gl=group_label, a0=age_min_months, a1=age_max_months.
-TOKEN SAVING: When pa0/pa1 is set, do NOT repeat a0/a1 on each row. Do NOT output r0/r1 — client computes them from "r".
-
-OUTPUT RULES:
-- Output valid JSON only.
-- Do not use Markdown code blocks.
-- Minify the JSON (no unnecessary whitespace).
-- You MUST extract ALL subtests and ALL rows visible on the page. Do NOT stop early.
+--- JSON OUTPUT SCHEMA (compact keys) ---
+tc=test_context, st=structure_type, pa0/pa1=page_age_months, sid=subtest_id, ab=source_abbreviation, m=mean, s=sd, r=raw_range, n=standard, p=percentile, z=z_score, gl=group_label, a0/a1=age_months.
+When pa0/pa1 is set, do NOT repeat a0/a1 on each row.
+Output valid minified JSON only.
 `;
 
 // ── GEMINI RESPONSE SCHEMAS ────────────────────────────────────────────────
@@ -350,8 +347,9 @@ export const INVENTORY_RESPONSE_SCHEMA: Record<string, unknown> = {
   type: 'OBJECT',
   properties: {
     tc: { type: 'STRING' },
-    st: { type: 'STRING', enum: ['PARAMETRIC', 'LOOKUP'] },
+    st: { type: 'STRING', enum: ['PARAMETRIC', 'LOOKUP', 'CONVERSION'] },
     isInverted: { type: 'BOOLEAN' },
+    leftScaleType: { type: 'STRING', enum: ['NS', 'PERCENTILE_BANDS', 'OTHER'], nullable: true },
     columns: {
       type: 'ARRAY',
       items: {
@@ -389,12 +387,16 @@ const sanitizeInventoryColumns = (columns: unknown): InventoryColumnDescriptor[]
       const columnOrderRaw = Number(value.columnOrder);
       const tableOrderRaw = Number(value.tableOrder);
 
+      // Clamp order values — Gemini occasionally hallucinates astronomically large
+      // integers (e.g. 1e120). In IEEE 754 these are finite, so Math.trunc passes
+      // but the value is useless for sorting. Cap to a safe display range.
+      const MAX_ORDER = 10_000;
       return {
         sid,
         ab,
         domain: domain || null,
-        columnOrder: Number.isFinite(columnOrderRaw) ? Math.trunc(columnOrderRaw) : null,
-        tableOrder: Number.isFinite(tableOrderRaw) ? Math.trunc(tableOrderRaw) : null,
+        columnOrder: Number.isFinite(columnOrderRaw) ? Math.min(Math.trunc(columnOrderRaw), MAX_ORDER) : null,
+        tableOrder: Number.isFinite(tableOrderRaw) ? Math.min(Math.trunc(tableOrderRaw), MAX_ORDER) : null,
         isInverted: value.isInverted === true,
       };
     });
@@ -421,6 +423,7 @@ export const parseInventoryResult = (text: string | null): InventoryResult | nul
       tc: typeof parsed.tc === 'string' ? parsed.tc : null,
       st: typeof parsed.st === 'string' ? parsed.st : null,
       isInverted: parsed.isInverted === true,
+      leftScaleType: typeof parsed.leftScaleType === 'string' ? parsed.leftScaleType : null,
       columns: sanitizeInventoryColumns(parsed.columns),
     };
   } catch {
@@ -533,39 +536,45 @@ For each physical data column, return:
 - "domain": visible section/domain header above that column
 - "tableOrder": 1-based order of the table block on the page (top table=1, next table=2, etc.)
 - "columnOrder": 1-based left-to-right order inside that table block
-- "isInverted": true if the table is inverted/transposed (leftmost column is NS / Note étalonnée / a 1-19 score scale)
+- "isInverted": true if the table is inverted/transposed (leftmost column is NS / Note étalonnée / Rang Percentiles / Centile / a 1-19 score scale / percentile bands like <2, 2-5, ..., >75)
 
 IMPORTANT COLUMN FILTER:
-- EXCLUDE the left score scale column itself (e.g. NS / Note etalonnee / Note standard).
+- EXCLUDE the left score scale column itself (e.g. NS / Note etalonnee / Note standard / Rang Percentiles).
 - INCLUDE only true subtest data columns that contain raw-score cells.
 
 Also detect the structure type:
 - "PARAMETRIC" if the table contains Mean/SD statistical constants
-- "LOOKUP" if it maps raw scores to standard scores or percentiles
+- "LOOKUP" if it maps raw scores to standard scores or percentiles (used for scoring patients)
+- "CONVERSION" if it is a conversion/equivalence table between score scales (e.g. NS→Percentile, NS→Rang Percentile, Standard→T-Score). These tables do NOT contain raw scores and are NOT used for scoring — they only translate between derived score types.
+
+HOW TO DISTINGUISH LOOKUP vs CONVERSION:
+- LOOKUP: columns are subtests (AA, BB, MF…) and cells contain raw scores. Used to look up a patient's raw score.
+- CONVERSION: columns are score scale labels (Percentile, Rang Percentile, QI, Note Standard…) and cells contain derived scores only. No subtest-specific raw scores. Often titled "Table de conversion" or "Equivalences".
+- If the leftmost column is a score scale (NS, Note Standard) AND the other columns are also score scales (Percentile, Rang Percentile, QI) with NO subtest abbreviations → CONVERSION.
+- If the leftmost column is a score scale AND the other columns are subtest abbreviations with raw score cells → LOOKUP (inverted).
 
 OUTPUT JSON ONLY:
 {
   "tc": "string",
-  "st": "PARAMETRIC" | "LOOKUP",
+  "st": "PARAMETRIC" | "LOOKUP" | "CONVERSION",
   "isInverted": true | false,
-  "columns": [
-    {
-      "sid": "string",
-      "ab": "string",
-      "domain": "string",
-      "tableOrder": number,
-      "columnOrder": number,
-      "isInverted": true | false
-    }
-  ]
+  "leftScaleType": "NS" | "PERCENTILE_BANDS" | "OTHER" | null,
+  "columns": [...]
 }
+
+"leftScaleType" (for inverted/transposed tables only):
+- "NS": the leftmost column contains individual standard scores (integers 1-19, or similar individual note scale).
+- "PERCENTILE_BANDS": the leftmost column contains percentile rank bands or ranges (e.g. ≤2, 2-5, 6-10, 11-25, 26-50, 51-75, >75, or similar cumulative percentage ranges).
+- "OTHER": any other scale type.
+- null: if the table is not inverted.
 
 RULES:
 - Include ALL data columns from ALL tables on the page.
 - "columns" must follow physical order as printed in the image.
 - For "sid": ALWAYS set sid = ab (same value as the column header abbreviation). Do NOT expand or translate. Name resolution is handled client-side.
 - Do not stop early after the first domain or first table.
-- If the page is LOOKUP, the inventory must include the rightmost columns too.`;
+- If the page is LOOKUP, the inventory must include the rightmost columns too.
+- RIGHTMOST COLUMN VERIFICATION: Count the total number of data columns visible in each table and verify your list length matches. The very last column must not be missed.`;
 
   return {
     contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
@@ -591,10 +600,16 @@ export const buildFocusedExtractionTaskV2 = (
     isInverted: column.isInverted === true,
   }));
 
+  // When canonical names are provided (test known in DB), they are authoritative.
+  // Skip known-names-from-history block to avoid token bloat as page count grows.
+  const knownNamesBlock = canonicalSubtestNames.length > 0
+    ? ''
+    : buildKnownNamesBlock(knownSubtestNames);
+
   const prompt = `ROLE: Expert Data Extractor for Occupational Therapy Clinical Tests.
 CONTEXT: The filename is "${filename}".
 IMPORTANT: The filename often contains the target AGE or GRADE (e.g., "CE1.png", "13ans.jpg", "10;6-10;11.jpg", "5ans6mois.png"). Use this to infer a0/a1 and pa0/pa1 when no age is visible in the table itself.
-${buildCanonicalNamesBlock(canonicalSubtestNames)}${buildKnownNamesBlock(knownSubtestNames)}${buildScoreTypeHintBlock(scoreTypeHint)}
+${buildCanonicalNamesBlock(canonicalSubtestNames)}${knownNamesBlock}${buildScoreTypeHintBlock(scoreTypeHint)}
 FOCUS CONSTRAINT: Extract data ONLY for these specific physical columns: ${JSON.stringify(serializedColumns)}
 These belong to the domain section: "${domainHint}".
 IGNORE all other columns entirely. Only output data for the listed columns.
@@ -604,9 +619,10 @@ CRITICAL FOR DENSE / INVERTED LOOKUP TABLES:
 - Track the listed columns by their physical position, not only by name.
 - Re-read the rightmost targeted columns before finalizing.
 - Do NOT borrow values from adjacent columns unless the target list explicitly includes them.
+- SELF-CHECK: After extracting each column, verify the raw ranges are non-overlapping and contiguous. If two adjacent columns produce identical output, you have drifted — re-read from the column header.
 
 TASK: Extract and normalize data for the specified columns only.
-${EXTRACTION_RULES}
+${EXTRACTION_RULES_FOCUSED}
 ${JSON_SCHEMA}`;
 
   return {
@@ -664,9 +680,11 @@ MANDATORY REPAIR RULES:
 - Reuse known/canonical names when possible. Avoid creating duplicate aliases for the same target.
 - Repair only the requested physical columns unless neighbor columns are explicitly allowed.
 - On inverted tables, re-check the lowest NS and highest NS cells for every targeted column.
+- SELF-CHECK: After extracting each column, verify the raw ranges are non-overlapping and contiguous. If two adjacent columns produce identical output, you have drifted — re-read from the column header. Watch for ghost values: if value X at NS k then range X-Y at NS k+1, NS k is a dash.
+- For inverted tables, output EXACTLY 19 rows per column (NS 1-19). Dashes and blanks = r:"-".
 - Output valid JSON only.
 
-${EXTRACTION_RULES}
+${EXTRACTION_RULES_FOCUSED}
 ${JSON_SCHEMA}`;
 
   return {
