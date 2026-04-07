@@ -88,6 +88,8 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'inhibitiondenominationtemps':  'Inhibition',
     'inhibitiontemps':              'Inhibition',
     'in':                           'Inhibition',
+    'ind':                          'Inhibition — Dénomination',
+    'ine':                          'Inhibition — Commutation',
     'st':                           'Statue',
     'statue':                       'Statue',
 
@@ -102,7 +104,9 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'phonologie':                   'Phonologie',
     'traitementphonologique':       'Phonologie',
     'ph':                           'Phonologie',
+    'pp':                           'Phonologie',
     'pm':                           'Production de mots',
+    'ps':                           'Production de mots',
     'productiondemots':             'Production de mots',
     'fluenceverbale':               'Production de mots',
     'wordgeneration':               'Production de mots',
@@ -116,26 +120,31 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'memoiredefigures':             'Mémoire de figures',
     'mfc':                          'Mémoire de figures — Contenu',
     'mfs':                          'Mémoire de figures — Spatial',
-    'mft':                          'Mémoire de figures — Total',
+    'mft':                          'Mémoire de figures — Score total',
     'ml':                           'Mémoire de liste',
+    'l':                            'Mémoire de liste',
     'memoiredeliste':               'Mémoire de liste',
     'memoireliste':                 'Mémoire de liste',
     'mn':                           'Mémoire narrative',
     'memoirenarrative':             'Mémoire narrative',
     'md':                           'Mémoire des prénoms',
+    'mp':                           'Mémoire des prénoms',
     'mdd':                          'Mémoire des prénoms différée',
+    'mpd':                          'Mémoire des prénoms différée',
+    'mpmpd':                        'Mémoire des prénoms — Total combiné',
     'memoiredesnoms':               'Mémoire des prénoms',
     'memoireprenom':                'Mémoire des prénoms',
     'memoryforname':                'Mémoire des prénoms',
     'mfd':                          'Mémoire de figures différée',
     'mfdc':                         'Mémoire de figures différée — Contenu',
     'mfds':                         'Mémoire de figures différée — Spatial',
-    'mfdt':                         'Mémoire de figures différée — Total',
+    'mfdt':                         'Mémoire de figures différée — Score total',
     'mvd':                          'Mémoire des visages différée',
     'mv':                           'Mémoire des visages',
     'memoiredesvisages':            'Mémoire des visages',
     'ilm':                          'Interférence de liste de mots',
-    'ini':                          'Interférence de liste de mots — Interférence',
+    'ini':                          'Inhibition — Inhibition',
+    'li':                           'Interférence de liste de mots',
     'interferencedelistedemots':    'Interférence de liste de mots',
     'interferencemot':              'Interférence de liste de mots',
     'wordlistinterference':         'Interférence de liste de mots',
@@ -147,6 +156,8 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
     'precisionvisuomotrice':        'Précision visuomotrice',
     'precisionvisuo':               'Précision visuomotrice',
     'pv':                           'Précision visuomotrice',
+    'pms':                          'Précision motrice',
+    'precisionmotrice':             'Précision motrice',
     'sm':                           'Séquences motrices manuelles',
     'sequencesmotricesmanuelles':   'Séquences motrices manuelles',
     'sequencemotrice':              'Séquences motrices manuelles',
@@ -189,10 +200,12 @@ export const SUBTEST_ALIASES: SubtestAliasMap = {
 
     // Perception sociale
     'ra':                           'Reconnaissance des affects',
+    'af':                           'Reconnaissance des affects',
     'reconnaissancedesaffects':     'Reconnaissance des affects',
     'reconnaissanceaffect':         'Reconnaissance des affects',
     'affectrecognition':            'Reconnaissance des affects',
     'te':                           'Théorie de l\'esprit',
+    'es':                           'Théorie de l\'esprit',
     'theoriedelesprit':             'Théorie de l\'esprit',
     'theoryofmind':                 'Théorie de l\'esprit',
   },
@@ -503,5 +516,16 @@ export const resolveSubtestAlias = (
   if (!aliasTable) return trimmed;
 
   const aliasKey = normalizeSubtestName(trimmed);
-  return aliasTable[aliasKey] || trimmed;
+  const byName = aliasTable[aliasKey];
+  if (byName) return byName;
+
+  // Fallback: try normalized abbreviation as alias key
+  const abbr = normalizeAliasAbbreviation(options?.abbreviation);
+  if (abbr) {
+    const abbrKey = abbr.toLowerCase().replace(/\s+/g, '');
+    const byAbbr = aliasTable[abbrKey];
+    if (byAbbr) return byAbbr;
+  }
+
+  return trimmed;
 };

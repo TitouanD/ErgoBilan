@@ -11,6 +11,7 @@ export interface InventoryScanResult {
   tc?: string | null;
   st?: string | null;
   isInverted?: boolean | null;
+  leftScaleType?: string | null;
   columns: InventoryColumnDescriptor[];
 }
 
@@ -31,7 +32,7 @@ export interface InventoryChunk {
 }
 
 export interface ExtractionRoutingDecision {
-  mode: 'parametric-full' | 'lookup-full' | 'lookup-chunked';
+  mode: 'parametric-full' | 'lookup-full' | 'lookup-chunked' | 'conversion-skip';
   inventoryColumnCount: number;
   isInverted: boolean;
   reason: string;
@@ -153,6 +154,26 @@ export const decideExtractionRouting = (
       inventoryColumnCount,
       isInverted: false,
       reason: 'parametric',
+    };
+  }
+
+  if (structure === 'CONVERSION') {
+    return {
+      mode: 'conversion-skip',
+      inventoryColumnCount,
+      isInverted: false,
+      reason: 'conversion-table',
+    };
+  }
+
+  // Heuristic: inverted table with percentile bands as left scale (e.g. ≤2, 2-5, ..., >75)
+  // is a conversion/equivalence table, not a norm lookup. Skip extraction.
+  if (isInverted && normalizeStableKeyPart(inventory?.leftScaleType || '') === 'PERCENTILE_BANDS') {
+    return {
+      mode: 'conversion-skip',
+      inventoryColumnCount,
+      isInverted: true,
+      reason: 'percentile-band-conversion',
     };
   }
 
@@ -399,4 +420,159 @@ export const matchRepairColumns = (
   });
 
   return Array.from(matched.values()).sort((left, right) => Number(left.columnOrder || 0) - Number(right.columnOrder || 0));
+};
+
+// ── SERVER-SIDE QUALITY DETECTION ──────────────────────────────────────────
+
+/** Parse the leading numeric value from a raw score string (e.g. "15-16" → 15, "≥ 45" → 45). */
+const parseLeadingRawLocal = (value: unknown): number | null => {
+  const s = String(value ?? '').trim();
+  if (!s || /^[-\u2013\u2014:]+$/.test(s)) return null;
+  const m = s.match(/(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Parse raw bounds from a string like "15-16" → {min:15, max:16}, "7" → {min:7, max:7}. */
+const parseRawBoundsLocal = (value: unknown): { min: number; max: number } | null => {
+  const s = String(value ?? '').trim().replace(/[\u2013\u2014]/g, '-');
+  if (!s || /^[-:]+$/.test(s)) return null;
+  const rangeMatch = s.match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
+  if (rangeMatch) {
+    const a = Number(rangeMatch[1]);
+    const b = Number(rangeMatch[2]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return a <= b ? { min: a, max: b } : { min: b, max: a };
+  }
+  const single = parseLeadingRawLocal(s);
+  if (single === null) return null;
+  return { min: single, max: single };
+};
+
+export interface OverlappingColumn {
+  sid: string;
+  ab?: string | null;
+  reason: 'overlap';
+  details: string;
+}
+
+/**
+ * Detect subtests with overlapping raw score ranges within each age group.
+ * Works on the raw ExtractionResult from Gemini (compact keys: r, n, a0, a1).
+ */
+export const detectOverlappingRanges = (
+  result: ExtractionLikeResult | null,
+): OverlappingColumn[] => {
+  if (!result || !Array.isArray(result.tables)) return [];
+  const problems: OverlappingColumn[] = [];
+
+  for (const table of result.tables) {
+    if (!Array.isArray(table.rows) || table.rows.length < 2) continue;
+    const rows = table.rows as Record<string, unknown>[];
+
+    // Group rows by age bucket
+    const byAge = new Map<string, Array<{ r: string; bounds: { min: number; max: number } }>>();
+    for (const row of rows) {
+      const ageKey = `${row.a0 ?? 'na'}|${row.a1 ?? 'na'}`;
+      const rawStr = String(row.r ?? '').trim();
+      const bounds = parseRawBoundsLocal(rawStr);
+      if (!bounds) continue;
+      if (!byAge.has(ageKey)) byAge.set(ageKey, []);
+      byAge.get(ageKey)!.push({ r: rawStr, bounds });
+    }
+
+    for (const [, entries] of byAge) {
+      if (entries.length < 2) continue;
+      // Sort by min bound
+      const sorted = [...entries].sort((a, b) => a.bounds.min - b.bounds.min);
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const curr = sorted[i];
+        // Overlap: current min <= previous max
+        if (curr.bounds.min <= prev.bounds.max) {
+          problems.push({
+            sid: table.sid,
+            ab: table.ab || null,
+            reason: 'overlap',
+            details: `raw ranges overlap: "${prev.r}" and "${curr.r}"`,
+          });
+          break; // One overlap per subtest is enough to flag it
+        }
+      }
+    }
+  }
+
+  return problems;
+};
+
+export interface DuplicateColumn {
+  sid1: string;
+  sid2: string;
+  ab1?: string | null;
+  ab2?: string | null;
+  reason: 'duplicate';
+}
+
+/**
+ * Detect pairs of subtests whose extracted data is >90% identical (hallucination/column drift).
+ */
+export const detectDuplicateColumns = (
+  result: ExtractionLikeResult | null,
+): DuplicateColumn[] => {
+  if (!result || !Array.isArray(result.tables) || result.tables.length < 2) return [];
+
+  const signatures = new Map<string, { sid: string; ab?: string | null }>();
+  const duplicates: DuplicateColumn[] = [];
+
+  for (const table of result.tables) {
+    if (!Array.isArray(table.rows) || table.rows.length < 3) continue;
+    const sig = (table.rows as Record<string, unknown>[])
+      .map((row) => `${String(row.r ?? '')}|${String(row.n ?? '')}`)
+      .sort()
+      .join(';');
+
+    if (signatures.has(sig)) {
+      const other = signatures.get(sig)!;
+      duplicates.push({
+        sid1: other.sid,
+        sid2: table.sid,
+        ab1: other.ab,
+        ab2: table.ab || null,
+        reason: 'duplicate',
+      });
+    } else {
+      signatures.set(sig, { sid: table.sid, ab: table.ab || null });
+    }
+  }
+
+  return duplicates;
+};
+
+/**
+ * Compute adaptive MAX_SUBTESTS_PER_CHUNK based on inventory density.
+ * Denser tables get smaller chunks to reduce horizontal drift.
+ */
+export const computeAdaptiveChunkSize = (
+  inventoryColumnCount: number,
+  baseMax: number,
+): number => {
+  if (inventoryColumnCount > 30) return Math.min(baseMax, 6);
+  if (inventoryColumnCount > 20) return Math.min(baseMax, 8);
+  return baseMax;
+};
+
+/**
+ * Detect combined-score columns that merge two adjacent subtests (e.g. "MP & MPD").
+ * These columns are highly prone to column drift and should always be retried.
+ */
+export const isCombinedScoreColumn = (col: InventoryColumnDescriptor): boolean => {
+  const sid = normalizeStableKeyPart(col.sid);
+  const ab = normalizeStableKeyPart(col.ab ?? '');
+  // Detect "&" separator in sid or ab (e.g. "MP & MPD", "MF & MFD")
+  if (/&/.test(col.sid ?? '') || /&/.test(col.ab ?? '')) return true;
+  // Detect "total combiné", "combiné", "total comb" keywords
+  if (/TOTAL\s*COMBIN/.test(sid) || /TOTAL\s*COMBIN/.test(ab)) return true;
+  if (/\bCOMBINE\b/.test(sid) || /\bCOMBINE\b/.test(ab)) return true;
+  return false;
 };

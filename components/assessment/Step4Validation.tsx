@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ReportSection, Patient } from '../../types';
 import { Check, Edit2, AlertCircle, Download, FileCheck, FileText, Bold, Italic, List, Heading, Undo, Redo, Info, CheckCheck, ChevronRight, ChevronLeft } from 'lucide-react';
 import { sanitizeReportText } from '../../utils/textSanitizer';
 import { useTextHistory } from '../../hooks/useTextHistory';
+import { ConfirmModal } from '../shared/ConfirmModal';
 
 interface Props {
   sections: ReportSection[];
@@ -103,7 +104,7 @@ const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: stri
     const btnClass = "p-2 hover:bg-stone-700 rounded-lg transition-colors text-white/90 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed";
     
     return (
-        <div className="mb-3 inline-flex items-center gap-1 bg-[var(--secondary)] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 animate-in fade-in duration-200">
+        <div className="mb-3 inline-flex items-center gap-1 bg-[#3D405B] p-1.5 rounded-xl shadow-xl shadow-stone-400/20 animate-in fade-in duration-200">
             <button onMouseDown={(e) => { e.preventDefault(); onAction('undo'); }} className={btnClass} title="Annuler (Ctrl+Z)" disabled={!canUndo}>
                 <Undo size={16} />
             </button>
@@ -139,7 +140,8 @@ const EditorToolbar = ({ onAction, canUndo, canRedo }: { onAction: (action: stri
 const SectionCard: React.FC<{
     section: ReportSection;
     onValidate: (id: string, content?: string) => void;
-}> = ({ section, onValidate }) => {
+    onDirtyChange?: (sectionId: string, isDirty: boolean) => void;
+}> = ({ section, onValidate, onDirtyChange }) => {
     const [isEditing, setIsEditing] = useState(false);
     const history = useTextHistory(sanitizeReportText(section.content));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -150,6 +152,16 @@ const SectionCard: React.FC<{
             history.reset(sanitizeReportText(section.content));
         }
     }, [section.content]);
+
+    // Report dirty state to parent
+    useEffect(() => {
+        if (isEditing) {
+            const dirty = history.value !== sanitizeReportText(section.content);
+            onDirtyChange?.(section.id, dirty);
+        } else {
+            onDirtyChange?.(section.id, false);
+        }
+    }, [isEditing, history.value, section.content, section.id]);
 
     const handleSave = () => {
         onValidate(section.id, sanitizeReportText(history.value));
@@ -216,7 +228,7 @@ const SectionCard: React.FC<{
             {/* Header Style Harmonisé avec ReportView */}
             <div className="flex justify-between items-center mb-6 border-b-2 border-[var(--border-color)] pb-2">
                 <div className="flex items-center gap-2">
-                    <div className="text-[var(--primary)]">
+                    <div className="text-[#E07A5F]">
                         <FileText size={18} />
                     </div>
                     <h3 className="text-lg font-bold text-[var(--text-heading)] uppercase tracking-wide">
@@ -246,7 +258,7 @@ const SectionCard: React.FC<{
                             autoCorrect="on"
                             autoCapitalize="sentences"
                             lang="fr"
-                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[var(--primary-opacity-10)] focus:border-[var(--primary)]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-medium resize-y shadow-inner transition-all"
+                            className="w-full p-6 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)] focus:bg-[var(--card-bg)] focus:ring-4 focus:ring-[#E07A5F]/10 focus:border-[#E07A5F]/50 outline-none text-[var(--text-heading)] leading-relaxed min-h-[400px] text-base font-medium resize-y shadow-inner transition-all"
                             value={history.value}
                             onChange={(e) => history.set(e.target.value)}
                             onKeyDown={(e) => {
@@ -306,7 +318,7 @@ const SectionCard: React.FC<{
                         </button>
                         {!isValidated && (
                             <button 
-                                onClick={() => onValidate(section.id, sanitizeReportText(section.content))}
+                                onClick={() => onValidate(section.id)}
                                 className="flex items-center gap-2 bg-stone-900 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-600 transition-all font-bold text-xs uppercase tracking-wider shadow-md"
                             >
                                 <Check size={16} /> Valider
@@ -324,13 +336,48 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
     const validatedCount = displayedSections.filter(s => s.status === 'validated').length;
     const allValidated = validatedCount === displayedSections.length && displayedSections.length > 0;
     const pendingCount = displayedSections.length - validatedCount;
+    const [dirtySections, setDirtySections] = useState<Set<string>>(new Set());
+    const [showDirtyWarning, setShowDirtyWarning] = useState<'back' | 'next' | null>(null);
+    const [showValidateAllConfirm, setShowValidateAllConfirm] = useState(false);
+    const [showUnvalidatedWarning, setShowUnvalidatedWarning] = useState(false);
 
-  const handleValidateAll = () => {
+    const handleDirtyChange = useCallback((sectionId: string, isDirty: boolean) => {
+        setDirtySections(prev => {
+            const next = new Set(prev);
+            if (isDirty) next.add(sectionId);
+            else next.delete(sectionId);
+            return next;
+        });
+    }, []);
+
+    const handleNavigate = useCallback((direction: 'back' | 'next') => {
+        if (dirtySections.size > 0) {
+            setShowDirtyWarning(direction);
+            return;
+        }
+        // C2: warn if advancing with unvalidated sections
+        if (direction === 'next' && pendingCount > 0) {
+            setShowUnvalidatedWarning(true);
+            return;
+        }
+        if (direction === 'back') onBack();
+        else onNext();
+    }, [dirtySections, pendingCount, onBack, onNext]);
+
+    const confirmDirtyNavigation = useCallback(() => {
+        const direction = showDirtyWarning;
+        setShowDirtyWarning(null);
+        if (direction === 'back') onBack();
+        else onNext();
+    }, [showDirtyWarning, onBack, onNext]);
+
+  const confirmValidateAll = () => {
         displayedSections.forEach(s => {
       if (s.status !== 'validated') {
         onValidateSection(s.id, s.content);
       }
     });
+    setShowValidateAllConfirm(false);
   };
 
   return (
@@ -352,7 +399,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
                         {pendingCount > 0 && displayedSections.length > 0 && (
               <button
                 type="button"
-                onClick={handleValidateAll}
+                onClick={() => setShowValidateAllConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 dark:border-emerald-700/40 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
               >
                 <CheckCheck size={14} />
@@ -370,28 +417,64 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
             </div>
         ) : (
             displayedSections.map(section => (
-                <SectionCard key={section.id} section={section} onValidate={onValidateSection} />
+                <SectionCard key={section.id} section={section} onValidate={onValidateSection} onDirtyChange={handleDirtyChange} />
             ))
         )}
       </div>
 
       <div className="mt-10 flex items-center justify-between gap-4">
           <button 
-              onClick={onBack} 
+              onClick={() => handleNavigate('back')} 
               className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
           >
               Retour
           </button>
           
           <button 
-              onClick={onNext}
+              onClick={() => handleNavigate('next')}
               disabled={displayedSections.length === 0}
-              className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[var(--secondary)] hover:bg-[var(--primary)]"
+              className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale bg-[#3D405B] hover:bg-[#E07A5F]"
           >
               <Download size={18} />
               <span className="uppercase tracking-wider">Visualiser le document</span>
           </button>
       </div>
+
+      {/* Unsaved changes warning (A2) */}
+      <ConfirmModal
+          isOpen={!!showDirtyWarning}
+          title="Modifications non enregistrées"
+          message={`${dirtySections.size} section(s) en cours d'édition. Les modifications non enregistrées seront perdues.\n\nContinuer ?`}
+          confirmLabel="Continuer sans sauvegarder"
+          cancelLabel="Rester"
+          variant="warning"
+          onConfirm={confirmDirtyNavigation}
+          onCancel={() => setShowDirtyWarning(null)}
+      />
+
+      {/* Validate-all confirmation (C1) */}
+      <ConfirmModal
+          isOpen={showValidateAllConfirm}
+          title="Tout valider d'un coup ?"
+          message={`${pendingCount} section(s) seront validées sans relecture individuelle. Vous pourrez toujours les modifier ensuite.`}
+          confirmLabel={`Valider ${pendingCount} section(s)`}
+          cancelLabel="Annuler"
+          variant="info"
+          onConfirm={confirmValidateAll}
+          onCancel={() => setShowValidateAllConfirm(false)}
+      />
+
+      {/* Unvalidated sections warning (C2) */}
+      <ConfirmModal
+          isOpen={showUnvalidatedWarning}
+          title="Sections non validées"
+          message={`${pendingCount} section(s) n'ont pas été validées. Vous pouvez continuer, mais pensez à relire le contenu généré par l'IA.`}
+          confirmLabel="Continuer quand même"
+          cancelLabel="Rester"
+          variant="warning"
+          onConfirm={() => { setShowUnvalidatedWarning(false); onNext(); }}
+          onCancel={() => setShowUnvalidatedWarning(false)}
+      />
     </div>
   );
 };

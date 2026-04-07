@@ -259,4 +259,193 @@ describe('extractionReviewFlags LOOKUP v1', () => {
 
     expect(flags.some((flag) => flag.code === 'LOOKUP_RAW_DUPLICATE_PARTIAL' && flag.severity === 'blocking')).toBe(true);
   });
+
+  it('suggests replacing ghost value with dash instead of fixing the range', () => {
+    // Pattern: prev=0 (single value), curr=0-1 (range starting at same value)
+    // The fix should target prev (replace "0" with "-"), NOT modify curr
+    const rows: ExtractedRow[] = [
+      {
+        id: 'ghost-0',
+        subtest: 'MP & MPD',
+        label: '5;5 – 5;11',
+        raw: '0',
+        standard: '1',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'MP_MPD::1',
+      },
+      {
+        id: 'ghost-1',
+        subtest: 'MP & MPD',
+        label: '5;5 – 5;11',
+        raw: '0-1',
+        standard: '2',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'MP_MPD::1',
+      },
+      {
+        id: 'ghost-2',
+        subtest: 'MP & MPD',
+        label: '5;5 – 5;11',
+        raw: '2',
+        standard: '3',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'MP_MPD::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-ghost-value',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    const overlapFlag = flags.find((f) => f.code === 'LOOKUP_RAW_RANGE_OVERLAP');
+    expect(overlapFlag).toBeDefined();
+    expect(overlapFlag?.severity).toBe('warning');
+    // Fix should target the PREVIOUS row (ghost value), not the range row
+    expect(overlapFlag?.suggestedFix?.rowId).toBe('ghost-0');
+    expect(overlapFlag?.suggestedFix?.value).toBe('-');
+    expect(overlapFlag?.suggestedFix?.field).toBe('raw');
+  });
+
+  it('detects raw range gap and suggests fix when a dash row exists in between', () => {
+    // Pattern: 0-24 at NS=1, dash at NS=2, 28-29 at NS=3 → gap of 25-27
+    const rows: ExtractedRow[] = [
+      {
+        id: 'gap-0',
+        subtest: 'CFPT',
+        label: '5;5 – 5;11',
+        raw: '0-24',
+        standard: '1',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'CFPT::1',
+      },
+      {
+        id: 'gap-1',
+        subtest: 'CFPT',
+        label: '5;5 – 5;11',
+        raw: '-',
+        standard: '2',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'CFPT::1',
+      },
+      {
+        id: 'gap-2',
+        subtest: 'CFPT',
+        label: '5;5 – 5;11',
+        raw: '28-29',
+        standard: '3',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'CFPT::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-raw-gap',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    const gapFlag = flags.find((f) => f.code === 'LOOKUP_RAW_RANGE_GAP');
+    expect(gapFlag).toBeDefined();
+    expect(gapFlag?.severity).toBe('warning');
+    // Should suggest fixing the dash row with the missing range
+    expect(gapFlag?.suggestedFix?.rowId).toBe('gap-1');
+    expect(gapFlag?.suggestedFix?.value).toBe('25-27');
+    expect(gapFlag?.suggestedFix?.field).toBe('raw');
+  });
+
+  it('detects raw range gap without fix when no dash row bridge exists', () => {
+    const rows: ExtractedRow[] = [
+      {
+        id: 'nobridge-0',
+        subtest: 'TestX',
+        label: '5;5 – 5;11',
+        raw: '0-5',
+        standard: '1',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'TX::1',
+      },
+      {
+        id: 'nobridge-1',
+        subtest: 'TestX',
+        label: '5;5 – 5;11',
+        raw: '10-15',
+        standard: '3',
+        zScore: '',
+        percentile: '',
+        hidden_age_min: 65,
+        hidden_age_max: 71,
+        source_column_key: 'TX::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-raw-gap-nobridge',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    const gapFlag = flags.find((f) => f.code === 'LOOKUP_RAW_RANGE_GAP');
+    expect(gapFlag).toBeDefined();
+    expect(gapFlag?.severity).toBe('warning');
+    expect(gapFlag?.suggestedFix).toBeUndefined();
+  });
+
+  it('suppresses gap flag when enough dash rows explain the gap (intentional normative gap)', () => {
+    // Simulates CFPL: 0-2 at NS=1, dash at NS=2, dash at NS=3, 4 at NS=4
+    // Gap size = 1 (missing raw=3), dash rows between = 2 → suppressed
+    const rows: ExtractedRow[] = [
+      {
+        id: 'norm-gap-0', subtest: 'CFPL', label: '5;5 – 5;11',
+        raw: '0-2', standard: '1', zScore: '', percentile: '',
+        hidden_age_min: 65, hidden_age_max: 71, source_column_key: 'CFPL::1',
+      },
+      {
+        id: 'norm-gap-1', subtest: 'CFPL', label: '5;5 – 5;11',
+        raw: '-', standard: '2', zScore: '', percentile: '',
+        hidden_age_min: 65, hidden_age_max: 71, source_column_key: 'CFPL::1',
+      },
+      {
+        id: 'norm-gap-2', subtest: 'CFPL', label: '5;5 – 5;11',
+        raw: '-', standard: '3', zScore: '', percentile: '',
+        hidden_age_min: 65, hidden_age_max: 71, source_column_key: 'CFPL::1',
+      },
+      {
+        id: 'norm-gap-3', subtest: 'CFPL', label: '5;5 – 5;11',
+        raw: '4', standard: '4', zScore: '', percentile: '',
+        hidden_age_min: 65, hidden_age_max: 71, source_column_key: 'CFPL::1',
+      },
+    ];
+
+    const flags = analyzePageRows({
+      pageId: 'fixture-intentional-gap',
+      rows,
+      structure: 'LOOKUP',
+    });
+
+    const gapFlags = flags.filter((f) => f.code === 'LOOKUP_RAW_RANGE_GAP');
+    expect(gapFlags).toHaveLength(0);
+  });
 });

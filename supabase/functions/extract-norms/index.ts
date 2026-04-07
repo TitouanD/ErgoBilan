@@ -3,12 +3,16 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { captureEdgeException } from "../_shared/sentry.ts";
 import {
   chunkInventoryColumns,
+  computeAdaptiveChunkSize,
   decideExtractionRouting,
   deduplicateInventoryColumnsForParametric,
+  detectDuplicateColumns,
+  detectOverlappingRanges,
   matchRepairColumns,
   sortTablesByInventoryOrder,
   summarizeInventoryCompleteness,
   normalizeKeyTolerant,
+  isCombinedScoreColumn,
   type InventoryColumnDescriptor,
 } from "./extractionUtils.ts";
 import {
@@ -38,6 +42,8 @@ const GEMINI_TIMEOUT_MS = 45_000;
 const GEMINI_MAX_RETRIES = 1;
 const GEMINI_RETRY_BASE_MS = 2_000;
 const MAX_OUTPUT_TOKENS = 65_536;
+const CHUNK_OUTPUT_TOKENS = 16_384;
+const INVENTORY_OUTPUT_TOKENS = 8_192;
 const PRECHECK_COLUMN_THRESHOLD = 8;
 const MAX_SUBTESTS_PER_CHUNK = 12;
 const CHUNK_MIN_COLUMN_COVERAGE_RATIO = 0.4;
@@ -187,10 +193,11 @@ const callGemini = async (
   responseMimeType: string = 'application/json',
   responseSchema?: Record<string, unknown>,
   thinkingBudget?: number,
+  maxOutputTokens?: number,
 ): Promise<{ text: string | null; finishReason: string }> => {
   const generationConfig: Record<string, unknown> = {
     responseMimeType,
-    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    maxOutputTokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
     thinkingConfig: { thinkingBudget: thinkingBudget ?? THINKING_BUDGET },
   };
   if (responseSchema) {
@@ -839,9 +846,35 @@ const sanitizeParametricExtraction = (result: ExtractionResult): ExtractionResul
   };
 };
 
+/**
+ * Normalize common symbol corruption in raw score values.
+ * Gemini sometimes outputs ">=", "R 282", "da45" instead of "≥ 282".
+ * Deterministic server-side fix — cheaper than prompt tokens.
+ */
+const normalizeRawSymbols = (value: string): string => {
+  let v = value.trim();
+  // ">=" / ">=" → "≥", "<=" → "≤"
+  v = v.replace(/^>=\s*/, '≥ ').replace(/^<=\s*/, '≤ ');
+  // Bare ">" / "<" before a digit → "≥" / "≤" (Gemini reads ≥/≤ as >/< )
+  v = v.replace(/^>\s*(\d)/, '≥ $1').replace(/^<\s*(\d)/, '≤ $1');
+  // Leading "R " or "r " before a digit → "≥ " (OCR misread of ≥)
+  v = v.replace(/^[Rr]\s+(\d)/, '≥ $1');
+  return v.trim();
+};
+
 const sanitizeLookupExtraction = (result: ExtractionResult): ExtractionResult => {
   if (String(result.st || '').toUpperCase() !== 'LOOKUP' || !Array.isArray(result.tables)) {
     return result;
+  }
+
+  // Step 0: Normalize symbols on raw score values
+  for (const table of result.tables) {
+    if (!Array.isArray(table.rows)) continue;
+    for (const row of table.rows) {
+      if (typeof row.r === 'string') {
+        row.r = normalizeRawSymbols(row.r);
+      }
+    }
   }
 
   // Step 1: Propagate page-level age to rows missing a0/a1
@@ -930,14 +963,15 @@ const runChunkedInventoryExtraction = async (
   payload: Record<string, unknown>,
   inventory: InventoryResult,
 ): Promise<{ parsed: ExtractionResult; apiCalls: number; strategy: string }> => {
-  const chunks = chunkInventoryColumns(inventory.columns, MAX_SUBTESTS_PER_CHUNK);
+  const adaptiveChunkSize = computeAdaptiveChunkSize(inventory.columns.length, MAX_SUBTESTS_PER_CHUNK);
+  const chunks = chunkInventoryColumns(inventory.columns, adaptiveChunkSize);
   if (chunks.length === 0) {
     throw new Error('Inventory scan did not return any extractable columns');
   }
 
   const runChunk = async (chunk: { columns: InventoryColumnDescriptor[]; domainHint: string }) => {
     const task = buildFocusedExtractionTaskV2(payload, chunk.columns, chunk.domainHint);
-    const { text } = await callGemini(task.contents, 'application/json', LOOKUP_EXTRACTION_RESPONSE_SCHEMA);
+    const { text } = await callGemini(task.contents, 'application/json', LOOKUP_EXTRACTION_RESPONSE_SCHEMA, undefined, CHUNK_OUTPUT_TOKENS);
     return safeJsonParse(text);
   };
 
@@ -1036,28 +1070,38 @@ const runChunkedInventoryExtraction = async (
   };
 };
 
-// Identify inventory columns that need a retry based on extraction quality.
-// Criteria: missing columns, low row count, or missing n values in LOOKUP tables.
+// Consolidated quality gate: identify ALL columns needing retry in a single pass.
+// Checks: missing/low coverage, missing n values, overlapping raw ranges, duplicate columns.
+// Returns a deduplicated list of inventory columns to re-extract in ONE repair call.
 const identifyRetryColumns = (
   result: ExtractionResult,
   inventoryColumns: InventoryColumnDescriptor[],
 ): InventoryColumnDescriptor[] => {
   if (!result?.tables || inventoryColumns.length === 0) return [];
 
+  const retryKeys = new Set<string>();
+  const retryColumns: InventoryColumnDescriptor[] = [];
+
+  const addRetryColumn = (col: InventoryColumnDescriptor) => {
+    const key = normalizeKeyTolerant(col.ab || col.sid);
+    if (retryKeys.has(key)) return;
+    retryKeys.add(key);
+    retryColumns.push(col);
+  };
+
+  // 1. Missing or very low coverage
   const rowCounts = buildExtractionRowCountsByInventoryOccurrence(result, inventoryColumns);
   const positiveRows = Object.values(rowCounts).filter((v) => v > 0);
   const medianRows = computeMedian(positiveRows);
   const minExpectedRows = Math.max(3, Math.ceil(medianRows * 0.5));
   const isLookup = String(result.st || '').toUpperCase() === 'LOOKUP';
 
-  const retryColumns: InventoryColumnDescriptor[] = [];
   for (let idx = 0; idx < inventoryColumns.length; idx++) {
     const col = inventoryColumns[idx];
     const rows = rowCounts[idx] ?? 0;
 
-    // Missing or very low coverage
     if (rows < minExpectedRows) {
-      retryColumns.push(col);
+      addRetryColumn(col);
       continue;
     }
 
@@ -1067,20 +1111,117 @@ const identifyRetryColumns = (
       if (table?.rows) {
         const missingN = table.rows.filter((r) => r.n === undefined || r.n === null || r.n === '').length;
         if (missingN > 0) {
-          retryColumns.push(col);
+          addRetryColumn(col);
         }
       }
+    }
+  }
+
+  // 2. Overlapping raw ranges
+  if (isLookup) {
+    const overlaps = detectOverlappingRanges(result);
+    for (const overlap of overlaps) {
+      const col = inventoryColumns.find((c) =>
+        normalizeKeyTolerant(c.ab || c.sid) === normalizeKeyTolerant(overlap.ab || overlap.sid)
+      );
+      if (col) addRetryColumn(col);
+    }
+  }
+
+  // 3. Duplicate columns (hallucination/drift)
+  const duplicates = detectDuplicateColumns(result);
+  for (const dup of duplicates) {
+    for (const sid of [dup.sid1, dup.sid2]) {
+      const ab = sid === dup.sid1 ? dup.ab1 : dup.ab2;
+      const col = inventoryColumns.find((c) =>
+        normalizeKeyTolerant(c.ab || c.sid) === normalizeKeyTolerant(ab || sid)
+      );
+      if (col) addRetryColumn(col);
+    }
+  }
+
+  // 4. Combined-score columns (e.g. "MP & MPD") — almost always drifted
+  for (const col of inventoryColumns) {
+    if (isCombinedScoreColumn(col)) {
+      addRetryColumn(col);
     }
   }
 
   return retryColumns.slice(0, MAX_REPAIR_TARGETS);
 };
 
+// ── NS ROW DEDUP + PADDING ──────────────────────────────────────────────────
+// For inverted LOOKUP tables (NS 1-19):
+//  1. Deduplicate rows with the same NS value (keep real value over dash).
+//  2. Pad missing NS values with r:"-" (dash = not scorable).
+const padMissingNsRows = (result: ExtractionResult, isInverted: boolean): ExtractionResult => {
+  if (!isInverted || !result.tables || result.tables.length === 0) return result;
+  if (String(result.st || '').toUpperCase() !== 'LOOKUP') return result;
+
+  const isDash = (r: unknown): boolean => {
+    const s = String(r ?? '').trim();
+    return s === '' || /^[-\u2013\u2014:]+$/.test(s);
+  };
+
+  for (const table of result.tables) {
+    if (!Array.isArray(table.rows)) continue;
+
+    // Step A: Deduplicate rows with the same n value
+    const byN = new Map<number, Record<string, unknown>[]>();
+    for (const row of table.rows) {
+      const n = Number(row.n);
+      if (!Number.isFinite(n)) continue;
+      const bucket = byN.get(n) || [];
+      bucket.push(row);
+      byN.set(n, bucket);
+    }
+    const deduped: Record<string, unknown>[] = [];
+    for (const [, rows] of byN) {
+      if (rows.length === 1) {
+        deduped.push(rows[0]);
+      } else {
+        // Prefer row with real raw value (non-dash) over dash
+        const real = rows.find((r) => !isDash(r.r));
+        deduped.push(real || rows[0]);
+      }
+    }
+    // Include rows without valid n (shouldn't happen but defensive)
+    for (const row of table.rows) {
+      const n = Number(row.n);
+      if (!Number.isFinite(n)) deduped.push(row);
+    }
+    table.rows = deduped;
+
+    // Step B: Pad missing NS values
+    const existingNs = new Set<number>();
+    for (const row of table.rows) {
+      const n = Number(row.n);
+      if (Number.isFinite(n)) existingNs.add(n);
+    }
+    if (existingNs.size === 0) continue;
+    const maxNs = Math.max(...existingNs);
+    if (maxNs < 10 || maxNs > 25) continue;
+
+    for (let ns = 1; ns <= maxNs; ns++) {
+      if (!existingNs.has(ns)) {
+        table.rows.push({ r: '-', n: String(ns) });
+      }
+    }
+    // Re-sort rows by NS value
+    table.rows.sort((a, b) => {
+      const na = Number(a.n) || 0;
+      const nb = Number(b.n) || 0;
+      return na - nb;
+    });
+  }
+  return result;
+};
+
 const extractWithFallbackV2 = async (
   payload: Record<string, unknown>
 ): Promise<ExtractionRunResult> => {
   const inventoryTask = buildInventoryScanTaskV2(payload);
-  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA, INVENTORY_THINKING_BUDGET);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA, INVENTORY_THINKING_BUDGET, INVENTORY_OUTPUT_TOKENS);
   const inventory = parseInventoryResult(inventoryText);
 
   if (!inventory || !inventory.st) {
@@ -1105,6 +1246,21 @@ const extractWithFallbackV2 = async (
     inventoryColumnCount: routing.inventoryColumnCount,
     isInvertedLookup: routing.isInverted,
   };
+
+  // Conversion tables (NS→Percentile, etc.) are not norm data — skip extraction entirely.
+  if (routing.mode === 'conversion-skip') {
+    return {
+      text: JSON.stringify({ st: 'CONVERSION', tc: inventory.tc || '', tables: [] }),
+      meta: {
+        ...baseMeta,
+        strategy: 'conversion-skip',
+        confidenceScore: 1,
+        expectedSourceColumns: [],
+        missingSourceColumns: [],
+        expectedSourceColumnCount: 0,
+      },
+    };
+  }
 
   let parsed: ExtractionResult | null = null;
   if (routing.mode === 'lookup-chunked' && inventory.columns.length > 0) {
@@ -1173,6 +1329,10 @@ const extractWithFallbackV2 = async (
   baseMeta.missingSourceColumns = completeness.missingSourceColumns;
   baseMeta.expectedSourceColumnCount = completeness.expectedSourceColumnCount;
   annotateExtractionQuality(baseMeta, parsed, qualityColumns);
+
+  // Pad missing NS rows for inverted LOOKUP
+  parsed = padMissingNsRows(parsed, routing.isInverted);
+
   let baseResult: ExtractionRunResult = {
     text: JSON.stringify(parsed),
     meta: baseMeta,
@@ -1204,7 +1364,7 @@ const extractWithFallbackV2 = async (
   const repairTask = buildRepairExtractionTaskV2(payload, repairRequest);
   const isLookupStructure = String(inventory.st || '').toUpperCase() === 'LOOKUP';
   const repairSchema = isLookupStructure ? LOOKUP_EXTRACTION_RESPONSE_SCHEMA : EXTRACTION_RESPONSE_SCHEMA;
-  const { text: repairText } = await callGemini(repairTask.contents, 'application/json', repairSchema);
+  const { text: repairText } = await callGemini(repairTask.contents, 'application/json', repairSchema, undefined, CHUNK_OUTPUT_TOKENS);
   baseMeta.apiCalls += 1;
   const repairedResult = safeJsonParse(repairText);
 
@@ -1225,8 +1385,11 @@ const extractWithFallbackV2 = async (
   baseMeta.repairedSubtests = retryColumns.map((col) => col.sid);
   annotateExtractionQuality(baseMeta, merged, qualityColumns);
 
+  // Pad missing NS rows for inverted LOOKUP
+  const paddedMerged = padMissingNsRows(merged, routing.isInverted);
+
   return {
-    text: JSON.stringify(merged),
+    text: JSON.stringify(paddedMerged),
     meta: baseMeta,
   };
 };
@@ -1235,7 +1398,7 @@ const extractWithRepairV2 = async (
   repairRequest: RepairRequestPayload
 ): Promise<ExtractionRunResult> => {
   const inventoryTask = buildInventoryScanTaskV2(payload);
-  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA, INVENTORY_THINKING_BUDGET);
+  const { text: inventoryText } = await callGemini(inventoryTask.contents, 'application/json', INVENTORY_RESPONSE_SCHEMA, INVENTORY_THINKING_BUDGET, INVENTORY_OUTPUT_TOKENS);
   const inventory = parseInventoryResult(inventoryText);
 
   const inventoryColumns = inventory?.columns || [];
@@ -1264,7 +1427,7 @@ const extractWithRepairV2 = async (
   const repairTask = buildRepairExtractionTaskV2(payload, effectiveRepairRequest);
   const repairIsLookup = String(inventory?.st || '').toUpperCase() === 'LOOKUP';
   const repairSchema = repairIsLookup ? LOOKUP_EXTRACTION_RESPONSE_SCHEMA : EXTRACTION_RESPONSE_SCHEMA;
-  const { text } = await callGemini(repairTask.contents, 'application/json', repairSchema);
+  const { text } = await callGemini(repairTask.contents, 'application/json', repairSchema, undefined, CHUNK_OUTPUT_TOKENS);
   if (!text) {
     throw new Error('Repair extraction returned empty response');
   }

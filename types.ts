@@ -447,6 +447,7 @@ export type ReviewFlagCode =
     | 'LOOKUP_ADJACENT_COLUMN_DUPLICATE'
     | 'LOOKUP_SUBTEST_LOW_RAW_COVERAGE'
     | 'LOOKUP_RAW_WITHOUT_SCORE'
+    | 'LOOKUP_RAW_RANGE_GAP'
     | 'EXTRACTION_MISSING_SOURCE_COLUMNS'
     | 'EXTRACTION_NOT_VERIFIED'
     | 'EXTRACTION_LOW_CONFIDENCE'
@@ -491,7 +492,7 @@ export interface Contribution {
     status: 'pending' | 'validated' | 'rejected';
     vigilanceScore: 'pass' | 'flagged';
     submittedAt: string;
-    structureType: 'PARAMETRIC' | 'LOOKUP' | 'UNKNOWN';
+    structureType: 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION' | 'UNKNOWN';
     rows: ExtractedRow[];
 }
 
@@ -653,7 +654,7 @@ export interface AIExtractedTable {
 
 export interface AIExtractionResult {
     test_context?: string;
-    structure_type?: 'PARAMETRIC' | 'LOOKUP';
+    structure_type?: 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION';
     page_age_min?: number | null;
     page_age_max?: number | null;
     tables?: AIExtractedTable[];
