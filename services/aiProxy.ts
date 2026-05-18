@@ -164,6 +164,7 @@ export const callAIProxyTask = async (params: TaskParams): Promise<ProxyResponse
     if (edgeError === 'RATE_LIMITED') throw new Error('RATE_LIMITED');
     if (edgeError === 'MISSING_GENERATION_SESSION') throw new Error('MISSING_GENERATION_SESSION');
     if (edgeError === 'INVALID_GENERATION_SESSION') throw new Error('INVALID_GENERATION_SESSION');
+    if (edgeError === 'GENERATION_SESSION_BUSY') throw new Error('GENERATION_SESSION_BUSY');
     if (edgeError === 'Missing authorization' || edgeError === 'Unauthorized') throw new Error('SESSION_EXPIRED');
 
     const retryable = isRetryable(edgeBody, error);

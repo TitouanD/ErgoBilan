@@ -12,12 +12,12 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 110_000);
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 50_000);
 const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get("AI_MAX_REQUESTS_PER_HOUR"), 15);
-const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 2);
+const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
 const GENERATION_REUSE_WINDOW_MINUTES = parsePositiveInt(Deno.env.get("GENERATION_REUSE_WINDOW_MINUTES"), 20);
-const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get("GENERATION_LOCK_TTL_SECONDS"), 300);
+const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get("GENERATION_LOCK_TTL_SECONDS"), 120);
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("GENERATE_MAX_PAYLOAD_BYTES"), 220_000);
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
@@ -231,9 +231,9 @@ REGLES NON NEGOCIABLES :
 const BIO_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
-    mandat_referencement: { type: 'STRING' as const, description: 'Qui adresse et pourquoi, 2-4 phrases factuelles (30-80 mots). Nomme le medecin via {{MEDECIN}}. Markdown.' },
-    mandat_evaluation: { type: 'STRING' as const, description: 'Difficultes concretes avec liens cause-consequence, en plusieurs paragraphes courts. Inclut la voix du patient si disponible (80-180 mots). Markdown.' },
-    profil_occupationnel: { type: 'STRING' as const, description: 'Profil par themes : scolarite actuelle, suivi therapeutique, autonomie, loisirs, comportement en classe, profil emotionnel. Un paragraphe par theme (150-300 mots). Markdown.' },
+    mandat_referencement: { type: 'STRING' as const, description: 'Ouverture sur le medecin prescripteur (obligatoire si present). Puis famille + 2-3 difficultes concretes. Puis priorites famille. Structure en 3 temps (60-130 mots). Markdown.' },
+    mandat_evaluation: { type: 'STRING' as const, description: 'Objectif du bilan uniquement (quoi evaluer), sans repeter les difficultes. 1-2 phrases courtes (20-60 mots). Markdown.' },
+    profil_occupationnel: { type: 'STRING' as const, description: 'Profil par themes : scolarite actuelle, suivi therapeutique (concis), autonomie, loisirs, comportement en classe, profil social et emotionnel incluant la personnalite. Un paragraphe par theme (150-300 mots). Markdown.' },
   },
   required: ['mandat_referencement', 'mandat_evaluation', 'profil_occupationnel'],
 };
@@ -284,39 +284,39 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     'TACHE : Redige un JSON avec 3 champs (valeurs = strings Markdown) en respectant STRICTEMENT ce format :',
     '',
-    '1. "mandat_referencement" (2-4 phrases, 30-80 mots) :',
-    '   Qui adresse le patient et pourquoi, de maniere factuelle et concise.',
-    '   OBLIGATOIRE : Si {{MEDECIN}} est present dans les donnees, nomme-le EXPLICITEMENT dans la phrase d\'ouverture.',
+    '1. "mandat_referencement" (3-5 phrases, 60-130 mots) :',
+    '   STRUCTURE EN 3 TEMPS OBLIGATOIRE :',
+    '   TEMPS 1 — PRESCRIPTEUR (phrase d\'ouverture) :',
+    '   Si {{MEDECIN}} est present dans les donnees : le medecin doit etre LA PREMIERE PERSONNE NOMMEE dans la premiere phrase. La famille n\'est mentionnee qu\'ensuite.',
     '   ATTENTION : {{MEDECIN}} peut DEJA contenir le titre "Dr". Ne rajoute JAMAIS "Dr" devant ce placeholder. Ecris directement "sur demande de {{MEDECIN}}" ou "a la demande de {{MEDECIN}}".',
     '   Si la specialite du medecin est disponible dans les donnees (ex: generaliste, pediatre, neurologue), mentionne-la apres le nom : "{{MEDECIN}}, medecin generaliste".',
-    '   Si {{MEDECIN}} est absent des donnees, ne pas inventer de nom.',
-    '   INTERDIT : Ne mentionne PAS de details sur la chaine de referencement (orthopedie, orthopedagogue, etc.) sauf si EXPLICITEMENT present dans les donnees ET directement pertinent. Utilise "bilan en ergotherapie" et non "evaluation fonctionnelle de ses capacites".',
-    '   EXEMPLES DE STYLE :',
-    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation sur demande de {{MEDECIN}}, medecin generaliste, afin de realiser un bilan en ergotherapie."',
-    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande de {{MEDECIN}}, pediatre, afin de realiser un bilan en ergotherapie."',
+    '   Si {{MEDECIN}} est absent des donnees, ouvre sur la famille.',
+    '   EXEMPLES DE STYLE pour le temps 1 :',
+    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande de {{MEDECIN}}, medecin generaliste, afin de realiser un bilan d\'ergotherapie."',
+    '   - "Cette demarche est egalement soutenue par les parents de {{PATIENT_PRENOM}}, suite a des observations de difficultes dans le domaine de [theme principal]."',
+    '   TEMPS 2 — DIFFICULTES CONCRETES (1-2 phrases) :',
+    '   Decris 2-3 difficultes concretes et specifiques tirees du questionnaire. Attribue-les a leur source (parents, enseignant, enfant). Utilise les details precis des donnees.',
+    '   EXEMPLES : "Ses parents constatent une difficulte a former les lettres entre les interlignes et a respecter une taille de caracteres constante, ce qui nuit a la lisibilite."',
+    '   TEMPS 3 — PRIORITES (1 phrase) :',
     '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase simple et directe.',
+    '   INTERDIT : Ne mentionne PAS de details sur la chaine de referencement (orthopedie, orthopedagogue, etc.) sauf si EXPLICITEMENT present dans les donnees. Utilise "bilan d\'ergotherapie" et non "bilan initial" ni "evaluation fonctionnelle de ses capacites".',
     '',
-    '2. "mandat_evaluation" (80-180 mots) :',
-    '   Decris les DIFFICULTES CONCRETES qui motivent le bilan, en PLUSIEURS PARAGRAPHES COURTS (un paragraphe par theme).',
-    '   STRUCTURE OBLIGATOIRE :',
-    '   - Commence par une phrase de RESUME introduisant le theme principal des difficultes : "{{PATIENT_PRENOM}} rapporte des difficultes scolaires liees a..."',
-    '   - Developpe ensuite chaque difficulte avec des LIENS CAUSE-CONSEQUENCE : "Elle se depeche pour ecrire, mais cela nuit a la lisibilite et augmente les douleurs."',
-    '   - Chaque difficulte doit etre ATTRIBUEE a sa source : "Les parents rapportent que...", "{{PATIENT_PRENOM}} dit avoir...", "L\'enseignant signale que...", "Le conseil de classe demande..."',
-    '   - Si {{PATIENT_PRENOM}} a exprime ses PROPRES SOUHAITS ou objectifs (distincts de ceux des parents/ecole), les inclure en DERNIER PARAGRAPHE. Formule-les SIMPLEMENT sans amplifier : "{{PATIENT_PRENOM}} souhaite faciliter son quotidien scolaire" et NON "{{PATIENT_PRENOM}} aspire a retrouver la serenite face aux apprentissages".',
-    '   RESPECT DU NIVEAU DE GRAVITE : Si les parents disent "parfois difficile", ne transforme PAS en "systematiquement conflictuel". Utilise les memes adverbes de frequence que les sources ("parfois", "souvent", "regulierement").',
-    '   NE PAS interpreter ni theoriser (pas de "ecriture phonetique pour compenser ses doutes orthographiques").',
-    '   NE PAS dramatiser : "la mise au travail est plus difficile" et NON "une mise sous tension emotionnelle pour l\'adolescente".',
-    '   INTERDIT : protocole, outils, modeles theoriques, objectifs du bilan.',
-    '   NE REPETE PAS les informations deja dans le mandat de referencement.',
+    '2. "mandat_evaluation" (20-60 mots, 1-2 phrases) :',
+    '   UNIQUE CONTENU : L\'OBJECTIF DU BILAN — quoi evaluer.',
+    '   INTERDIT : Ne repete PAS les difficultes (elles sont dans le mandat de referencement). Ne mentionne pas les attentes de la famille. Pas de protocole ni de modele theorique.',
+    '   Formule l\'objectif de maniere courte et directe.',
+    '   EXEMPLES DE STYLE :',
+    '   - "L\'objectif de ce bilan en ergotherapie est d\'evaluer les capacites de motricite fine, de graphisme et d\'attention de {{PATIENT_PRENOM}}."',
+    '   - "Ce bilan a pour objectif d\'evaluer les habiletes motrices et graphiques de {{PATIENT_PRENOM}} ainsi que leurs impacts sur ses activites scolaires."',
     '',
     '3. "profil_occupationnel" (150-300 mots) :',
     '   Synthese du profil en PARAGRAPHES THEMATIQUES, un par theme. Ordre OBLIGATOIRE :',
     '   a) SCOLARITE ACTUELLE : etablissement, niveau/filiere precise, amenagements en place avec leur CONTENU (pas juste "PAP" mais "PAP mentionnant un travail allege et du temps supplementaire").',
-    '   b) SUIVI THERAPEUTIQUE : prises en charge passees et en cours, avec dates si disponibles et motifs.',
+    '   b) SUIVI THERAPEUTIQUE : prises en charge passees et en cours, avec dates si disponibles et motifs. CONCIS : 1-2 phrases par professionnel maximum. Ne liste pas toutes les dates si elles forment un catalogue.',
     '   c) AUTONOMIE / VIE QUOTIDIENNE : autonomie dans les actes de la vie courante, difficultes spatiales ou autres mentionnees.',
     '   d) LOISIRS : activites extrascolaires, centres d\'interet, hobbies.',
-    '   e) COMPORTEMENT EN CLASSE : attention, investissement, participation, preferences de matieres (si mentionne dans les donnees). Si l\'organisation est fonctionnelle, dis-le positivement ("son organisation est satisfaisante"). Ne reformule PAS negativement un constat positif.',
-    '   f) PROFIL SOCIAL ET EMOTIONNEL : relations avec les pairs, sensibilite, confiance en soi. Sois PRECIS dans la nuance : si les relations sont bonnes en general mais complexes avec certaines personnes specifiques, decris cette nuance exacte au lieu de generaliser.',
+    '   e) COMPORTEMENT EN CLASSE : attention, investissement, participation, motivation pour les devoirs, preferences de matieres (si mentionne dans les donnees). Si l\'organisation est fonctionnelle, dis-le positivement ("son organisation est satisfaisante"). Ne reformule PAS negativement un constat positif.',
+    '   f) PROFIL SOCIAL ET EMOTIONNEL : traits de personnalite (comptetitif, perfectionniste, curieux...), relations avec les pairs, sensibilite, confiance en soi. Inclus les nuances de caractere mentionnees (peut etre brusque ou maladroit, tres competiteur, timide...) si elles figurent dans les donnees. Sois PRECIS : si les relations sont bonnes en general mais complexes avec certaines personnes, decris cette nuance exacte au lieu de generaliser.',
     '   REGLES :',
     '   - Commence TOUJOURS par la situation scolaire actuelle, PAS par l\'historique developpemental.',
     '   - L\'historique developpemental precoce (age de marche, elocution...) ne doit etre mentionne QUE s\'il est directement pertinent pour la problematique actuelle.',
@@ -445,7 +445,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   - "Concernant l\'ecriture manuscrite" : Section la plus DETAILLEE. Developpe en PLUSIEURS PARAGRAPHES :',
     '     (a) Vitesse et qualite generale : ce qui est dans les normes, comment la qualite evolue avec l\'acceleration.',
     '     (b) Comportements associes observes : hesitations orthographiques, dependance visuelle au modele, rapport entre la pensee et le flux scriptural, effort cognitif soutenu generant de la fatigue.',
-    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main, mode de progression sur la ligne, prise de crayon. Decris en termes FONCTIONNELS et simples : "prise de stylo adequate, mais crispee et avec une forte pression" plutot que "prise tridigitale avec hyperflexion du pouce". Le parent doit comprendre.',
+    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main, mode de progression sur la ligne, prise de crayon. Decris en termes FONCTIONNELS et simples : "prise de stylo adequate, mais crispee et avec une forte pression" plutot que "prise tridigitale avec hyperflexion du pouce". Le parent doit comprendre. ANTI-INVENTION : Decris la prise du crayon UNIQUEMENT sur la base de ce que l\'ergotherapeute a ecrit dans les observations. Si la prise est notee "correcte", "adequate", "fonctionnelle" ou toute formulation positive, ecris simplement "la prise du crayon est fonctionnelle". NE DEDUIS PAS de details anatomiques absents (position du pouce, tension des doigts, angle du poignet, pression...) si l\'observation n\'en parle pas explicitement.',
     '     (d) DOULEURS : localisation precise (doigts, main, poignet, epaule...), cotation si disponible (ex: "que {{PATIENT_PRENOM}} evalue a X/10 sur l\'echelle de la douleur").',
     '     (e) CONCLUSION INTEGRATIVE du graphisme : lien entre posture, effort, et endurance ("Bien que l\'ecrit reste fluide et fonctionnel, il exige un effort physique et cognitif couteux, limitant l\'endurance sur le long terme").',
     '   - "Sur le plan attentionnel" : si donnees disponibles.',
@@ -479,6 +479,9 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   Commence par un en-tete adapte au contexte : "Adaptations pedagogiques recommandees :" (si contexte scolaire) ou "Adaptations recommandees :" (si autre contexte).',
     '   Puis 3-4 tirets concrets et DIRECTEMENT ACTIONNABLES.',
     '   Chaque recommandation doit pouvoir etre mise en oeuvre immediatement par l\'ecole ou la famille.',
+    '   SUGGESTIONS ERGONOMIQUES STANDARDS : Parmi les adaptations ci-dessous, inclus celles qui n\'auraient pas deja ete mentionnees par le praticien et qui sont pertinentes selon les observations :',
+    '   - Plan incline : a proposer si difficultes posturales d\'ecriture ou posture du buste problematique (facilite l\'angle d\'ecriture et la posture).',
+    '   - Assise dynamique (coussin a air) : a proposer si agitation motrice ou besoin de mouvement sont notes dans les observations.',
     '   INTERDIT : recommandations vagues ("sensibilisation de l\'equipe"), recommandations materielles trop specifiques (noms de produits) sauf si justifie par les observations.',
     '   Si tout est normal, mentionne que l\'accompagnement n\'est pas necessaire.',
     '   STYLE : Formule LARGE et PRAGMATIQUE avec des exemples concrets entre parentheses. Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte.',

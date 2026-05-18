@@ -37,9 +37,11 @@ export interface Patient {
     parent1Name?: string;
     parent1Phone?: string;
     parent1Email?: string;
+    parent1Address?: string;
     parent2Name?: string;
     parent2Phone?: string;
     parent2Email?: string;
+    parent2Address?: string;
     guardArrangement: string;
     guardMode?: string;
     guardExclusiveOther?: string;

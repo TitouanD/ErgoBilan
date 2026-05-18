@@ -3,7 +3,7 @@
  * draft save/resume logic that was previously inlined in AppRouter.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { AIService, type GenerationPayload, type GenerationResult } from '../services/ai';
 import { callAIProxyTask } from '../services/aiProxy';
 import { StorageService } from '../services/storage';
@@ -136,17 +136,23 @@ export const useAssessmentFlow = ({
 }: UseAssessmentFlowParams) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const generatingRef = useRef(false);
 
   // ------------------------------------------------------------------
   // Generate AI report
   // ------------------------------------------------------------------
   const handleGenerateReport = useCallback(async () => {
+    // Prevent concurrent invocations (double-click, race conditions)
+    if (generatingRef.current) return;
+    generatingRef.current = true;
+
     // Demo path — simulate with static data
     if (isDemoMode) {
       setIsGenerating(true);
       setTimeout(() => {
         assessment.setSections(DEMO_SECTIONS);
         assessment.setStep(4);
+        generatingRef.current = false;
         setIsGenerating(false);
         toast.success('Rapport généré (Simulation)');
       }, 3000);
@@ -366,11 +372,14 @@ export const useAssessmentFlow = ({
       } else if (msg === 'SESSION_EXPIRED') {
         setGenerationError("Session expirée. Veuillez vous reconnecter.");
       } else if (msg === 'TIMEOUT_AI') {
-        setGenerationError("Le serveur IA ne répond pas.");
+        setGenerationError("Le serveur IA ne répond pas. Réessayez dans quelques instants.");
+      } else if (msg === 'GENERATION_SESSION_BUSY') {
+        setGenerationError("Une génération est déjà en cours. Attendez quelques instants, puis réessayez.");
       } else {
         setGenerationError(msg || 'Erreur inconnue.');
       }
     } finally {
+      generatingRef.current = false;
       setIsGenerating(false);
     }
   }, [assessment, isDemoMode, refreshProfile, practitioner, toast]);
