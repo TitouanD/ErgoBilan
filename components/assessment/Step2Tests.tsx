@@ -2849,16 +2849,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                       </div>
                       {!collapsed && (
                         <div>
-                          {visibleSubtests.length > 1 && viewMode[test.id] !== 'table' && (
-                            <div className="px-5 pt-3">
-                              <input
-                                value={subtestFilters[test.id] || ''}
-                                onChange={(e) => setSubtestFilters((prev) => ({ ...prev, [test.id]: e.target.value }))}
-                                placeholder="Filtrer les sous-tests..."
-                                className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-xs text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors"
-                              />
-                            </div>
-                          )}
+                
                           {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>}
 
                           {viewMode[test.id] === 'table' ? (

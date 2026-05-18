@@ -64,7 +64,7 @@ const ChipGroup = ({
 }) => {
     const selected = multi ? (value || '').split(',').filter(Boolean) : [];
     const handleClick = (optValue: string) => {
-        if (!multi) { onChange(optValue); return; }
+        if (!multi) { onChange(value === optValue ? '' : optValue); return; }
         const newSelected = selected.includes(optValue)
             ? selected.filter(v => v !== optValue)
             : [...selected, optValue];
@@ -498,6 +498,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                             <DebouncedInput name="parent1Email" type="email" value={data.parent1Email || ''} onChange={(v) => syncLegacyParentFields({ parent1Email: v })} className={`${inputClass} pl-10`} />
                                                         </div>
                                                     </div>
+                                                    <div>
+                                                        <label className={labelClass}>Adresse</label>
+                                                        <div className="relative">
+                                                            <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent1Address" value={data.parent1Address || ''} onChange={(v) => handleFieldChange('parent1Address', v)} className={`${inputClass} pl-10`} placeholder="Adresse complète" />
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 <div className="space-y-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
@@ -518,6 +525,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         <div className="relative">
                                                             <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
                                                             <DebouncedInput name="parent2Email" type="email" value={data.parent2Email || ''} onChange={(v) => syncLegacyParentFields({ parent2Email: v })} className={`${inputClass} pl-10`} />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className={labelClass}>Adresse</label>
+                                                        <div className="relative">
+                                                            <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
+                                                            <DebouncedInput name="parent2Address" value={data.parent2Address || ''} onChange={(v) => handleFieldChange('parent2Address', v)} className={`${inputClass} pl-10`} placeholder="Adresse complète" />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -717,10 +731,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 options={[
                                                     {value: 'orthographe', label: "Fautes d'orthographe"},
                                                     {value: 'miroir', label: 'Lettres/chiffres en miroir'},
-                                                    {value: 'lisibilite', label: 'Peu de lisibilité des écrits'},
+                                                    {value: 'lisibilite', label: 'Lisibilité difficile'},
                                                     {value: 'lenteur', label: 'Lenteur'},
                                                     {value: 'prise_crayon_atypique', label: 'Prise du crayon atypique'},
                                                     {value: 'sauts_lignes', label: 'Sauts de lignes'},
+                                                    {value: 'interlignes_non_respectees', label: 'Interlignes non respectées'},
+                                                    {value: 'taille_lettres_non_respectee', label: 'Taille des lettres non respectée'},
                                                 ]}
                                                 value={data.writingDifficultyTags}
                                                 onChange={(v) => handleFieldChange('writingDifficultyTags', v)}
@@ -1093,6 +1109,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <label className={labelClass}>Observations</label>
                                                 <ChipGroup
                                                     options={[
+                                                        { value: 'autonome', label: 'Autonome' },
                                                         { value: 'cooperatif', label: 'Coopératif' },
                                                         { value: 'refus_opposition', label: 'Refus / opposition' },
                                                         { value: 'peur_eau', label: 'Peur de l\'eau' },
@@ -1132,6 +1149,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <label className={labelClass}>Observations</label>
                                                 <ChipGroup
                                                     options={[
+                                                        { value: 'repere_temps', label: 'Se repère dans le temps' },
                                                         { value: 'repere_lieux', label: 'Se repère dans les lieux' },
                                                         { value: 'confond_matin_soir', label: 'Confond Matin / Soir' },
                                                         { value: 'se_perd', label: 'Se perd facilement' },
