@@ -12,12 +12,12 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const GEMINI_MODEL = "gemini-3-flash-preview";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 110_000);
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get("GEMINI_TIMEOUT_MS"), 50_000);
 const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get("AI_MAX_REQUESTS_PER_HOUR"), 15);
-const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 2);
+const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get("GEMINI_MAX_RETRIES"), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get("GEMINI_RETRY_BASE_MS"), 2_000);
 const GENERATION_REUSE_WINDOW_MINUTES = parsePositiveInt(Deno.env.get("GENERATION_REUSE_WINDOW_MINUTES"), 20);
-const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get("GENERATION_LOCK_TTL_SECONDS"), 300);
+const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get("GENERATION_LOCK_TTL_SECONDS"), 120);
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get("GENERATE_MAX_PAYLOAD_BYTES"), 220_000);
 
 const APP_ENV = (Deno.env.get("APP_ENV") || Deno.env.get("ENV") || "").toLowerCase();
