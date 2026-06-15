@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.extract-norms]
 verify_jwt = false
+
+[functions.purge-pending]
+verify_jwt = false

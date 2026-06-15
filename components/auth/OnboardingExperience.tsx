@@ -100,7 +100,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
                             <div className="mt-8 flex items-center gap-3 bg-[var(--card-bg)] px-4 py-2 rounded-full shadow-sm border border-[var(--border-color)]">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                                <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest">PIN 6 Chiffres = Clé unique</span>
+                                <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest">Données stockées sur votre poste</span>
                             </div>
                         </div>
                     )}
@@ -221,23 +221,30 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
 
                             <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">
-                                Vous seul avez la clé.
+                                Vos données restent chez vous.
                             </h2>
                             
                             <p className="text-stone-500 leading-relaxed">
-                                Vos données patients sont chiffrées de bout en bout (E2EE). <strong className="text-[var(--secondary)]">Vous avez défini un code PIN à 6 chiffres</strong> qui servira de clé de déchiffrement unique.
+                                Vos données patients ne quittent jamais votre navigateur. <strong className="text-[var(--secondary)]">Elles sont stockées localement sur votre poste</strong>, pas sur nos serveurs — nous n'y avons pas accès.
                             </p>
 
                             <div className="bg-[var(--card-bg-raised)] border border-[var(--border-color)] p-6 rounded-2xl shadow-inner">
                                 <p className="text-sm font-medium text-[var(--text-main)] mb-2">
                                     <Key size={16} className="inline mr-2 text-[var(--primary)]" /> 
-                                    Fonctionnement du coffre-fort :
+                                    Comment ça fonctionne :
                                 </p>
                                 <ul className="text-xs text-[var(--text-secondary)] space-y-2 ml-6 list-disc">
-                                    <li>Votre mot de passe sert à vous connecter (Auth).</li>
-                                    <li>Votre PIN sert à déverrouiller les données (Décryptage).</li>
-                                    <li>Même nous ne pouvons pas lire vos bilans.</li>
+                                    <li>Votre mot de passe sert à vous connecter (compte en ligne).</li>
+                                    <li>Votre PIN verrouille l'écran après 15 min d'inactivité.</li>
+                                    <li>Les questionnaires envoyés aux familles sont chiffrés de bout en bout.</li>
                                 </ul>
+                            </div>
+
+                            <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+                                <span className="text-amber-500 mt-0.5 shrink-0">⚠️</span>
+                                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                                    <strong>Utilisez toujours le même navigateur sur ce poste.</strong> Les données ne se synchronisent pas entre Chrome, Firefox ou Safari. Exportez régulièrement un backup depuis le tableau de bord.
+                                </p>
                             </div>
 
                             <button onClick={handleNext} className="w-full px-8 py-4 bg-[var(--secondary)] text-white rounded-xl font-bold text-lg shadow-xl hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-3">

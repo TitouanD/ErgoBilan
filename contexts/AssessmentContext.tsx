@@ -70,7 +70,7 @@ const initialSynthesis: ClinicalSynthesis = {
 const DRAFT_VERSION = 2;
 
 export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { sessionKey, orgKey, isDemoMode } = useAuth();
+  const { sessionKey, isDemoMode } = useAuth();
 
   const [patient, setPatient] = useState<Patient>(initialPatient);
   const [tests, setTests] = useState<TestData>({});
@@ -103,7 +103,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Uses ref to prevent multiple simultaneous creation attempts
   const ensurePatientId = useCallback(async (patientSnapshot: Patient): Promise<string | null> => {
     if (patientSnapshot.id) return patientSnapshot.id;
-    if (!orgKey || isDemoMode) return null;
+    if (isDemoMode) return null;
     if (!isPatientCreationReady(patientSnapshot)) return null;
 
     if (!createPromiseRef.current) {
@@ -112,7 +112,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ...patientSnapshot,
           age: getPatientAgeForIdentity(patientSnapshot),
         };
-        const newId = await StorageService.ensurePatientId(toCreate, orgKey);
+        const newId = await StorageService.ensurePatientId(toCreate);
         setPatient((prev) => (prev.id ? prev : { ...prev, id: newId, age: toCreate.age }));
         return newId;
       })().finally(() => {
@@ -126,7 +126,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       Logger.error('DB', 'Failed to create patient ID', createError);
       return null;
     }
-  }, [orgKey, isDemoMode]);
+  }, [isDemoMode]);
 
   // Memoize patient identity fields to optimize Effect A & C dependencies
   // Only changes when actual identity fields change, not entire patient object
@@ -189,9 +189,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           timestamp: new Date().toISOString(),
         };
 
-        if (sessionKey) {
-          await StorageService.saveDraft(draftData, sessionKey);
-        }
+        await StorageService.saveDraft(draftData);
       } catch (e) {
         Logger.warn('DB', 'Autosave draft failed (silently)', e);
       } finally {
@@ -208,7 +206,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Separate from draft autosave to isolate identity mutations
   // Uses patientIdentity memo to avoid excessive syncs
   useEffect(() => {
-    if (!patientIdentity.id || !orgKey || isDemoMode) return;
+    if (!patientIdentity.id || isDemoMode) return;
 
     const identitySignature = buildPatientIdentitySignature(patient);
     if (identitySignature === lastSyncedIdentityRef.current) return;
@@ -218,7 +216,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       beginAutoSave();
       try {
         const patientToSync = { ...patient, age: getPatientAgeForIdentity(patient) };
-        await StorageService.syncPatientIdentityPreview(patientIdentity.id, patientToSync, orgKey);
+        await StorageService.syncPatientIdentityPreview(patientIdentity.id, patientToSync);
         lastSyncedIdentityRef.current = buildPatientIdentitySignature(patientToSync);
       } catch (e) {
         Logger.warn('DB', 'Identity preview sync failed (silently)', e);
@@ -230,7 +228,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => {
       if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);
     };
-  }, [patientIdentity, patient, orgKey, isDemoMode, beginAutoSave, endAutoSave]);
+  }, [patientIdentity, patient, isDemoMode, beginAutoSave, endAutoSave]);
 
   const updatePatient = (data: Partial<Patient>) => {
     setPatient(prev => ({ ...prev, ...data }));

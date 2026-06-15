@@ -54,14 +54,20 @@ export const useLinkManager = ({
 
     if (!practitioner || !sessionKey) return;
 
-    const { data: member } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', practitioner.id)
+    // Resolve organizationId via bootstrap RPC (idempotent — creates org if not exists).
+    // Avoids a direct dependency on organization_members which may not have a row yet.
+    const { data: orgData, error: orgError } = await supabase
+      .rpc('bootstrap_org_for_user', {
+        p_user_id: practitioner.id,
+        p_org_name: 'Mon Cabinet',
+      })
       .maybeSingle();
 
-    if (!member?.organization_id) {
-      toast.error('Erreur critique: Organisation introuvable.');
+    const organizationId: string | null =
+      (orgData as { organization_id?: string } | null)?.organization_id ?? null;
+
+    if (!organizationId || orgError) {
+      toast.error('Erreur critique\u00a0: Organisation introuvable.');
       return;
     }
 
@@ -79,7 +85,7 @@ export const useLinkManager = ({
       .from('pending_questionnaires')
       .insert({
         practitioner_id: practitioner.id,
-        organization_id: member.organization_id,
+        organization_id: organizationId,
         label,
         status: 'pending',
         practitioner_encrypted_key: `${enc.iv}:${enc.content}`,

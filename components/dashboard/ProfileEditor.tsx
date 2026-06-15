@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { ArrowLeft, User, Phone, Building, MapPin, Save, Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { ArrowLeft, User, Phone, Building, MapPin, Save, Loader2, Download, Upload, HardDrive } from 'lucide-react';
 import { supabase } from '../../services/db';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { ExportService } from '../../services/exportService';
 
 interface ProfileEditorProps {
     onClose: () => void;
@@ -11,6 +12,49 @@ interface ProfileEditorProps {
 export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
     const { userProfile, practitioner, updateUserProfile, refreshProfile } = useAuth();
     const toast = useToast();
+    const importInputRef = useRef<HTMLInputElement>(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+
+    const handleExport = async () => {
+        if (!practitioner) return;
+        setIsExporting(true);
+        try {
+            await ExportService.exportAll(practitioner.id);
+            toast.success('Backup téléchargé');
+        } catch {
+            toast.error('Erreur lors de l\'export');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !practitioner) return;
+        if (!file.name.endsWith('.ergobilan')) {
+            toast.error('Fichier invalide. Choisissez un fichier .ergobilan');
+            return;
+        }
+        setIsImporting(true);
+        try {
+            const preview = await ExportService.peekBundle(file);
+            const ok = window.confirm(
+                `Importer ce backup ?\n` +
+                `Date\u00a0: ${new Date(preview.exportedAt).toLocaleString()}\n` +
+                `${preview.patients} patient(s) \u2022 ${preview.assessments} bilan(s) \u2022 ${preview.drafts} brouillon(s)\n\n` +
+                `Les données existantes pour ces patients seront \u00e9crasées.`
+            );
+            if (!ok) return;
+            const result = await ExportService.importFromFile(file, practitioner.id);
+            toast.success(`Import réussi\u00a0: ${result.patients} patients, ${result.assessments} bilans`);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'import');
+        } finally {
+            setIsImporting(false);
+            if (importInputRef.current) importInputRef.current.value = '';
+        }
+    };
 
     const [form, setForm] = useState({
         firstName: practitioner?.firstName || '',
@@ -146,6 +190,46 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                         {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                         Enregistrer
                     </button>
+                </div>
+            </div>
+
+            {/* ─── Données locales ──────────────────────────────────────── */}
+            <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-xl overflow-hidden mt-6">
+                <div className="px-8 py-6 border-b border-[var(--border-color)] bg-[var(--card-bg-raised)]">
+                    <h2 className="text-xl font-serif font-bold text-[var(--text-heading)] flex items-center gap-3">
+                        <HardDrive size={22} className="text-[var(--primary)]" /> Mes Données Locales
+                    </h2>
+                    <p className="text-sm text-[var(--text-secondary)] mt-1">Vos bilans sont stockés sur cet appareil. Exportez régulièrement un backup.</p>
+                </div>
+                <div className="p-8 space-y-3">
+                    <button
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 border-[var(--primary)] text-[var(--primary)] font-bold text-sm hover:bg-[var(--primary)] hover:text-white transition-all disabled:opacity-70"
+                    >
+                        {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                        Télécharger un backup (.ergobilan)
+                    </button>
+
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".ergobilan"
+                        className="hidden"
+                        onChange={handleImport}
+                    />
+                    <button
+                        onClick={() => importInputRef.current?.click()}
+                        disabled={isImporting}
+                        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-sm hover:bg-[var(--hover-bg)] transition-all disabled:opacity-70"
+                    >
+                        {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        Restaurer depuis un backup
+                    </button>
+
+                    <p className="text-xs text-[var(--text-secondary)] text-center pt-1">
+                        ⚠️ Utilisez toujours le même navigateur. Les données ne se synchronisent pas entre Chrome, Firefox ou Safari.
+                    </p>
                 </div>
             </div>
         </div>

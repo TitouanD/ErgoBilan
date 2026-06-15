@@ -141,7 +141,7 @@ const buildSyntheticFollowup = (file: PatientFile): PatientFollowup | null => {
   return {
     id: `virtual-${file.id}`,
     patientId: file.id,
-    organizationId: file.patient.organizationId || '',
+    organizationId: null,
     status,
     dueAt: dueDate.toISOString(),
     snoozedUntil: null,

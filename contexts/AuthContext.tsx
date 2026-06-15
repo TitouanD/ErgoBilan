@@ -4,7 +4,7 @@ import { supabase, ensureFreshSession } from '../services/db';
 import { SubscriptionService } from '../services/subscription';
 import { StorageService } from '../services/storage';
 import type { PractitionerProfile, UserProfile, BrandingConfig } from '../types';
-import { unwrapKey, wrapKey, generateSymetricKey } from '../utils/crypto'; 
+import { generateSymetricKey } from '../utils/crypto';
 import { Logger } from '../utils/logger';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -29,9 +29,7 @@ type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked'
 interface AuthContextType {
   userProfile: UserProfile;
   practitioner: PractitionerProfile | null;
-  sessionKey: CryptoKey | null; // MasterKey (PIN)
-  orgKey: CryptoKey | null; // NOUVEAU: Clé du cabinet déchiffrée
-  orgId: string | null; // Organization ID for filtering
+  sessionKey: CryptoKey | null; // Derived from PIN via PBKDF2 — used for: (1) portal questionnaire E2EE, (2) idle app-lock gate. NOT used to encrypt local PHI (data is stored plaintext in IndexedDB).
   // Ajout de 'subscription_locked' : Utilisateur reconnu mais sans droits d'accès valides
     authState: AuthState;
   isLoading: boolean;
@@ -45,7 +43,6 @@ interface AuthContextType {
   lockSession: () => void;
   logout: () => void;
   updateUserProfile: (update: Partial<UserProfile>) => void;
-  setOrgKey: (key: CryptoKey | null) => void; 
   startDemo: () => Promise<void>; // NOUVEAU : Entrée en mode démo
   verifyAdminAccess: () => Promise<boolean>; // NOUVEAU : Vérification serveur
   setWizardActive: (active: boolean) => void; // Lock pour empêcher loadUser pendant le wizard
@@ -87,8 +84,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
   const [practitioner, setPractitioner] = useState<PractitionerProfile | null>(null);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
-  const [orgKey, setOrgKey] = useState<CryptoKey | null>(null); 
-  const [orgId, setOrgId] = useState<string | null>(null); 
     const [authState, setAuthState] = useState<AuthState>('unauthenticated');
   const [isLoading, setIsLoading] = useState(true);
   const [tempEmail, setTempEmail] = useState<string | null>(null);
@@ -344,8 +339,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       Logger.info('AUTH', "Performing local logout cleanup");
       setPractitioner(null);
       setSessionKey(null);
-      setOrgKey(null);
-      setOrgId(null); 
       setUserProfile(INITIAL_PROFILE);
       setAuthState('unauthenticated');
       setIsDemoMode(false);
@@ -415,8 +408,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const dummyKey = await generateSymetricKey();
       setSessionKey(dummyKey);
-      setOrgKey(dummyKey);
-      setOrgId(null);
+      StorageService.setCurrentUser('demo-practitioner');
 
       setAuthState('authenticated');
       setIsLoading(false);
@@ -660,77 +652,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const unlockSession = async (key: CryptoKey) => {
       if (!practitioner) return;
-      Logger.info('CRYPTO', "Starting Hierarchical Unlock Process");
+      Logger.info('CRYPTO', 'Unlocking session (local-first mode)');
 
       try {
-          if (!isDemoMode) {
-              const { session, error } = await ensureFreshSession({ minValidityMs: 10_000 });
-              if (!session) {
-                  Logger.warn('AUTH', 'Session expired during unlock', error);
-                  await forceLogout('Session expired');
-                  return;
-              }
+          const { session, error } = await ensureFreshSession({ minValidityMs: 10_000 });
+          if (!session) {
+              Logger.warn('AUTH', 'Session expired during unlock', error);
+              await forceLogout('Session expired');
+              return;
           }
-          const { data: memberData, error } = await supabase
-              .from('organization_members')
-              .select('encrypted_org_key, organization_id')
-              .eq('user_id', practitioner.id)
-              .maybeSingle();
 
-          if (error) throw error;
+          setSessionKey(key);
+          StorageService.setCurrentUser(practitioner.id);
 
-          if (memberData && memberData.encrypted_org_key) {
-              const [iv, content] = memberData.encrypted_org_key.split(':');
-              const unwrappedOrgKey = await unwrapKey({ iv, content }, key);
-              
-              setSessionKey(key); 
-              setOrgKey(unwrappedOrgKey);
-              setOrgId(memberData.organization_id || null);
-
-              // Phase 2: Hydrate subscription profile in parallel after key derivation
-              const finalState = await hydrateProfile(practitioner.id);
-              setAuthState(finalState);
-          } else {
-              Logger.warn('CRYPTO', "No encrypted Org Key found. Lazy initialization.");
-              let orgIdVal = memberData?.organization_id;
-              if (!orgIdVal) {
-                  // Use SECURITY DEFINER RPC to bypass RLS on organizations table
-                  const { data: newOrgId, error: orgErr } = await supabase.rpc('bootstrap_org_for_user', { p_user_id: practitioner.id, p_org_name: 'Mon Cabinet' });
-                  if (orgErr || !newOrgId) throw orgErr || new Error('Failed to bootstrap organization');
-                  orgIdVal = newOrgId;
-              }
-
-              const newOrgKey = await generateSymetricKey();
-              const wrapped = await wrapKey(newOrgKey, key);
-              const wrappedStr = `${wrapped.iv}:${wrapped.content}`;
-              
-              const { error: updateError } = await supabase
-                  .from('organization_members')
-                  .update({ encrypted_org_key: wrappedStr })
-                  .eq('user_id', practitioner.id);
-
-              if (updateError) throw updateError;
-                  
-              setSessionKey(key);
-              setOrgKey(newOrgKey);
-              setOrgId(orgIdVal || null);
-
-              // Phase 2: Hydrate subscription profile after lazy init
-              const finalState = await hydrateProfile(practitioner.id);
-              setAuthState(finalState);
-          }
+          const finalState = await hydrateProfile(practitioner.id);
+          setAuthState(finalState);
 
       } catch (e) {
-          Logger.error('CRYPTO', "Failed to unlock session/org key", e);
-          alert("Erreur critique de déchiffrement. Veuillez vérifier votre PIN ou contacter le support.");
+          Logger.error('CRYPTO', 'Failed to unlock session', e);
+          alert('Erreur de connexion. Veuillez réessayer ou contacter le support.');
       }
   };
 
   const lockSession = () => {
-      Logger.info('CRYPTO', "Locking session (Clearing keys)");
+      Logger.info('CRYPTO', 'Locking session (Clearing keys)');
       setSessionKey(null);
-      setOrgKey(null);
-      setOrgId(null);
       setAuthState('locked');
   };
 
@@ -746,8 +692,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{ 
-        userProfile, practitioner, sessionKey, orgKey, orgId, authState, isLoading, tempEmail, isDemoMode,
-        refreshProfile, reloadUserFromSession, setSessionKey, setOrgKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive, suppressIdleLock, resumeIdleLock
+        userProfile, practitioner, sessionKey, authState, isLoading, tempEmail, isDemoMode,
+        refreshProfile, reloadUserFromSession, setSessionKey, unlockSession, lockSession, logout, updateUserProfile, startDemo, verifyAdminAccess, setWizardActive, suppressIdleLock, resumeIdleLock
     }}>
       {children}
     </AuthContext.Provider>

@@ -46,6 +46,7 @@ const OnboardingExperience = React.lazy(() => import('./components/auth/Onboardi
 
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then(module => ({ default: module.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then(module => ({ default: module.PricingModal })));
+const LegalModal = React.lazy(() => import('./components/shared/LegalModal').then(module => ({ default: module.LegalModal })));
 const QuickEntryModal = React.lazy(() => import('./components/dashboard/QuickEntryModal').then(module => ({ default: module.QuickEntryModal })));
 
 // --- LOADER LÉGER ---
@@ -62,7 +63,7 @@ const AppLoader = () => (
 
 // --- ROUTEUR INTERNE ---
 const AppRouter = () => {
-    const { userProfile, practitioner, authState, sessionKey, orgKey, orgId, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
+    const { userProfile, practitioner, authState, sessionKey, setSessionKey, unlockSession, logout, updateUserProfile, refreshProfile, reloadUserFromSession, tempEmail, startDemo, isDemoMode, verifyAdminAccess, isLoading } = useAuth();
     const { catalog, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
     const assessment = useAssessment();
     const toast = useToast();
@@ -75,6 +76,7 @@ const AppRouter = () => {
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
+    const [legalModal, setLegalModal] = useState<{ open: boolean; tab: 'cgu' | 'privacy' }>({ open: false, tab: 'cgu' });
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
     const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
@@ -94,10 +96,10 @@ const AppRouter = () => {
     const shouldUseCaptcha = turnstileSiteKey.length > 0;
 
     // --- Extracted domain hooks ---
-    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, setDraftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, orgKey, orgId, authState, practitioner, isDemoMode });
+    const { patientFiles, setPatientFiles, pendingQuestionnaires, setPendingQuestionnaires, draftsIndex, setDraftsIndex, loadData, hasMorePatients, isLoadingMorePatients, loadMorePatients } = useDataLoader({ sessionKey, authState, practitioner, isDemoMode });
 
     const { isGenerating, setIsGenerating, generationError, setGenerationError, handleGenerateReport, handleFinalize, handleSaveAndQuit, handleResumeDraft } = useAssessmentFlow({
-        assessment, sessionKey, orgKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
+        assessment, sessionKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
     });
 
     const { handleGenerateLink, handleCopyLink } = useLinkManager({
@@ -105,7 +107,7 @@ const AppRouter = () => {
     });
 
     const { processingQueueId, handleProcessPending } = usePendingProcessor({
-        sessionKey, orgKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast,
+        sessionKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast,
     });
 
     // --- Auth state → mode sync ---
@@ -295,12 +297,11 @@ const AppRouter = () => {
     const onProcessPending = useCallback(async (q: Parameters<typeof handleProcessPending>[0]) => { const result = await handleProcessPending(q); if (result === 'assessment') setMode('assessment'); }, [handleProcessPending]);
 
     const handleLoadMoreHistory = useCallback(async () => {
-        if (!selectedFile || !orgKey) return;
+        if (!selectedFile) return;
         if (detailPaging.isLoadingMore) return;
         setDetailPaging(prev => ({ ...prev, isLoadingMore: true }));
         try {
-            const history = await StorageService.loadPatientHistoryPage(selectedFile.id, orgKey, {
-                encryptedFileKey: selectedFile.encryptedFileKey,
+            const history = await StorageService.loadPatientHistoryPage(selectedFile.id, {
                 assessmentOffset: detailPaging.nextAssessmentOffset,
             });
 
@@ -323,7 +324,7 @@ const AppRouter = () => {
             toast.error("Impossible de charger plus d'historique.");
             setDetailPaging(prev => ({ ...prev, isLoadingMore: false }));
         }
-    }, [selectedFile, orgKey, detailPaging.nextAssessmentOffset, detailPaging.isLoadingMore, toast]);
+    }, [selectedFile, detailPaging.nextAssessmentOffset, detailPaging.isLoadingMore, toast]);
 
     const accountDisplayName = (
         userProfile.branding.practitionerName ||
@@ -390,6 +391,19 @@ const AppRouter = () => {
                         <p className="text-[var(--text-light)] text-sm">Pas encore de compte ? <button onClick={handleStartDemo} className="font-bold text-[var(--text-main)] hover:text-[#E07A5F] underline underline-offset-2 transition-colors cursor-pointer">Explorer l'interface sans inscription</button></p>
                     </div>
                 </div>
+                {/* Legal footer */}
+                <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 text-[10px] text-[var(--text-disabled)] z-10">
+                    <button onClick={() => setLegalModal({ open: true, tab: 'cgu' })} className="hover:text-[var(--text-secondary)] transition-colors">Conditions Générales</button>
+                    <span>·</span>
+                    <button onClick={() => setLegalModal({ open: true, tab: 'privacy' })} className="hover:text-[var(--text-secondary)] transition-colors">Politique de Confidentialité</button>
+                    <span>·</span>
+                    <span>© {new Date().getFullYear()} ErgoBilan</span>
+                </div>
+                {legalModal.open && (
+                    <Suspense fallback={null}>
+                        <LegalModal initialTab={legalModal.tab} onClose={() => setLegalModal(prev => ({ ...prev, open: false }))} />
+                    </Suspense>
+                )}
                 {showAuthModal && (
                     <div className="fixed inset-0 z-50 bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
                         {authMode === 'login' && authState !== 'registering' ? (
@@ -536,7 +550,7 @@ const AppRouter = () => {
                             onShowPricing={() => setPricingModalMode('plans')}
                             onOpenPatient={async (id) => {
                                 try {
-                                    const details = await StorageService.loadPatientDetails(id, orgKey!);
+                                    const details = await StorageService.loadPatientDetails(id);
                                     const baseFile = patientFiles.find(f => f.id === id);
                                     if (baseFile) {
                                         setSelectedFile({
@@ -678,7 +692,7 @@ const AppRouter = () => {
                         </div>
                     )}
 
-                {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile && orgKey) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }, orgKey); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
+                {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
             </Suspense>
 
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
-import { setupPin, generateSymetricKey, wrapKey } from '../../utils/crypto';
+import { setupPin } from '../../utils/crypto';
 import type { PractitionerProfile } from '../../types';
 import { supabase } from '../../services/db';
 import { Logger } from '../../utils/logger';
@@ -277,9 +277,6 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
             setStatusMessage("Génération des clés de chiffrement...");
             const { key: masterKey, salt, validator } = await setupPin(formData.pin);
-            const orgKey = await generateSymetricKey();
-            const wrappedOrgKey = await wrapKey(orgKey, masterKey);
-            const wrappedOrgKeyStr = `${wrappedOrgKey.iv}:${wrappedOrgKey.content}`;
 
             // --- ÉTAPE 3 : ONBOARDING CÔTÉ EDGE (profil + org + subscription) ---
             setStatusMessage("Configuration du compte praticien...");
@@ -294,7 +291,6 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                     address: formData.address.trim(),
                     encryptionSalt: salt,
                     encryptionValidator: validator,
-                    encryptedOrgKey: wrappedOrgKeyStr,
                     orgName: 'Mon Cabinet'
                 }
             });

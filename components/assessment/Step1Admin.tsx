@@ -4,7 +4,6 @@ import type { Patient } from '../../types';
 import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../utils';
 import { User, Lock, AlertTriangle, Mic, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
-import { useAuth } from '../../contexts/AuthContext';
 import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
@@ -129,7 +128,6 @@ const SectionSummary: React.FC<{
 };
 
 export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, onPatientCreated }) => {
-  const { orgKey } = useAuth(); 
   const [viewMode, setViewModeRaw] = useState<'review' | 'edit'>(() =>
       (sessionStorage.getItem('step1_viewMode') as 'review' | 'edit') || 'review'
   );
@@ -261,10 +259,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
     const isCondensedMode = viewMode === 'review' && (shouldAutoUseCondensed || userSwitchedToReview);
 
   const ensurePatientPersisted = async (): Promise<void> => {
-      if (!orgKey) throw new Error('Missing org key');
       if (!isPatientCreationReady(data)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
 
-      const patientId = await StorageService.ensurePatientId(data, orgKey);
+      const patientId = await StorageService.ensurePatientId(data);
       const patientSnapshot: Patient = {
           ...data,
           id: patientId,
@@ -275,7 +272,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           updateData({ id: patientId, age: patientSnapshot.age });
       }
 
-      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot, orgKey);
+      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot);
       onPatientCreated();
   };
 
