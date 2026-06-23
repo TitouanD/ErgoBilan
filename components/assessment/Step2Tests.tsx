@@ -391,7 +391,7 @@ const ScoreTypeReportModal: React.FC<{
   enteredPct?: number | null;
   onClose: () => void;
 }> = ({ subtest, enteredNS, enteredET, enteredPct, onClose }) => {
-  const { showToast } = useToast();
+  const toast = useToast();
   const [suggestedType, setSuggestedType] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -413,10 +413,10 @@ const ScoreTypeReportModal: React.FC<{
         entered_pct: enteredPct ?? null,
         note: note.trim() || undefined,
       });
-      showToast('Signalement envoyé. Merci !', 'success');
+      toast.success('Signalement envoyé. Merci !');
       onClose();
     } catch (e) {
-      showToast('Erreur lors de l\'envoi du signalement.', 'error');
+      toast.error('Erreur lors de l\'envoi du signalement.');
     } finally {
       setLoading(false);
     }

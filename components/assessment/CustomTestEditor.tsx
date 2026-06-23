@@ -29,7 +29,7 @@ const SCORE_TYPES = [
 const makeKey = () => Math.random().toString(36).slice(2);
 
 export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
-  const { showToast } = useToast();
+  const toast = useToast();
   const { ensureCatalogLoaded } = useCatalog();
 
   const [testName, setTestName] = useState('');
@@ -72,11 +72,11 @@ export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
       });
       // Refresh catalog so the new test appears immediately
       ensureCatalogLoaded();
-      showToast(`Test « ${testName.trim()} » créé avec succès !`, 'success');
+      toast.success(`Test « ${testName.trim()} » créé avec succès !`);
       onCreated?.();
       onClose();
     } catch (e: any) {
-      showToast(`Erreur : ${e?.message || 'Impossible de créer le test.'}`, 'error');
+      toast.error(`Erreur : ${e?.message || 'Impossible de créer le test.'}`);
     } finally {
       setLoading(false);
     }
