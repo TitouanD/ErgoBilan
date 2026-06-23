@@ -326,6 +326,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       newGoals.splice(idx, 1);
       onChange({ goals: newGoals, priorities: newGoals.join('. ') });
   };
+  const moveGoal = (idx: number, dir: -1 | 1) => {
+      const newGoals = [...goals];
+      const swapIdx = idx + dir;
+      if (swapIdx < 0 || swapIdx >= newGoals.length) return;
+      [newGoals[idx], newGoals[swapIdx]] = [newGoals[swapIdx], newGoals[idx]];
+      onChange({ goals: newGoals, priorities: newGoals.join('. ') });
+  };
   const [tempGoal, setTempGoal] = useState('');
 
   const inputClass = "w-full p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--input-border)] outline-none focus:border-[var(--primary)] focus:bg-[var(--card-bg)] transition-all font-bold text-[var(--text-heading)] text-sm";
@@ -734,9 +741,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     {value: 'lisibilite', label: 'Lisibilité difficile'},
                                                     {value: 'lenteur', label: 'Lenteur'},
                                                     {value: 'prise_crayon_atypique', label: 'Prise du crayon atypique'},
-                                                    {value: 'sauts_lignes', label: 'Sauts de lignes'},
+                                                    {value: 'sauts_lignes', label: 'Lettres non régulières'},
                                                     {value: 'interlignes_non_respectees', label: 'Interlignes non respectées'},
                                                     {value: 'taille_lettres_non_respectee', label: 'Taille des lettres non respectée'},
+                                                    {value: 'lettres_capitales', label: 'Utilise uniquement les lettres capitales'},
+                                                    {value: 'ecriture_grande', label: 'Écriture de grande taille'},
                                                 ]}
                                                 value={data.writingDifficultyTags}
                                                 onChange={(v) => handleFieldChange('writingDifficultyTags', v)}
@@ -957,7 +966,9 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         {value: 'reveil_matinal', label: 'Réveil très matinal'},
                                                         {value: 'fatigue_journee', label: 'Fatigue en journée'},
                                                         {value: 'paisible', label: 'Paisible'},
-                                                        {value: 'endormissement_long', label: 'Endormissement long'}
+                                                        {value: 'endormissement_long', label: 'Endormissement long'},
+                                                        {value: 'endormissement_rapide', label: 'Endormissement rapide'},
+                                                        {value: 'peur_noir', label: 'Peur du noir'}
                                                     ]}
                                                     value={data.sleepStatus} 
                                                     onChange={(v) => handleFieldChange('sleepStatus', v)}
@@ -974,23 +985,29 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     {/* 🟡 SENSORIEL */}
                                     <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-2 mb-4">🟡 Sensoriel</h4>
-                                        <div>
-                                            <label className={labelClass}>Précisions</label>
-                                            <ChipGroup
-                                                options={[
-                                                    {value: 'textures_gene', label: 'Gêné par certaines textures'},
-                                                    {value: 'odeurs_sensible', label: 'Sensible aux odeurs'},
-                                                    {value: 'bruits_sensible', label: 'Sensible aux bruits'},
-                                                    {value: 'lumiere_sensible', label: 'Sensible à la lumière'},
-                                                    {value: 'prenom_pas_reaction', label: 'Ne réagit pas au prénom'},
-                                                    {value: 'recherche_pression', label: 'Recherche de pression'},
-                                                    {value: 'maladresse', label: 'Maladresse'},
-                                                    {value: 'selectivite_alimentaire', label: 'Sélectivité alimentaire'}
-                                                ]}
-                                                value={data.sensory}
-                                                onChange={(v) => handleFieldChange('sensory', v)}
-                                                multi
-                                            />
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className={labelClass}>Observations</label>
+                                                <ChipGroup
+                                                    options={[
+                                                        {value: 'textures_gene', label: 'Gêné par certaines textures'},
+                                                        {value: 'odeurs_sensible', label: 'Sensible aux odeurs'},
+                                                        {value: 'bruits_sensible', label: 'Sensible aux bruits'},
+                                                        {value: 'lumiere_sensible', label: 'Sensible à la lumière'},
+                                                        {value: 'prenom_pas_reaction', label: 'Ne réagit pas au prénom'},
+                                                        {value: 'recherche_pression', label: 'Recherche de pression'},
+                                                        {value: 'maladresse', label: 'Maladresse'},
+                                                        {value: 'selectivite_alimentaire', label: 'Sélectivité alimentaire'}
+                                                    ]}
+                                                    value={data.sensory}
+                                                    onChange={(v) => handleFieldChange('sensory', v)}
+                                                    multi
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Précisions</label>
+                                                <DebouncedTextarea name="sensoryNotes" value={data.sensoryNotes || ''} onChange={(v) => handleFieldChange('sensoryNotes', v)} className={inputClass} placeholder="Sensibilités particulières, contexte, réactions observées..." rows={2} />
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1115,6 +1132,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         { value: 'peur_eau', label: 'Peur de l\'eau' },
                                                         { value: 'recherche_autonomie', label: 'Recherche l\'autonomie' },
                                                         { value: 'besoin_rappels', label: 'Besoin de rappels' },
+                                                        { value: 'besoin_supervision', label: 'Besoin de supervision' },
                                                     ]}
                                                     value={data.hygieneObservations}
                                                     onChange={(v) => handleFieldChange('hygieneObservations', v)}
@@ -1256,6 +1274,10 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         onChange={(e) => updateGoal(idx, e.target.value)}
                                                         className="flex-1 text-sm font-bold bg-transparent text-[var(--text-heading)] border-b border-transparent focus:border-amber-300 outline-none"
                                                     />
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <button onClick={() => moveGoal(idx, -1)} disabled={idx === 0} className="text-[var(--text-disabled)] hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronUp size={14}/></button>
+                                                        <button onClick={() => moveGoal(idx, 1)} disabled={idx === goals.length - 1} className="text-[var(--text-disabled)] hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronDown size={14}/></button>
+                                                    </div>
                                                     <button onClick={() => removeGoal(idx)} className="text-[var(--text-disabled)] hover:text-rose-500"><Trash2 size={16}/></button>
                                                 </div>
                                             ))}

@@ -232,7 +232,7 @@ const BIO_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
     mandat_referencement: { type: 'STRING' as const, description: 'Ouverture sur le medecin prescripteur (obligatoire si present). Puis famille + 2-3 difficultes concretes. Puis priorites famille. Structure en 3 temps (60-130 mots). Markdown.' },
-    mandat_evaluation: { type: 'STRING' as const, description: 'Objectif du bilan uniquement (quoi evaluer), sans repeter les difficultes. 1-2 phrases courtes (20-60 mots). Markdown.' },
+    mandat_evaluation: { type: 'STRING' as const, description: 'Objectif du bilan uniquement (quoi evaluer). Commence OBLIGATOIREMENT par "observer et d\'evaluer". Structure : capacites graphomotrices + facteurs sous-jacents (motricite fine, visuo-perceptives, exploration visuelle, bi-manuelle, oculo-manuelle) + phrase motricite globale si dans le perimetre + impact fonctionnel. 1-3 phrases (20-70 mots). Markdown.' },
     profil_occupationnel: { type: 'STRING' as const, description: 'Profil par themes : scolarite actuelle, suivi therapeutique (concis), autonomie, loisirs, comportement en classe, profil social et emotionnel incluant la personnalite. Un paragraphe par theme (150-300 mots). Markdown.' },
   },
   required: ['mandat_referencement', 'mandat_evaluation', 'profil_occupationnel'],
@@ -301,13 +301,17 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '   Si la famille a exprime des priorites/objectifs, mentionne-les en une phrase simple et directe.',
     '   INTERDIT : Ne mentionne PAS de details sur la chaine de referencement (orthopedie, orthopedagogue, etc.) sauf si EXPLICITEMENT present dans les donnees. Utilise "bilan d\'ergotherapie" et non "bilan initial" ni "evaluation fonctionnelle de ses capacites".',
     '',
-    '2. "mandat_evaluation" (20-60 mots, 1-2 phrases) :',
+    '2. "mandat_evaluation" (20-70 mots, 1-3 phrases) :',
     '   UNIQUE CONTENU : L\'OBJECTIF DU BILAN — quoi evaluer.',
     '   INTERDIT : Ne repete PAS les difficultes (elles sont dans le mandat de referencement). Ne mentionne pas les attentes de la famille. Pas de protocole ni de modele theorique.',
-    '   Formule l\'objectif de maniere courte et directe.',
+    '   FORMULE OBLIGATOIRE : Commence TOUJOURS par "observer et d\'evaluer" (jamais seulement "evaluer" ou "analyser").',
+    '   STRUCTURE EN 1-3 PHRASES :',
+    '   Phrase 1 (OBLIGATOIRE) : "L\'objectif de ce bilan en ergotherapie est d\'observer et d\'evaluer les capacites graphomotrices de {{PATIENT_PRENOM}}, ainsi que les facteurs sous-jacents tels que la motricite fine, les capacites visuo-perceptives et d\'exploration visuelle, la coordination bimanuelle et oculo-manuelle."',
+    '   Phrase 2 (si motricite globale dans le perimetre du bilan, sinon omets) : "Ce bilan va egalement permettre d\'observer et d\'evaluer les capacites de motricite globale."',
+    '   Phrase finale : lien avec l\'impact ("Cette evaluation vise a identifier les freins a [probleme principal] et a analyser leur impact sur [domaine pertinent]." ou "Cela permettra d\'evaluer leur impact sur [domaine pertinent].").',
     '   EXEMPLES DE STYLE :',
-    '   - "L\'objectif de ce bilan en ergotherapie est d\'evaluer les capacites de motricite fine, de graphisme et d\'attention de {{PATIENT_PRENOM}}."',
-    '   - "Ce bilan a pour objectif d\'evaluer les habiletes motrices et graphiques de {{PATIENT_PRENOM}} ainsi que leurs impacts sur ses activites scolaires."',
+    '   - (graphisme seul) "L\'objectif de ce bilan en ergotherapie est d\'observer et d\'evaluer les capacites graphomotrices de {{PATIENT_PRENOM}}, ainsi que les facteurs sous-jacents tels que la motricite fine, les capacites visuo-perceptives et d\'exploration visuelle, la coordination bimanuelle et oculo-manuelle. Cette evaluation vise a identifier les freins a une ecriture fonctionnelle et a analyser leur impact sur ses activites scolaires."',
+    '   - (avec motricite globale) "L\'objectif de ce bilan en ergotherapie est d\'observer et d\'evaluer les capacites graphomotrices de {{PATIENT_PRENOM}}, ainsi que les facteurs sous-jacents tels que la motricite fine, les capacites visuo-perceptives et d\'exploration visuelle, la coordination bimanuelle et oculo-manuelle. Ce bilan va egalement permettre d\'observer et d\'evaluer les capacites de motricite globale. Cela permettra d\'evaluer leur impact sur son autonomie quotidienne et ses activites scolaires."',
     '',
     '3. "profil_occupationnel" (150-300 mots) :',
     '   Synthese du profil en PARAGRAPHES THEMATIQUES, un par theme. Ordre OBLIGATOIRE :',
@@ -384,7 +388,13 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   if (projectInput.length > 5) {
     projectDirective = `Le praticien a defini le projet suivant : "${projectInput}". Developpe ce projet en tirets concrets (axes de travail, suivi propose, collaboration avec l'entourage).`;
   } else {
-    projectDirective = 'Formule un projet d\'accompagnement coherent avec le diagnostique. Si un suivi est justifie, liste les axes d\'intervention (ex: graphomotricite, autonomie, adaptations scolaires). Si aucun suivi n\'est preconise, indique-le clairement.';
+    projectDirective = [
+      'Formule un projet d\'accompagnement coherent avec le diagnostique.',
+      'Si un suivi est justifie, liste les axes d\'intervention (ex: reeducation graphique, motricite fine, strategies visuo-spatiales, autonomie, adaptations scolaires).',
+      'Pour les axes graphiques/scriptaux, inclus TOUJOURS "qualite" aux cotes de "lisibilite" et "vitesse" (ex: "pour ameliorer la lisibilite, la qualite et la vitesse lors des ecrits").',
+      'Si motricite fine/coordination ET reeducation graphique figurent tous deux dans les axes, formule la motricite fine comme prerequis a la reeducation graphique (ex: "Travail de la motricite fine et de la coordination bi-manuelle pour favoriser la reeducation graphique.").',
+      'Si aucun suivi n\'est preconise, indique-le clairement.',
+    ].join(' ');
   }
 
   // Directive recommandations conditionnelle
@@ -433,11 +443,17 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   Puis : "L\'entretien realise ainsi que les resultats des evaluations mettent en evidence plusieurs elements cles :"',
     '',
     '   CORPS — APPROCHE NARRATIVE PAR DOMAINE :',
-    '   Organise par domaine fonctionnel avec des tirets "-". Chaque domaine peut contenir PLUSIEURS PARAGRAPHES si le contenu le justifie.',
+    '   FORMAT OBLIGATOIRE : Le titre du domaine doit figurer DANS le tiret lui-meme, suivi d\'un deux-points, puis du corps en prose sur la ou les lignes suivantes (sans nouveau tiret pour le corps).',
+    '   EXEMPLE DE FORMAT CORRECT :',
+    '   "- Sur le plan de la motricite fine et de la coordination bi-manuelle :\\nLes competences sont deficitaires. Une maladresse est observee lors..."',
+    '   "- Concernant les capacites visuo-perceptives :\\nLes resultats sont heterogenes. Les capacites d\'exploration visuelle..."',
+    '   INTERDIT : Ne cree PAS un header en gras, en italique ou en prose separe pour introduire un domaine. Le titre EST dans le tiret.',
+    '   Chaque domaine peut contenir PLUSIEURS PARAGRAPHES si le contenu le justifie.',
     '   Pour chaque domaine :',
     '   1. Commence par les OBSERVATIONS FONCTIONNELLES : ce qui est preserve, ce qui est fragile, ce qui est deficitaire.',
     '   2. Decris les MANIFESTATIONS CONCRETES observees ou rapportees : "ce qui se manifeste par des sauts de ligne lors de la copie", "engendrant des confusions de lettres".',
     '   3. NE CITE AUCUN SCORE NI NOM DE TEST.',
+    '   4. PRESERVE LES OBSERVATIONS SPECIFIQUES : Si l\'ergotherapeute a note une observation precise sur une epreuve (ex: performance sur une epreuve particuliere, comportement specifique observe), integre ce detail en le reformulant. Ne generalise PAS un fait specifique en formulation vague.
     '',
     '   DOMAINES POSSIBLES (n\'utilise que ceux pour lesquels tu as des donnees) :',
     '   - "Sur le plan de la motricite fine et de la coordination bi-manuelle" : motricite fine, coordination bimanuelle, coordination oculo-manuelle. Decris ce qui est fonctionnel et ce qui est fragile.',
@@ -445,7 +461,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   - "Concernant l\'ecriture manuscrite" : Section la plus DETAILLEE. Developpe en PLUSIEURS PARAGRAPHES :',
     '     (a) Vitesse et qualite generale : ce qui est dans les normes, comment la qualite evolue avec l\'acceleration.',
     '     (b) Comportements associes observes : hesitations orthographiques, dependance visuelle au modele, rapport entre la pensee et le flux scriptural, effort cognitif soutenu generant de la fatigue.',
-    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main, mode de progression sur la ligne, prise de crayon. Decris en termes FONCTIONNELS et simples : "prise de stylo adequate, mais crispee et avec une forte pression" plutot que "prise tridigitale avec hyperflexion du pouce". Le parent doit comprendre. ANTI-INVENTION : Decris la prise du crayon UNIQUEMENT sur la base de ce que l\'ergotherapeute a ecrit dans les observations. Si la prise est notee "correcte", "adequate", "fonctionnelle" ou toute formulation positive, ecris simplement "la prise du crayon est fonctionnelle". NE DEDUIS PAS de details anatomiques absents (position du pouce, tension des doigts, angle du poignet, pression...) si l\'observation n\'en parle pas explicitement.',
+    '     (c) POSTURE D\'ECRITURE (paragraphe dedie) : lateralite, position du poignet et de la main, mode de progression sur la ligne, prise de crayon. Decris en termes FONCTIONNELS et simples : "prise de stylo adequate, mais crispee et avec une forte pression" plutot que "prise tridigitale avec hyperflexion du pouce". Le parent doit comprendre. ANTI-INVENTION ABSOLUE s\'appliquant a TOUTE LA POSTURE : Decris UNIQUEMENT ce que l\'ergotherapeute a ecrit dans les observations. Si un element de posture est note "correct", "adequate", "fonctionnel" ou toute formulation positive, dis-le explicitement ("la posture est correcte", "la prise du crayon est fonctionnelle"). NE DEDUIS AUCUN detail absent — ni pour la prise (position du pouce, tension des doigts, angle du poignet, pression), ni pour la posture du corps (position de la tete, courbure du dos, stabilite de l\'assise). Si ces elements ne figurent pas dans les observations, ne les mentionne pas.',
     '     (d) DOULEURS : localisation precise (doigts, main, poignet, epaule...), cotation si disponible (ex: "que {{PATIENT_PRENOM}} evalue a X/10 sur l\'echelle de la douleur").',
     '     (e) CONCLUSION INTEGRATIVE du graphisme : lien entre posture, effort, et endurance ("Bien que l\'ecrit reste fluide et fonctionnel, il exige un effort physique et cognitif couteux, limitant l\'endurance sur le long terme").',
     '   - "Sur le plan attentionnel" : si donnees disponibles.',
@@ -454,7 +470,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     '   PARAGRAPHE DE CONCLUSION (OBLIGATOIRE) :',
     '   Termine par un PARAGRAPHE FINAL CONCIS (hors tirets, 2-3 phrases) qui :',
-    '   1. Synthetise les enjeux fonctionnels principaux sans repeter les details deja mentionnes.',
+    '   1. Synthetise les enjeux fonctionnels GLOBAUX en couvrant TOUS les domaines deficitaires identifies dans le cas (AVQ, motricite globale, ecriture, autonomie, visuo-spatial...) — pas uniquement l\'ecriture. Si plusieurs domaines sont impactes, le mentionner explicitement.',
     '   2. Justifie la recommandation centrale de maniere directe ("est preconise" et NON "est vivement preconise"). Pas de qualificatifs restrictifs inutiles ("pour les travaux de redaction longs" → "pour les productions ecrites") sauf si c\'est le constat specifique du praticien.',
     '   Ce paragraphe ne cite aucun nouveau score. Il conclut et oriente.',
     '',
@@ -470,7 +486,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     `   Si un suivi en ergotherapie est recommande :`,
     `   - Commence par une phrase valorisant ${subjectLabel} ("jeune fille consciencieuse et appliquee", "enfant volontaire et investi(e)").`,
     `   - Precise la MODALITE de suivi : "je propose la mise en place de seances regulieres" OU "je propose la mise en place de seances ponctuelles, en si besoin" (adapte au niveau de necessite du suivi selon le diagnostique).`,
-    `   - Liste 1-3 axes de travail en tirets simples et concis.`,
+    `   - Liste 1-3 axes de travail en tirets simples et concis. REGLE ECRITURE : Pour les axes graphiques/scriptaux, inclus TOUJOURS "qualite" aux cotes de "lisibilite" et "vitesse" (ex: "pour ameliorer la lisibilite, la qualite et la vitesse lors des ecrits"). REGLE PREREQUIS : Si motricite fine/coordination ET reeducation graphique figurent tous deux, formule la motricite fine comme prerequis : "Travail de la motricite fine et de la coordination bi-manuelle pour favoriser la reeducation graphique."`,
     `   - OBLIGATOIRE : Termine par une phrase de REEVALUATION : "Une reevaluation des competences est preconisee tous les 6 mois, afin d'ajuster les objectifs du suivi en ergotherapie et de s'adapter au plus pres de l'evolution de {{PATIENT_PRENOM}}."`,
     `   Si le suivi n'est PAS recommande :`,
     `   - Dis-le clairement : "Un accompagnement en ergotherapie n'est pas preconise pour {{PATIENT_PRENOM}}."`,
@@ -479,9 +495,9 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   Commence par un en-tete adapte au contexte : "Adaptations pedagogiques recommandees :" (si contexte scolaire) ou "Adaptations recommandees :" (si autre contexte).',
     '   Puis 3-4 tirets concrets et DIRECTEMENT ACTIONNABLES.',
     '   Chaque recommandation doit pouvoir etre mise en oeuvre immediatement par l\'ecole ou la famille.',
-    '   SUGGESTIONS ERGONOMIQUES STANDARDS : Parmi les adaptations ci-dessous, inclus celles qui n\'auraient pas deja ete mentionnees par le praticien et qui sont pertinentes selon les observations :',
-    '   - Plan incline : a proposer si difficultes posturales d\'ecriture ou posture du buste problematique (facilite l\'angle d\'ecriture et la posture).',
-    '   - Assise dynamique (coussin a air) : a proposer si agitation motrice ou besoin de mouvement sont notes dans les observations.',
+    '   SUGGESTIONS ERGONOMIQUES STANDARDS : Inclus ces adaptations UNIQUEMENT si elles sont directement justifiees par les observations du praticien. NE PAS ajouter de maniere systematique si l\'observation correspondante est absente des notes cliniques.',
+    '   - Plan incline : A PROPOSER UNIQUEMENT si une problematique posturale est EXPLICITEMENT notee dans les observations (tete proche de la feuille, mauvaise posture du buste, dos voute...). Ne pas proposer si la posture est decrite comme correcte ou si elle n\'est pas mentionnee.',
+    '   - Assise dynamique (coussin a air) : A PROPOSER UNIQUEMENT si agitation motrice ou besoin de mouvement important sont EXPLICITEMENT notes dans les observations du praticien.'
     '   INTERDIT : recommandations vagues ("sensibilisation de l\'equipe"), recommandations materielles trop specifiques (noms de produits) sauf si justifie par les observations.',
     '   Si tout est normal, mentionne que l\'accompagnement n\'est pas necessaire.',
     '   STYLE : Formule LARGE et PRAGMATIQUE avec des exemples concrets entre parentheses. Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte.',
@@ -533,12 +549,25 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 
 // ── STYLE FEEDBACK EXTRACTION ──────────────────────
 
+// Structured style preferences: global rules + per-section rules
 const FEEDBACK_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
-    style_preferences: { type: 'STRING' as const, description: 'Liste consolidee de regles de style du praticien, en bullet points. Maximum 500 caracteres. Aucune donnee clinique ou patient.' },
+    global: { type: 'STRING' as const, description: 'Regles de style generales applicables a toutes les sections. Bullet points "-". Max 400 chars. Aucune donnee clinique.' },
+    sections: {
+      type: 'OBJECT' as const,
+      properties: {
+        mandat_ref:      { type: 'STRING' as const, description: 'Regles specifiques au Mandat de referencement. Bullet points. Max 200 chars. Vide si aucune correction sur cette section.' },
+        mandat_eval:     { type: 'STRING' as const, description: 'Regles specifiques au Mandat d evaluation. Bullet points. Max 200 chars.' },
+        profil:          { type: 'STRING' as const, description: 'Regles specifiques au Profil occupationnel. Bullet points. Max 200 chars.' },
+        diagnostic:      { type: 'STRING' as const, description: 'Regles specifiques a la Synthese diagnostique. Bullet points. Max 200 chars.' },
+        objectifs:       { type: 'STRING' as const, description: 'Regles specifiques aux Objectifs generaux. Bullet points. Max 200 chars.' },
+        project:         { type: 'STRING' as const, description: 'Regles specifiques au Projet d accompagnement. Bullet points. Max 200 chars.' },
+        recommandations: { type: 'STRING' as const, description: 'Regles specifiques aux Recommandations. Bullet points. Max 200 chars.' },
+      },
+    },
   },
-  required: ['style_preferences'],
+  required: ['global'],
 };
 
 const FEEDBACK_SYSTEM = `Tu es un assistant specialise dans l'analyse de style redactionnel pour des rapports d'ergotherapie.
@@ -550,43 +579,83 @@ REGLES ABSOLUES DE SECURITE DES DONNEES :
 - Tu extrais UNIQUEMENT des regles de STYLE et de FORMULATION abstraites et generiques.
 - Si tu detectes des donnees patient dans ta sortie, supprime-les immediatement.
 
-Ton role : comparer les textes originaux (generes par IA) avec les corrections du praticien pour en deduire des PREFERENCES DE STYLE ABSTRAITES.`;
+Ton role : comparer les textes originaux (generes par IA) avec les corrections du praticien pour en deduire des PREFERENCES DE STYLE ABSTRAITES, organisees par section de rapport.`;
 
 const buildFeedbackTask = (payload: Record<string, unknown>): BuildResult => {
   const diffs = payload.diffs as Array<{ sectionId: string; original: string; corrected: string }> || [];
-  const existingPreferences = String(payload.existingPreferences || '').trim();
+  // existingPreferences may be a JSON string (structured) or a plain string (legacy)
+  const existingPreferencesRaw = String(payload.existingPreferences || '').trim();
+  let existingGlobal = '';
+  let existingSections: Record<string, string> = {};
+  if (existingPreferencesRaw) {
+    try {
+      const parsed = JSON.parse(existingPreferencesRaw);
+      existingGlobal = String(parsed?.global || '');
+      existingSections = (parsed?.sections && typeof parsed.sections === 'object') ? parsed.sections as Record<string, string> : {};
+    } catch {
+      existingGlobal = existingPreferencesRaw; // legacy plain string → treat as global
+    }
+  }
 
   if (diffs.length === 0) throw new Error('No diffs provided');
 
-  const diffBlocks = diffs.map((d, i) =>
-    `--- Section ${i + 1} (${d.sectionId}) ---\nORIGINAL :\n${d.original}\n\nCORRIGE PAR LE PRATICIEN :\n${d.corrected}`
-  ).join('\n\n');
+  const SECTION_LABELS: Record<string, string> = {
+    mandat_ref: 'Mandat de referencement',
+    mandat_eval: "Mandat d'evaluation",
+    profil: 'Profil occupationnel',
+    diagnostic: 'Synthese diagnostique',
+    objectifs: 'Objectifs generaux',
+    project: "Projet d'accompagnement",
+    recommandations: 'Recommandations / Preconisations',
+  };
+
+  const diffBlocks = diffs.map((d) => {
+    const label = SECTION_LABELS[d.sectionId] || d.sectionId;
+    return `--- ${label} ---\nORIGINAL :\n${d.original}\n\nCORRIGE PAR LE PRATICIEN :\n${d.corrected}`;
+  }).join('\n\n');
+
+  const existingBlock = [
+    ...(existingGlobal ? [`PREFERENCES GENERALES EXISTANTES :\n${existingGlobal}`] : []),
+    ...Object.entries(existingSections)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `PREFERENCES EXISTANTES pour "${SECTION_LABELS[k] || k}" :\n${v}`),
+  ].join('\n\n');
 
   const userPrompt = [
     'REGLE DE SECURITE : Ne reproduis AUCUNE donnee clinique, medicale ou personnelle dans ta reponse. Extrais UNIQUEMENT des regles de style abstraites.',
     '',
-    ...(existingPreferences ? [
-      'PREFERENCES DE STYLE EXISTANTES (a consolider avec les nouvelles observations) :',
-      existingPreferences,
+    ...(existingBlock ? [
+      'PREFERENCES EXISTANTES (a consolider, pas de doublons, maximum 10 regles au total) :',
+      existingBlock,
       '',
     ] : []),
     'CORRECTIONS DU PRATICIEN (textes anonymises) :',
     diffBlocks,
     '',
-    'TACHE : Analyse les differences entre les textes originaux et corriges. Extrais des REGLES DE STYLE ABSTRAITES et GENERIQUES que le praticien prefere.',
+    'TACHE : Analyse les differences. Pour chaque correction, identifie la regle sous-jacente et classe-la dans :',
+    '- "global" : UNIQUEMENT pour les regles applicables a TOUTES les sections (ton, ponctuation, longueur de phrase, tendances stylistiques transversales).',
+    '- "sections.mandat_eval", "sections.diagnostic", etc. : pour les regles specifiques a UNE section (format, template de formule, contenu attendu, ordre des elements, regles de structure, conditions d\'ajout d\'un element).',
     '',
-    'EXEMPLES de bonnes regles :',
-    '- Prefere les phrases courtes et directes aux formulations litteraires.',
-    '- Utilise "sur demande de" plutot que "sur referencement de".',
-    '- Decrit les relations sociales avec nuance plutot que de generaliser.',
+    'EXEMPLES de bonnes regles globales :',
+    '- Prefere les phrases courtes et directes.',
     '- Evite les softeners inutiles ("globalement", "relativement").',
-    '- Prefere "prise de stylo crispee" a "prise tridigitale".',
+    '- Utilise "lorsque cela est possible" pour contextualiser les recommandations.',
+    '',
+    'EXEMPLES de bonnes regles de section (structurelles, de template et de contenu) :',
+    '- (mandat_eval) Commence toujours par "observer et d\'evaluer" plutot que simplement "evaluer" ou "analyser".',
+    '- (mandat_eval) Structure : capacites graphomotrices + facteurs sous-jacents (motricite fine, visuo-perceptives, exploration visuelle, bi-manuelle, oculo-manuelle) + phrase motricite globale si dans le perimetre du bilan.',
+    '- (diagnostic) Le titre de domaine figure dans le tiret lui-meme ("- Sur le plan de...:") suivi du corps en prose ; pas de header separe.',
+    '- (diagnostic) Preserves les observations cliniques specifiques telles que notees ; ne pas generaliser un fait precis.',
+    '- (project) Formule la motricite fine comme prerequis a la reeducation graphique quand les deux axes coexistent.',
+    '- (project) Inclure "qualite" en plus de "lisibilite" et "vitesse" pour les axes graphiques.',
+    '- (recommandations) Ne propose plan incline ou assise dynamique que si une problematique posturale ou un besoin de mouvement est explicitement note dans les observations.',
+    '- (mandat_ref) Mentionne le contexte PCO si present dans les donnees du dossier.',
     '',
     'EXEMPLES de MAUVAISES regles (A EVITER car elles contiennent des donnees patient) :',
-    '- "Pour Teyla, mentionner le bilan orthoptique" ← contient un prenom',
+    '- "Pour [prenom], mentionner le bilan orthoptique" ← contient un prenom',
     '- "Quand l\'enfant a des douleurs 6/10, le dire" ← contient des donnees cliniques',
     '',
-    'FORMAT : Retourne un JSON avec "style_preferences" contenant des bullet points (tirets "-"). Maximum 500 caracteres. Si des preferences existantes sont fournies, CONSOLIDE-les avec les nouvelles (pas de doublons, maximum 10 regles).',
+    'FORMAT : JSON avec "global" (string, bullet points, max 400 chars) et "sections" (objet, champs optionnels, max 200 chars chacun). Consolide avec les preferences existantes.',
   ].join('\n');
 
   return {
@@ -726,11 +795,19 @@ Deno.serve(async (req: Request) => {
         if (fbText) {
           try {
             const parsed = JSON.parse(fbText);
-            const prefs = String(parsed?.style_preferences || '').slice(0, 2000);
-            if (prefs.length > 0) {
-              // Persist to practitioners table (admin client bypasses RLS)
+            // Store structured JSON (global + sections) — serialize back to compact JSON string
+            const globalRules = String(parsed?.global || '').trim().slice(0, 400);
+            const sections = parsed?.sections && typeof parsed.sections === 'object' ? parsed.sections : {};
+            const cleanSections: Record<string, string> = {};
+            for (const [k, v] of Object.entries(sections)) {
+              const s = String(v || '').trim().slice(0, 200);
+              if (s) cleanSections[k] = s;
+            }
+            const hasContent = globalRules.length > 0 || Object.keys(cleanSections).length > 0;
+            if (hasContent) {
+              const structured = JSON.stringify({ global: globalRules, sections: cleanSections });
               await adminSupabase!.from('practitioners')
-                .update({ ai_style_preferences: prefs })
+                .update({ ai_style_preferences: structured })
                 .eq('id', userId);
             }
           } catch {

@@ -24,6 +24,36 @@ interface DiagResponse {
   reformulated_observations?: ReformulatedObsEntry[];
 }
 
+// Structured style preferences stored in practitioners.ai_style_preferences
+interface StylePrefs {
+  global: string;
+  sections: Partial<Record<string, string>>;
+}
+
+const parseStylePrefs = (raw: string | undefined): StylePrefs => {
+  if (!raw) return { global: '', sections: {} };
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      global: String(parsed?.global || '').trim(),
+      sections: (parsed?.sections && typeof parsed.sections === 'object') ? parsed.sections : {},
+    };
+  } catch {
+    // Legacy plain string → treat as global only
+    return { global: raw.trim(), sections: {} };
+  }
+};
+
+const buildStyleBlock = (prefs: StylePrefs, sectionIds: string[]): string => {
+  const parts: string[] = [];
+  if (prefs.global) parts.push(prefs.global);
+  for (const id of sectionIds) {
+    const s = prefs.sections[id];
+    if (s) parts.push(s);
+  }
+  return parts.join('\n');
+};
+
 export interface GenerationPayload {
   safeQuestionnaire: string;
   safeObservations: string;
@@ -52,6 +82,10 @@ export const AIService = {
     const ageYears = getAgeYears(patient.age);
     const profile = ageYears >= 20 ? 'adult' : 'pediatric';
 
+    const prefs = parseStylePrefs(payload.styleDirectives);
+    const bioDirectives = buildStyleBlock(prefs, ['mandat_ref', 'mandat_eval', 'profil']);
+    const diagDirectives = buildStyleBlock(prefs, ['diagnostic', 'objectifs', 'project', 'recommandations']);
+
     let sessionGenerationId: string | null = null;
 
     try {
@@ -61,7 +95,7 @@ export const AIService = {
           profile,
           childContext: payload.childContext,
           safeQuestionnaire: payload.safeQuestionnaire,
-          ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
+          ...(bioDirectives && { styleDirectives: bioDirectives }),
         },
       });
 
@@ -77,7 +111,7 @@ export const AIService = {
           safeObservations: payload.safeObservations,
           scoresEvidence: payload.scoresEvidence,
           synthesis: payload.synthesis,
-          ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
+          ...(diagDirectives && { styleDirectives: diagDirectives }),
         },
         generationId: sessionGenerationId ?? undefined,
       });

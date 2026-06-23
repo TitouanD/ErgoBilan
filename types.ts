@@ -77,6 +77,7 @@ export interface Patient {
     sleep?: string;
     sleepStatus?: string;
     sensory: string;
+    sensoryNotes?: string;
     meals: string;
     eatingHabits?: string;
     dressing: string;
@@ -632,83 +633,6 @@ export interface GeneratedReportSection {
     isAiGenerated: true;
 }
 
-/** AI extraction response from ContributionStudio image processing */
-export interface AIExtractedNormRow {
-    raw_range?: string;
-    standard?: string;
-    mean?: string;
-    sd?: string;
-    z_score?: string;
-    percentile?: string;
-    group_label?: string;
-    age_min_months?: number | null;
-    age_max_months?: number | null;
-    raw_min?: number | null;
-    raw_max?: number | null;
-}
-
-export interface AIExtractedTable {
-    subtest_id?: string;
-    /** Original column abbreviation as printed in the image (e.g. 'MF', 'MFDC') */
-    source_abbreviation?: string;
-    rows: AIExtractedNormRow[];
-}
-
-export interface AIExtractionResult {
-    test_context?: string;
-    structure_type?: 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION';
-    page_age_min?: number | null;
-    page_age_max?: number | null;
-    tables?: AIExtractedTable[];
-}
-
-export interface ExtractionRepairFocusSubtest {
-    name: string;
-    abbreviation?: string | null;
-    domain?: string | null;
-    columnOrder?: number | null;
-    isInverted?: boolean | null;
-}
-
-export interface ExtractionRepairExpectedGroupCount {
-    groupLabel: string;
-    expectedCount: number;
-}
-
-export interface ExtractionRepairRequest {
-    focusSubtests: ExtractionRepairFocusSubtest[];
-    expectedGroupCounts: ExtractionRepairExpectedGroupCount[];
-    includeNeighborColumns: boolean;
-    existingSubtests: string[];
-    dominantAgeMin?: number | null;
-    dominantAgeMax?: number | null;
-}
-
-export interface ExtractionUncertaintyLowCoverageColumn {
-    column: string;
-    extractedRows: number;
-    medianRows: number;
-}
-
-export interface ExtractionUncertaintyFlags {
-    emptyExtractedColumns?: string[];
-    lowCoverageColumns?: ExtractionUncertaintyLowCoverageColumn[];
-    inventoryCoverageRatio?: number;
-}
-
-export interface ExtractionCallMeta {
-    strategy: string;
-    apiCalls: number;
-    repairedSubtests?: string[];
-    inventoryMode?: 'off' | 'conditional' | 'required';
-    inventoryColumnCount?: number;
-    isInvertedLookup?: boolean;
-    expectedSourceColumns?: string[];
-    missingSourceColumns?: string[];
-    expectedSourceColumnCount?: number;
-    uncertaintyFlags?: ExtractionUncertaintyFlags;
-    confidenceScore?: number;
-}
 
 // ── Deduplication types ──
 

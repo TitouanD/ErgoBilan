@@ -3,14 +3,13 @@
  *
  * Exports all PHI from IndexedDB as a plain JSON `.ergobilan` file that the
  * practitioner downloads to their device. Importing merges the bundle back
- * into IndexedDB (upsert by UUID for patients/assessments/followups, replace
- * by [userId+patientId] for auto-increment drafts).
+ * into the practitioner's own scoped IndexedDB.
  *
  * ⚠️ The file is NOT encrypted — practitioners are responsible for keeping it
  *    safe (same as any local backup). Future: optional PIN-based AES-GCM wrap.
  */
 
-import { localDB, type LocalPatientRow, type LocalDraftRow, type LocalAssessmentRow, type LocalFollowupRow } from './localDB';
+import { getLocalDB, type LocalPatientRow, type LocalDraftRow, type LocalAssessmentRow, type LocalFollowupRow } from './localDB';
 
 // ─── Bundle format ─────────────────────────────────────────────────────────────
 
@@ -19,7 +18,6 @@ const BUNDLE_VERSION = 1;
 export interface ErgoExportBundle {
   version: typeof BUNDLE_VERSION;
   exportedAt: string; // ISO timestamp
-  userId: string;
   patients: LocalPatientRow[];
   drafts: Omit<LocalDraftRow, 'id'>[]; // id stripped — auto-increment on import
   assessments: LocalAssessmentRow[];
@@ -37,31 +35,27 @@ export interface ImportResult {
 
 export const ExportService = {
   /**
-   * Export all PHI owned by `userId` as a `.ergobilan` JSON file download.
+   * Export all PHI for `userId` as a `.ergobilan` JSON file download.
+   * Uses the per-user scoped DB — no cross-user data can be included.
    */
   async exportAll(userId: string): Promise<void> {
-    const allDrafts = await localDB.drafts.toArray();
-    const userDrafts = allDrafts.filter((d) => d.userId === userId);
+    const db = getLocalDB(userId);
 
-    const [patients, assessments, followups] = await Promise.all([
-      localDB.patients.where('userId').equals(userId).toArray(),
-      localDB.assessments.where('userId').equals(userId).toArray(),
-      localDB.followups.toArray(),
+    const [patients, draftsRaw, assessments, followups] = await Promise.all([
+      db.patients.toArray(),
+      db.drafts.toArray(),
+      db.assessments.toArray(),
+      db.followups.toArray(),
     ]);
-
-    // Followups don't have a userId column — filter via patient ownership
-    const ownedPatientIds = new Set(patients.map((p) => p.id));
-    const userFollowups = followups.filter((f) => ownedPatientIds.has(f.patientId));
 
     const bundle: ErgoExportBundle = {
       version: BUNDLE_VERSION,
       exportedAt: new Date().toISOString(),
-      userId,
       patients,
       // Strip auto-increment id so Dexie can assign fresh keys on import
-      drafts: userDrafts.map(({ id: _id, ...rest }) => rest),
+      drafts: draftsRaw.map(({ id: _id, ...rest }) => rest),
       assessments,
-      followups: userFollowups,
+      followups,
     };
 
     const json = JSON.stringify(bundle, null, 2);
@@ -79,9 +73,9 @@ export const ExportService = {
   },
 
   /**
-   * Import a `.ergobilan` bundle file.
+   * Import a `.ergobilan` bundle file into the current user's scoped DB.
    * - patients/assessments/followups: upsert by UUID (safe merge)
-   * - drafts: delete existing for affected [userId+patientId] pairs, then re-add
+   * - drafts: delete existing for affected patientIds, then re-add
    *
    * @returns counts of imported rows per table
    */
@@ -108,25 +102,26 @@ export const ExportService = {
     const assessments = bundle.assessments ?? [];
     const followups = bundle.followups ?? [];
 
-    await localDB.transaction(
+    const db = getLocalDB(currentUserId);
+
+    await db.transaction(
       'rw',
-      [localDB.patients, localDB.drafts, localDB.assessments, localDB.followups],
+      [db.patients, db.drafts, db.assessments, db.followups],
       async () => {
         // Upsert by UUID
-        if (patients.length) await localDB.patients.bulkPut(patients);
-        if (assessments.length) await localDB.assessments.bulkPut(assessments);
-        if (followups.length) await localDB.followups.bulkPut(followups);
+        if (patients.length) await db.patients.bulkPut(patients);
+        if (assessments.length) await db.assessments.bulkPut(assessments);
+        if (followups.length) await db.followups.bulkPut(followups);
 
-        // Drafts: delete existing rows that the bundle would overwrite, then re-add
+        // Drafts: delete existing rows for the imported patientIds, then re-add
         if (drafts.length) {
-          const allExisting = await localDB.drafts.toArray();
           const importedPatientIds = new Set(drafts.map((d) => d.patientId));
-          const toDelete = allExisting
-            .filter((d) => d.userId === currentUserId && importedPatientIds.has(d.patientId))
+          const toDelete = (await db.drafts.toArray())
+            .filter((d) => importedPatientIds.has(d.patientId))
             .map((d) => d.id!);
 
-          if (toDelete.length) await localDB.drafts.bulkDelete(toDelete);
-          await localDB.drafts.bulkAdd(drafts as LocalDraftRow[]);
+          if (toDelete.length) await db.drafts.bulkDelete(toDelete);
+          await db.drafts.bulkAdd(drafts as LocalDraftRow[]);
         }
       },
     );
@@ -143,7 +138,7 @@ export const ExportService = {
    * Validate that a File looks like a valid `.ergobilan` bundle without importing.
    * Useful for showing a preview before confirming the import.
    */
-  async peekBundle(file: File): Promise<Pick<ErgoExportBundle, 'exportedAt' | 'userId'> & ImportResult> {
+  async peekBundle(file: File): Promise<Pick<ErgoExportBundle, 'exportedAt'> & ImportResult> {
     let bundle: ErgoExportBundle;
     try {
       bundle = JSON.parse(await file.text()) as ErgoExportBundle;
@@ -155,7 +150,6 @@ export const ExportService = {
     }
     return {
       exportedAt: bundle.exportedAt,
-      userId: bundle.userId,
       patients: (bundle.patients ?? []).length,
       assessments: (bundle.assessments ?? []).length,
       drafts: (bundle.drafts ?? []).length,

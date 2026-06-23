@@ -13,8 +13,8 @@ interface Props {
     tests: TestData;
     onUpdateSection?: (sectionId: string, updates: Partial<ReportSection>) => void;
     branding?: BrandingConfig;
-    scoreDisplayModes?: Record<string, 'Brut' | 'NS' | 'ET' | '%'>;
-    onScoreDisplayModeChange?: (modes: Record<string, 'Brut' | 'NS' | 'ET' | '%'>) => void;
+    scoreDisplayModes?: Record<string, 'NS' | 'ET' | '%'>;
+    onScoreDisplayModeChange?: (modes: Record<string, 'NS' | 'ET' | '%'>) => void;
     chartType?: 'radar' | 'bar' | 'percentile';
     onChartTypeChange?: (type: 'radar' | 'bar' | 'percentile') => void;
     isPerformance?: boolean;
@@ -519,21 +519,21 @@ const AddPageMenu: React.FC<{ onAddBlank: () => void; onAddEcole: () => void }> 
 
 // ScoreSelector component
 const ScoreSelector: React.FC<{
-    selected: 'Brut' | 'NS' | 'ET' | '%';
-    onChange: (mode: 'Brut' | 'NS' | 'ET' | '%') => void;
+    selected: 'NS' | 'ET' | '%';
+    onChange: (mode: 'NS' | 'ET' | '%') => void;
     isPrint: boolean;
 }> = ({ selected, onChange, isPrint }) => {
     if (isPrint) {
         return <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">Score ({selected})</span>;
     }
 
-    const modes: Array<'Brut' | 'NS' | 'ET' | '%'> = ['Brut', 'NS', 'ET', '%'];
+    const modes: Array<'NS' | 'ET' | '%'> = ['NS', 'ET', '%'];
 
     return (
         <div className="relative inline-block text-left no-print">
             <select
                 value={selected}
-                onChange={(e) => onChange(e.target.value as 'Brut' | 'NS' | 'ET' | '%')}
+                onChange={(e) => onChange(e.target.value as 'NS' | 'ET' | '%')}
                 className="block w-full pl-3 pr-8 py-1 text-xs font-bold text-[var(--text-main)] bg-[var(--input-bg)] border border-[var(--input-border)] rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] sm:text-sm cursor-pointer"
             >
                 {modes.map(mode => (
@@ -811,7 +811,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         const qualitativeSubtests = enrichedSubtests.filter((item) => item.isQualitative);
                         const hasScoreableSubtests = quantitativeSubtests.some((item) => item.isScoreable);
 
-                        const currentMode = scoreDisplayModes?.[testId] || (hasScoreableSubtests ? 'ET' : 'Brut');
+                        const currentMode = scoreDisplayModes?.[testId] || 'ET';
                         const showSelector = hasScoreableSubtests;
 
                         // Custom observations: simple card layout (no score table)
@@ -867,13 +867,11 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                                         const colorClass = isPathological ? "text-[var(--primary)] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
 
                                                         let displayScore: string | number = '-';
-                                                        if (currentMode === 'Brut') displayScore = result.raw || '-';
-                                                        else if (currentMode === 'NS') displayScore = isScoreable ? (result.standard || '-') : '-';
-                                                        else if (currentMode === 'ET') displayScore = (isScoreable && z !== null) ? (z > 0 ? '+' : '') + z.toFixed(2) + ' ET' : '-';
-                                                        else if (currentMode === '%') displayScore = (isScoreable && result.percentile !== undefined && result.percentile !== null) ? result.percentile + '%' : '-';
+                                        if (currentMode === 'NS') displayScore = isScoreable ? (result.standard || '-') : '-';
+                                        else if (currentMode === 'ET') displayScore = (isScoreable && z !== null) ? (z > 0 ? '+' : '') + z.toFixed(2) + ' ET' : '-';
+                                        else if (currentMode === '%') displayScore = (isScoreable && result.percentile !== undefined && result.percentile !== null) ? result.percentile + '%' : '-';
 
-                                                        if (!isScoreable && currentMode !== 'Brut') displayScore = '-';
-
+                                        if (!isScoreable) displayScore = '-';
                                                         return (
                                                             <tr key={subId} className="border-b border-stone-50 last:border-0 align-top">
                                                                 <td className="py-3 pr-4 font-medium">• {subDef?.displayName || subDef?.name}</td>

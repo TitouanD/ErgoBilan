@@ -118,6 +118,30 @@ export const useLinkManager = ({
   }, [isDemoMode, sessionKey, practitioner, pendingQuestionnaires, setPendingQuestionnaires, toast, tryCopyLink]);
 
   // ------------------------------------------------------------------
+  // Delete a pending questionnaire (suppression en DB)
+  // ------------------------------------------------------------------
+  const handleDeletePending = useCallback(
+    async (q: PendingQuestionnaire): Promise<void> => {
+      // Optimistic removal first
+      setPendingQuestionnaires((prev) => prev.filter((item) => item.id !== q.id));
+
+      if (isDemoMode) return;
+
+      const { error } = await supabase
+        .from('pending_questionnaires')
+        .delete()
+        .eq('id', q.id);
+
+      if (error) {
+        // Rollback on failure
+        setPendingQuestionnaires((prev) => [q, ...prev]);
+        toast.error('Erreur lors de la suppression.');
+      }
+    },
+    [isDemoMode, setPendingQuestionnaires, toast],
+  );
+
+  // ------------------------------------------------------------------
   // Copy an existing link
   // ------------------------------------------------------------------
   const handleCopyLink = useCallback(
@@ -149,5 +173,6 @@ export const useLinkManager = ({
   return {
     handleGenerateLink,
     handleCopyLink,
+    handleDeletePending,
   };
 };

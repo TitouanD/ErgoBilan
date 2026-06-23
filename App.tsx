@@ -40,7 +40,7 @@ const Step4Validation = React.lazy(() => import('./components/assessment/Step4Va
 const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
 
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then(module => ({ default: module.AdminPanel })));
-const ContributionStudio = React.lazy(() => import('./components/admin/ContributionStudio').then(module => ({ default: module.ContributionStudio })));
+
 const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEditor').then(module => ({ default: module.ProfileEditor })));
 const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then(module => ({ default: module.OnboardingExperience })));
 
@@ -69,7 +69,8 @@ const AppRouter = () => {
     const toast = useToast();
 
     // --- UI mode / navigation ---
-    const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'contribution' | 'detail' | 'profile'>('landing');
+    const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile'>('landing');
+    const [previousMode, setPreviousMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'>('dashboard');
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authMode, setAuthMode] = useState<'login' | 'register' | 'confirm_email'>('login');
     const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('');
@@ -102,7 +103,7 @@ const AppRouter = () => {
         assessment, sessionKey, isDemoMode, catalog, refreshProfile, patientFiles, loadData, toast,
     });
 
-    const { handleGenerateLink, handleCopyLink } = useLinkManager({
+    const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
         sessionKey, practitioner, isDemoMode, pendingQuestionnaires, setPendingQuestionnaires, toast,
     });
 
@@ -237,7 +238,7 @@ const AppRouter = () => {
     };
     const handleStartDemo = async () => { await startDemo(); setShowOnboarding(true); };
     const handleAdminAccess = async () => { const allowed = await verifyAdminAccess(); if (allowed) setMode('admin'); else toast.error("Accès refusé par le serveur."); };
-    const handleContributionAccess = () => { if (isDemoMode) { setDemoConversion({ show: true, action: "La contribution" }); return; } if (userProfile.subscriptionPlan === 'free') { setPricingModalMode('plans'); return; } setMode('contribution'); };
+
 
     const onTriggerGeneration = useCallback(async () => { setShowConfirmGeneration(false); await handleGenerateReport(); }, [handleGenerateReport]);
 
@@ -510,10 +511,8 @@ const AppRouter = () => {
                                             <p className="text-xs text-[var(--text-light)] truncate">{userProfile.email}</p>
                                         </div>
 
-                                        <button onClick={() => { setShowAccountMenu(false); handleContributionAccess(); }} className="w-full mt-1 px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
-                                            <FilePlus size={14} /> Créer un test
-                                        </button>
-                                        <button onClick={() => { setShowAccountMenu(false); setMode('profile'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
+
+                                        <button onClick={() => { setShowAccountMenu(false); setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <User size={14} /> Mon Profil
                                         </button>
                                         <button onClick={() => { setShowAccountMenu(false); setPricingModalMode('plans'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
@@ -576,6 +575,7 @@ const AppRouter = () => {
                             onResumeDraft={onResumeDraft}
                             isDemoMode={isDemoMode}
                             onCopyLink={handleCopyLink}
+                            onDeletePending={handleDeletePending}
                             hasMorePatients={hasMorePatients}
                             isLoadingMorePatients={isLoadingMorePatients}
                             onLoadMorePatients={loadMorePatients}
@@ -626,9 +626,9 @@ const AppRouter = () => {
                     )}
                     {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
                     {mode === 'portal' && <PatientPortal onBack={() => setMode('landing')} initialUrl={portalInitialUrl} />}
-                    {mode === 'contribution' && <ContributionStudio onClose={() => setMode('dashboard')} onSubmit={() => { }} />}
 
-                    {mode === 'profile' && <ProfileEditor onClose={() => setMode(assessment?.patient ? 'assessment' : 'dashboard')} />}
+
+                    {mode === 'profile' && <ProfileEditor onClose={() => setMode(previousMode)} />}
 
                     {/* --- WORKFLOW ASSESSMENT MISE À JOUR (FLUID FLOW 5 ÉTAPES) --- */}
                     {mode === 'assessment' && (
@@ -649,7 +649,6 @@ const AppRouter = () => {
                                     updateObservations={assessment.updateObservations}
                                     onNext={() => assessment.setStep(3)} // Vers Diagnostic
                                     onBack={() => assessment.setStep(1)}
-                                    onContribute={handleContributionAccess}
                                     userProfile={userProfile}
                                 />
                             )}
@@ -686,7 +685,7 @@ const AppRouter = () => {
                                     onBack={() => assessment.setStep(4)}
                                     isDemoMode={isDemoMode}
                                     onDemoConvert={(action) => setDemoConversion({ show: true, action })}
-                                    onOpenProfile={() => setMode('profile')}
+                                    onOpenProfile={() => { setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }}
                                 />
                             )}
                         </div>

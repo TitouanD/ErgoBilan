@@ -118,7 +118,7 @@ export const usePendingProcessor = ({
         setProcessingQueueId(null);
       }
     },
-    [sessionKey, orgKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast],
+    [sessionKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast],
   );
 
   return { processingQueueId, handleProcessPending };

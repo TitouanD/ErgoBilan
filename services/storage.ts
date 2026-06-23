@@ -13,9 +13,17 @@
  * from AuthContext after PIN unlock.
  */
 
-import Dexie from 'dexie';
-import { localDB } from './localDB';
+import { getLocalDB, migrateLegacyDB } from './localDB';
 import type { LocalFollowupRow } from './localDB';
+
+// ─── Scoped DB accessor ────────────────────────────────────────────────────────
+// Initialised in setCurrentUser(). All PHI operations must go through _localDB.
+let _localDB: ReturnType<typeof getLocalDB> | null = null;
+
+const db = (): ReturnType<typeof getLocalDB> => {
+  if (!_localDB) throw new Error('StorageService: setCurrentUser() must be called before any PHI operation');
+  return _localDB;
+};
 import type {
   DashboardDraftMeta,
   DraftPayload,
@@ -73,6 +81,7 @@ const createEmptyPatient = (): Patient => ({
   developmentLanguage: '',
   sleep: '',
   sensory: '',
+  sensoryNotes: '',
   crawlingFourPattes: '',
   crawlingRamper: '',
   meals: '',
@@ -327,7 +336,10 @@ export const StorageService = {
   /** Call this immediately after PIN unlock in AuthContext. */
   setCurrentUser: (userId: string) => {
     _currentUserId = userId;
+    _localDB = getLocalDB(userId);
     Logger.info('DB', `StorageService context set — user: ${userId}`);
+    // Fire-and-forget: migrate legacy global ErgoBilanDB rows for this user
+    migrateLegacyDB(userId, _localDB).catch(() => {/* already logged inside */});
   },
 
   setDemoMode: (active: boolean) => {
@@ -345,9 +357,8 @@ export const StorageService = {
     const normalizedPatient = normalizePatientIdentity(patientData);
     const now = new Date().toISOString();
 
-    await localDB.patients.add({
+    await db().patients.add({
       id,
-      userId: _currentUserId,
       patient: { ...normalizedPatient, id },
       archived: false,
       lastInteraction: now,
@@ -371,7 +382,7 @@ export const StorageService = {
   syncPatientIdentityPreview: async (patientId: string, patientData: Patient): Promise<void> => {
     if (_isDemoMode) return;
 
-    const existing = await localDB.patients.get(patientId);
+    const existing = await db().patients.get(patientId);
     if (!existing) {
       Logger.warn('DB', `syncPatientIdentityPreview: patient ${patientId} not found`);
       return;
@@ -382,7 +393,7 @@ export const StorageService = {
       buildPreviewPayload(normalizedPatient, { archived: existing.archived, assessments: [] }),
     );
 
-    await localDB.patients.update(patientId, {
+    await db().patients.update(patientId, {
       patient: { ...normalizedPatient, id: patientId },
       previewMeta,
       updatedAt: new Date().toISOString(),
@@ -399,15 +410,12 @@ export const StorageService = {
     if (!patientId) return;
 
     const now = new Date().toISOString();
-    const existing = await localDB.drafts
-      .where('[userId+patientId]')
-      .equals([_currentUserId, patientId])
-      .first();
+    const existing = await db().drafts.where('patientId').equals(patientId).first();
 
     if (existing?.id !== undefined) {
-      await localDB.drafts.update(existing.id, { draftData, updatedAt: now });
+      await db().drafts.update(existing.id, { draftData, updatedAt: now });
     } else {
-      await localDB.drafts.add({ userId: _currentUserId, patientId, draftData, updatedAt: now });
+      await db().drafts.add({ patientId, draftData, updatedAt: now });
     }
   },
 
@@ -415,10 +423,7 @@ export const StorageService = {
     if (_isDemoMode) return {};
     if (!_currentUserId) return {};
 
-    const rows = await localDB.drafts
-      .where('[userId+patientId]')
-      .between([_currentUserId, Dexie.minKey], [_currentUserId, Dexie.maxKey])
-      .toArray();
+    const rows = await db().drafts.toArray();
 
     const map: Record<string, DashboardDraftMeta> = {};
     for (const row of rows) {
@@ -435,11 +440,7 @@ export const StorageService = {
     if (!_currentUserId) return null;
 
     const pid = patientId ?? '';
-    const row = await localDB.drafts
-      .where('[userId+patientId]')
-      .equals([_currentUserId, pid])
-      .first();
-
+    const row = await db().drafts.where('patientId').equals(pid).first();
     return row?.draftData ?? null;
   },
 
@@ -448,7 +449,7 @@ export const StorageService = {
     if (!_currentUserId) return;
 
     const pid = patientId ?? '';
-    await localDB.drafts.where('[userId+patientId]').equals([_currentUserId, pid]).delete();
+    await db().drafts.where('patientId').equals(pid).delete();
   },
 
   // ── Full patient file save ────────────────────────────────────────────────
@@ -462,7 +463,7 @@ export const StorageService = {
       buildPreviewPayload(normalizedPatient, { archived: file.archived, assessments: file.assessments }),
     );
 
-    await localDB.patients.update(file.id, {
+    await db().patients.update(file.id, {
       patient: { ...normalizedPatient, id: file.id },
       archived: file.archived ?? false,
       lastInteraction: file.lastInteraction,
@@ -475,7 +476,6 @@ export const StorageService = {
       const assessmentRows = file.assessments.map((a) => ({
         id: a.id || crypto.randomUUID(),
         patientId: file.id!,
-        userId: _currentUserId,
         kind: a.kind,
         hasFormalReport: a.hasFormalReport,
         date: a.date,
@@ -484,7 +484,7 @@ export const StorageService = {
         report: a.report,
         createdAt: now,
       }));
-      await localDB.assessments.bulkPut(assessmentRows);
+      await db().assessments.bulkPut(assessmentRows);
     }
   },
 
@@ -517,8 +517,8 @@ export const StorageService = {
     const offset = options?.offset ?? 0;
 
     const allRows = (
-      await localDB.patients.where('userId').equals(_currentUserId).sortBy('lastInteraction')
-    ).reverse();
+      await db().patients.orderBy('lastInteraction').reverse().toArray()
+    );
 
     const page = allRows.slice(offset, offset + pageSize + 1);
     const hasMore = page.length > pageSize;
@@ -527,7 +527,7 @@ export const StorageService = {
     const patientIds = pageRows.map((r) => r.id);
     const followupRows =
       patientIds.length > 0
-        ? await localDB.followups.where('patientId').anyOf(patientIds).toArray()
+        ? await db().followups.where('patientId').anyOf(patientIds).toArray()
         : [];
     const followupByPatientId = new Map(followupRows.map((f) => [f.patientId, mapLocalFollowupRow(f)]));
 
@@ -551,10 +551,10 @@ export const StorageService = {
   ): Promise<PatientFile | null> => {
     if (_isDemoMode) return null;
 
-    const row = await localDB.patients.get(patientId);
+    const row = await db().patients.get(patientId);
     if (!row) return null;
 
-    const followupRow = await localDB.followups.where('patientId').equals(patientId).first();
+    const followupRow = await db().followups.where('patientId').equals(patientId).first();
 
     return {
       id: row.id,
@@ -581,7 +581,7 @@ export const StorageService = {
     const assessmentLimit = options?.assessmentLimit ?? ASSESSMENTS_PAGE_SIZE;
 
     const allRows = (
-      await localDB.assessments.where('patientId').equals(patientId).sortBy('date')
+      await db().assessments.where('patientId').equals(patientId).sortBy('date')
     ).reverse();
 
     const page = allRows.slice(assessmentOffset, assessmentOffset + assessmentLimit + 1);
@@ -634,7 +634,7 @@ export const StorageService = {
       };
     }
 
-    const row = await localDB.patients.get(patientId);
+    const row = await db().patients.get(patientId);
     if (!row) throw new Error('Patient introuvable.');
 
     const history = await StorageService.loadPatientHistoryPage(patientId, {
@@ -642,7 +642,7 @@ export const StorageService = {
       assessmentLimit: options?.assessmentLimit,
     });
 
-    const followupRow = await localDB.followups.where('patientId').equals(patientId).first();
+    const followupRow = await db().followups.where('patientId').equals(patientId).first();
 
     return {
       assessments: history.assessments,
@@ -657,10 +657,10 @@ export const StorageService = {
 
   deleteFile: async (id: string): Promise<void> => {
     if (_isDemoMode) return;
-    await localDB.assessments.where('patientId').equals(id).delete();
-    await localDB.drafts.where('[userId+patientId]').equals([_currentUserId, id]).delete();
-    await localDB.followups.where('patientId').equals(id).delete();
-    await localDB.patients.delete(id);
+    await db().assessments.where('patientId').equals(id).delete();
+    await db().drafts.where('patientId').equals(id).delete();
+    await db().followups.where('patientId').equals(id).delete();
+    await db().patients.delete(id);
   },
 
   toggleArchive: async (file: PatientFile): Promise<void> => {
@@ -672,7 +672,7 @@ export const StorageService = {
 
   getPatientFollowup: async (patientId: string): Promise<PatientFollowup | null> => {
     if (_isDemoMode) return null;
-    const row = await localDB.followups.where('patientId').equals(patientId).first();
+    const row = await db().followups.where('patientId').equals(patientId).first();
     return row ? mapLocalFollowupRow(row) : null;
   },
 
@@ -686,10 +686,10 @@ export const StorageService = {
     if (_isDemoMode) return;
 
     const now = new Date().toISOString();
-    const existing = await localDB.followups.where('patientId').equals(input.patientId).first();
+    const existing = await db().followups.where('patientId').equals(input.patientId).first();
 
     if (existing) {
-      await localDB.followups.update(existing.id, {
+      await db().followups.update(existing.id, {
         status: input.status,
         dueAt: input.dueAt,
         snoozedUntil: input.snoozedUntil ?? null,
@@ -697,7 +697,7 @@ export const StorageService = {
         updatedAt: now,
       });
     } else {
-      await localDB.followups.add({
+      await db().followups.add({
         id: crypto.randomUUID(),
         patientId: input.patientId,
         status: input.status,
@@ -712,9 +712,9 @@ export const StorageService = {
 
   markFollowupCompleted: async (patientId: string): Promise<void> => {
     if (_isDemoMode) return;
-    const existing = await localDB.followups.where('patientId').equals(patientId).first();
+    const existing = await db().followups.where('patientId').equals(patientId).first();
     if (!existing) return;
-    await localDB.followups.update(existing.id, {
+    await db().followups.update(existing.id, {
       status: 'completed',
       snoozedUntil: null,
       updatedAt: new Date().toISOString(),
@@ -723,9 +723,9 @@ export const StorageService = {
 
   snoozeFollowup: async (patientId: string, until: string): Promise<void> => {
     if (_isDemoMode) return;
-    const existing = await localDB.followups.where('patientId').equals(patientId).first();
+    const existing = await db().followups.where('patientId').equals(patientId).first();
     if (!existing) return;
-    await localDB.followups.update(existing.id, {
+    await db().followups.update(existing.id, {
       status: 'snoozed',
       snoozedUntil: until,
       updatedAt: new Date().toISOString(),

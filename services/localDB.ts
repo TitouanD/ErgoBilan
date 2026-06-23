@@ -4,6 +4,10 @@
  *   patients, drafts, patient_assessments, patient_followups
  *
  * Supabase is still used for: auth, subscriptions, catalogue, portal questionnaires.
+ *
+ * Each practitioner gets a fully isolated database named `ErgoBilanDB_${userId}`.
+ * Isolation is enforced at the DB level — no userId/orgId filtering in queries.
+ * Organization info is non-medical and belongs on Supabase (practitioner profile only).
  */
 
 import Dexie, { type Table } from 'dexie';
@@ -16,18 +20,15 @@ import type {
 } from '../types';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
+// Note: no userId or organizationId — isolation is enforced by the per-user DB name.
 
 export interface LocalPatientRow {
   /** UUID generated client-side via crypto.randomUUID() */
   id: string;
-  /** Supabase auth.users.id of the practitioner who owns this patient */
-  userId: string;
-  /** Organization ID (reserved for future multi-practitioner cabinet feature) */
-  organizationId?: string;
   patient: Patient;
   archived: boolean;
   lastInteraction: string; // ISO timestamp
-  /** Computed preview metadata for dashboard cards (no decryption needed) */
+  /** Computed preview metadata for dashboard cards */
   previewMeta?: PatientDashboardPreviewMeta;
   createdAt: string;
   updatedAt: string;
@@ -36,7 +37,6 @@ export interface LocalPatientRow {
 export interface LocalDraftRow {
   /** Auto-incremented primary key */
   id?: number;
-  userId: string;
   patientId: string;
   draftData: DraftPayload;
   updatedAt: string;
@@ -46,8 +46,6 @@ export interface LocalAssessmentRow {
   /** UUID generated client-side */
   id: string;
   patientId: string;
-  organizationId?: string;
-  userId: string;
   kind: PatientAssessment['kind'];
   hasFormalReport: boolean;
   date: string; // ISO timestamp
@@ -62,7 +60,6 @@ export interface LocalFollowupRow {
   id: string;
   /** Unique per patient */
   patientId: string;
-  organizationId?: string;
   status: PatientFollowupStatus;
   dueAt: string;
   snoozedUntil?: string | null;
@@ -79,19 +76,114 @@ class ErgoBilanDB extends Dexie {
   assessments!: Table<LocalAssessmentRow>;
   followups!: Table<LocalFollowupRow>;
 
-  constructor() {
-    super('ErgoBilanDB');
+  constructor(userId: string) {
+    super(`ErgoBilanDB_${userId}`);
     this.version(1).stores({
-      // patients: indexed by userId (multi-entry queries) + lastInteraction (sort)
-      patients: 'id, userId, organizationId, lastInteraction, archived',
-      // drafts: auto-increment PK + compound index for user+patient lookup
-      drafts: '++id, [userId+patientId], updatedAt',
-      // assessments: indexed by patientId for history queries
-      assessments: 'id, patientId, userId, date',
-      // followups: patientId is unique (one followup per patient)
+      patients: 'id, lastInteraction, archived',
+      drafts: '++id, patientId, updatedAt',
+      assessments: 'id, patientId, date',
       followups: 'id, &patientId',
     });
   }
 }
 
-export const localDB = new ErgoBilanDB();
+// ─── Per-user instance cache ──────────────────────────────────────────────────
+
+const _dbCache = new Map<string, ErgoBilanDB>();
+
+export function getLocalDB(userId: string): ErgoBilanDB {
+  let db = _dbCache.get(userId);
+  if (!db) {
+    db = new ErgoBilanDB(userId);
+    _dbCache.set(userId, db);
+  }
+  return db;
+}
+
+// ─── Legacy migration ─────────────────────────────────────────────────────────
+
+/**
+ * Minimal Dexie wrapper for the old global `ErgoBilanDB` (v1 schema).
+ * Used only during one-time migration — never instantiated otherwise.
+ */
+class LegacyErgoBilanDB extends Dexie {
+  patients!: Table<Record<string, unknown>>;
+  drafts!: Table<Record<string, unknown>>;
+  assessments!: Table<Record<string, unknown>>;
+  followups!: Table<Record<string, unknown>>;
+
+  constructor() {
+    super('ErgoBilanDB');
+    this.version(1).stores({
+      patients: 'id, userId, organizationId, lastInteraction, archived',
+      drafts: '++id, [userId+patientId], updatedAt',
+      assessments: 'id, patientId, userId, date',
+      followups: 'id, &patientId',
+    });
+  }
+}
+
+/**
+ * Migrate data for `userId` from the legacy global `ErgoBilanDB` into the
+ * new per-user `ErgoBilanDB_${userId}`. Deletes migrated rows from the legacy DB.
+ * Safe to call multiple times — a no-op when the legacy DB does not exist or
+ * contains no rows for this user.
+ */
+export const migrateLegacyDB = async (userId: string, targetDB: ErgoBilanDB): Promise<void> => {
+  const legacyExists = await Dexie.exists('ErgoBilanDB');
+  if (!legacyExists) return;
+
+  const legacyDB = new LegacyErgoBilanDB();
+  try {
+    const patients = await legacyDB.patients.where('userId').equals(userId).toArray();
+
+    if (patients.length === 0) return; // nothing to migrate for this user
+
+    const ownedPatientIds = new Set(patients.map((p) => p.id as string));
+    const [draftRows, assessments, allFollowups] = await Promise.all([
+      // Drafts use a compound index — filter in memory (only migration path)
+      legacyDB.drafts.toArray().then((rows) => rows.filter((r) => r.userId === userId)),
+      legacyDB.assessments.where('userId').equals(userId).toArray(),
+      legacyDB.followups.toArray(),
+    ]);
+    const followups = allFollowups.filter((f) => ownedPatientIds.has(f.patientId as string));
+
+    // Write to new scoped DB, stripping userId + organizationId
+    await targetDB.transaction('rw', [targetDB.patients, targetDB.drafts, targetDB.assessments, targetDB.followups], async () => {
+      if (patients.length) {
+        await targetDB.patients.bulkPut(
+          patients.map(({ userId: _u, organizationId: _o, ...rest }) => rest as LocalPatientRow),
+        );
+      }
+      if (assessments.length) {
+        await targetDB.assessments.bulkPut(
+          assessments.map(({ userId: _u, organizationId: _o, ...rest }) => rest as LocalAssessmentRow),
+        );
+      }
+      if (followups.length) {
+        await targetDB.followups.bulkPut(
+          followups.map(({ organizationId: _o, ...rest }) => rest as LocalFollowupRow),
+        );
+      }
+      if (draftRows.length) {
+        await targetDB.drafts.bulkAdd(
+          draftRows.map(({ id: _id, userId: _u, ...rest }) => rest as LocalDraftRow),
+        );
+      }
+    });
+
+    // Remove migrated rows from legacy DB
+    await legacyDB.transaction('rw', [legacyDB.patients, legacyDB.drafts, legacyDB.assessments, legacyDB.followups], async () => {
+      await legacyDB.patients.bulkDelete(patients.map((p) => p.id as string));
+      await legacyDB.assessments.bulkDelete(assessments.map((a) => a.id as string));
+      await legacyDB.drafts.bulkDelete(draftRows.map((d) => d.id as number));
+      await legacyDB.followups.bulkDelete(followups.map((f) => f.id as string));
+    });
+
+    console.info(`[DB] Migrated ${patients.length} patients from legacy ErgoBilanDB → ErgoBilanDB_${userId}`);
+  } catch (e) {
+    console.warn('[DB] Legacy migration failed — legacy DB left intact for manual recovery', e);
+  } finally {
+    legacyDB.close();
+  }
+};
