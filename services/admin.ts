@@ -1083,7 +1083,77 @@ export const AdminService = {
             total_errors: number;
             error_rate_pct: number;
         };
-    }
+    },
+
+    // --- SIGNALEMENTS : score_type_reports ---
+
+    submitScoreTypeReport: async (report: {
+        subtest_id: string;
+        current_score_type: string;
+        suggested_score_type?: string;
+        entered_ns?: number | null;
+        entered_et?: number | null;
+        entered_pct?: number | null;
+        note?: string;
+    }): Promise<void> => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Non authentifié');
+        const { error } = await supabase.from('score_type_reports').insert({
+            ...report,
+            reporter_id: user.id,
+        });
+        if (error) throw error;
+    },
+
+    listScoreTypeReports: async (): Promise<Array<{
+        id: string;
+        subtest_id: string;
+        reporter_id: string;
+        current_score_type: string;
+        suggested_score_type: string | null;
+        entered_ns: number | null;
+        entered_et: number | null;
+        entered_pct: number | null;
+        note: string | null;
+        status: 'pending' | 'reviewed' | 'dismissed';
+        created_at: string;
+    }>> => {
+        const { data, error } = await supabase
+            .from('score_type_reports')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return (data || []) as any[];
+    },
+
+    updateScoreTypeReportStatus: async (id: string, status: 'reviewed' | 'dismissed'): Promise<void> => {
+        const { error } = await supabase
+            .from('score_type_reports')
+            .update({ status, reviewed_at: new Date().toISOString() })
+            .eq('id', id);
+        if (error) throw error;
+    },
+
+    // --- TESTS PRIVÉS : practitioner_save_custom_test ---
+
+    saveCustomTest: async (payload: {
+        test: {
+            name: string;
+            abbreviation?: string;
+            category_id: string;
+        };
+        subtests: Array<{
+            name: string;
+            abbreviation?: string;
+            score_type: string;
+            input_model?: string;
+            order_index?: number;
+        }>;
+    }): Promise<string> => {
+        const { data, error } = await supabase.rpc('practitioner_save_custom_test', { payload });
+        if (error) throw error;
+        return (data as any)?.test_id || (data as any)?.id || '';
+    },
 };
 
 

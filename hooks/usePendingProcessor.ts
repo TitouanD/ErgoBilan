@@ -14,7 +14,6 @@ import type { AssessmentHandle } from './useAssessmentFlow';
 
 interface UsePendingProcessorParams {
   sessionKey: CryptoKey | null;
-  orgKey: CryptoKey | null;
   isDemoMode: boolean;
   assessment: AssessmentHandle;
   setPatientFiles: Dispatch<SetStateAction<PatientFile[]>>;
@@ -25,7 +24,6 @@ interface UsePendingProcessorParams {
 
 export const usePendingProcessor = ({
   sessionKey,
-  orgKey,
   isDemoMode,
   assessment,
   setPatientFiles,
@@ -66,7 +64,7 @@ export const usePendingProcessor = ({
       }
 
       // ---- Real path ----
-      if (!sessionKey || !orgKey) return null;
+      if (!sessionKey) return null;
 
       setProcessingQueueId(q.id);
       try {
@@ -87,7 +85,7 @@ export const usePendingProcessor = ({
 
         if (payload?.patient) {
           const basePatient = { ...(payload.patient as Patient) };
-          const newId = await StorageService.createPatient(basePatient, orgKey);
+          const newId = await StorageService.createPatient(basePatient);
           const newPatient = { ...basePatient, id: newId };
 
           const initialDraft = {
@@ -100,7 +98,7 @@ export const usePendingProcessor = ({
             step: 1,
             timestamp: new Date().toISOString(),
           };
-          await StorageService.saveDraft(initialDraft, sessionKey);
+          await StorageService.saveDraft(initialDraft);
           loadData();
 
           await supabase.from('pending_questionnaires').delete().eq('id', q.id);
@@ -120,7 +118,7 @@ export const usePendingProcessor = ({
         setProcessingQueueId(null);
       }
     },
-    [sessionKey, orgKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast],
+    [sessionKey, isDemoMode, assessment, setPatientFiles, setPendingQuestionnaires, loadData, toast],
   );
 
   return { processingQueueId, handleProcessPending };

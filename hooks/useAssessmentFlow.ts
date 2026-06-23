@@ -55,7 +55,6 @@ interface CatalogCategory { id: string; tests: CatalogTest[] }
 interface UseAssessmentFlowParams {
   assessment: AssessmentHandle;
   sessionKey: CryptoKey | null;
-  orgKey: CryptoKey | null;
   isDemoMode: boolean;
   catalog: CatalogCategory[];
   refreshProfile: () => Promise<void>;
@@ -125,7 +124,6 @@ const DEMO_SECTIONS: ReportSection[] = [
 export const useAssessmentFlow = ({
   assessment,
   sessionKey,
-  orgKey,
   isDemoMode,
   catalog,
   refreshProfile,
@@ -386,8 +384,6 @@ export const useAssessmentFlow = ({
 
   const ensurePatientIdentityPersisted = useCallback(
     async (action: 'save_quit' | 'finalize'): Promise<{ patientId: string; patientSnapshot: Patient } | null> => {
-      if (!orgKey) return null;
-
       const normalizedPatient: Patient = {
         ...assessment.patient,
         age: getPatientAgeForIdentity(assessment.patient),
@@ -401,7 +397,7 @@ export const useAssessmentFlow = ({
           return null;
         }
 
-        patientId = await StorageService.ensurePatientId(normalizedPatient, orgKey);
+        patientId = await StorageService.ensurePatientId(normalizedPatient);
       }
 
       const patientSnapshot: Patient = {
@@ -413,10 +409,10 @@ export const useAssessmentFlow = ({
         assessment.updatePatient({ id: patientId, age: patientSnapshot.age });
       }
 
-      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot, orgKey);
+      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot);
       return { patientId, patientSnapshot };
     },
-    [assessment, orgKey, toast],
+    [assessment, toast],
   );
 
   // ------------------------------------------------------------------
@@ -424,7 +420,7 @@ export const useAssessmentFlow = ({
   // ------------------------------------------------------------------
   const handleFinalize = useCallback(async () => {
     if (isDemoMode) return 'dashboard' as const;
-    if (!sessionKey || !orgKey) return null;
+    if (!sessionKey) return null;
 
     setIsGenerating(true);
     try {
@@ -470,7 +466,7 @@ export const useAssessmentFlow = ({
         assessments: [newAssessment, ...(currentFile.assessments || [])],
       };
 
-      await StorageService.saveFile(updatedFile, orgKey);
+      await StorageService.saveFile(updatedFile);
 
       // ── Feedback loop: extract style preferences from practitioner corrections ──
       try {
@@ -529,7 +525,7 @@ export const useAssessmentFlow = ({
     } finally {
       setIsGenerating(false);
     }
-  }, [assessment, sessionKey, orgKey, isDemoMode, catalog, practitioner, patientFiles, loadData, toast, ensurePatientIdentityPersisted]);
+  }, [assessment, sessionKey, isDemoMode, catalog, practitioner, patientFiles, loadData, toast, ensurePatientIdentityPersisted]);
 
   // ------------------------------------------------------------------
   // Save draft and quit
@@ -540,7 +536,7 @@ export const useAssessmentFlow = ({
       return 'dashboard' as const;
     }
 
-    if (!sessionKey || !orgKey) return null;
+    if (!sessionKey) return null;
 
     try {
       await ensureFreshSession();
@@ -557,7 +553,7 @@ export const useAssessmentFlow = ({
         step: assessment.step,
         timestamp: new Date().toISOString(),
       };
-      await StorageService.saveDraft(draftData, sessionKey);
+      await StorageService.saveDraft(draftData);
       assessment.resetAssessment();
       toast.success('Brouillon sauvegardé');
       return 'dashboard' as const;
@@ -566,7 +562,7 @@ export const useAssessmentFlow = ({
       toast.error('Impossible de sauvegarder le brouillon.');
       return null;
     }
-  }, [assessment, sessionKey, orgKey, isDemoMode, toast, ensurePatientIdentityPersisted]);
+  }, [assessment, sessionKey, isDemoMode, toast, ensurePatientIdentityPersisted]);
 
   // ------------------------------------------------------------------
   // Resume a draft
@@ -574,7 +570,7 @@ export const useAssessmentFlow = ({
   const handleResumeDraft = useCallback(
     async (patientId?: string) => {
       if (!sessionKey && !isDemoMode) return false;
-      const draftContent = await StorageService.getDraft(sessionKey!, patientId);
+      const draftContent = await StorageService.getDraft(patientId);
       if (draftContent) {
         assessment.resetAssessment();
         assessment.loadFromDraft(draftContent);

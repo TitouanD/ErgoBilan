@@ -4,7 +4,8 @@ import type { ClinicalSynthesis, TestData, Observations, Patient, ScoreResult } 
 import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, AlertTriangle, Check } from 'lucide-react';
 import { VoiceTextarea } from '../shared/VoiceTextarea';
 import { useCatalog } from '../../contexts/CatalogContext';
-import { hasScoreValue, isReviewedScore } from '../../utils/scoring';
+const hasScoreValue = (r: any): boolean => Boolean(r && ((r.raw && String(r.raw).trim()) || (r.standard && String(r.standard).trim()) || (r.percentile && String(r.percentile).trim()) || (typeof r.zScore === 'number' && Number.isFinite(r.zScore)) || r.qualitativeCode || r.observation));
+const isReviewedScore = (r: any): boolean => Boolean(r && (r.reviewState === 'reviewed' || r.status === 'validated' || r.status === 'certified'));
 
 interface Props {
     synthesis: ClinicalSynthesis;

@@ -14,6 +14,7 @@ export interface ComputationResult {
 
 export type NormsStatusCode = 'ok' | 'no_norms' | 'no_applicable_age_gender' | 'onboarding_required' | 'access_restricted';
 
+/** @deprecated — norms checking removed from client. Kept for type-compatibility only. */
 export interface NormsStatusRow {
     subtestId: string;
     hasNorms: boolean;
@@ -128,68 +129,5 @@ export const ScoringEngine = {
             Logger.error('SYSTEM', 'Unexpected scoring error', e);
             return null;
         }
-    },
-
-    checkNormsStatus: async (
-        subtestIds: string[],
-        ageInMonths: number,
-        gender: 'M' | 'F' | 'Mixed' = 'Mixed',
-    ): Promise<NormsStatusRow[] | null> => {
-        if (!Array.isArray(subtestIds) || subtestIds.length === 0) return [];
-
-        try {
-            const { data, error } = await supabase.rpc('check_norms_status', {
-                p_subtest_ids: subtestIds,
-                p_age_months: ageInMonths,
-                p_gender: gender,
-            });
-
-            if (error || !Array.isArray(data)) {
-                Logger.warn('SYSTEM', 'check_norms_status failed, fallback required', error || data);
-                return null;
-            }
-
-            return data.map((row: any) => ({
-                subtestId: String(row.subtest_id),
-                hasNorms: row.has_norms === true,
-                hasApplicableNorms: row.has_applicable_norms === true,
-                statusCode: (String(row.status_code || 'no_norms') as NormsStatusCode),
-            }));
-        } catch (e) {
-            Logger.warn('SYSTEM', 'Unexpected check_norms_status error', e);
-            return null;
-        }
-    },
-
-    upsertRawDirectionOverrideClone: async (
-        sourceSubtestId: string,
-        rawDirection: 'higher_better' | 'lower_better',
-        reason = 'step2_user_override',
-    ): Promise<{ effectiveSubtestId: string; created: boolean; updatedNormsCount: number } | null> => {
-        try {
-            const { data, error } = await supabase.rpc('admin_create_or_update_subtest_override_clone', {
-                p_source_subtest_id: sourceSubtestId,
-                p_raw_direction: rawDirection,
-                p_reason: reason,
-            });
-
-            if (error) {
-                Logger.error('SYSTEM', 'admin_create_or_update_subtest_override_clone failed', error);
-                return null;
-            }
-
-            const row = Array.isArray(data) ? data[0] : data;
-            if (!row) return null;
-
-            return {
-                effectiveSubtestId: String(row.effective_subtest_id),
-                created: row.created === true,
-                updatedNormsCount: Number(row.updated_norms_count || 0),
-            };
-        } catch (e) {
-            Logger.error('SYSTEM', 'Unexpected override clone error', e);
-            return null;
-        }
-    },
 };
 

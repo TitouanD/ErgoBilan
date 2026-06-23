@@ -18,7 +18,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
-import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
 const PatientEvolutionChart = React.lazy(() =>
@@ -153,7 +152,6 @@ export const PatientDetail: React.FC<Props> = ({
   onLoadMoreHistory,
   onFollowupChange,
 }) => {
-  const { orgKey } = useAuth();
   const toast = useToast();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -190,7 +188,7 @@ export const PatientDetail: React.FC<Props> = ({
     return {
       id: `fallback-${file.id}`,
       patientId: file.id,
-      organizationId: file.patient.organizationId || '',
+      organizationId: null,
       status: deriveTemporalStatus(dueAt),
       dueAt,
       snoozedUntil: null,
@@ -198,7 +196,7 @@ export const PatientDetail: React.FC<Props> = ({
       createdAt: lastFormal.date,
       updatedAt: lastFormal.date,
     } satisfies PatientFollowup;
-  }, [formalAssessments, file.id, file.patient.organizationId]);
+  }, [formalAssessments, file.id]);
 
   const followup = followupState || fallbackFollowup;
 
@@ -233,12 +231,10 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleScheduleFollowup = async () => {
-    if (!orgKey) return;
     setIsFollowupBusy(true);
     try {
       await StorageService.upsertPatientFollowup({
         patientId: file.id,
-        organizationId: file.patient.organizationId,
         status: 'scheduled',
         dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 1),
         note: 'Rappel planifie depuis la fiche patient',
@@ -253,7 +249,6 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleSnoozeFollowup = async () => {
-    if (!orgKey) return;
     const snoozedUntil = addMonths(new Date().toISOString(), 1);
     setIsFollowupBusy(true);
     try {
@@ -262,7 +257,6 @@ export const PatientDetail: React.FC<Props> = ({
       } else {
         await StorageService.upsertPatientFollowup({
           patientId: file.id,
-          organizationId: file.patient.organizationId,
           status: 'snoozed',
           dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 6),
           snoozedUntil,
@@ -279,7 +273,7 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleMarkFollowupCompleted = async () => {
-    if (!orgKey || !latestFormalIsReevaluation) return;
+    if (!latestFormalIsReevaluation) return;
     setIsFollowupBusy(true);
     try {
       if (followupState) {
@@ -287,7 +281,6 @@ export const PatientDetail: React.FC<Props> = ({
       } else {
         await StorageService.upsertPatientFollowup({
           patientId: file.id,
-          organizationId: file.patient.organizationId,
           status: 'completed',
           dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 6),
           note: 'Rappel clôturé après réévaluation formelle',
@@ -303,10 +296,9 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleArchive = async () => {
-    if (!orgKey) return;
     setIsProcessing(true);
     try {
-      await StorageService.toggleArchive(file, orgKey);
+      await StorageService.toggleArchive(file);
       onBack();
     } catch {
       toast.error('Erreur lors de la mise à jour.');
@@ -316,7 +308,6 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleDelete = async () => {
-    if (!orgKey) return;
     setIsProcessing(true);
     try {
       await StorageService.deleteFile(file.id);

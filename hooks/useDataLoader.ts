@@ -13,8 +13,6 @@ import { Logger } from '../utils/logger';
 
 interface UseDataLoaderParams {
   sessionKey: CryptoKey | null;
-  orgKey: CryptoKey | null;
-  orgId: string | null;
   authState: string;
   practitioner: PractitionerProfile | null;
   isDemoMode: boolean;
@@ -24,8 +22,6 @@ const PATIENT_PAGE_SIZE = 50;
 
 export const useDataLoader = ({
   sessionKey,
-  orgKey,
-  orgId,
   authState,
   practitioner,
   isDemoMode,
@@ -38,7 +34,6 @@ export const useDataLoader = ({
   const [isLoadingMorePatients, setIsLoadingMorePatients] = useState(false);
   const patientOffsetRef = useRef(0);
   const loadingPatientsRef = useRef(false);
-  const pendingPatientIdsRef = useRef<Set<string>>(new Set());
 
   // ------------------------------------------------------------------
   // Core data loaders (called on mount + after writes)
@@ -56,7 +51,7 @@ export const useDataLoader = ({
 
   const loadPatients = useCallback(
     async (options?: { reset?: boolean }) => {
-      if (!(sessionKey && orgKey && authState === 'authenticated') && !isDemoMode) return;
+      if (!(sessionKey && authState === 'authenticated') && !isDemoMode) return;
       if (loadingPatientsRef.current) return;
       const reset = options?.reset ?? false;
 
@@ -68,8 +63,7 @@ export const useDataLoader = ({
       }
 
       try {
-        const { files, hasMore, nextOffset } = await StorageService.loadPatientListPage(orgKey!, {
-          orgId: orgId || undefined,
+        const { files, hasMore, nextOffset } = await StorageService.loadPatientListPage({
           offset: patientOffsetRef.current,
           limit: PATIENT_PAGE_SIZE,
         });
@@ -81,7 +75,7 @@ export const useDataLoader = ({
         if (!reset) setIsLoadingMorePatients(false);
       }
     },
-    [sessionKey, orgKey, orgId, authState, isDemoMode],
+    [sessionKey, authState, isDemoMode],
   );
 
   const loadMorePatients = useCallback(async () => {
@@ -90,11 +84,10 @@ export const useDataLoader = ({
   }, [hasMorePatients, loadPatients]);
 
   const loadDrafts = useCallback(async () => {
-    if (!(sessionKey && orgKey && authState === 'authenticated') && !isDemoMode) return;
-    if (!sessionKey) return;
-    const draftsMap = await StorageService.getDraftsMetadata(sessionKey);
+    if (!(sessionKey && authState === 'authenticated') && !isDemoMode) return;
+    const draftsMap = await StorageService.getDraftsMetadata();
     setDraftsIndex(draftsMap);
-  }, [sessionKey, orgKey, authState, isDemoMode]);
+  }, [sessionKey, authState, isDemoMode]);
 
   const loadPending = useCallback(async () => {
     if (isDemoMode) {
@@ -104,8 +97,7 @@ export const useDataLoader = ({
       ]);
       return;
     }
-    if (!(sessionKey && orgKey && authState === 'authenticated')) return;
-    if (!practitioner) return;
+    if (!(sessionKey && authState === 'authenticated')) return;
 
     const { data } = await supabase
       .from('pending_questionnaires')
@@ -126,39 +118,15 @@ export const useDataLoader = ({
         })),
       );
     }
-  }, [sessionKey, orgKey, authState, practitioner, isDemoMode]);
-
-  const refreshPatientsByIds = useCallback(
-    async (ids: string[]) => {
-      if (!orgKey || ids.length === 0) return;
-      const uniqueIds = Array.from(new Set(ids));
-      const results = await Promise.all(
-        uniqueIds.map((id) => StorageService.loadPatientPreviewById(id, orgKey!, { orgId: orgId || undefined })),
-      );
-
-      setPatientFiles((prev) => {
-        const byId = new Map<string, PatientFile>(prev.map((file) => [file.id, file]));
-        uniqueIds.forEach((id, idx) => {
-          const file = results[idx];
-          if (file) {
-            byId.set(file.id, file);
-          } else {
-            byId.delete(id);
-          }
-        });
-        return sortPatients(Array.from(byId.values()));
-      });
-    },
-    [orgKey, orgId],
-  );
+  }, [sessionKey, authState, practitioner, isDemoMode]);
 
   const loadData = useCallback(async () => {
-    if (!(sessionKey && orgKey && authState === 'authenticated') && !isDemoMode) return;
+    if (!(sessionKey && authState === 'authenticated') && !isDemoMode) return;
     Logger.info('DB', 'Refreshing user data...');
     await loadPatients({ reset: true });
     await loadDrafts();
     await loadPending();
-  }, [sessionKey, orgKey, authState, isDemoMode, loadPatients, loadDrafts, loadPending]);
+  }, [sessionKey, authState, isDemoMode, loadPatients, loadDrafts, loadPending]);
 
   // Auto-load on dependency change
   useEffect(() => {
@@ -166,60 +134,31 @@ export const useDataLoader = ({
   }, [loadData]);
 
   // ------------------------------------------------------------------
-  // Realtime subscription (debounced)
+  // Realtime subscription for pending questionnaires only
+  // (patients/followups are now local IndexedDB — no realtime needed)
   // ------------------------------------------------------------------
   useEffect(() => {
-    if (!sessionKey || !orgKey || isDemoMode || authState !== 'authenticated') return;
+    if (!sessionKey || isDemoMode || authState !== 'authenticated') return;
 
     const schedule = (handler: () => void) => {
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-      refreshTimeoutRef.current = setTimeout(() => {
-        handler();
-      }, 1000);
-    };
-
-    const handlePatientChange = (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-      const id = (payload.new?.id as string) || (payload.old?.id as string);
-      if (!id) return;
-      pendingPatientIdsRef.current.add(id);
-      schedule(() => {
-        const ids = Array.from(pendingPatientIdsRef.current);
-        pendingPatientIdsRef.current.clear();
-        refreshPatientsByIds(ids);
-      });
-    };
-
-    const handleFollowupChange = (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-      const patientId = (payload.new?.patient_id as string) || (payload.old?.patient_id as string);
-      if (!patientId) return;
-      pendingPatientIdsRef.current.add(patientId);
-      schedule(() => {
-        const ids = Array.from(pendingPatientIdsRef.current);
-        pendingPatientIdsRef.current.clear();
-        refreshPatientsByIds(ids);
-      });
+      refreshTimeoutRef.current = setTimeout(handler, 1000);
     };
 
     const channel = supabase
-      .channel('dashboard-updates')
+      .channel('dashboard-pending')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pending_questionnaires', filter: practitioner ? `practitioner_id=eq.${practitioner.id}` : undefined },
         () => schedule(loadPending),
-      );
-
-    if (orgId) {
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'patients', filter: `organization_id=eq.${orgId}` }, handlePatientChange);
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'patient_followups', filter: `organization_id=eq.${orgId}` }, handleFollowupChange);
-    }
-
-    channel.subscribe();
+      )
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
     };
-  }, [sessionKey, orgKey, authState, isDemoMode, practitioner, orgId, loadPending, refreshPatientsByIds]);
+  }, [sessionKey, authState, isDemoMode, practitioner, loadPending]);
 
   return {
     patientFiles,

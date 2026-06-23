@@ -1,39 +1,33 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../types';
 import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel, type SubtestItem, type ItemsAggregation } from '../../data/testCatalog';
-import { ScoringEngine } from '../../services/scoringEngine';
-import { calculateFromPercentile, calculateFromStandard, calculateFromZ } from '../../utils/scoring';
-import { getNormStatusMessage, resolveEffectiveDirection, type EffectiveDirection, type NormsStatusCode } from '../../utils/scoreDirection';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
-import { supabase } from '../../services/db';
+import { useFavoriteTests } from '../../hooks/useFavoriteTests';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
+import { CustomTestEditor as CustomTestEditorLazy } from './CustomTestEditor';
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Circle,
-  CircleCheck,
-  FilePlus,
   GripVertical,
   Layers,
-  Loader2,
   MessageSquare,
   Mic,
   MicOff,
   PenTool,
   Plus,
   Search,
+  Star,
   Table2,
   Trash2,
   X,
@@ -48,73 +42,27 @@ interface Props {
   onNext: () => void;
   onBack: () => void;
   userProfile?: UserProfile;
-  onContribute?: () => void;
 }
 
 type Metric = 'raw' | 'standard' | 'z' | 'percentile';
-type ConversionMode = 'auto' | 'manual';
-
-type NormsStatus = {
-  hasNorms: boolean;
-  hasApplicableNorms: boolean;
-  statusCode: NormsStatusCode;
-};
 
 const parseNum = (value: string): number | null => {
   const n = parseFloat(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
 };
 
+
 const isManualOnlyScoreType = (scoreType?: ScoreType | string): boolean => (
   String(scoreType || '').toLowerCase() === 'none'
 );
 
-const isStandardizedMetric = (metric: Metric): metric is 'standard' | 'z' | 'percentile' => (
-  metric === 'standard' || metric === 'z' || metric === 'percentile'
-);
-
-const resolveConversionMode = (result: Partial<ScoreResult>, scoreType?: ScoreType): ConversionMode => (
-  isManualOnlyScoreType(scoreType) ? 'manual' : (result.conversionMode === 'manual' ? 'manual' : 'auto')
-);
-
-const hasStandardizedValue = (
-  result: Partial<ScoreResult>,
-  metric: 'standard' | 'z' | 'percentile',
-): boolean => {
-  if (metric === 'z') {
-    return typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-  }
-  const raw = metric === 'standard' ? result.standard : result.percentile;
-  return parseNum(String(raw || '').trim()) !== null;
-};
-
-const shouldSwitchToManualMode = (
-  result: ScoreResult,
-  nextMetric: Metric,
-  scoreType?: ScoreType,
-): boolean => {
-  if (resolveConversionMode(result, scoreType) === 'manual') return false;
-  if (!isStandardizedMetric(nextMetric)) return false;
-  const previousMetric = result.entryMetric;
-  if (previousMetric === 'standard' || previousMetric === 'z' || previousMetric === 'percentile') {
-    return previousMetric !== nextMetric;
-  }
-
-  // Legacy rows or asynchronous updates may miss entryMetric.
-  // If another standardized metric already has a value, switch to manual
-  // to prevent destructive cross-reconversion when user overrides fields.
-  if (nextMetric !== 'standard' && hasStandardizedValue(result, 'standard')) return true;
-  if (nextMetric !== 'z' && hasStandardizedValue(result, 'z')) return true;
-  if (nextMetric !== 'percentile' && hasStandardizedValue(result, 'percentile')) return true;
-  return false;
-};
 
 const SCALE_LABELS: Record<string, string> = {
-  scaled: 'NS (m=10, \u03c3=3)',
-  standard: 'QI (m=100, \u03c3=15)',
+  scaled:    'NS (m=10, \u03c3=3)',
+  standard:  'QI (m=100, \u03c3=15)',
   't-score': 'T (m=50, \u03c3=10)',
-  sten: 'Sten (m=5.5, \u03c3=2)',
-  stanine: 'Stanine (m=5, \u03c3=2)',
+  sten:      'Sten (m=5.5, \u03c3=2)',
+  stanine:   'Stanine (m=5, \u03c3=2)',
 };
 
 const getScaleLabel = (scoreType?: ScoreType): string | null => {
@@ -122,82 +70,81 @@ const getScaleLabel = (scoreType?: ScoreType): string | null => {
   return SCALE_LABELS[scoreType] || null;
 };
 
+// ─── Parametric conversion engine ─────────────────────────────────────────
+const SCALE_PARAMS: Record<string, { mean: number; sd: number } | null> = {
+  scaled:     { mean: 10,  sd: 3  },
+  standard:   { mean: 100, sd: 15 },
+  't-score':  { mean: 50,  sd: 10 },
+  sten:       { mean: 5.5, sd: 2  },
+  stanine:    { mean: 5,   sd: 2  },
+  percentile: null,
+  none:       null,
+};
+
+// Standard normal CDF (Abramowitz & Stegun 26.2.17)
+const normalCDF = (z: number): number => {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const poly = t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const p = 1 - (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z) * poly;
+  return z >= 0 ? p : 1 - p;
+};
+
+// Inverse normal CDF (rational approximation)
+const invNormalCDF = (p: number): number => {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  if (p < 0.5) return -invNormalCDF(1 - p);
+  const t = Math.sqrt(-2 * Math.log(1 - p));
+  return t - (2.515517 + 0.802853 * t + 0.010328 * t * t) /
+    (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
+};
+
+interface DerivedScores { standard?: string; zScore?: number; percentile?: string; }
+
+const deriveScores = (value: number, metric: 'standard' | 'z' | 'percentile', scoreType: string): DerivedScores => {
+  const params = SCALE_PARAMS[scoreType];
+  const result: DerivedScores = {};
+  let z: number | null = null;
+
+  if (metric === 'standard') {
+    if (params) {
+      z = (value - params.mean) / params.sd;
+    } else if (scoreType === 'percentile') {
+      result.percentile = String(value);
+      const pf = value / 100;
+      if (pf > 0 && pf < 1) z = invNormalCDF(pf);
+    }
+    result.standard = String(value);
+  } else if (metric === 'z') {
+    z = value;
+    if (params) result.standard = String(Math.round(z * params.sd + params.mean));
+  } else if (metric === 'percentile') {
+    const pf = value / 100;
+    if (pf > 0 && pf < 1) {
+      z = invNormalCDF(pf);
+      if (params) result.standard = String(Math.round(z * params.sd + params.mean));
+    }
+    result.percentile = String(value);
+  }
+
+  if (z !== null && Number.isFinite(z)) {
+    result.zScore = parseFloat(z.toFixed(3));
+    if (metric !== 'percentile') {
+      result.percentile = String(Math.round(normalCDF(z) * 100));
+    }
+  }
+  return result;
+};
+
+const zToneClass = (z: number | null): string => {
+  if (z === null || !Number.isFinite(z)) return 'text-[var(--text-secondary)]';
+  if (z <= -2) return 'text-rose-600 font-bold';
+  if (z < -1)  return 'text-amber-600 font-bold';
+  return 'text-emerald-600 font-bold';
+};
+
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
-const getDirectionBadgeLabel = (direction: EffectiveDirection): string => (
-  direction === 'lower_better' ? 'Brut croissant -> score decroissant' : 'Brut croissant -> score croissant'
-);
-
-const getDirectionBadgeTooltip = (direction: EffectiveDirection, interactive: boolean): string => {
-  const base = direction === 'lower_better'
-    ? 'Sens brut: plus le brut augmente, plus le score baisse.'
-    : 'Sens brut: plus le brut augmente, plus le score augmente.';
-  return interactive ? `${base} Cliquer pour inverser ce sens.` : base;
-};
-
-const DirectionBadge: React.FC<{
-  direction: EffectiveDirection;
-  pending?: boolean;
-  interactive?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-}> = ({
-  direction,
-  pending = false,
-  interactive = false,
-  disabled = false,
-  onClick,
-}) => {
-    const isLower = direction === 'lower_better';
-    const Icon = isLower ? ArrowDown : ArrowUp;
-    const toneClass = isLower
-      ? 'text-rose-500 bg-rose-500/10 border-rose-500/30'
-      : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30';
-    const title = getDirectionBadgeTooltip(direction, interactive);
-    const commonClass = `inline-flex items-center justify-center rounded-full border transition-colors ${toneClass} ${pending ? 'ring-1 ring-[var(--primary)]/50' : ''}`;
-
-    if (interactive) {
-      return (
-        <button
-          type="button"
-          disabled={disabled || !onClick}
-          onClick={onClick}
-          title={title}
-          aria-label={getDirectionBadgeLabel(direction)}
-          className={`${commonClass} h-6 w-6 hover:brightness-110 ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
-        >
-          <Icon size={13} strokeWidth={2.8} />
-        </button>
-      );
-    }
-
-    return (
-      <span
-        title={title}
-        aria-label={getDirectionBadgeLabel(direction)}
-        className={`${commonClass} h-5 w-5`}
-      >
-        <Icon size={12} strokeWidth={2.8} />
-      </span>
-    );
-  };
-
-const humanizeComputeWarning = (warning: string): string => {
-  if (warning === 'direction_auto_applied') return 'Sens brut auto appliqué.';
-  if (warning === 'direction_override_clone_applied') return 'Sens brut personnalisé organisation appliqué.';
-  if (warning === 'score_type_unset') return 'Type de score non défini (calcul auto désactivé).';
-  return warning;
-};
-
-/** Infer the preferred display metric (NS or ET) for a given subtest */
-const getPreferredMetric = (subtest: SubtestDef): 'standard' | 'z' => {
-  const dm = subtest.inputConfig?.defaultMetric;
-  if (dm === 'standard' || dm === 'z') return dm;
-  // Infer from scoreType: most clinical scales prefer NS
-  const st = subtest.scoreType || 'standard';
-  if (st === 'scaled' || st === 'standard' || st === 't-score' || st === 'sten' || st === 'stanine' || st === 'none') return 'standard';
-  return 'z';
-};
 
 const getSubtestDisplayName = (subtest: Pick<SubtestDef, 'name' | 'displayName'>): string => (
   subtest.displayName || subtest.name
@@ -291,27 +238,19 @@ const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
 
 const METRIC_LABEL: Record<string, string> = { raw: 'BRUT', standard: 'NS', z: 'ET', percentile: '%' };
 
-const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): string => {
-  if (metric === 'standard') {
-    return scoreType === 'percentile' ? 'PERCENTILE' : 'NS';
-  }
-  return METRIC_LABEL[metric] || metric.toUpperCase();
-};
-
-const scoreToneFromZ = (z: number | null): 'good' | 'warn' | 'bad' | 'neutral' => {
-  if (z === null || !Number.isFinite(z)) return 'neutral';
+// Simple z-score coloring (no norms lookup, just statistical interpretation)
+const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
+  if (z === null || !Number.isFinite(z)) return null;
   if (z <= -2) return 'bad';
   if (z < -1) return 'warn';
   return 'good';
 };
 
-const ageMonths = (dob?: string): number => {
-  if (!dob) return 96;
-  const d = new Date(dob);
-  if (Number.isNaN(d.getTime())) return 96;
-  const now = new Date();
-  return Math.max(1, (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()));
+const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): string => {
+  if (metric === 'standard') return scoreType === 'percentile' ? '%ile' : 'NS';
+  return METRIC_LABEL[metric] || metric.toUpperCase();
 };
+
 
 const hasValue = (r?: Partial<ScoreResult>): boolean => {
   if (!r) return false;
@@ -336,7 +275,7 @@ const emptyScore = (): ScoreResult => ({
   standard: '',
   percentile: '',
   status: 'empty',
-  entryMetric: 'raw',
+  entryMetric: 'standard',
   conversionMode: 'auto',
   reviewState: 'not_reviewed',
 });
@@ -393,1022 +332,291 @@ const VoiceObservation: React.FC<{
   );
 };
 
-const ReviewButton: React.FC<{ result: ScoreResult; onChange: (patch: Partial<ScoreResult>) => void }> = ({ result, onChange }) => {
-  const isReviewed = reviewed(result);
-  const canReview = hasValue(result);
-  const reviewedAtText = result.reviewedAt
-    ? new Date(result.reviewedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : null;
 
-  return (
-    <button
-      type="button"
-      disabled={!canReview}
-      onClick={() => {
-        if (isReviewed) {
-          onChange({ reviewState: 'not_reviewed', reviewedAt: undefined, status: hasValue(result) ? 'estimated' : 'empty' });
-          return;
-        }
-        onChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: hasValue(result) ? 'validated' : 'empty', certifiedAt: undefined });
-      }}
-      className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${
-        isReviewed
-          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
-          : canReview
-            ? 'bg-[var(--primary)] text-white hover:brightness-105 shadow-sm'
-            : 'opacity-40 cursor-not-allowed bg-[var(--hover-bg)] text-[var(--text-secondary)] border border-[var(--border-color)]'
-      }`}
-    >
-      {isReviewed ? <CircleCheck size={14} /> : <Circle size={14} />}
-      {isReviewed ? `Revu${reviewedAtText ? ` à ${reviewedAtText}` : ''}` : 'Valider'}
-    </button>
-  );
-};
 
-const GaussBand: React.FC<{ z: number | null }> = ({ z }) => {
-  if (z === null || !Number.isFinite(z)) {
-    return (
-      <div className="flex items-center gap-3 py-1">
-        <div className="flex-1 h-1.5 rounded-full bg-[var(--progress-bg)]" />
-      </div>
-    );
-  }
-
-  const clamped = clamp(z, -3.5, 3.5);
-  const left = ((clamped + 3.5) / 7) * 100;
-
-  return (
-    <div className="flex items-center gap-3 py-1">
-      <div
-        className="flex-1 relative h-1.5 rounded-full"
-        style={{
-          background:
-            'linear-gradient(to right, #f87171 0%, #f87171 21.4%, #fbbf24 21.4%, #fbbf24 35.7%, #34d399 35.7%, #34d399 100%)',
-        }}
-      >
-        <span
-          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-[var(--secondary)] shadow-sm"
-          style={{ left: `${left}%` }}
-        />
-      </div>
-      <span className="text-[11px] font-bold text-[var(--text-secondary)] tabular-nums shrink-0">
-        ET {z > 0 ? '+' : ''}{z.toFixed(2)}
-      </span>
-    </div>
-  );
-};
-
-const NumericRow: React.FC<{
-  testId: string;
-  patient: Patient;
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-  hasNorms?: boolean;
-  normsStatusCode?: NormsStatusCode;
-  effectiveDirection: EffectiveDirection;
-  baseDirection: EffectiveDirection;
-  onToggleDirection?: () => void;
-  hasPendingDirectionOverride?: boolean;
-}> = ({
-  testId,
-  patient,
-  subtest,
-  result,
-  onChange,
-  readOnly,
-  onFocus,
-  onToggleExpand,
-  hasNorms,
-  normsStatusCode,
-  effectiveDirection,
-  baseDirection,
-  onToggleDirection,
-  hasPendingDirectionOverride,
-}) => {
-    const [isComputing, setIsComputing] = useState(false);
-    const [warn, setWarn] = useState<string | null>(null);
-    const [localZText, setLocalZText] = useState<string | null>(null);
-    const preferred = getPreferredMetric(subtest);
-    const scoreType = subtest.scoreType || 'standard';
-    const conversionMode = resolveConversionMode(result, subtest.scoreType);
-    const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
-    const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
-    const hasAutoNorms = Boolean(hasNorms) && canAutoConvert;
-    // The "active entry" metric — which field is the source of truth
-    const entryMetric = result.entryMetric || (hasAutoNorms ? 'raw' : preferred);
-
-    const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-
-    const computeRaw = async (raw: string, value: number) => {
-      if (!canAutoConvert) {
-        setWarn(conversionLocked
-          ? 'Type de score non défini: calcul et conversion auto désactivés.'
-          : 'Mode manuel actif: calcul et conversion auto désactivés.');
-        setPatch({ raw, derived: { source: 'manual' } });
-        return;
-      }
-      if ((subtest.computationMode || 'LOOKUP') === 'NONE') {
-        setWarn('Pas de calcul automatique pour cette épreuve.');
-        setPatch({ raw, derived: { source: 'manual' } });
-        return;
-      }
-      if (!hasAutoNorms) {
-        const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
-        setWarn(statusWarn);
-        setPatch({ raw, derived: { source: 'manual' } });
-        return;
-      }
-
-      setIsComputing(true);
-      try {
-        const dbSubtestId = subtest.id;
-        const out = await ScoringEngine.compute(dbSubtestId, value, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed', patient.classLevel);
-        if (!out || !out.normFound) {
-          const statusWarn = getNormStatusMessage(normsStatusCode) || 'Normes introuvables - poursuivez en saisie manuelle.';
-          setWarn(statusWarn);
-          setPatch({ raw, derived: { source: 'manual' } });
-          return;
-        }
-
-        let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
-        let standardToUse = out.standard ?? '';
-        let percentileToUse = out.percentile ?? '';
-
-        if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
-          zToUse = -zToUse;
-          const recalculated = calculateFromZ(zToUse, scoreType);
-          standardToUse = recalculated.standard ?? '';
-          percentileToUse = recalculated.percentile ?? '';
-        }
-
-        const warningList = out.warnings.map(humanizeComputeWarning);
-        if (effectiveDirection !== baseDirection) {
-          warningList.push('Sens brut inversé localement (en attente de sauvegarde).');
-        }
-        setWarn(warningList.length > 0 ? warningList.join(' | ') : null);
-
-        setPatch({
-          raw,
-          standard: standardToUse,
-          percentile: percentileToUse,
-          zScore: zToUse ?? undefined,
-          derived: {
-            standard: standardToUse || undefined,
-            percentile: percentileToUse || undefined,
-            zScore: zToUse ?? undefined,
-            source: 'auto',
-          },
-          scoreSource: 'auto',
-          conversionMode: 'auto',
-        });
-      } catch (e) {
-        setWarn('Erreur lors du calcul automatique.');
-        setPatch({ raw, derived: { source: 'manual' } });
-        Logger.error('SYSTEM', 'Auto scoring failed', e);
-      } finally {
-        setIsComputing(false);
-      }
-    };
-
-    const onMetricInput = async (metric: Metric, text: string) => {
-      if (readOnly) return;
-
-      const autoSwitchToManual = shouldSwitchToManualMode(result, metric, subtest.scoreType);
-      const nextManualMode = conversionLocked || conversionMode === 'manual' || autoSwitchToManual;
-      const conversionPatch: Partial<ScoreResult> = nextManualMode
-        ? { conversionMode: 'manual' }
-        : { conversionMode: 'auto' };
-
-      if (autoSwitchToManual) {
-        setWarn('Mode manuel activé: les scores bruts ne seront plus calculés automatiquement. La conversion entre NS/ET/% reste active.');
-      }
-
-      if (metric === 'z') {
-        setLocalZText(text);
-        const n = parseNum(text);
-        if (n === null) {
-          if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
-          setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
-          return;
-        }
-        // Always cross-convert ET ↔ NS ↔ %
-        const c = calculateFromZ(n, scoreType);
-        setWarn(null);
-        setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
-        return;
-      }
-      setLocalZText(null);
-      const n = parseNum(text);
-      if (metric === 'raw') {
-        setPatch({ entryMetric: 'raw', raw: text, ...conversionPatch });
-        if (n !== null) await computeRaw(text, n);
-        return;
-      }
-      if (metric === 'standard') {
-        if (n === null) {
-          setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch });
-          return;
-        }
-        // Always cross-convert NS ↔ ET ↔ % (only skip normative lookup via computeRaw)
-        const c = calculateFromStandard(n, scoreType);
-        setWarn(null);
-        setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
-        return;
-      }
-      if (metric === 'percentile') {
-        if (n === null) {
-          setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch });
-          return;
-        }
-        // Always cross-convert % ↔ NS ↔ ET
-        const c = calculateFromPercentile(n, scoreType);
-        setWarn(null);
-        setPatch({
-          entryMetric: 'percentile',
-          percentile: text,
-          standard: c.standard,
-          zScore: c.zScore,
-          derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' },
-          scoreSource: 'manual_pct',
-          ...conversionPatch,
-        });
-        return;
-      }
-    };
-
-    const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-
-    const metricValue = (metric: Metric): string => {
-      if (metric === 'raw') return result.raw || '';
-      if (metric === 'standard') return result.standard || '';
-      if (metric === 'z') {
-        if (localZText !== null && entryMetric === 'z') return localZText;
-        return hasZ ? String(result.zScore) : '';
-      }
-      return result.percentile || '';
-    };
-
-    let visualZ: number | null = hasZ ? result.zScore! : null;
-    if (visualZ === null && !conversionLocked && result.standard) {
-      const s = parseNum(result.standard);
-      if (s !== null) visualZ = calculateFromStandard(s, scoreType).zScore;
-    }
-    if (visualZ === null && !conversionLocked && result.percentile) {
-      const p = parseNum(result.percentile);
-      if (p !== null) visualZ = calculateFromPercentile(p, scoreType).zScore;
-    }
-
-    // Decide which fields are editable inputs vs display-only
-    // Regime A (norms): Brut = primary input, NS + ET editable, % = display-only
-    // Regime B (no norms): NS + ET editable (preferred highlighted), % = display-only
-
-    const isSource = (m: Metric) => m === entryMetric;
-
-    const inputStyles = (m: Metric, primary?: boolean) => {
-      const base = 'w-full text-center font-bold bg-transparent outline-none transition-all placeholder:text-[var(--text-disabled)]';
-      const sizeClass = primary ? 'text-2xl py-2' : 'text-lg py-1.5';
-      const borderClass = isSource(m)
-        ? 'border-b-2 border-[var(--primary)]'
-        : 'border-b border-[var(--border-color)] focus:border-[var(--primary)]';
-      const colorClass = isSource(m) ? 'text-[var(--text-heading)]' : 'text-[var(--text-main)]';
-      return `${base} ${sizeClass} ${borderClass} ${colorClass} ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`;
-    };
-
-    const statusMessage = getNormStatusMessage(normsStatusCode);
-    const percentileEditable = !canAutoConvert;
-    const showDirectionControl = canAutoConvert
-      && (subtest.computationMode || 'LOOKUP') === 'PARAMETRIC'
-      && subtest.scoreType !== 'none';
-
-    return (
-      <div className="bg-[var(--card-bg)]">
-        <div className="p-4 md:p-5">
-          {/* Header: name + meta badges */}
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="min-w-0">
-              <div className="flex items-start gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onToggleExpand?.()}
-                  className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
-                  title={onToggleExpand ? 'Refermer le sous-test' : undefined}
-                  aria-label="Refermer le sous-test"
-                >
-                  <ChevronDown size={12} className="shrink-0" />
-                </button>
-                <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
-                  {getSubtestDisplayName(subtest)}
-                </h4>
-              </div>
-              <div className="flex items-center flex-wrap gap-1.5 mt-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
-                {getScaleLabel(subtest.scoreType) && (
-                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
-                    {getScaleLabel(subtest.scoreType)}
-                  </span>
-                )}
-                {hasAutoNorms && (
-                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
-                    Normes ✓
-                  </span>
-                )}
-                {!hasAutoNorms && statusMessage && (
-                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    {normsStatusCode === 'no_norms' && 'Pas de normes'}
-                    {normsStatusCode === 'no_applicable_age_gender' && 'Normes non applicables'}
-                    {normsStatusCode === 'onboarding_required' && 'Onboarding requis'}
-                    {normsStatusCode === 'access_restricted' && 'Accès restreint'}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setPatch({ conversionMode: 'auto' })}
-                    disabled={readOnly || conversionLocked}
-                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[var(--secondary)] text-white' : 'text-[var(--text-secondary)]'} ${(readOnly || conversionLocked) ? 'cursor-not-allowed opacity-60' : ''}`}
-                  >
-                    Auto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPatch({ conversionMode: 'manual' })}
-                    disabled={readOnly}
-                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[var(--primary)] text-white' : 'text-[var(--text-secondary)]'} ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
-                  >
-                    Manuel
-                  </button>
-                </span>
-                {showDirectionControl && (
-                  <DirectionBadge
-                    direction={effectiveDirection}
-                    pending={hasPendingDirectionOverride}
-                    interactive
-                    disabled={readOnly || !onToggleDirection}
-                    onClick={onToggleDirection}
-                  />
-                )}
-              </div>
-            </div>
-            {isComputing && <Loader2 size={14} className="animate-spin text-[var(--primary)]" />}
-          </div>
-
-          {/* === Inline score inputs === */}
-          {hasAutoNorms ? (
-            /* Regime A: Norms available — Brut (primary) + NS + ET editable + % display */
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-                {/* Brut — primary input */}
-                <div className="col-span-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    BRUT
-                    {isSource('raw') && <span className="ml-1 text-[var(--primary)]">●</span>}
-                  </label>
-                  <input
-                    value={metricValue('raw')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onFocus={() => onFocus?.()}
-                    onChange={(e) => void onMetricInput('raw', e.target.value)}
-                    className={inputStyles('raw', true)}
-                    placeholder="–"
-                    aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
-                  />
-                </div>
-                {/* NS — editable */}
-                <div className="col-span-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    {getMetricDisplayLabel('standard', subtest.scoreType)}
-                    {isSource('standard') && <span className="ml-1 text-[var(--primary)]">●</span>}
-                  </label>
-                  <input
-                    value={metricValue('standard')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onFocus={() => onFocus?.()}
-                    onChange={(e) => void onMetricInput('standard', e.target.value)}
-                    className={inputStyles('standard')}
-                    placeholder="–"
-                    aria-label={`${getMetricDisplayLabel('standard', subtest.scoreType)} pour ${getSubtestDisplayName(subtest)}`}
-                  />
-                </div>
-                {/* ET — editable */}
-                <div className="col-span-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    ET
-                    {isSource('z') && <span className="ml-1 text-[var(--primary)]">●</span>}
-                  </label>
-                  <input
-                    value={metricValue('z')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onFocus={() => onFocus?.()}
-                    onChange={(e) => void onMetricInput('z', e.target.value)}
-                    onBlur={() => {
-                      if (localZText !== null) {
-                        const n = parseNum(localZText);
-                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(result, subtest.scoreType) === 'manual' ? 'manual' : undefined });
-                        setLocalZText(null);
-                      }
-                    }}
-                    className={inputStyles('z')}
-                    placeholder="–"
-                    aria-label={`Écart-type pour ${getSubtestDisplayName(subtest)}`}
-                  />
-                </div>
-                {/* Percentile — display only */}
-                <div className="col-span-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">%</label>
-                  <div className="w-full text-center text-lg font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
-                    {metricValue('percentile') ? `${metricValue('percentile')}` : '–'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Regime B: No auto norms — NS + ET editable (preferred highlighted) + % display/edit depending on mode */
-            <div className="space-y-2">
-              <div className="grid grid-cols-3 gap-3 items-end">
-                {/* NS — editable */}
-                <div className="col-span-1">
-                  <div className="flex items-center gap-1 mb-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                      {getMetricDisplayLabel('standard', subtest.scoreType)}
-                    </label>
-                    {(entryMetric === 'standard' || (!entryMetric && preferred === 'standard') || (entryMetric !== 'z' && preferred === 'standard')) && <span className="text-[var(--primary)] text-[10px]">●</span>}
-                  </div>
-                  <input
-                    value={metricValue('standard')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onFocus={() => onFocus?.()}
-                    onChange={(e) => void onMetricInput('standard', e.target.value)}
-                    className={inputStyles('standard', preferred === 'standard' || entryMetric === 'standard')}
-                    placeholder="–"
-                    aria-label={`${getMetricDisplayLabel('standard', subtest.scoreType)} pour ${getSubtestDisplayName(subtest)}`}
-                  />
-                </div>
-                {/* ET — editable */}
-                <div className="col-span-1">
-                  <div className="flex items-center gap-1 mb-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">ET</label>
-                    {(entryMetric === 'z' || (!entryMetric && preferred === 'z') || (entryMetric !== 'standard' && preferred === 'z')) && <span className="text-[var(--primary)] text-[10px]">●</span>}
-                  </div>
-                  <input
-                    value={metricValue('z')}
-                    disabled={readOnly}
-                    inputMode="decimal"
-                    onFocus={() => onFocus?.()}
-                    onChange={(e) => void onMetricInput('z', e.target.value)}
-                    onBlur={() => {
-                      if (localZText !== null) {
-                        const n = parseNum(localZText);
-                        if (n === null) setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(result, subtest.scoreType) === 'manual' ? 'manual' : undefined });
-                        setLocalZText(null);
-                      }
-                    }}
-                    className={inputStyles('z', preferred === 'z' || entryMetric === 'z')}
-                    placeholder="–"
-                    aria-label={`Écart-type pour ${getSubtestDisplayName(subtest)}`}
-                  />
-                </div>
-                {/* Percentile — editable in manual mode */}
-                <div className="col-span-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">%</label>
-                  {percentileEditable ? (
-                    <input
-                      value={metricValue('percentile')}
-                      disabled={readOnly}
-                      inputMode="decimal"
-                      onFocus={() => onFocus?.()}
-                      onChange={(e) => void onMetricInput('percentile', e.target.value)}
-                      className={inputStyles('percentile', entryMetric === 'percentile')}
-                      placeholder="–"
-                      aria-label={`Percentile pour ${getSubtestDisplayName(subtest)}`}
-                    />
-                  ) : (
-                    <div className="w-full text-center text-lg font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
-                      {metricValue('percentile') ? `${metricValue('percentile')}` : '–'}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {/* Optional raw field for manual note — always shown when alwaysShowRaw is set */}
-              {(result.raw || subtest.alwaysShowRaw) && !conversionLocked && (
-                <div className="max-w-[200px]">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">
-                    {subtest.inputConfig?.rawValueLabel ?? 'BRUT'}
-                  </label>
-                  {subtest.inputConfig?.showRawFraction && subtest.inputConfig?.maxRawScore ? (
-                    <div className="flex items-center gap-1">
-                      <input
-                        value={metricValue('raw')}
-                        disabled={readOnly}
-                        inputMode="decimal"
-                        onChange={(e) => setPatch({ raw: e.target.value })}
-                        onFocus={() => onFocus?.()}
-                        className="w-16 text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[var(--primary)] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
-                        placeholder="–"
-                        aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
-                      />
-                      <span className="text-sm text-[var(--text-disabled)] font-medium">/ {subtest.inputConfig.maxRawScore}</span>
-                    </div>
-                  ) : (
-                    <input
-                      value={metricValue('raw')}
-                      disabled={readOnly}
-                      inputMode="decimal"
-                      onChange={(e) => setPatch({ raw: e.target.value })}
-                      onFocus={() => onFocus?.()}
-                      className="w-full text-center text-sm font-medium bg-transparent outline-none py-1 border-b border-dashed border-[var(--border-color)] focus:border-[var(--primary)] text-[var(--text-secondary)] placeholder:text-[var(--text-disabled)] transition-colors"
-                      placeholder="(optionnel)"
-                      aria-label={`Score brut pour ${getSubtestDisplayName(subtest)}`}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {!hasAutoNorms && statusMessage && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              {statusMessage}
-            </div>
-          )}
-          {conversionLocked && (
-            <div className="mt-2 rounded-lg border border-[var(--secondary)]/20 bg-[var(--secondary-opacity-5)] px-3 py-1.5 text-[11px] font-medium text-[var(--secondary)] inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              score_type = none: saisie manuelle NS/ET/%, conversion auto désactivée.
-            </div>
-          )}
-          {hasPendingDirectionOverride && (
-            <div className="mt-2 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-opacity-10)] px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
-            </div>
-          )}
-
-          {/* Gauss inline */}
-          <div className="mt-2">
-            <GaussBand z={visualZ} />
-          </div>
-
-          {warn && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/30 px-3 py-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-200 inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              {warn}
-            </div>
-          )}
-
-          <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
-
-          {/* Review toggle */}
-          <div className="mt-3">
-            <ReviewButton result={result} onChange={onChange} />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-const QualitativeRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
-  const options = [...(subtest.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
-  const selected = result.qualitativeCode || result.raw;
-
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-
-  return (
-    <div className="bg-[var(--card-bg)]">
-      <div className="p-4 md:p-5">
-        <div className="mb-4">
-          <div className="flex items-start gap-1.5">
-            <button
-              type="button"
-              onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
-              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
-              aria-label="Refermer le sous-test"
-            >
-              <ChevronDown size={12} className="shrink-0" />
-            </button>
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
-          </div>
-          <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Catégorie normative</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-          {options.map((o, index) => {
-            const active = selected === o.code;
-            return (
-              <button
-                key={o.code}
-                type="button"
-                disabled={readOnly}
-                onClick={() =>
-                  setPatch({
-                    raw: o.code,
-                    qualitativeCode: o.code,
-                    qualitativeLabel: o.label,
-                    standard: '',
-                    percentile: '',
-                    zScore: undefined,
-                    derived: undefined,
-                    scoreSource: 'manual_ns',
-                  })
-                }
-                className={`text-left rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${active
-                    ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white shadow-sm'
-                    : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-main)] hover:border-[var(--primary)]'
-                  } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
-              >
-                <div className="flex items-start gap-2">
-                  <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-[var(--progress-bg)] text-[var(--text-secondary)]'}`}>
-                    {index + 1}
-                  </span>
-                  <span>{o.label}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
-
-        <div className="mt-3">
-          <ReviewButton result={result} onChange={onChange} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const RawOnlyRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-  return (
-    <div className="bg-[var(--card-bg)]">
-      <div className="p-4 md:p-5">
-        <div className="mb-4">
-          <div className="flex items-start gap-1.5">
-            <button
-              type="button"
-              onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
-              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
-              aria-label="Refermer le sous-test"
-            >
-              <ChevronDown size={12} className="shrink-0" />
-            </button>
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
-          </div>
-          <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mt-1">Saisie brute manuelle</p>
-        </div>
-
-        <input
-          value={result.raw}
-          onChange={(e) => setPatch({ raw: e.target.value })}
-          onFocus={onFocus}
-          disabled={readOnly}
-          placeholder="Entrer la valeur brute"
-          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-3 text-center text-3xl font-bold text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors"
-        />
-        <VoiceObservation value={result.observation || ''} onChange={(value) => setPatch({ observation: value })} readOnly={readOnly} onFocus={onFocus} />
-
-        <div className="mt-3">
-          <ReviewButton result={result} onChange={onChange} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ─── Custom Text Row (Bilan écologique / Observation personnalisée) ─── */
-const CustomTextRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand }) => {
-  const setPatch = (patch: Partial<ScoreResult>) => onChange({ ...result, ...patch });
-
-  return (
-    <div className="bg-[var(--card-bg)]">
-      <div className="p-4 md:p-5 space-y-3">
-        <div>
-          <div className="flex items-start gap-1.5">
-            <button
-              type="button"
-              onClick={() => onToggleExpand?.()}
-              className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
-              title={onToggleExpand ? 'Refermer le sous-test' : undefined}
-              aria-label="Refermer le sous-test"
-            >
-              <ChevronDown size={12} className="shrink-0" />
-            </button>
-            <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">{getSubtestDisplayName(subtest)}</h4>
-          </div>
-        </div>
-        <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
-          <input
-            value={result.customLabel || ''}
-            onChange={(e) => setPatch({ customLabel: e.target.value })}
-            onFocus={onFocus}
-            disabled={readOnly}
-            placeholder="Ex : Observation en classe, Bilan écologique..."
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm font-semibold text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none transition-colors placeholder:text-[var(--text-disabled)] placeholder:font-normal"
-          />
-        </div>
-        <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Notes libres</label>
-          <textarea
-            value={result.observation || ''}
-            onChange={(e) => !readOnly && setPatch({ observation: e.target.value, raw: e.target.value.slice(0, 1) || '' })}
-            onFocus={onFocus}
-            disabled={readOnly}
-            placeholder="Décrivez vos observations..."
-            rows={10}
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--text-main)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none resize-none transition-colors placeholder:text-[var(--text-disabled)]"
-          />
-        </div>
-        <div className="mt-3">
-          <ReviewButton result={result} onChange={onChange} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ─── Helpers for computed_items aggregation ─── */
+// ─── Aggregate computation for computed_items subtests ───
 const computeAggregate = (
   items: SubtestItem[],
-  values: Record<string, number>,
-  aggregation: ItemsAggregation,
-  direction: EffectiveDirection,
+  values: Record<string, number | undefined>,
+  agg: ItemsAggregation,
 ): number | null => {
-  const defined = items
-    .filter(it => !it.isMaster && values[it.id] !== undefined && Number.isFinite(values[it.id]))
-    .map(it => values[it.id]);
-
-  if (defined.length === 0) return null;
-
-  if (aggregation === 'sum') {
-    return defined.reduce((a, b) => a + b, 0);
-  }
-  if (aggregation === 'best_of') {
-    return direction === 'lower_better' ? Math.min(...defined) : Math.max(...defined);
-  }
-  if (aggregation === 'mean') {
-    return defined.reduce((a, b) => a + b, 0) / defined.length;
-  }
-  // 'custom' — caller must provide brut directly
-  return null;
+  const vals = items
+    .filter((it) => !it.isMaster)
+    .map((it) => values[it.id])
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  if (vals.length === 0) return null;
+  if (agg === 'sum') return vals.reduce((a, b) => a + b, 0);
+  if (agg === 'best_of') return Math.max(...vals);
+  if (agg === 'mean') return vals.reduce((a, b) => a + b, 0) / vals.length;
+  return null; // 'custom' — manual entry
 };
 
-/* ─── CompositeItemsRow ─── */
-const CompositeItemsRow: React.FC<{
-  testId: string;
-  patient: Patient;
+// ─── Shared row header + collapse button ───
+const RowHeader: React.FC<{
+  subtest: SubtestDef;
+  badge?: React.ReactNode;
+  onToggleExpand?: () => void;
+}> = ({ subtest, badge, onToggleExpand }) => (
+  <div className="flex items-start gap-1.5 mb-4">
+    <button
+      type="button"
+      onClick={() => onToggleExpand?.()}
+      className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)] shrink-0"
+      aria-label="Refermer le sous-test"
+    >
+      <ChevronDown size={12} />
+    </button>
+    <div className="min-w-0 flex-1">
+      <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
+        {getSubtestDisplayName(subtest)}
+      </h4>
+      <div className="flex items-center flex-wrap gap-1.5 mt-1">
+        {subtest.unit && <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>}
+        {getScaleLabel(subtest.scoreType) && (
+          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
+            {getScaleLabel(subtest.scoreType)}
+          </span>
+        )}
+        {badge}
+      </div>
+    </div>
+  </div>
+);
+
+// ─── ScoreTypeReportModal: practitioner flags a wrong score_type ─────────────
+const ScoreTypeReportModal: React.FC<{
+  subtest: SubtestDef | null;
+  enteredNS?: number | null;
+  enteredET?: number | null;
+  enteredPct?: number | null;
+  onClose: () => void;
+}> = ({ subtest, enteredNS, enteredET, enteredPct, onClose }) => {
+  const { showToast } = useToast();
+  const [suggestedType, setSuggestedType] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!subtest) return null;
+
+  const SCORE_TYPES = ['scaled', 'standard', 't-score', 'sten', 'stanine', 'percentile', 'none'];
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    try {
+      const { AdminService } = await import('../../services/admin');
+      await AdminService.submitScoreTypeReport({
+        subtest_id: subtest.id,
+        current_score_type: String(subtest.scoreType || 'standard'),
+        suggested_score_type: suggestedType || undefined,
+        entered_ns: enteredNS ?? null,
+        entered_et: enteredET ?? null,
+        entered_pct: enteredPct ?? null,
+        note: note.trim() || undefined,
+      });
+      showToast('Signalement envoyé. Merci !', 'success');
+      onClose();
+    } catch (e) {
+      showToast('Erreur lors de l\'envoi du signalement.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] shadow-2xl p-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <AlertCircle size={18} className="text-amber-500 shrink-0" />
+          <h3 className="font-bold text-sm text-[var(--text-heading)]">Signaler un score type incorrect</h3>
+        </div>
+        <p className="text-xs text-[var(--text-secondary)] mb-4">
+          <span className="font-semibold text-[var(--text-main)]">{subtest.name}</span><br/>
+          Type actuel : <code className="text-[10px] bg-[var(--hover-bg)] px-1 rounded">{String(subtest.scoreType || 'standard')}</code>
+        </p>
+        <div className="mb-3">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Type suggéré (optionnel)</label>
+          <select
+            value={suggestedType}
+            onChange={e => setSuggestedType(e.target.value)}
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-heading)] outline-none focus:border-[var(--primary)]"
+          >
+            <option value="">— choisir —</option>
+            {SCORE_TYPES.filter(t => t !== String(subtest.scoreType || 'standard')).map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div className="mb-4">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Note (optionnel)</label>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            rows={2}
+            placeholder="Ex : le manuel donne une échelle en note T…"
+            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] resize-none"
+          />
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)]">Annuler</button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'Envoi…' : 'Signaler'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── NumericRow: NS-centric entry with auto-conversion ───────────────────────
+const NumericRow: React.FC<{
   subtest: SubtestDef;
   result: ScoreResult;
   onChange: (patch: Partial<ScoreResult>) => void;
   readOnly?: boolean;
   onFocus?: () => void;
   onToggleExpand?: () => void;
-  hasNorms?: boolean;
-  normsStatusCode?: NormsStatusCode;
-  effectiveDirection: EffectiveDirection;
-  baseDirection: EffectiveDirection;
-  onToggleDirection?: () => void;
-  hasPendingDirectionOverride?: boolean;
+  preferredMetric?: Metric;
+  onPreferredMetricChange?: (m: Metric) => void;
+  onAdvance?: () => void;
 }> = ({
-  testId,
-  patient,
-  subtest,
-  result,
-  onChange,
-  readOnly,
-  onFocus,
-  onToggleExpand,
-  hasNorms,
-  normsStatusCode,
-  effectiveDirection,
-  baseDirection,
-  onToggleDirection,
-  hasPendingDirectionOverride,
+  subtest, result, onChange, readOnly, onFocus, onToggleExpand,
+  preferredMetric, onPreferredMetricChange, onAdvance,
 }) => {
-  const cfg = subtest.inputConfig ?? {};
-  const items: SubtestItem[] = cfg.items ?? [];
-  const aggregation: ItemsAggregation = cfg.itemsAggregation ?? 'sum';
-  const isCustomAgg = aggregation === 'custom';
-  const scoreType = subtest.scoreType || 'standard';
+  const scoreType = String(subtest.scoreType || 'standard');
   const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
-  const canAutoConvert = !conversionLocked;
-  const hasAutoNorms = Boolean(hasNorms) && canAutoConvert;
+  const cfg = subtest.inputConfig || {};
+  const items: SubtestItem[] = cfg.items || [];
+  const aggregation: ItemsAggregation = (cfg.itemsAggregation || 'sum') as ItemsAggregation;
+  const hasItems = items.length > 0 && subtest.inputModel === 'computed_items';
 
-  const [isComputing, setIsComputing] = useState(false);
-  const [warn, setWarn] = useState<string | null>(null);
-  const [itemsExpanded, setItemsExpanded] = useState(true);
-  const [directMode, setDirectMode] = useState(isCustomAgg);
-
-  /** Local state mirrors result.rawItems for immediate UI reactivity */
-  const [localItemValues, setLocalItemValues] = useState<Record<string, number>>(
-    result.rawItems ?? {},
+  const [localItemValues, setLocalItemValues] = useState<Record<string, number | undefined>>(
+    () => (result.rawItems as Record<string, number | undefined> | undefined) || {},
   );
+  const [itemsExpanded, setItemsExpanded] = useState(true);
 
-  // Sync localItemValues when result.rawItems changes externally (e.g. load from DB)
-  useEffect(() => {
-    setLocalItemValues(result.rawItems ?? {});
-  }, [result.rawItems]);
+  React.useEffect(() => {
+    if (result.rawItems && Object.keys(result.rawItems).length > 0) {
+      setLocalItemValues(result.rawItems as Record<string, number | undefined>);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Active metric: prefer stored value, default to 'standard' (NS)
+  const activeMetric: Metric = (() => {
+    const em = result.entryMetric as Metric | undefined;
+    if (em && em !== 'raw') return em;
+    if (!hasValue(result) && preferredMetric && preferredMetric !== 'raw') return preferredMetric;
+    return 'standard';
+  })();
 
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
 
-  /** Run the scoring RPC with the given raw string value */
-  const fireScoring = useCallback(async (rawStr: string, rawVal: number) => {
-    if (!canAutoConvert || !hasAutoNorms) {
-      setPatch({ raw: rawStr, derived: { source: 'manual' } });
-      return;
-    }
-    setIsComputing(true);
-    try {
-      const dbSubtestId = subtest.id;
-      const out = await ScoringEngine.compute(
-        dbSubtestId,
-        rawVal,
-        ageMonths(patient.dob),
-        patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed',
-        patient.classLevel,
-      );
-      if (!out || !out.normFound) {
-        const msg = getNormStatusMessage(normsStatusCode) || 'Normes introuvables — saisie manuelle.';
-        setWarn(msg);
-        setPatch({ raw: rawStr, derived: { source: 'manual' } });
-        return;
-      }
-      let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
-      let standardToUse = out.standard ?? '';
-      let percentileToUse = out.percentile ?? '';
-      if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
-        zToUse = -zToUse;
-        const r = calculateFromZ(zToUse, scoreType);
-        standardToUse = r.standard ?? '';
-        percentileToUse = r.percentile ?? '';
-      }
-      const warningList = out.warnings.map(humanizeComputeWarning);
-      if (effectiveDirection !== baseDirection) warningList.push('Sens brut inversé localement.');
-      setWarn(warningList.length > 0 ? warningList.join(' | ') : null);
-      setPatch({
-        raw: rawStr,
-        standard: standardToUse,
-        percentile: percentileToUse,
-        zScore: zToUse ?? undefined,
-        derived: { standard: standardToUse || undefined, percentile: percentileToUse || undefined, zScore: zToUse ?? undefined, source: 'auto' },
-        scoreSource: 'auto',
-        conversionMode: 'auto',
-      });
-    } catch {
-      setWarn('Erreur lors du calcul automatique.');
-      setPatch({ raw: rawStr, derived: { source: 'manual' } });
-    } finally {
-      setIsComputing(false);
-    }
-  }, [subtest.id, testId, patient, hasAutoNorms, canAutoConvert, effectiveDirection, baseDirection, scoreType, normsStatusCode]);
+  const handleSetMetric = (m: Metric) => {
+    setPatch({ entryMetric: m });
+    onPreferredMetricChange?.(m);
+  };
 
-  /** Called whenever an item value changes */
-  const handleItemChange = useCallback((itemId: string, raw: string) => {
+  const handleItemChange = (itemId: string, text: string) => {
     if (readOnly) return;
-    const n = parseNum(raw);
-    const nextValues = { ...localItemValues };
-    if (n !== null) nextValues[itemId] = n;
-    else delete nextValues[itemId];
-
-    setLocalItemValues(nextValues);
-
-    const agg = computeAggregate(items, nextValues, aggregation, effectiveDirection);
-    if (agg !== null) {
-      const decimals = subtest.rawDisplayDecimals ?? 0;
-      const aggStr = decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg));
-      // Persist both rawItems and the aggregate raw
-      onChange(mergePatch(result, { rawItems: nextValues, raw: aggStr, derived: { source: 'manual' } }));
-      void fireScoring(aggStr, agg);
-    } else {
-      onChange(mergePatch(result, { rawItems: nextValues }));
-    }
-  }, [localItemValues, items, aggregation, effectiveDirection, result, subtest.rawDisplayDecimals, readOnly, fireScoring, onChange]);
-
-  const handleDirectRaw = useCallback(async (text: string) => {
-    if (readOnly) return;
-    setPatch({ raw: text, rawItems: {} });
-    setLocalItemValues({});
     const n = parseNum(text);
-    if (n !== null) void fireScoring(text, n);
-  }, [readOnly, fireScoring]);
+    const newVals = { ...localItemValues, [itemId]: n ?? undefined };
+    setLocalItemValues(newVals);
+    const agg = computeAggregate(items, newVals, aggregation);
+    const decimals = subtest.rawDisplayDecimals ?? 0;
+    const rawStr = agg !== null ? (decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg))) : result.raw || '';
+    setPatch({ rawItems: newVals, raw: rawStr, scoreSource: 'manual_raw' });
+  };
 
-  const agg = computeAggregate(items, localItemValues, aggregation, effectiveDirection);
-  const decimals = subtest.rawDisplayDecimals ?? 0;
-  const aggDisplay = agg !== null
-    ? (decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg)))
-    : null;
-  const displayedRaw = aggDisplay ?? (result.raw || null);
+  const handleInput = (text: string) => {
+    if (readOnly) return;
+    const n = parseNum(text);
+    const m = activeMetric === 'raw' ? 'standard' : activeMetric as 'standard' | 'z' | 'percentile';
+    const derived: DerivedScores = (n !== null && !conversionLocked) ? deriveScores(n, m, scoreType) : {};
+    if (m === 'standard') {
+      setPatch({ entryMetric: 'standard', standard: text, ...derived, scoreSource: 'manual_ns' });
+    } else if (m === 'z') {
+      setPatch({ entryMetric: 'z', zScore: n ?? undefined, ...derived, scoreSource: 'manual_et' });
+    } else {
+      setPatch({ entryMetric: 'percentile', percentile: text, ...derived, scoreSource: 'manual_pct' });
+    }
+  };
+
+  const handleBlur = () => {
+    if (hasValue(result) && !reviewed(result)) {
+      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+      setTimeout(() => onAdvance?.(), 200);
+    }
+  };
+
+  const getInputValue = (): string => {
+    if (activeMetric === 'z') {
+      const z = result.zScore;
+      return typeof z === 'number' && Number.isFinite(z) ? String(z) : '';
+    }
+    if (activeMetric === 'percentile') return result.percentile || '';
+    return result.standard || '';
+  };
+
+  const filledCount = items.filter((it) => !it.isMaster && localItemValues[it.id] !== undefined).length;
+  const displayGroup = cfg.displayGroup ?? 'column';
+  const gridClass =
+    displayGroup === 'grid_2' ? 'grid grid-cols-2 gap-2' :
+    displayGroup === 'grid_3' ? 'grid grid-cols-3 gap-2' :
+    displayGroup === 'table' ? 'divide-y divide-[var(--border-color)]' : 'space-y-2';
+
+  const metrics: Metric[] = conversionLocked ? [] : ['standard', 'z', 'percentile'];
+  const metricLabel = (m: Metric): string => {
+    if (m === 'standard') return getScaleLabel(subtest.scoreType) || 'NS';
+    if (m === 'z') return 'ET';
+    if (m === 'percentile') return '%';
+    return m.toUpperCase();
+  };
 
   const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-  let visualZ: number | null = hasZ ? result.zScore! : null;
-  if (visualZ === null && !conversionLocked && result.standard) {
-    const s = parseNum(result.standard);
-    if (s !== null) visualZ = calculateFromStandard(s, scoreType).zScore;
+  const derivedBadges: { label: string; value: string; z: number | null }[] = [];
+  if (!conversionLocked) {
+    if (activeMetric !== 'standard' && result.standard) derivedBadges.push({ label: 'NS', value: result.standard, z: null });
+    if (activeMetric !== 'z' && hasZ) derivedBadges.push({ label: 'ET', value: `${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`, z: result.zScore! });
+    if (activeMetric !== 'percentile' && result.percentile) derivedBadges.push({ label: '%', value: `${result.percentile}\u202f%`, z: null });
   }
-
-  const filledCount = items.filter(it => localItemValues[it.id] !== undefined).length;
-  const allFilled = filledCount > 0 && filledCount >= items.filter(it => !it.isMaster).length;
-
-  const displayGroup = cfg.displayGroup ?? 'column';
-  const gridClass = displayGroup === 'grid_2' ? 'grid grid-cols-2 gap-2' :
-    displayGroup === 'grid_3' ? 'grid grid-cols-3 gap-2' :
-    displayGroup === 'table' ? 'divide-y divide-[var(--border-color)]' :
-    'space-y-2';
+  const [showReportModal, setShowReportModal] = useState(false);
 
   return (
     <div className="bg-[var(--card-bg)]">
       <div className="p-4 md:p-5">
+        <RowHeader
+          subtest={subtest}
+          onToggleExpand={onToggleExpand}
+          badge={hasItems ? (
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300">
+              <Layers size={9} className="inline mr-0.5" />Items
+            </span>
+          ) : undefined}
+        />
 
-        {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <div className="flex items-start gap-1.5">
-              <button
-                type="button"
-                onClick={() => onToggleExpand?.()}
-                className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]"
-                title={onToggleExpand ? 'Refermer le sous-test' : undefined}
-                aria-label="Refermer le sous-test"
-              >
-                <ChevronDown size={12} className="shrink-0" />
-              </button>
-              <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
-                {getSubtestDisplayName(subtest)}
-              </h4>
-            </div>
-            <div className="flex items-center flex-wrap gap-1.5 mt-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>
-              {getScaleLabel(subtest.scoreType) && (
-                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
-                  {getScaleLabel(subtest.scoreType)}
-                </span>
-              )}
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300">
-                <Layers size={9} className="inline mr-0.5" />Items
-              </span>
-              {hasAutoNorms && (
-                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Normes ✓</span>
-              )}
-              {!hasAutoNorms && normsStatusCode && normsStatusCode !== 'ok' && (
-                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">Pas de normes</span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {isComputing && <Loader2 size={14} className="animate-spin text-[var(--primary)]" />}
-          </div>
-        </div>
-
-        {/* ── Items section ── */}
-        {!directMode && items.length > 0 && (
+        {/* Items section (computed_items) */}
+        {hasItems && (
           <div className="mb-4 rounded-xl border border-[var(--border-color)] overflow-hidden">
-            {/* Items header */}
             <button
               type="button"
-              onClick={() => setItemsExpanded(e => !e)}
+              onClick={() => setItemsExpanded((e) => !e)}
               className="w-full flex items-center justify-between px-3 py-2 bg-[var(--hover-bg)] text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
             >
               <span className="flex items-center gap-1.5">
-                <Layers size={11} />
-                Items
+                <Layers size={11} />Items
                 <span className="rounded-full bg-[var(--border-color)] px-1.5 py-0.5 text-[9px] font-medium">
-                  {filledCount}/{items.filter(it => !it.isMaster).length}
+                  {filledCount}/{items.filter((it) => !it.isMaster).length}
                 </span>
               </span>
               {itemsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
-
             {itemsExpanded && (
               <div className={`p-3 ${gridClass}`}>
                 {items.map((item) => {
@@ -1418,39 +626,26 @@ const CompositeItemsRow: React.FC<{
                     return (
                       <div key={item.id} className="flex items-center justify-between gap-2 py-1.5">
                         <span className="text-xs text-[var(--text-main)] font-medium">{item.label}</span>
-                        <button
-                          type="button"
-                          disabled={readOnly}
+                        <button type="button" disabled={readOnly}
                           onClick={() => handleItemChange(item.id, String(val === 1 ? 0 : 1))}
                           className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${val === 1 ? 'bg-emerald-500 text-white border-emerald-500' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
-                        >
-                          {val === 1 ? 'Oui' : 'Non'}
-                        </button>
+                        >{val === 1 ? 'Oui' : 'Non'}</button>
                       </div>
                     );
                   }
                   return (
                     <div key={item.id} className={`flex items-center gap-2 ${item.wide ? 'col-span-full' : ''}`}>
-                      <label className="text-xs text-[var(--text-main)] font-medium flex-1 min-w-0 truncate">
-                        {item.label}
-                      </label>
+                      <label className="text-xs text-[var(--text-main)] font-medium flex-1 min-w-0 truncate">{item.label}</label>
                       <div className="flex items-center gap-1 shrink-0">
-                        <input
-                          type="number"
-                          value={strVal}
-                          min={item.min}
-                          max={item.max}
+                        <input type="number" value={strVal} min={item.min} max={item.max}
                           step={item.decimals !== undefined ? Math.pow(10, -item.decimals) : 1}
-                          disabled={readOnly || item.isMaster}
-                          onFocus={() => onFocus?.()}
+                          disabled={readOnly || item.isMaster} onFocus={() => onFocus?.()}
                           onChange={(e) => handleItemChange(item.id, e.target.value)}
-                          placeholder="–"
-                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          placeholder="—"
+                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50"
                           aria-label={item.label}
                         />
-                        {item.unit && (
-                          <span className="text-[10px] text-[var(--text-secondary)] font-medium w-8">{item.unit}</span>
-                        )}
+                        {item.unit && <span className="text-[10px] text-[var(--text-secondary)] font-medium w-8">{item.unit}</span>}
                       </div>
                     </div>
                   );
@@ -1460,119 +655,219 @@ const CompositeItemsRow: React.FC<{
           </div>
         )}
 
-        {/* ── Brut agrégé ── */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-              {isCustomAgg || directMode ? 'Brut' : 'Brut calculé'}
-              {cfg.aggregationHint && !directMode && (
-                <span className="ml-1.5 text-[9px] font-normal text-[var(--text-disabled)] normal-case">
-                  ({cfg.aggregationHint})
+        {/* Metric selector + primary input */}
+        <div className="mb-3">
+          {metrics.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {metrics.map((m) => (
+                <button key={m} type="button" disabled={readOnly} onClick={() => handleSetMetric(m)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
+                    activeMetric === m
+                      ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
+                      : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)]'
+                  } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
+                >{metricLabel(m)}</button>
+              ))}
+            </div>
+          )}
+          <input
+            value={getInputValue()} disabled={readOnly} inputMode="decimal"
+            onFocus={() => onFocus?.()} onBlur={handleBlur}
+            onChange={(e) => handleInput(e.target.value)}
+            placeholder="—"
+            className={`w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
+            aria-label={`${metricLabel(activeMetric)} pour ${getSubtestDisplayName(subtest)}`}
+          />
+          {derivedBadges.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] font-medium items-center">
+              {derivedBadges.map((b) => (
+                <span key={b.label} className={b.label === 'ET' ? zToneClass(b.z) : 'text-[var(--text-secondary)]'}>
+                  {b.label}&nbsp;{b.value}
                 </span>
-              )}
-            </span>
-            {/* Toggle direct/items mode */}
-            {items.length > 0 && !isCustomAgg && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDirectMode(d => !d);
-                  if (!directMode) { setLocalItemValues({}); setPatch({ rawItems: {} }); }
-                }}
-                className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--primary)] transition-colors"
-              >
-                {directMode ? '← Saisir par items' : 'Saisie directe →'}
-              </button>
-            )}
-          </div>
-
-          {directMode || isCustomAgg ? (
-            <input
-              value={result.raw || ''}
-              disabled={readOnly}
-              inputMode="decimal"
-              onFocus={() => onFocus?.()}
-              onChange={(e) => void handleDirectRaw(e.target.value)}
-              placeholder="–"
-              className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
-            />
-          ) : (
-            <div className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 ${displayedRaw !== null ? 'bg-[var(--secondary-opacity-10)] border border-[var(--secondary)]/15' : 'border border-dashed border-[var(--border-color)]'}`}>
-              <span className={`text-3xl font-bold tabular-nums ${displayedRaw !== null ? 'text-[var(--text-heading)]' : 'text-[var(--text-disabled)]'}`}>
-                {displayedRaw ?? '–'}
-              </span>
-              {subtest.unit && displayedRaw !== null && (
-                <span className="text-xs text-[var(--text-secondary)] font-medium">{subtest.unit}</span>
+              ))}
+              {!readOnly && (
+                <button
+                  type="button"
+                  title="Signaler un score type incorrect"
+                  onClick={() => setShowReportModal(true)}
+                  className="ml-auto p-0.5 rounded text-amber-400 hover:text-amber-600 transition-colors opacity-50 hover:opacity-100"
+                >
+                  <AlertCircle size={13} />
+                </button>
               )}
             </div>
           )}
         </div>
 
-        {/* ── Standardised scores (if not score_type=none) ── */}
-        {!conversionLocked && (
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                {getMetricDisplayLabel('standard', subtest.scoreType)}
-              </label>
-              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-heading)] tabular-nums border-b border-[var(--border-color)]">
-                {result.standard || '–'}
-              </div>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">ET</label>
-              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-heading)] tabular-nums border-b border-[var(--border-color)]">
-                {hasZ ? `${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}` : '–'}
-              </div>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] mb-1">%</label>
-              <div className="text-center text-xl font-bold py-1.5 text-[var(--text-secondary)] tabular-nums border-b border-transparent">
-                {result.percentile || '–'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Direction badge ── */}
-        {canAutoConvert && subtest.scoreType !== 'none' && (
-          <div className="flex items-center gap-2 mb-2">
-            <DirectionBadge
-              direction={effectiveDirection}
-              pending={hasPendingDirectionOverride}
-              interactive
-              disabled={readOnly || !onToggleDirection}
-              onClick={onToggleDirection}
-            />
-            <span className="text-[10px] text-[var(--text-disabled)]">
-              {effectiveDirection === 'lower_better' ? 'Score décroissant avec le brut' : 'Score croissant avec le brut'}
-            </span>
-          </div>
-        )}
-
-        <GaussBand z={visualZ} />
-
-        {warn && (
-          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 inline-flex items-center gap-1.5">
-            <AlertTriangle size={12} />{warn}
-          </div>
-        )}
-        {hasPendingDirectionOverride && (
-          <div className="mt-2 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-opacity-10)] px-3 py-1.5 text-[11px] font-medium text-[#A84C34] inline-flex items-center gap-1.5">
-            <AlertTriangle size={12} />Sens brut local modifié. Il sera enregistré à l&apos;étape suivante.
-          </div>
-        )}
-
         <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
-        <div className="mt-3"><ReviewButton result={result} onChange={onChange} /></div>
       </div>
+      {showReportModal && (
+        <ScoreTypeReportModal
+          subtest={subtest}
+          enteredNS={typeof result.standard === 'string' ? parseFloat(result.standard) : null}
+          enteredET={result.zScore ?? null}
+          enteredPct={typeof result.percentile === 'string' ? parseFloat(result.percentile) : null}
+          onClose={() => setShowReportModal(false)}
+        />
+      )}
     </div>
   );
 };
 
+// ─── CustomTextRow: free text / observation entry ───
+const CustomTextRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onToggleExpand?: () => void;
+  onAdvance?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
+  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
+  const handleBlur = () => {
+    if (hasValue(result) && !reviewed(result)) {
+      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+      setTimeout(() => onAdvance?.(), 200);
+    }
+  };
+  return (
+    <div className="bg-[var(--card-bg)] p-4 md:p-5">
+      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
+      <div className="mb-3">
+        <input
+          type="text"
+          value={result.customLabel || ''}
+          disabled={readOnly}
+          onFocus={onFocus}
+          onBlur={handleBlur}
+          onChange={(e) => setPatch({ customLabel: e.target.value })}
+          placeholder="Intitulé personnalisé..."
+          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] transition-colors"
+        />
+      </div>
+      <VoiceObservation
+        value={result.observation || ''}
+        onChange={(v) => { setPatch({ observation: v }); }}
+        readOnly={readOnly}
+        onFocus={onFocus}
+      />
+    </div>
+  );
+};
+
+// ─── QualitativeRow: qualitative category selection ───
+const QualitativeRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onToggleExpand?: () => void;
+  onAdvance?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
+  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
+  const options = [...(subtest.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
+  const layout = subtest.inputConfig?.qualitativeLayout || 'toggle';
+  const selected = result.qualitativeCode || result.raw || '';
+
+  const selectOption = (code: string) => {
+    if (readOnly) return;
+    const opt = options.find((o) => o.code === code);
+    onChange(mergePatch(result, {
+      raw: code, qualitativeCode: code,
+      qualitativeLabel: opt?.label || '', standard: '', percentile: '',
+      zScore: undefined, scoreSource: 'manual_ns',
+    }));
+    setTimeout(() => onAdvance?.(), 250);
+  };
+
+  return (
+    <div className="bg-[var(--card-bg)] p-4 md:p-5">
+      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
+      {layout === 'toggle' ? (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {options.map((opt) => (
+            <button
+              key={opt.code}
+              type="button"
+              disabled={readOnly}
+              onFocus={onFocus}
+              onClick={() => selectOption(opt.code)}
+              className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${selected === opt.code ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm' : 'border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--primary)]'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <select
+          value={selected}
+          disabled={readOnly}
+          onFocus={onFocus}
+          onChange={(e) => selectOption(e.target.value)}
+          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text-heading)] outline-none focus:border-[var(--primary)] mb-3"
+        >
+          <option value="">— Sélectionner —</option>
+          {options.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
+        </select>
+      )}
+      <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
+    </div>
+  );
+};
+
+// ─── RawOnlyRow: single value entry for scoreType=none ───
+const RawOnlyRow: React.FC<{
+  subtest: SubtestDef;
+  result: ScoreResult;
+  onChange: (patch: Partial<ScoreResult>) => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onToggleExpand?: () => void;
+  onAdvance?: () => void;
+}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
+  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
+  const cfg = subtest.inputConfig || {};
+  const rawLabel = cfg.rawValueLabel || 'Valeur';
+  const showFraction = cfg.showRawFraction && cfg.maxRawScore != null;
+
+  const handleBlur = () => {
+    if (hasValue(result) && !reviewed(result)) {
+      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+      setTimeout(() => onAdvance?.(), 200);
+    }
+  };
+
+  return (
+    <div className="bg-[var(--card-bg)] p-4 md:p-5">
+      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
+      <div className="mb-4">
+        <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">{rawLabel}</span>
+        <div className="flex items-baseline gap-2">
+          <input
+            value={result.raw || ''}
+            disabled={readOnly}
+            inputMode="decimal"
+            onFocus={onFocus}
+            onBlur={handleBlur}
+            onChange={(e) => setPatch({ raw: e.target.value, entryMetric: 'raw', scoreSource: 'manual_raw' })}
+            placeholder="—"
+            className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
+          />
+          {showFraction && <span className="text-xl font-semibold text-[var(--text-secondary)]">/ {cfg.maxRawScore}</span>}
+          {subtest.unit && !showFraction && <span className="text-sm text-[var(--text-secondary)] font-medium">{subtest.unit}</span>}
+        </div>
+      </div>
+      <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
+    </div>
+  );
+};
+
+// CompositeItemsRow = NumericRow (handles computed_items via hasItems check)
+const CompositeItemsRow = NumericRow;
+
 const FlexibleSubtestRow = React.memo((props: {
-  testId: string;
-  patient: Patient;
   subtest: SubtestDef;
   result: ScoreResult;
   onChange: (patch: Partial<ScoreResult>) => void;
@@ -1580,51 +875,26 @@ const FlexibleSubtestRow = React.memo((props: {
   onFocus?: () => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
-  hasNorms?: boolean;
-  normsStatusCode?: NormsStatusCode;
-  effectiveDirection: EffectiveDirection;
-  baseDirection: EffectiveDirection;
-  onToggleDirection?: () => void;
-  hasPendingDirectionOverride?: boolean;
+  preferredMetric?: Metric;
+  onPreferredMetricChange?: (m: Metric) => void;
+  onAdvance?: () => void;
 }) => {
-  const model = props.subtest.inputModel || 'numeric_4mode';
-  if (model === 'custom_text') return <CustomTextRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
-  if (model === 'qualitative_category') return <QualitativeRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
-  if (model === 'raw_only') return <RawOnlyRow subtest={props.subtest} result={props.result} onChange={props.onChange} readOnly={props.readOnly} onFocus={props.onFocus} onToggleExpand={props.onToggleExpand} />;
-  if (model === 'computed_items') return (
-    <CompositeItemsRow
-      testId={props.testId}
-      patient={props.patient}
-      subtest={props.subtest}
-      result={props.result}
-      onChange={props.onChange}
-      readOnly={props.readOnly}
-      onFocus={props.onFocus}
-      onToggleExpand={props.onToggleExpand}
-      hasNorms={props.hasNorms}
-      normsStatusCode={props.normsStatusCode}
-      effectiveDirection={props.effectiveDirection}
-      baseDirection={props.baseDirection}
-      onToggleDirection={props.onToggleDirection}
-      hasPendingDirectionOverride={props.hasPendingDirectionOverride}
-    />
-  );
+  const { subtest, result, onChange, readOnly, onFocus, onToggleExpand, preferredMetric, onPreferredMetricChange, onAdvance } = props;
+  const model = subtest.inputModel || 'numeric_4mode';
+  if (model === 'custom_text') return <CustomTextRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
+  if (model === 'qualitative_category') return <QualitativeRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
+  if (model === 'raw_only') return <RawOnlyRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
   return (
     <NumericRow
-      testId={props.testId}
-      patient={props.patient}
-      subtest={props.subtest}
-      result={props.result}
-      onChange={props.onChange}
-      readOnly={props.readOnly}
-      onFocus={props.onFocus}
-      onToggleExpand={props.onToggleExpand}
-      hasNorms={props.hasNorms}
-      normsStatusCode={props.normsStatusCode}
-      effectiveDirection={props.effectiveDirection}
-      baseDirection={props.baseDirection}
-      onToggleDirection={props.onToggleDirection}
-      hasPendingDirectionOverride={props.hasPendingDirectionOverride}
+      subtest={subtest}
+      result={result}
+      onChange={onChange}
+      readOnly={readOnly}
+      onFocus={onFocus}
+      onToggleExpand={onToggleExpand}
+      preferredMetric={preferredMetric}
+      onPreferredMetricChange={onPreferredMetricChange}
+      onAdvance={onAdvance}
     />
   );
 });
@@ -1634,7 +904,8 @@ const CompactSubtestRow: React.FC<{
   result: ScoreResult;
   onClick: () => void;
   onDelete?: () => void;
-}> = ({ subtest, result, onClick, onDelete }) => {
+  onInlineChange?: (patch: Partial<ScoreResult>) => void;
+}> = ({ subtest, result, onClick, onDelete, onInlineChange }) => {
   const isReviewed = reviewed(result);
   const hasData = hasValue(result);
   const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
@@ -1645,13 +916,6 @@ const CompactSubtestRow: React.FC<{
   if (hasZ) parts.push(`ET ${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`);
   if (result.percentile) parts.push(`${result.percentile}\u202F%`);
   if (result.qualitativeLabel) parts.push(result.qualitativeLabel);
-  if (result.raw && parts.length === 0 && result.raw.trim()) {
-    const rawNum = parseFloat(result.raw);
-    const formattedRaw = !isNaN(rawNum) && subtest.rawDisplayDecimals != null
-      ? rawNum.toFixed(subtest.rawDisplayDecimals)
-      : result.raw;
-    parts.push(`Brut\u00a0: ${formattedRaw}`);
-  }
 
   return (
     <div className="w-full flex items-center group">
@@ -1675,6 +939,28 @@ const CompactSubtestRow: React.FC<{
         <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
           }`} />
       </button>
+      {onInlineChange && subtest.inputModel !== 'custom_text' && subtest.inputModel !== 'qualitative_category' && !isManualOnlyScoreType(subtest.scoreType) && (
+        <div className="shrink-0 flex items-center mr-1" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={result.standard || ''}
+            onChange={(e) => {
+              const n = parseNum(e.target.value);
+              const derived = n !== null ? deriveScores(n, 'standard', String(subtest.scoreType || 'standard')) : {};
+              onInlineChange(mergePatch(result, { standard: e.target.value, entryMetric: 'standard', scoreSource: 'manual_ns', ...derived }));
+            }}
+            onBlur={() => {
+              if (hasValue(result) && !reviewed(result)) {
+                onInlineChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="NS"
+            className="w-16 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
+          />
+        </div>
+      )}
       {onDelete && (
         <button
           type="button"
@@ -1689,31 +975,22 @@ const CompactSubtestRow: React.FC<{
   );
 };
 
-/* ─── Table View: spreadsheet-style quick entry ─── */
+/* â”€â”€â”€ Table View: spreadsheet-style quick entry â”€â”€â”€ */
 const TableView: React.FC<{
   testId: string;
-  patient: Patient;
   subtests: SubtestDef[];
   tests: TestData;
-  normsStatusMap: Record<string, NormsStatus>;
-  directionByDbSubtestId: Record<string, EffectiveDirection>;
   updateSubtest: (testId: string, subId: string, patch: Partial<ScoreResult>) => void;
-}> = ({ testId, patient, subtests, tests, normsStatusMap, directionByDbSubtestId, updateSubtest }) => {
+}> = ({ testId, subtests, tests, updateSubtest }) => {
   const [localZ, setLocalZ] = useState<Record<string, string>>({});
+  const [reportingSubtest, setReportingSubtest] = useState<SubtestDef | null>(null);
 
   const getResult = (subId: string): ScoreResult => tests[testId]?.[subId] || emptyScore();
 
-  const handleInput = async (subId: string, metric: Metric, text: string, subtest: SubtestDef) => {
+  const handleInput = (subId: string, metric: Metric, text: string, subtest: SubtestDef) => {
     const current = getResult(subId);
-    const scoreType = subtest.scoreType || 'standard';
-    const conversionMode = resolveConversionMode(current, subtest.scoreType);
+    const scoreType = String(subtest.scoreType || 'standard');
     const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
-    const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
-    const autoSwitchToManual = shouldSwitchToManualMode(current, metric, subtest.scoreType);
-    const nextManualMode = conversionLocked || conversionMode === 'manual' || autoSwitchToManual;
-    const conversionPatch: Partial<ScoreResult> = nextManualMode
-      ? { conversionMode: 'manual' }
-      : { conversionMode: 'auto' };
     const setPatch = (patch: Partial<ScoreResult>) => updateSubtest(testId, subId, mergePatch(current, patch));
 
     if (metric === 'z') {
@@ -1721,67 +998,31 @@ const TableView: React.FC<{
       const n = parseNum(text);
       if (n === null) {
         if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
-        setPatch({ entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', ...conversionPatch });
+        setPatch({ entryMetric: 'z', zScore: undefined, scoreSource: 'manual_et' });
         return;
       }
-      // Always cross-convert ET ↔ NS ↔ %
-      const c = calculateFromZ(n, scoreType);
-      setPatch({ entryMetric: 'z', zScore: n, standard: c.standard, percentile: c.percentile, derived: { standard: c.standard, percentile: c.percentile, zScore: n, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_et', ...conversionPatch });
+      const derived = !conversionLocked ? deriveScores(n, 'z', scoreType) : {};
+      setPatch({ entryMetric: 'z', zScore: n, ...(derived.standard !== undefined && { standard: derived.standard }), ...(derived.percentile !== undefined && { percentile: derived.percentile }), scoreSource: 'manual_et' });
       return;
     }
     setLocalZ(prev => { const next = { ...prev }; delete next[subId]; return next; });
     const n = parseNum(text);
 
-    if (metric === 'raw') {
-      setPatch({ entryMetric: 'raw', raw: text, ...conversionPatch });
-      const dbSubtestId = subId;
-      const status = normsStatusMap[dbSubtestId];
-      const canCompute = status?.statusCode === 'ok';
-      if (n !== null && canAutoConvert && (subtest.computationMode || 'LOOKUP') !== 'NONE' && canCompute) {
-        try {
-          const out = await ScoringEngine.compute(dbSubtestId, n, ageMonths(patient.dob), patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed', patient.classLevel);
-          if (out?.normFound) {
-            let zToUse = typeof out.zScore === 'number' ? out.zScore : null;
-            let standardToUse = out.standard ?? '';
-            let percentileToUse = out.percentile ?? '';
-            const baseDirection = resolveEffectiveDirection(subtest.rawDirection, subtest.name);
-            const effectiveDirection = directionByDbSubtestId[dbSubtestId] || baseDirection;
-            if (out.method === 'PARAMETRIC' && zToUse !== null && effectiveDirection !== baseDirection) {
-              zToUse = -zToUse;
-              const recalculated = calculateFromZ(zToUse, scoreType);
-              standardToUse = recalculated.standard ?? '';
-              percentileToUse = recalculated.percentile ?? '';
-            }
-            setPatch({
-              raw: text, standard: standardToUse, percentile: percentileToUse,
-              zScore: zToUse ?? undefined,
-              derived: { standard: standardToUse || undefined, percentile: percentileToUse || undefined, zScore: zToUse ?? undefined, source: 'auto' },
-              scoreSource: 'auto',
-              conversionMode: 'auto',
-            });
-          }
-        } catch { /* silent */ }
-      }
-      return;
-    }
     if (metric === 'standard') {
-      if (n === null) { setPatch({ entryMetric: 'standard', standard: text, derived: { source: 'manual' }, scoreSource: 'manual_ns', ...conversionPatch }); return; }
-      const c = calculateFromStandard(n, scoreType);
-      setPatch({ entryMetric: 'standard', standard: text, percentile: c.percentile, zScore: c.zScore, derived: { standard: text, percentile: c.percentile, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' }, scoreSource: 'manual_ns', ...conversionPatch });
+      const derived = (n !== null && !conversionLocked) ? deriveScores(n, 'standard', scoreType) : {};
+      setPatch({ entryMetric: 'standard', standard: text, ...(derived.zScore !== undefined && { zScore: derived.zScore }), ...(derived.percentile !== undefined && { percentile: derived.percentile }), scoreSource: 'manual_ns' });
       return;
     }
     if (metric === 'percentile') {
-      if (n === null) { setPatch({ entryMetric: 'percentile', percentile: text, derived: { source: 'manual' }, scoreSource: 'manual_pct', ...conversionPatch }); return; }
-      const c = calculateFromPercentile(n, scoreType);
-      setPatch({
-        entryMetric: 'percentile',
-        percentile: text,
-        standard: c.standard,
-        zScore: c.zScore,
-        derived: { standard: c.standard, percentile: text, zScore: c.zScore, source: nextManualMode ? 'manual' : 'assisted' },
-        scoreSource: 'manual_pct',
-        ...conversionPatch,
-      });
+      const derived = (n !== null && !conversionLocked) ? deriveScores(n, 'percentile', scoreType) : {};
+      setPatch({ entryMetric: 'percentile', percentile: text, ...(derived.zScore !== undefined && { zScore: derived.zScore }), ...(derived.standard !== undefined && { standard: derived.standard }), scoreSource: 'manual_pct' });
+    }
+  };
+
+  const handleBlurField = (subId: string) => {
+    const res = getResult(subId);
+    if (hasValue(res) && !reviewed(res)) {
+      updateSubtest(testId, subId, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
     }
   };
 
@@ -1793,11 +1034,10 @@ const TableView: React.FC<{
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-[var(--border-color)]">
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[22%]">Épreuve</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[10%]">Brut</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[10%]">NS</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[10%]">ET</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] w-[7%]">%</th>
+            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">Épreuve</th>
+            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">NS</th>
+            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">ET</th>
+            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] w-[8%]">%</th>
             <th className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-auto">Observation</th>
             <th className="text-center py-2 px-1 w-[3%]" />
           </tr>
@@ -1805,16 +1045,8 @@ const TableView: React.FC<{
         <tbody>
           {subtests.map(st => {
             const res = getResult(st.id);
-            const dbSubId = st.id;
-            const stStatus = normsStatusMap[dbSubId];
-            const conversionMode = resolveConversionMode(res, st.scoreType);
-            const conversionLocked = isManualOnlyScoreType(st.scoreType);
-            const canAutoConvert = conversionMode === 'auto' && !conversionLocked;
-            const stHasNorms = stStatus?.statusCode === 'ok' && canAutoConvert;
-            const pref = getPreferredMetric(st);
             const isQual = st.inputModel === 'qualitative_category';
             const isRawOnly = st.inputModel === 'raw_only';
-            const percentileEditable = !canAutoConvert;
             const isRev = reviewed(res);
             const hasData = hasValue(res);
             const hasZ = typeof res.zScore === 'number' && Number.isFinite(res.zScore);
@@ -1825,7 +1057,7 @@ const TableView: React.FC<{
               return (
                 <tr key={st.id} className="border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors">
                   <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{getSubtestDisplayName(st)}</td>
-                  <td colSpan={4} className="py-2 px-1">
+                  <td colSpan={3} className="py-2 px-1">
                     <select
                       value={res.qualitativeCode || res.raw || ''}
                       onChange={(e) => {
@@ -1838,7 +1070,7 @@ const TableView: React.FC<{
                       }}
                       className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
                     >
-                      <option value="">–</option>
+                      <option value="">—</option>
                       {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
                     </select>
                   </td>
@@ -1858,104 +1090,64 @@ const TableView: React.FC<{
             }
 
             return (
-              <tr key={st.id} className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : tone === 'good' ? 'bg-emerald-50/20 dark:bg-emerald-900/5' : ''}`}>
+              <tr key={st.id} className={`group border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : tone === 'good' ? 'bg-emerald-50/20 dark:bg-emerald-900/5' : ''}`}>
                 <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
                   <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
-                  {canAutoConvert && st.computationMode === 'PARAMETRIC' && (
-                    <span className="mt-1 inline-flex">
-                      <DirectionBadge
-                        direction={directionByDbSubtestId[dbSubId] || resolveEffectiveDirection(st.rawDirection, st.name)}
-                      />
-                    </span>
-                  )}
-                  {!isRawOnly && (
-                    <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--hover-bg)] p-0.5">
-                      <button
-                        type="button"
-                        disabled={conversionLocked}
-                        onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'auto' }))}
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'auto' ? 'bg-[var(--secondary)] text-white' : 'text-[var(--text-secondary)]'} ${conversionLocked ? 'cursor-not-allowed opacity-60' : ''}`}
-                      >
-                        A
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateSubtest(testId, st.id, mergePatch(res, { conversionMode: 'manual' }))}
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${conversionMode === 'manual' ? 'bg-[var(--primary)] text-white' : 'text-[var(--text-secondary)]'}`}
-                      >
-                        M
-                      </button>
-                    </div>
-                  )}
-                </td>
-                {/* Brut — disabled/greyed when no norms */}
-                <td className="py-1 px-1">
-                  {stHasNorms || isRawOnly ? (
-                    <input
-                      value={res.raw || ''}
-                      inputMode="decimal"
-                      onChange={(e) => void handleInput(st.id, 'raw', e.target.value, st)}
-                      className={`${cellInput} ${res.entryMetric === 'raw' || (!res.entryMetric && stHasNorms) ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="–"
-                    />
-                  ) : (
-                    <div className="text-center text-xs font-medium text-[var(--text-disabled)] py-1.5 tabular-nums opacity-40">–</div>
+                  {getScaleLabel(st.scoreType) && (
+                    <span className="text-[9px] font-medium text-[var(--text-secondary)]">{getScaleLabel(st.scoreType)}</span>
                   )}
                 </td>
                 {/* NS */}
                 <td className="py-1 px-1">
                   {isRawOnly ? (
-                    <div className={cellDisplay}>–</div>
+                    <div className={cellDisplay}>—</div>
                   ) : (
                     <input
                       value={res.standard || ''}
                       inputMode="decimal"
-                      onChange={(e) => void handleInput(st.id, 'standard', e.target.value, st)}
-                      className={`${cellInput} ${res.entryMetric === 'standard' || (!res.entryMetric && !stHasNorms && pref === 'standard') ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="–"
+                      onChange={(e) => handleInput(st.id, 'standard', e.target.value, st)}
+                      onBlur={() => handleBlurField(st.id)}
+                      className={`${cellInput} ${res.entryMetric === 'standard' ? 'border-b-[var(--primary)]' : ''}`}
+                      placeholder="—"
                     />
                   )}
                 </td>
-                {/* ET */}
+                {/* ET — colored by z score */}
                 <td className="py-1 px-1">
                   {isRawOnly ? (
-                    <div className={cellDisplay}>–</div>
+                    <div className={cellDisplay}>—</div>
                   ) : (
                     <input
                       value={localZ[st.id] !== undefined ? localZ[st.id] : (hasZ ? String(res.zScore) : '')}
                       inputMode="decimal"
-                      onChange={(e) => void handleInput(st.id, 'z', e.target.value, st)}
+                      onChange={(e) => handleInput(st.id, 'z', e.target.value, st)}
                       onBlur={() => {
                         if (localZ[st.id] !== undefined) {
-                          const n = parseNum(localZ[st.id]);
-                          if (n === null) {
-                            updateSubtest(testId, st.id, mergePatch(res, { entryMetric: 'z', zScore: undefined, derived: { source: 'manual' }, scoreSource: 'manual_et', conversionMode: resolveConversionMode(res, st.scoreType) === 'manual' ? 'manual' : undefined }));
-                          }
                           setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
                         }
+                        handleBlurField(st.id);
                       }}
-                      className={`${cellInput} ${res.entryMetric === 'z' || (!res.entryMetric && !stHasNorms && pref === 'z') ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="–"
+                      className={`${cellInput} ${res.entryMetric === 'z' ? 'border-b-[var(--primary)]' : ''} ${hasZ ? zToneClass(res.zScore!) : ''}`}
+                      placeholder="—"
                     />
                   )}
                 </td>
-                {/* % — editable in manual mode */}
+                {/* % — editable */}
                 <td className="py-1 px-1">
                   {isRawOnly ? (
-                    <div className={cellDisplay}>–</div>
-                  ) : percentileEditable ? (
+                    <div className={cellDisplay}>—</div>
+                  ) : (
                     <input
                       value={res.percentile || ''}
                       inputMode="decimal"
-                      onChange={(e) => void handleInput(st.id, 'percentile', e.target.value, st)}
+                      onChange={(e) => handleInput(st.id, 'percentile', e.target.value, st)}
+                      onBlur={() => handleBlurField(st.id)}
                       className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="–"
+                      placeholder="—"
                     />
-                  ) : (
-                    <div className={cellDisplay}>{res.percentile || '–'}</div>
                   )}
                 </td>
-                {/* Observation — inline text input */}
+                {/* Observation */}
                 <td className="py-1 px-2">
                   <input
                     value={res.observation || ''}
@@ -1964,17 +1156,37 @@ const TableView: React.FC<{
                     placeholder="Note..."
                   />
                 </td>
-                {/* Review dot */}
+                {/* Status dot + report */}
                 <td className="py-1 px-1 text-center">
-                  <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
+                  <div className="flex items-center justify-center gap-1">
+                    <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
+                    <button
+                      type="button"
+                      title="Signaler un score type incorrect"
+                      onClick={() => setReportingSubtest(st)}
+                      className="p-0.5 rounded text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    >
+                      <AlertCircle size={11} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      {reportingSubtest && (
+        <ScoreTypeReportModal
+          subtest={reportingSubtest}
+          enteredNS={(() => { const r = tests[testId]?.[reportingSubtest.id]; return r?.standard ? parseFloat(r.standard) : null; })()}
+          enteredET={tests[testId]?.[reportingSubtest.id]?.zScore ?? null}
+          enteredPct={(() => { const r = tests[testId]?.[reportingSubtest.id]; return r?.percentile ? parseFloat(r.percentile) : null; })()}
+          onClose={() => setReportingSubtest(null)}
+        />
+      )}
     </div>
   );
+
 };
 
 const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
@@ -2063,14 +1275,15 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
   );
 };
 
-export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; existingTests: TestData; onAddTests: (selection: Record<string, string[]>) => void; onContribute?: () => void; initialExpandedTestId?: string | null }> = ({ isOpen, onClose, existingTests, onAddTests, onContribute, initialExpandedTestId }) => {
+export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; existingTests: TestData; onAddTests: (selection: Record<string, string[]>) => void; initialExpandedTestId?: string | null }> = ({ isOpen, onClose, existingTests, onAddTests, initialExpandedTestId }) => {
   const { catalog, searchTests, ensureCatalogLoaded, loading } = useCatalog();
+  const { favorites, recentTests, toggleFavorite, isFavorite } = useFavoriteTests();
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
   const [subtestSearchByTest, setSubtestSearchByTest] = useState<Record<string, string>>({});
-
+  const [showCustomEditor, setShowCustomEditor] = useState(false);
   useEffect(() => {
     if (!isOpen) return;
     ensureCatalogLoaded();
@@ -2096,11 +1309,14 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
 
   const totalSelected = Object.values(selected).reduce((acc: number, ids: string[]) => acc + ids.length, 0);
   const categoryTabs = useMemo(() => [{ id: 'all', label: 'Tous' }, ...catalog.map((c) => ({ id: c.id, label: c.name }))], [catalog]);
+  const allTests = useMemo(() => catalog.flatMap((c) => c.tests), [catalog]);
   const testsToRender = useMemo(() => {
     if (searchTerm.trim()) return searchTests(searchTerm.trim());
-    if (activeCategoryId === 'all') return catalog.flatMap((c) => c.tests);
+    if (activeCategoryId === 'all') return allTests;
     return catalog.find((c) => c.id === activeCategoryId)?.tests || [];
-  }, [searchTerm, searchTests, activeCategoryId, catalog]);
+  }, [searchTerm, searchTests, activeCategoryId, catalog, allTests]);
+  const favoriteTests = useMemo(() => allTests.filter(t => isFavorite(t.id)), [allTests, isFavorite]);
+  const recentTestObjects = useMemo(() => recentTests.map(id => allTests.find(t => t.id === id)).filter(Boolean) as typeof allTests, [recentTests, allTests]);
 
   if (!isOpen) return null;
 
@@ -2165,6 +1381,44 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
           {loading && testsToRender.length === 0 && <p className="text-sm text-[var(--text-secondary)]">Chargement...</p>}
           {testsToRender.length === 0 && !loading && <p className="text-sm text-[var(--text-secondary)]">Aucun test trouvé pour ce filtre.</p>}
 
+          {/* Favorites section */}
+          {!searchTerm.trim() && favoriteTests.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
+                <Star size={11} className="text-amber-400 fill-amber-400" />Favoris
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {favoriteTests.map(t => {
+                  const sc = (selected[t.id] || []).length;
+                  return (
+                    <button key={t.id} type="button" onClick={() => setExpandedTestId(prev => prev === t.id ? null : t.id)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors ${sc > 0 ? 'bg-[var(--primary-opacity-5)] border-[var(--primary)]/40 text-[var(--primary)]' : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--primary)]'}`}>
+                      {t.name}{sc > 0 && <span className="ml-1.5 rounded-full bg-[var(--primary)] text-white px-1.5 text-[10px]">{sc}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Recent tests section */}
+          {!searchTerm.trim() && recentTestObjects.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Récemment utilisés</h3>
+              <div className="flex flex-wrap gap-2">
+                {recentTestObjects.map(t => {
+                  const sc = (selected[t.id] || []).length;
+                  return (
+                    <button key={t.id} type="button" onClick={() => setExpandedTestId(prev => prev === t.id ? null : t.id)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors ${sc > 0 ? 'bg-[var(--primary-opacity-5)] border-[var(--primary)]/40 text-[var(--primary)]' : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--primary)]'}`}>
+                      {t.name}{sc > 0 && <span className="ml-1.5 rounded-full bg-[var(--primary)] text-white px-1.5 text-[10px]">{sc}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
             {testsToRender.map((test) => {
               const isExpanded = expandedTestId === test.id;
@@ -2192,6 +1446,14 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                       <p className="text-[11px] text-[var(--text-secondary)]">{test.subtests.length} sous-tests</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(test.id); }}
+                        className="p-1 rounded-lg hover:bg-[var(--hover-bg)] transition-colors"
+                        aria-label={isFavorite(test.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                      >
+                        <Star size={14} className={isFavorite(test.id) ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-disabled)]'} />
+                      </button>
                       {alreadyCount > 0 && <span className="rounded-full bg-[var(--progress-bg)] text-[var(--text-secondary)] px-2 py-0.5 text-[10px] font-bold">{alreadyCount} déjà</span>}
                       {selectedCount > 0 && <span className="rounded-full bg-[var(--primary)] text-white px-2 py-0.5 text-[10px] font-bold">{selectedCount}</span>}
                       {isExpanded ? <ChevronDown size={16} className="text-[var(--text-secondary)]" /> : <ChevronRight size={16} className="text-[var(--text-secondary)]" />}
@@ -2265,37 +1527,19 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               );
             })}
           </div>
-
-          <div className="mt-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><FilePlus size={16} /> Test manquant ?</h3>
-              <p className="text-xs text-[var(--text-secondary)]">Ajoutez-le via le studio contribution.</p>
-            </div>
-            {onContribute && <button onClick={() => { onClose(); onContribute(); }} className="px-4 py-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-heading)] hover:border-[var(--secondary)]">Contribuer</button>}
-          </div>
-
-          <div className="mt-3 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-[var(--text-heading)] flex items-center gap-2"><MessageSquare size={16} className="text-[var(--primary)]" /> Observation personnalisée</h3>
-              <p className="text-xs text-[var(--text-secondary)]">Zone de texte libre avec titre modifiable (bilan écologique, questionnaire...).</p>
-            </div>
-            <button
-              onClick={() => {
-                const customId = `custom_${Date.now()}`;
-                onAddTests({ custom_observations: [customId] });
-                // Do NOT call onClose() here — closing immediately after onAddTests
-                // can interfere with the batched state updates and trigger unexpected
-                // navigation away from Step 2. The user closes the modal manually.
-              }}
-              className="shrink-0 px-4 py-2 bg-[var(--primary)] text-white border border-[var(--primary)] rounded-xl text-xs font-bold hover:brightness-105 transition-colors"
-            >
-              + Ajouter
-            </button>
-          </div>
         </div>
 
         <div className="p-4 border-t border-[var(--border-color)] bg-[var(--card-bg)] flex flex-wrap justify-between items-center gap-3">
-          <span className="text-xs text-[var(--text-secondary)] font-semibold">{totalSelected} épreuve(s) sélectionnée(s)</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[var(--text-secondary)] font-semibold">{totalSelected} épreuve(s) sélectionnée(s)</span>
+            <button
+              type="button"
+              onClick={() => setShowCustomEditor(true)}
+              className="flex items-center gap-1.5 text-xs font-bold text-[var(--primary)] hover:underline"
+            >
+              <Plus size={13} /> Créer un test
+            </button>
+          </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 font-bold text-[var(--text-secondary)]">Annuler</button>
             <button
@@ -2312,6 +1556,9 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
           </div>
         </div>
       </div>
+      {showCustomEditor && (
+        <CustomTestEditorLazy onClose={() => setShowCustomEditor(false)} onCreated={() => ensureCatalogLoaded()} />
+      )}
     </div>
   );
 };
@@ -2337,9 +1584,11 @@ const SortableTestWrapper: React.FC<{
   );
 };
 
-export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack, onContribute }) => {
-  const toast = useToast();
+
+export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack }) => {
   const { catalog, ensureCatalogLoaded } = useCatalog();
+  const { pushRecent } = useFavoriteTests();
+  const toast = useToast();
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogTargetTestId, setCatalogTargetTestId] = useState<string | null>(null);
   const [collapsedTests, setCollapsedTests] = useState<Record<string, boolean>>({});
@@ -2347,12 +1596,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const [subtestFilters, setSubtestFilters] = useState<Record<string, string>>({});
   const [showWarning, setShowWarning] = useState(false);
   const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
-  const [normsStatusMap, setNormsStatusMap] = useState<Record<string, NormsStatus>>({});
-  const [pendingDirectionOverrides, setPendingDirectionOverrides] = useState<Record<string, EffectiveDirection>>({});
-  const [isPersistingDirectionOverrides, setIsPersistingDirectionOverrides] = useState(false);
   const [viewMode, setViewMode] = useState<Record<string, 'accordion' | 'table'>>({});
   const [testOrder, setTestOrder] = useState<string[]>(() => Object.keys(tests));
-  const normsLoadedRef = useRef<string>('');
+  const [preferredMetricByTest, setPreferredMetricByTest] = useState<Record<string, Metric>>({});
   const prevExpandedTestIdRef = useRef<string | null>(null);
 
   // Keep testOrder in sync when tests keys change externally (e.g. initial load)
@@ -2402,223 +1648,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     ensureCatalogLoaded();
   }, [ensureCatalogLoaded]);
 
-  // Load norms status for all current subtests (age/gender aware)
-  useEffect(() => {
-    const allSubtestIds: string[] = [];
-    Object.entries(tests).forEach(([testId, subtests]) => {
-      Object.keys(subtests).forEach((subId) => {
-        const dbId = subId;
-        allSubtestIds.push(dbId);
-      });
-    });
-    const uniqueIds = Array.from(new Set(allSubtestIds));
-    const age = ageMonths(patient.dob);
-    const gender = patient.gender === 'F' ? 'F' : patient.gender === 'M' ? 'M' : 'Mixed';
-    const key = `${age}|${gender}|${uniqueIds.sort().join(',')}`;
-    if (!key || key === normsLoadedRef.current) return;
-    normsLoadedRef.current = key;
-
-    let cancelled = false;
-    const applyMap = (map: Record<string, NormsStatus>) => {
-      if (!cancelled) setNormsStatusMap(map);
-    };
-
-    const loadLegacyStatus = async () => {
-      try {
-        const [availabilityRes, applicabilityRes, onboardRes] = await Promise.all([
-          supabase.rpc('check_norms_availability', { p_subtest_ids: uniqueIds }),
-          supabase.rpc('check_norms_applicability', { p_subtest_ids: uniqueIds, p_age_months: age, p_gender: gender }),
-          supabase.rpc('is_current_user_onboarded'),
-        ]);
-
-        const onboarded = onboardRes.data === true;
-        const hasNormsById: Record<string, boolean> = {};
-        const hasApplicableById: Record<string, boolean> = {};
-        (availabilityRes.data as Array<{ subtest_id: string; has_norms: boolean }> | null || []).forEach((row) => {
-          hasNormsById[row.subtest_id] = row.has_norms === true;
-        });
-        (applicabilityRes.data as Array<{ subtest_id: string; has_applicable_norms: boolean }> | null || []).forEach((row) => {
-          hasApplicableById[row.subtest_id] = row.has_applicable_norms === true;
-        });
-
-        const map: Record<string, NormsStatus> = {};
-        uniqueIds.forEach((subtestId) => {
-          if (!onboarded) {
-            map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'onboarding_required' };
-            return;
-          }
-          const hasNorms = hasNormsById[subtestId] === true;
-          const hasApplicableNorms = hasApplicableById[subtestId] === true;
-          map[subtestId] = {
-            hasNorms,
-            hasApplicableNorms,
-            statusCode: !hasNorms ? 'no_norms' : hasApplicableNorms ? 'ok' : 'no_applicable_age_gender',
-          };
-        });
-        applyMap(map);
-      } catch {
-        const map: Record<string, NormsStatus> = {};
-        uniqueIds.forEach((subtestId) => {
-          map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'access_restricted' };
-        });
-        applyMap(map);
-      }
-    };
-
-    const loadStatus = async () => {
-      const rows = await ScoringEngine.checkNormsStatus(uniqueIds, age, gender);
-      if (!rows) {
-        await loadLegacyStatus();
-        return;
-      }
-
-      const map: Record<string, NormsStatus> = {};
-      rows.forEach((row) => {
-        map[row.subtestId] = {
-          hasNorms: row.hasNorms,
-          hasApplicableNorms: row.hasApplicableNorms,
-          statusCode: row.statusCode,
-        };
-      });
-      uniqueIds.forEach((subtestId) => {
-        if (!map[subtestId]) {
-          map[subtestId] = { hasNorms: false, hasApplicableNorms: false, statusCode: 'access_restricted' };
-        }
-      });
-      applyMap(map);
-    };
-
-    void loadStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [tests, patient.dob, patient.gender]);
-
-  useEffect(() => {
-    const currentDbIds = new Set<string>();
-    Object.entries(tests).forEach(([testId, subtests]) => {
-      Object.keys(subtests).forEach((subId) => {
-        currentDbIds.add(subId);
-      });
-    });
-    setPendingDirectionOverrides((prev) => {
-      const next: Record<string, EffectiveDirection> = {};
-      (Object.entries(prev) as Array<[string, EffectiveDirection]>).forEach(([dbSubtestId, direction]) => {
-        if (currentDbIds.has(dbSubtestId)) next[dbSubtestId] = direction;
-      });
-      return next;
-    });
-  }, [tests]);
-
-  const getSubtestDefByDbSubtestId = useCallback((dbSubtestId: string): SubtestDef | null => {
-    for (const category of catalog) {
-      for (const test of category.tests) {
-        const match = test.subtests.find((subtest) => subtest.id === dbSubtestId);
-        if (match) return match;
-      }
-    }
-    return null;
-  }, [catalog]);
-
-  const resolveBaseDirectionForDbSubtest = useCallback((dbSubtestId: string, fallbackSubtest?: SubtestDef): EffectiveDirection => {
-    const subtest = fallbackSubtest || getSubtestDefByDbSubtestId(dbSubtestId);
-    if (!subtest) return 'higher_better';
-    return resolveEffectiveDirection(subtest.rawDirection, subtest.name);
-  }, [getSubtestDefByDbSubtestId]);
-
-  const toggleSubtestDirection = useCallback((dbSubtestId: string, subtest: SubtestDef) => {
-    const baseDirection = resolveBaseDirectionForDbSubtest(dbSubtestId, subtest);
-    setPendingDirectionOverrides((prev) => {
-      const currentDirection = prev[dbSubtestId] || baseDirection;
-      const nextDirection: EffectiveDirection = currentDirection === 'higher_better' ? 'lower_better' : 'higher_better';
-      if (nextDirection === baseDirection) {
-        const { [dbSubtestId]: _discarded, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [dbSubtestId]: nextDirection };
-    });
-
-    const scoreType = subtest.scoreType || 'standard';
-    if (scoreType === 'none') return;
-    let touched = false;
-    const nextTests: TestData = { ...tests };
-
-    Object.entries(tests).forEach(([testId, subtests]) => {
-      Object.entries(subtests).forEach(([subId, result]) => {
-        const candidateDbId = subId;
-        if (candidateDbId !== dbSubtestId) return;
-
-        let zToFlip: number | null = null;
-        if (typeof result.zScore === 'number' && Number.isFinite(result.zScore)) {
-          zToFlip = result.zScore;
-        } else {
-          const standardValue = parseNum(result.standard || '');
-          if (standardValue !== null) {
-            zToFlip = calculateFromStandard(standardValue, scoreType).zScore;
-          } else {
-            const percentileValue = parseNum(result.percentile || '');
-            if (percentileValue !== null) {
-              zToFlip = calculateFromPercentile(percentileValue, scoreType).zScore;
-            }
-          }
-        }
-        if (zToFlip === null) return;
-
-        const flippedZ = -zToFlip;
-        const recalculated = calculateFromZ(flippedZ, scoreType);
-        nextTests[testId] = {
-          ...nextTests[testId],
-          [subId]: {
-            ...result,
-            standard: recalculated.standard ?? '',
-            percentile: recalculated.percentile ?? '',
-            zScore: flippedZ,
-            derived: {
-              standard: recalculated.standard || undefined,
-              percentile: recalculated.percentile || undefined,
-              zScore: flippedZ,
-              source: result.scoreSource === 'auto' ? 'auto' : 'assisted',
-            },
-          },
-        };
-        touched = true;
-      });
-    });
-
-    if (touched) {
-      updateTests(nextTests);
-    }
-  }, [resolveBaseDirectionForDbSubtest, tests, updateTests]);
-
-  const persistPendingDirectionOverrides = useCallback(async (): Promise<boolean> => {
-    const entries = Object.entries(pendingDirectionOverrides) as Array<[string, EffectiveDirection]>;
-    if (entries.length === 0) return true;
-
-    setIsPersistingDirectionOverrides(true);
-    try {
-      for (const [dbSubtestId, overrideDirection] of entries) {
-        const subtestDef = getSubtestDefByDbSubtestId(dbSubtestId);
-        const sourceSubtestId = subtestDef?.sourceSubtestId || dbSubtestId;
-        const result = await ScoringEngine.upsertRawDirectionOverrideClone(sourceSubtestId, overrideDirection, 'step2_user_override');
-        if (!result) {
-          toast.error(`Impossible d'enregistrer le sens brut pour ${getSubtestDisplayName(subtestDef || { name: dbSubtestId, displayName: undefined })}.`);
-          return false;
-        }
-      }
-      setPendingDirectionOverrides({});
-      return true;
-    } finally {
-      setIsPersistingDirectionOverrides(false);
-    }
-  }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, toast]);
-
-  const handleProceedToNext = useCallback(async () => {
-    const ok = await persistPendingDirectionOverrides();
-    if (!ok) return;
-    onNext();
-  }, [onNext, persistPendingDirectionOverrides]);
-
   const addTests = useCallback((selection: Record<string, string[]>) => {
     const next = { ...tests };
     const newTestIds: string[] = [];
@@ -2633,9 +1662,15 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
     if (newTestIds.length > 0) {
       setTestOrder((prev) => [...prev, ...newTestIds.filter((id) => !prev.includes(id))]);
+      setViewMode((prev) => {
+        const patch: Record<string, 'accordion' | 'table'> = {};
+        newTestIds.forEach((id) => { if (!prev[id]) patch[id] = 'table'; });
+        return { ...prev, ...patch };
+      });
+      pushRecent(newTestIds);
     }
     updateTests(next);
-  }, [tests, updateTests]);
+  }, [tests, updateTests, pushRecent]);
 
   const removeTest = useCallback((testId: string) => {
     const next = { ...tests };
@@ -2706,18 +1741,28 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     return map;
   }, [grouped, catalog]);
 
-  const directionByDbSubtestId = useMemo(() => {
-    const map: Record<string, EffectiveDirection> = {};
-    Object.entries(tests).forEach(([testId, subtests]) => {
-      Object.keys(subtests).forEach((subId) => {
-        const dbSubtestId = subId;
-        const subtestDef = getSubtestDefByDbSubtestId(dbSubtestId);
-        const baseDirection = subtestDef ? resolveEffectiveDirection(subtestDef.rawDirection, subtestDef.name) : 'higher_better';
-        map[dbSubtestId] = pendingDirectionOverrides[dbSubtestId] || baseDirection;
-      });
+  const orderedSubKeys = useMemo(() => {
+    const keys: string[] = [];
+    testOrder.forEach((testId) => {
+      const entry = testDefMap[testId];
+      if (!entry) return;
+      const { def: test } = entry;
+      const selectedIds = Object.keys(tests[testId] || {});
+      const visible = test.subtests.filter((st) => selectedIds.includes(st.id));
+      [...visible].sort(compareSubtestsForDisplay).forEach((st) => keys.push(`${testId}__${st.id}`));
     });
-    return map;
-  }, [getSubtestDefByDbSubtestId, pendingDirectionOverrides, tests]);
+    return keys;
+  }, [testOrder, testDefMap, tests]);
+
+  const handleAdvance = useCallback(() => {
+    if (!expandedSubKey) return;
+    const idx = orderedSubKeys.indexOf(expandedSubKey);
+    if (idx >= 0 && idx < orderedSubKeys.length - 1) {
+      setExpandedSubKey(orderedSubKeys[idx + 1]);
+    } else {
+      setExpandedSubKey(null);
+    }
+  }, [expandedSubKey, orderedSubKeys]);
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
@@ -2853,20 +1898,17 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                           {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>}
 
                           {viewMode[test.id] === 'table' ? (
-                            /* ── Table mode ── */
+                            /* â”€â”€ Table mode â”€â”€ */
                             <div className="p-3">
                               <TableView
                                 testId={test.id}
-                                patient={patient}
                                 subtests={filteredSubtests}
                                 tests={tests}
-                                normsStatusMap={normsStatusMap}
-                                directionByDbSubtestId={directionByDbSubtestId}
                                 updateSubtest={updateSubtest}
                               />
                             </div>
                           ) : (
-                            /* ── Accordion mode ── */
+                            /* â”€â”€ Accordion mode â”€â”€ */
                             <>
                               {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
                               {(() => {
@@ -2892,11 +1934,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                   }
                                   const { st } = item;
                                   const res = tests[test.id]?.[st.id] || emptyScore();
-                                  const dbSubId = st.id;
-                                  const normsStatus = normsStatusMap[dbSubId];
-                                  const hasApplicableNorms = normsStatus?.statusCode === 'ok';
-                                  const baseDirection = resolveBaseDirectionForDbSubtest(dbSubId, st);
-                                  const effectiveDirection = directionByDbSubtestId[dbSubId] || baseDirection;
                                   const subKey = `${test.id}__${st.id}`;
                                   const isSubExpanded = expandedSubKey === subKey;
                                   const isSubReviewed = reviewed(res);
@@ -2913,20 +1950,15 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                     >
                                       {isSubExpanded ? (
                                         <FlexibleSubtestRow
-                                          testId={test.id}
-                                          patient={patient}
                                           subtest={st}
                                           result={res}
                                           onChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                          hasNorms={hasApplicableNorms}
-                                          normsStatusCode={normsStatus?.statusCode}
-                                          effectiveDirection={effectiveDirection}
-                                          baseDirection={baseDirection}
-                                          onToggleDirection={() => toggleSubtestDirection(dbSubId, st)}
-                                          hasPendingDirectionOverride={pendingDirectionOverrides[dbSubId] !== undefined}
                                           isExpanded={isSubExpanded}
                                           onToggleExpand={() => setExpandedSubKey((prev) => (prev === subKey ? null : subKey))}
                                           onFocus={() => setExpandedSubKey(subKey)}
+                                          preferredMetric={preferredMetricByTest[test.id]}
+                                          onPreferredMetricChange={(m) => setPreferredMetricByTest((p) => ({ ...p, [test.id]: m }))}
+                                          onAdvance={handleAdvance}
                                         />
                                       ) : (
                                         <CompactSubtestRow
@@ -2934,6 +1966,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                           result={res}
                                           onClick={() => setExpandedSubKey(subKey)}
                                           onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
+                                          onInlineChange={(patch) => updateSubtest(test.id, st.id, patch)}
                                         />
                                       )}
                                       {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
@@ -2960,23 +1993,22 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       <div className="mt-10 flex justify-between items-center gap-4">
           <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
           <button
-            onClick={() => (stat.pending > 0 ? setShowWarning(true) : void handleProceedToNext())}
-            disabled={isPersistingDirectionOverrides}
-            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[var(--secondary)] hover:bg-[var(--primary)]"
+            onClick={() => (stat.pending > 0 ? setShowWarning(true) : onNext())}
+            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all bg-[var(--secondary)] hover:bg-[var(--primary)]"
           >
-            <span>{isPersistingDirectionOverrides ? 'Enregistrement...' : 'Passer au diagnostic'}</span>
+            <span>Passer au diagnostic</span>
             <ArrowRight size={20} />
           </button>
       </div>
 
-      <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} onContribute={onContribute} initialExpandedTestId={catalogTargetTestId} />
+      <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} initialExpandedTestId={catalogTargetTestId} />
 
       {showWarning && (
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[var(--secondary)]/75 backdrop-blur-sm">
           <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-[var(--border-color)]">
-            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Eléments non revus</h4></div>
+            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Éléments non revus</h4></div>
             <p className="text-sm text-[var(--text-main)]">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); void handleProceedToNext(); }} className="px-4 py-2 rounded-xl bg-[var(--secondary)] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
+            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[var(--secondary)] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
           </div>
         </div>
       )}

@@ -95,7 +95,6 @@ Deno.serve(async (req: Request) => {
     const encryptionValidator = typeof body?.encryptionValidator === "string"
       ? normalize(body.encryptionValidator)
       : "";
-    const encryptedOrgKey = typeof body?.encryptedOrgKey === "string" ? normalize(body.encryptedOrgKey) : "";
     const orgName = typeof body?.orgName === "string" && body.orgName.trim().length > 0
       ? normalize(body.orgName)
       : "Mon Cabinet";
@@ -103,7 +102,7 @@ Deno.serve(async (req: Request) => {
     if (!firstName || !lastName) {
       return fail("MISSING_FIELDS", "Missing practitioner firstName/lastName.", 400);
     }
-    if (!encryptionSalt || !encryptionValidator || !encryptedOrgKey) {
+    if (!encryptionSalt || !encryptionValidator) {
       return fail("MISSING_FIELDS", "Missing PIN setup material.", 400);
     }
     if (encryptionSalt === "pending" || encryptionValidator === "pending") {
@@ -164,16 +163,6 @@ Deno.serve(async (req: Request) => {
       return fail("ORG_SETUP_FAILED", "Failed to setup organization.", 500);
     }
     const orgId = String(orgIdRaw);
-
-    const { error: memberUpdateError } = await supabase
-      .from("organization_members")
-      .update({ encrypted_org_key: encryptedOrgKey })
-      .eq("user_id", user.id)
-      .eq("organization_id", orgId);
-    if (memberUpdateError) {
-      console.warn("Org key setup failed", memberUpdateError);
-      return fail("ORG_KEY_SETUP_FAILED", "Failed to setup encrypted organization key.", 500);
-    }
 
     return responseJson({
       ok: true,

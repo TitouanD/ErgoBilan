@@ -7,7 +7,7 @@ const CLIENT_MAX_RETRIES = 2;
 const CLIENT_RETRY_BASE_MS = 3_000;
 const MIN_TOKEN_VALIDITY_MS = 120_000;
 
-export type AITask = 'report_bio' | 'report_diagnostic' | 'extract_norms' | 'extract_style_feedback';
+export type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback';
 
 export interface TaskParams {
   task: AITask;

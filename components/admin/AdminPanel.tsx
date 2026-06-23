@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import type { UserProfile, FittingScoreType } from '../../types';
+import type { UserProfile } from '../../types';
 import { AdminService } from '../../services/admin';
 import { ClinicalInsights } from './ClinicalInsights';
 import { OpsMonitoring } from './OpsMonitoring';
 import { AdminLibrary } from './AdminLibrary';
-import { AdminIssuesBoard } from './AdminIssuesBoard';
-import { AdminNormQualityBoard } from './AdminNormQualityBoard';
 import { AdminUsers } from './AdminUsers';
-import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, ClipboardList, Users2, FlaskConical } from 'lucide-react';
+import { AdminSignalements } from './AdminSignalements';
+import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, Users2, Flag } from 'lucide-react';
 import { Logger } from '../../utils/logger';
 
 interface Props {
@@ -16,20 +15,7 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'catalogue' | 'issues' | 'norm_quality' | 'users' | 'insights' | 'ops'>('catalogue');
-  const [catalogFocus, setCatalogFocus] = useState<{
-    testId: string;
-    subtestId?: string | null;
-    suggestedScoreType?: FittingScoreType | null;
-    valueFixes?: Array<{
-      normId: string;
-      field: 'standard_score' | 'percentile' | 'mean' | 'sd';
-      value: number;
-      confidence: number;
-      reason: string;
-    }>;
-    nonce: number;
-  } | null>(null);
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'signalements' | 'users' | 'insights' | 'ops'>('catalogue');
   const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
 
@@ -90,22 +76,17 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
             <Layers size={18} /> Catalogue Officiel
           </button>
           <button
-            onClick={() => setActiveTab('issues')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'issues' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
-          >
-            <ClipboardList size={18} /> Issues Globales
-          </button>
-          <button
-            onClick={() => setActiveTab('norm_quality')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'norm_quality' ? 'bg-fuchsia-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
-          >
-            <FlaskConical size={18} /> Qualité Normes
-          </button>
-          <button
             onClick={() => setActiveTab('users')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-cyan-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
           >
             <Users2 size={18} /> Utilisateurs
+          </button>
+
+          <button
+            onClick={() => setActiveTab('signalements')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'signalements' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
+          >
+            <Flag size={18} /> Signalements
           </button>
 
           <div className="my-4 h-px bg-white/5"></div>
@@ -136,8 +117,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#1A1C23]">
           <h2 className="font-bold text-white text-lg">
             {activeTab === 'catalogue' && "Catalogue Officiel"}
-            {activeTab === 'issues' && "Backlog Global des Issues"}
-            {activeTab === 'norm_quality' && "Audit Fitting Global des Normes"}
+            {activeTab === 'signalements' && "Signalements Score Type"}
             {activeTab === 'users' && "Gestion Utilisateurs & Abonnements"}
             {activeTab === 'insights' && "Analyse Statistique & Normative"}
             {activeTab === 'ops' && "Supervision Technique & IA"}
@@ -153,35 +133,14 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         <main className="flex-1 overflow-y-auto p-0 bg-[#1A1C23]">
           {activeTab === 'catalogue' && (
             <AdminLibrary
-              focusTestId={catalogFocus?.testId || null}
-              focusSubtestId={catalogFocus?.subtestId || null}
-              focusSuggestedScoreType={catalogFocus?.suggestedScoreType || null}
-              focusValueFixes={catalogFocus?.valueFixes || []}
-              focusNonce={catalogFocus?.nonce || 0}
+              focusTestId={null}
+              focusSubtestId={null}
+              focusSuggestedScoreType={null}
+              focusValueFixes={[]}
+              focusNonce={0}
             />
           )}
-          {activeTab === 'issues' && (
-            <AdminIssuesBoard
-              onOpenTest={(testId) => {
-                setCatalogFocus({ testId, nonce: Date.now() });
-                setActiveTab('catalogue');
-              }}
-            />
-          )}
-          {activeTab === 'norm_quality' && (
-            <AdminNormQualityBoard
-              onOpenInCatalog={(payload) => {
-                setCatalogFocus({
-                  testId: payload.testId,
-                  subtestId: payload.subtestId || null,
-                  suggestedScoreType: payload.suggestedScoreType || null,
-                  valueFixes: payload.valueFixes || [],
-                  nonce: Date.now(),
-                });
-                setActiveTab('catalogue');
-              }}
-            />
-          )}
+          {activeTab === 'signalements' && <AdminSignalements />}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'insights' && <ClinicalInsights />}
           {activeTab === 'ops' && <OpsMonitoring />}
