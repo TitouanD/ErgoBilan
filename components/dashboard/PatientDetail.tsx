@@ -11,7 +11,6 @@ import {
   ChevronRight,
   BellOff,
   FileText,
-  Plus,
   TrendingUp,
   Trash2,
   X,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { useToast } from '../../contexts/ToastContext';
+import { useCatalog } from '../../contexts/CatalogContext';
 
 const PatientEvolutionChart = React.lazy(() =>
   import('./PatientEvolutionChart').then((module) => ({ default: module.PatientEvolutionChart })),
@@ -29,7 +29,6 @@ interface Props {
   onBack: () => void;
   onDelete?: (patientId: string) => void;
   onNewBilan: (type: 'initial' | 'reevaluation') => void;
-  onQuickEntry: () => void;
   onOpenReport: (reportId: string) => void;
   draftAvailable?: boolean;
   onResumeDraft?: () => void;
@@ -42,7 +41,6 @@ interface Props {
 const kindLabel: Record<PatientAssessment['kind'], string> = {
   initial: 'Bilan initial',
   reevaluation: 'Réévaluation',
-  mini_reevaluation: 'Mini-réévaluation',
 };
 
 const followupLabel: Record<PatientFollowup['status'], string> = {
@@ -143,7 +141,6 @@ export const PatientDetail: React.FC<Props> = ({
   onBack,
   onDelete,
   onNewBilan,
-  onQuickEntry,
   onOpenReport,
   draftAvailable,
   onResumeDraft,
@@ -153,10 +150,16 @@ export const PatientDetail: React.FC<Props> = ({
   onFollowupChange,
 }) => {
   const toast = useToast();
+  const { catalog } = useCatalog();
+  const subtestNameMap = useMemo(() =>
+    new Map(catalog.flatMap(c => c.tests.flatMap(t =>
+      t.subtests.map(s => [s.id, s.displayName ?? s.name])
+    ))),
+  [catalog]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFollowupBusy, setIsFollowupBusy] = useState(false);
-  const [timelineFilter, setTimelineFilter] = useState<'all' | 'formal' | 'mini'>('all');
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'formal'>('all');
   const [followupState, setFollowupState] = useState<PatientFollowup | null>(file.followup || null);
 
   const assessments = useMemo(
@@ -173,7 +176,7 @@ export const PatientDetail: React.FC<Props> = ({
 
   const filteredTimeline = useMemo(() => {
     if (timelineFilter === 'formal') return formalAssessments;
-    if (timelineFilter === 'mini') return assessments.filter((item) => !item.hasFormalReport);
+    return assessments;
     return assessments;
   }, [assessments, formalAssessments, timelineFilter]);
 
@@ -348,11 +351,8 @@ export const PatientDetail: React.FC<Props> = ({
           {followup && <p className="mt-2 text-sm font-semibold text-[var(--text-heading)]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
         </div>
         <div className="flex gap-3">
-          <button onClick={onQuickEntry} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-4 text-sm font-bold text-[var(--text-heading)] hover:border-[var(--primary)]">
-            <Plus size={18} className="text-[var(--primary)]" /> Mini-réévaluation
-          </button>
           <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[var(--secondary)] px-8 py-4 text-sm font-bold text-white hover:brightness-90">
-            <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation formelle
+            <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation 1 clic
           </button>
         </div>
       </div>
@@ -392,7 +392,7 @@ export const PatientDetail: React.FC<Props> = ({
                   <tbody>
                     {matrixRows.map((subtestId) => (
                       <tr key={subtestId} className="odd:bg-[var(--hover-bg)]">
-                        <td className="sticky left-0 bg-inherit px-3 py-2 text-xs font-semibold text-[var(--text-heading)]">{subtestId}</td>
+                        <td className="sticky left-0 bg-inherit px-3 py-2 text-xs font-semibold text-[var(--text-heading)]">{subtestNameMap.get(subtestId) ?? subtestId}</td>
                         {matrixSnapshots.map((snapshot) => (
                           <td key={`${snapshot.id}-${subtestId}`} className="px-3 py-2 text-xs text-[var(--text-secondary)]">
                             {getScoreValue(snapshot.results?.[subtestId])}
@@ -410,9 +410,9 @@ export const PatientDetail: React.FC<Props> = ({
             <div className="flex items-center justify-between border-b border-[var(--border-color)] p-5">
               <h2 className="flex items-center gap-2 font-serif text-2xl font-bold text-[var(--text-heading)]"><Calendar size={22} /> Evenements cliniques</h2>
               <div className="flex gap-2">
-                {(['all', 'formal', 'mini'] as const).map((tab) => (
+                {(['all', 'formal'] as const).map((tab) => (
                   <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}>
-                    {tab === 'all' ? 'Tout' : tab === 'formal' ? 'Formels' : 'Mini'}
+                    {tab === 'all' ? 'Tout' : 'Formels'}
                   </button>
                 ))}
               </div>

@@ -549,16 +549,29 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     <button
                         onClick={onBack}
                         className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-xl hover:bg-[var(--hover-bg)] transition-all"
-                        title="Retour à la validation"
+                        title="Retour à la relecture"
                     >
                         <ArrowLeft size={20} />
                     </button>
                     <div>
-                        <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Export & Impression</h2>
-                        <p className="text-[var(--text-secondary)] font-medium mt-2">Personnalisez et finalisez votre document.</p>
+                        <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Visualisation & Export</h2>
+                        <p className="text-[var(--text-secondary)] font-medium mt-2">Personnalisez la mise en page et exportez votre document.</p>
                     </div>
                 </div>
                 <div className="flex gap-3">
+                    <button
+                        onClick={onBack}
+                        className="flex items-center gap-2 px-4 py-2.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[var(--hover-bg)] transition-all"
+                        title="Retourner en Step4 pour modifier le texte"
+                    >
+                        <ArrowLeft size={14} /> Modifier le texte
+                    </button>
+                    <button
+                        onClick={handleOpenBranding}
+                        className="flex items-center gap-2 px-4 py-2.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[var(--hover-bg)] transition-all"
+                    >
+                        <Palette size={14} /> Design
+                    </button>
                     <button
                         onClick={handlePrint}
                         className="flex items-center gap-2 px-5 py-3 bg-[var(--hover-bg)] text-[var(--text-secondary)] rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-[var(--border-color)] transition-all"
@@ -591,7 +604,6 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     sections={sections}
                     tests={tests}
                     branding={branding}
-                    onUpdateSection={onUpdateSection}
                     scoreDisplayModes={scoreDisplayModes}
                     onScoreDisplayModeChange={setScoreDisplayModes}
                     chartType={chartType}

@@ -17,13 +17,13 @@ interface Props {
 }
 
 const SCORE_TYPES = [
-  { value: 'standard', label: 'Standard (NS, moy. 100)' },
-  { value: 'scaled',   label: 'Scaled (moy. 10)' },
-  { value: 't-score',  label: 'Score T (moy. 50)' },
-  { value: 'percentile', label: 'Percentile' },
-  { value: 'sten',     label: 'Sten' },
-  { value: 'stanine',  label: 'Stanine' },
-  { value: 'none',     label: 'Sans score standardisé' },
+  { value: 'none',       label: 'Sans score standardisé', tooltip: 'Score brut uniquement (temps, nombre, erreurs…). Choisir si incertain.' },
+  { value: 'standard',   label: 'Note Standard',          tooltip: 'Quotient intellectuel ou équivalent — moy. 100, σ=15. Ex : WISC-V, MABC-2 DQ.' },
+  { value: 'scaled',     label: 'Note Scalée',            tooltip: 'Par sous-test — moy. 10, σ=3. Ex : NEPSY-2, TEA-Ch, WISC-V Index.' },
+  { value: 't-score',    label: 'Score T',                tooltip: 'Moyenne 50, σ=10. Ex : BRIEF-2, Vineland-3, Profil Sensoriel.' },
+  { value: 'percentile', label: 'Percentile',             tooltip: 'Rang centile de 1 à 99. Ex : M-ABC norme britannique.' },
+  { value: 'sten',       label: 'Sten',                   tooltip: 'Échelle 1–10, moy. 5,5. Peu fréquent.' },
+  { value: 'stanine',    label: 'Stanine',                tooltip: 'Échelle 1–9, moy. 5. Peu fréquent.' },
 ];
 
 const makeKey = () => Math.random().toString(36).slice(2);
@@ -155,7 +155,7 @@ export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
                     className="shrink-0 text-xs bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1 text-[var(--text-heading)] outline-none focus:border-[var(--primary)]"
                   >
                     {SCORE_TYPES.map(t => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
+                      <option key={t.value} value={t.value} title={t.tooltip}>{t.label}</option>
                     ))}
                   </select>
                   {subtests.length > 1 && (

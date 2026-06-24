@@ -78,6 +78,8 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
                     : inline
                         ? 'prose prose-sm max-w-none focus:outline-none min-h-[1.5em] text-[var(--text-main)] leading-relaxed cursor-text'
                         : 'prose prose-sm max-w-none focus:outline-none min-h-[80px] text-[var(--text-main)] p-3 leading-relaxed',
+                lang: 'fr',
+                spellcheck: readOnly ? 'false' : 'true',
             },
         },
     });

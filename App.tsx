@@ -19,7 +19,7 @@ import { ConfirmModal } from './components/shared/ConfirmModal';
 import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
+import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile, ReportSection } from './types';
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
@@ -39,6 +39,15 @@ const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step
 const Step4Validation = React.lazy(() => import('./components/assessment/Step4Validation').then(module => ({ default: module.Step4Validation })));
 const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
 
+// --- Reevaluation 1-clic steps ---
+const ReevStep1Scores = React.lazy(() => import('./components/assessment/ReevStep1Scores').then(module => ({ default: module.ReevStep1Scores })));
+const ReevStep2Comment = React.lazy(() => import('./components/assessment/ReevStep2Comment').then(module => ({ default: module.ReevStep2Comment })));
+const ReevStep3Export = React.lazy(() => import('./components/assessment/ReevStep3Export').then(module => ({ default: module.ReevStep3Export })));
+
+// --- Historical import step ---
+const HistoricalPatientForm = React.lazy(() => import('./components/assessment/HistoricalPatientForm').then(module => ({ default: module.HistoricalPatientForm })));
+const HistoricalSectionsStep = React.lazy(() => import('./components/assessment/HistoricalSectionsStep').then(module => ({ default: module.HistoricalSectionsStep })));
+
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then(module => ({ default: module.AdminPanel })));
 
 const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEditor').then(module => ({ default: module.ProfileEditor })));
@@ -47,7 +56,6 @@ const OnboardingExperience = React.lazy(() => import('./components/auth/Onboardi
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then(module => ({ default: module.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then(module => ({ default: module.PricingModal })));
 const LegalModal = React.lazy(() => import('./components/shared/LegalModal').then(module => ({ default: module.LegalModal })));
-const QuickEntryModal = React.lazy(() => import('./components/dashboard/QuickEntryModal').then(module => ({ default: module.QuickEntryModal })));
 
 // --- LOADER LÉGER ---
 const AppLoader = () => (
@@ -79,12 +87,12 @@ const AppRouter = () => {
     const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
     const [legalModal, setLegalModal] = useState<{ open: boolean; tab: 'cgu' | 'privacy' }>({ open: false, tab: 'cgu' });
     const [showConfirmGeneration, setShowConfirmGeneration] = useState(false);
-    const [showQuickEntry, setShowQuickEntry] = useState(false);
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const [stepperConfirm, setStepperConfirm] = useState<{ target: number } | null>(null);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    const [viewingReport, setViewingReport] = useState<import('./types').PatientAssessment | null>(null);
     const [detailPaging, setDetailPaging] = useState({
         hasMoreAssessments: false,
         nextAssessmentOffset: 0,
@@ -248,12 +256,83 @@ const AppRouter = () => {
         if (result === 'dashboard') setMode('dashboard');
     }, [isDemoMode, handleFinalize, toast]);
 
+    const handleFinalizeHistorical = useCallback(async (sections: ReportSection[]) => {
+        if (isDemoMode) { assessment.resetAssessment(); setMode('dashboard'); toast.success('Bilan de référence enregistré (démo).'); return; }
+        const patientId = assessment.patient.id;
+        if (!patientId) { toast.error('Identifiant patient manquant. Remplissez le dossier avant d\'enregistrer.'); return; }
+        try {
+            const details = await StorageService.loadPatientDetails(patientId);
+            const testNames: string[] = [];
+            const flatResults: Record<string, import('./types').ScoreResult> = {};
+            Object.entries(assessment.tests).forEach(([tId, subtests]) => {
+                const catalogDef = catalog.flatMap((c) => c.tests).find((t) => t.id === tId);
+                testNames.push(catalogDef ? catalogDef.name : tId);
+                Object.entries(subtests).forEach(([sId, res]) => { flatResults[sId] = res as import('./types').ScoreResult; });
+            });
+            const newAssessment: PatientAssessment = {
+                id: crypto.randomUUID(),
+                date: assessment.historicalDate || new Date().toISOString(),
+                kind: 'initial',
+                hasFormalReport: true,
+                testName: testNames.join(', ') || 'Bilan initial (import)',
+                results: flatResults,
+                tests: assessment.tests,
+                report: sections.length > 0 ? {
+                    status: 'completed',
+                    patientName: `${assessment.patient.firstName} ${assessment.patient.lastName}`.trim(),
+                    sections,
+                } : undefined,
+            };
+            const currentFileIndex = patientFiles.findIndex((f) => f.id === patientId);
+            const currentFile: PatientFile = currentFileIndex === -1
+                ? { id: patientId, patient: assessment.patient, assessments: [], lastInteraction: new Date().toISOString(), archived: false }
+                : patientFiles[currentFileIndex];
+            const updatedFile: PatientFile = {
+                ...currentFile,
+                lastInteraction: new Date().toISOString(),
+                assessments: [newAssessment, ...(currentFile.assessments || [])],
+            };
+            await StorageService.saveFile(updatedFile);
+            await StorageService.deleteDraft(patientId);
+            assessment.resetAssessment();
+            await loadData();
+            toast.success('Bilan de référence enregistré. La réévaluation 1-clic est maintenant disponible.');
+            setMode('dashboard');
+        } catch (e) {
+            Logger.error('DB', 'handleFinalizeHistorical failed', e);
+            toast.error('Erreur lors de l\'enregistrement du bilan.');
+        }
+    }, [isDemoMode, assessment, patientFiles, catalog, loadData, toast]);
+
     const onSaveAndQuit = useCallback(async () => {
         const result = await handleSaveAndQuit();
         if (result === 'dashboard') setMode('dashboard');
     }, [handleSaveAndQuit]);
 
-    const onResumeDraft = useCallback(async (patientId?: string) => { const ok = await handleResumeDraft(patientId); if (ok) setMode('assessment'); }, [handleResumeDraft]);
+    const onResumeDraft = useCallback(async (patientId?: string) => {
+        // If patient already has a completed formal assessment, the draft is stale.
+        // Delete it and open reevaluation instead.
+        // NOTE: file.assessments is [] from the list page; use previewMeta flags instead.
+        const file = patientId ? patientFiles.find((f) => f.id === patientId) : null;
+        const hasCompletedInitial = file?.previewMeta?.flags?.hasInitialReport ?? false;
+        const draftMeta = patientId ? draftsIndex[patientId] : null;
+        const isStale = hasCompletedInitial && (!draftMeta?.reportType || draftMeta?.reportType === 'initial' || draftMeta?.reportType === 'historique');
+        if (isStale && file) {
+            await StorageService.deleteDraft(patientId);
+            // Load full patient details to get actual assessments (list page has assessments:[])
+            const details = await StorageService.loadPatientDetails(patientId);
+            const prevAssessment = details ? [...(details.assessments || [])].filter(a => a.hasFormalReport).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null : null;
+            assessment.resetAssessment();
+            assessment.setPatient(file.patient);
+            assessment.setReportType('reevaluation');
+            assessment.setPreviousAssessment(prevAssessment);
+            assessment.setStep(1);
+            setMode('assessment');
+            return;
+        }
+        const ok = await handleResumeDraft(patientId);
+        if (ok) setMode('assessment');
+    }, [handleResumeDraft, patientFiles, draftsIndex, assessment]);
 
     // --- Guarded stepper navigation (A1): warn when going back before step 4 with existing sections ---
     const handleStepperClick = useCallback((targetStep: number) => {
@@ -545,6 +624,7 @@ const AppRouter = () => {
                             pendingQuestionnaires={pendingQuestionnaires}
                             patientFiles={patientFiles}
                             onCreateNew={() => { assessment.resetAssessment(); setMode('assessment'); }}
+                            onCreateHistorical={() => { assessment.resetAssessment(); assessment.setReportType('historique'); setMode('assessment'); }}
                             onGenerateLink={handleGenerateLink}
                             onShowPricing={() => setPricingModalMode('plans')}
                             onOpenPatient={async (id) => {
@@ -595,23 +675,32 @@ const AppRouter = () => {
                                 });
                                 setSelectedFile(null);
                             }}
-                            onQuickEntry={() => setShowQuickEntry(true)}
-                            onNewBilan={(type) => { assessment.resetAssessment(); assessment.setPatient(selectedFile.patient); assessment.setReportType(type); setMode('assessment'); }}
-                            onOpenReport={(reportId) => {
-                                const target = selectedFile.assessments.find((item) => item.id === reportId && item.hasFormalReport && item.report);
-                                if (!target || !target.report) {
-                                    toast.info('Document introuvable.');
-                                    return;
-                                }
+                            onNewBilan={(type) => {
                                 assessment.resetAssessment();
                                 assessment.setPatient(selectedFile.patient);
-                                assessment.setSections(target.report.sections || []);
-                                assessment.setTests({});
-                                assessment.setReportType(target.kind === 'initial' ? 'initial' : 'reevaluation');
-                                assessment.setStep(5);
+                                assessment.setReportType(type);
+                                if (type === 'reevaluation') {
+                                    const prevAssessment = [...(selectedFile.assessments || [])]
+                                        .filter(a => a.hasFormalReport)
+                                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null;
+                                    assessment.setPreviousAssessment(prevAssessment);
+                                } else {
+                                    assessment.setPreviousAssessment(null);
+                                }
                                 setMode('assessment');
                             }}
-                            draftAvailable={!!draftsIndex[selectedFile.id]}
+                            onOpenReport={(reportId) => {
+                                const target = selectedFile.assessments.find((item) => item.id === reportId && item.hasFormalReport);
+                                if (!target) { toast.info('Document introuvable.'); return; }
+                                setViewingReport(target);
+                            }}
+                            draftAvailable={(() => {
+                                const meta = draftsIndex[selectedFile.id];
+                                if (!meta || meta.reportType === 'historique') return false;
+                                const hasInitial = selectedFile.assessments?.some(a => a.hasFormalReport) ?? false;
+                                if (hasInitial && (!meta.reportType || meta.reportType === 'initial')) return false;
+                                return true;
+                            })()}
                             onResumeDraft={() => onResumeDraft(selectedFile.id)}
                             hasMoreHistory={detailPaging.hasMoreAssessments}
                             isLoadingMoreHistory={detailPaging.isLoadingMore}
@@ -634,64 +723,142 @@ const AppRouter = () => {
                     {mode === 'assessment' && (
                         <div className="max-w-7xl mx-auto p-6">
                             {/* Navigation Stepper */}
-                            <AssessmentStepper currentStep={assessment.step} onStepClick={handleStepperClick} disabled={isGenerating} />
+                            <AssessmentStepper currentStep={assessment.step} onStepClick={handleStepperClick} disabled={isGenerating} reportType={assessment.reportType} />
 
-                            {/* Step 1: Admin */}
-                            {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onQuit={handleQuitAssessment} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
-
-                            {/* Step 2: Tests & Observations (FUSIONNÉ) */}
-                            {assessment.step === 2 && (
-                                <Step2Tests
-                                    patient={assessment.patient}
-                                    tests={assessment.tests}
-                                    updateTests={assessment.updateTests}
-                                    observations={assessment.observations}
-                                    updateObservations={assessment.updateObservations}
-                                    onNext={() => assessment.setStep(3)} // Vers Diagnostic
-                                    onBack={() => assessment.setStep(1)}
-                                    userProfile={userProfile}
-                                />
+                            {/* ─── FLUX RÉÉVALUATION 1 CLIC (3 étapes) ─── */}
+                            {assessment.reportType === 'reevaluation' && (
+                                <>
+                                    {assessment.step === 1 && (
+                                        <ReevStep1Scores
+                                            patient={assessment.patient}
+                                            previousAssessment={assessment.previousAssessment}
+                                            currentTests={assessment.tests}
+                                            onUpdateTests={assessment.updateTests}
+                                            onNext={() => assessment.setStep(2)}
+                                            onQuit={handleQuitAssessment}
+                                        />
+                                    )}
+                                    {assessment.step === 2 && (
+                                        <ReevStep2Comment
+                                            patient={assessment.patient}
+                                            previousAssessment={assessment.previousAssessment}
+                                            newTests={assessment.tests}
+                                            sections={assessment.sections}
+                                            onSetSections={assessment.setSections}
+                                            onNext={() => assessment.setStep(3)}
+                                            onBack={() => assessment.setStep(1)}
+                                        />
+                                    )}
+                                    {assessment.step === 3 && (
+                                        <ReevStep3Export
+                                            patient={assessment.patient}
+                                            sections={assessment.sections}
+                                            newTests={assessment.tests}
+                                            previousAssessment={assessment.previousAssessment}
+                                            branding={userProfile.branding}
+                                            onValidate={onFinalize}
+                                            onBack={() => assessment.setStep(2)}
+                                            isDemoMode={isDemoMode}
+                                        />
+                                    )}
+                                </>
                             )}
 
-                            {/* Step 3: Synthèse & Projet (Ex Step 4) */}
-                            {assessment.step === 3 && (
-                                <Step3BisDiagnostic
-                                    synthesis={assessment.synthesis}
-                                    updateSynthesis={assessment.updateSynthesis}
-                                    tests={assessment.tests}
-                                    observations={assessment.observations}
-                                    patient={assessment.patient}
-                                    onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
-                                    onBack={() => assessment.setStep(2)}
-                                    isGenerating={isGenerating}
-                                />
+                            {/* ─── FLUX IMPORT HISTORIQUE (3 étapes) ─── */}
+                            {assessment.reportType === 'historique' && (
+                                <>
+                                    {assessment.step === 1 && (
+                                        <HistoricalPatientForm
+                                            data={assessment.patient}
+                                            updateData={assessment.updatePatient}
+                                            onNext={() => assessment.setStep(2)}
+                                            onPatientCreated={loadData}
+                                        />
+                                    )}
+                                    {assessment.step === 2 && (
+                                        <Step2Tests
+                                            patient={assessment.patient}
+                                            tests={assessment.tests}
+                                            updateTests={assessment.updateTests}
+                                            observations={assessment.observations}
+                                            updateObservations={assessment.updateObservations}
+                                            onNext={() => assessment.setStep(3)}
+                                            onBack={() => assessment.setStep(1)}
+                                            userProfile={userProfile}
+                                        />
+                                    )}
+                                    {assessment.step === 3 && (
+                                        <HistoricalSectionsStep
+                                            patient={assessment.patient}
+                                            historicalDate={assessment.historicalDate}
+                                            onBack={() => assessment.setStep(2)}
+                                            onSave={handleFinalizeHistorical}
+                                        />
+                                    )}
+                                </>
                             )}
 
-                            {/* Step 4: Validation */}
-                            {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
+                            {/* ─── FLUX INITIAL 5 ÉTAPES ─── */}
+                            {assessment.reportType === 'initial' && (
+                                <>
+                                    {/* Step 1: Admin */}
+                                    {assessment.step === 1 && <Step1Admin data={assessment.patient} updateData={assessment.updatePatient} onQuit={handleQuitAssessment} onNext={() => assessment.setStep(2)} onPatientCreated={loadData} />}
 
-                            {/* Step 5: Export */}
-                            {assessment.step === 5 && (
-                                <Step5Export
-                                    patient={assessment.patient}
-                                    sections={assessment.sections}
-                                    tests={assessment.tests}
-                                    onValidate={onFinalize}
-                                    onUpdateSection={assessment.updateSection}
-                                    branding={userProfile.branding}
-                                    onUpdateBranding={(newBranding) => updateUserProfile({ branding: newBranding })}
-                                    isPremium={userProfile.subscriptionPlan !== 'free'}
-                                    onShowPricing={() => setPricingModalMode('plans')}
-                                    onBack={() => assessment.setStep(4)}
-                                    isDemoMode={isDemoMode}
-                                    onDemoConvert={(action) => setDemoConversion({ show: true, action })}
-                                    onOpenProfile={() => { setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }}
-                                />
+                                    {/* Step 2: Tests & Observations (FUSIONNÉ) */}
+                                    {assessment.step === 2 && (
+                                        <Step2Tests
+                                            patient={assessment.patient}
+                                            tests={assessment.tests}
+                                            updateTests={assessment.updateTests}
+                                            observations={assessment.observations}
+                                            updateObservations={assessment.updateObservations}
+                                            onNext={() => assessment.setStep(3)} // Vers Diagnostic
+                                            onBack={() => assessment.setStep(1)}
+                                            userProfile={userProfile}
+                                        />
+                                    )}
+
+                                    {/* Step 3: Synthèse & Projet (Ex Step 4) */}
+                                    {assessment.step === 3 && (
+                                        <Step3BisDiagnostic
+                                            synthesis={assessment.synthesis}
+                                            updateSynthesis={assessment.updateSynthesis}
+                                            tests={assessment.tests}
+                                            observations={assessment.observations}
+                                            patient={assessment.patient}
+                                            onNext={() => { if (userProfile.credits > 0 || userProfile.subscriptionPlan === 'expert' || isDemoMode) setShowConfirmGeneration(true); else setPricingModalMode('paywall'); }}
+                                            onBack={() => assessment.setStep(2)}
+                                            isGenerating={isGenerating}
+                                        />
+                                    )}
+
+                                    {/* Step 4: Validation */}
+                                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c, fmt) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}), ...(fmt ? { contentFormat: fmt } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
+
+                                    {/* Step 5: Export */}
+                                    {assessment.step === 5 && (
+                                        <Step5Export
+                                            patient={assessment.patient}
+                                            sections={assessment.sections}
+                                            tests={assessment.tests}
+                                            onValidate={onFinalize}
+                                            onUpdateSection={assessment.updateSection}
+                                            branding={userProfile.branding}
+                                            onUpdateBranding={(newBranding) => updateUserProfile({ branding: newBranding })}
+                                            isPremium={userProfile.subscriptionPlan !== 'free'}
+                                            onShowPricing={() => setPricingModalMode('plans')}
+                                            onBack={() => assessment.setStep(4)}
+                                            isDemoMode={isDemoMode}
+                                            onDemoConvert={(action) => setDemoConversion({ show: true, action })}
+                                            onOpenProfile={() => { setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }}
+                                        />
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
 
-                {showQuickEntry && <QuickEntryModal patient={selectedFile?.patient} onClose={() => setShowQuickEntry(false)} onSave={async (assessmentEntry) => { if (selectedFile) { await StorageService.saveFile({ ...selectedFile, assessments: [assessmentEntry, ...(selectedFile.assessments || [])], lastInteraction: assessmentEntry.date }); setSelectedFile((prev) => prev ? ({ ...prev, assessments: [assessmentEntry, ...(prev.assessments || [])], lastInteraction: assessmentEntry.date }) : prev); setShowQuickEntry(false); } else if (isDemoMode) { setShowQuickEntry(false); } }} />}
+
             </Suspense>
 
             <GenerationLoader isVisible={isGenerating} onCancel={() => setIsGenerating(false)} />
@@ -741,6 +908,58 @@ const AppRouter = () => {
                                 {isDemoMode ? "Générer" : "Générer (1 crédit)"}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Read-only report viewer modal */}
+            {viewingReport && selectedFile && (
+                <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto" onClick={() => setViewingReport(null)}>
+                    <div className="bg-[var(--card-bg)] rounded-[24px] shadow-2xl w-full max-w-2xl border border-[var(--border-color)] animate-in fade-in slide-in-from-bottom-4 duration-200" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 border-b border-[var(--border-color)]">
+                            <div>
+                                <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest mb-1">
+                                    {viewingReport.kind === 'reevaluation' ? 'Réévaluation' : 'Bilan initial'}
+                                    {' · '}
+                                    {new Date(viewingReport.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                </p>
+                                <h2 className="font-serif text-xl font-bold text-[var(--text-heading)]">{viewingReport.report?.patientName ?? selectedFile.patient.displayName}</h2>
+                            </div>
+                            <button onClick={() => setViewingReport(null)} className="p-2 rounded-xl hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"><X size={20} /></button>
+                        </div>
+                        {/* Scores */}
+                        {viewingReport.results && Object.keys(viewingReport.results).length > 0 && (
+                            <div className="p-6 border-b border-[var(--border-color)]">
+                                <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-3">Scores</h3>
+                                <div className="space-y-1">
+                                    {Object.entries(viewingReport.results).map(([key, score]) => (
+                                        <div key={key} className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-[var(--hover-bg)] text-sm">
+                                            <span className="text-[var(--text-primary)] font-medium">{key}</span>
+                                            <span className="text-[var(--text-secondary)] font-mono text-xs">
+                                                {score.standard ? `NS ${score.standard}` : score.zScore != null ? `ET ${score.zScore}` : score.percentile ? `${score.percentile}%` : '—'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {/* Sections */}
+                        {viewingReport.report?.sections && viewingReport.report.sections.length > 0 ? (
+                            <div className="p-6 space-y-4">
+                                <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-1">Rapport</h3>
+                                {viewingReport.report.sections.map((section) => (
+                                    <div key={section.id} className="space-y-1.5">
+                                        <h4 className="font-semibold text-sm text-[var(--text-heading)]">{section.title}</h4>
+                                        <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap rounded-xl bg-[var(--card-bg-raised)] p-3">
+                                            {section.content || <span className="text-[var(--text-secondary)] italic">Section vide</span>}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="p-6 text-center text-sm text-[var(--text-secondary)] italic">Aucun contenu de rapport enregistré.</div>
+                        )}
                     </div>
                 </div>
             )}

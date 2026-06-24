@@ -50,7 +50,9 @@ export interface LocalAssessmentRow {
   hasFormalReport: boolean;
   date: string; // ISO timestamp
   testName?: string;
+  previousAssessmentId?: string;
   results?: PatientAssessment['results'];
+  tests?: PatientAssessment['tests'];
   report?: PatientAssessment['report'];
   createdAt: string;
 }

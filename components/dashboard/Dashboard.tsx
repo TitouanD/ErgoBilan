@@ -29,6 +29,7 @@ interface Props {
   onCreateNew: () => void;
   onOpenPatient: (patientId: string) => void;
   onGenerateLink: () => void;
+  onCreateHistorical: () => void;
   onShowPricing: () => void;
   onProcessPending?: (q: PendingQuestionnaire) => void;
   processingQueueId?: string | null;
@@ -225,6 +226,7 @@ export const Dashboard: React.FC<Props> = ({
   onCreateNew,
   onOpenPatient,
   onGenerateLink,
+  onCreateHistorical,
   onShowPricing,
   onProcessPending,
   processingQueueId,
@@ -309,7 +311,7 @@ export const Dashboard: React.FC<Props> = ({
     <div className="relative animate-in fade-in duration-700 motion-reduce:animate-none">
       <ImportAnimation isOpen={showImportAnim} onComplete={() => { setShowImportAnim(false); if (targetDemoQ && onProcessPending) onProcessPending(targetDemoQ); }} />
       <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} patientFiles={patientFiles} draftsIndex={draftsIndex} onOpenPatient={onOpenPatient} onOpenNewPatientChoice={() => setIsNewPatientChoiceOpen(true)} onResumeDraft={onResumeDraft} />
-      <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} />
+      <NewPatientChoiceModal isOpen={isNewPatientChoiceOpen} onClose={() => setIsNewPatientChoiceOpen(false)} onChooseFamilyLink={onGenerateLink} onChooseManual={onCreateNew} onChooseHistorical={onCreateHistorical} />
 
       {/* Delete confirmation modal */}
       {deleteConfirmQ && (
@@ -492,7 +494,8 @@ export const Dashboard: React.FC<Props> = ({
             {filteredFiles.map((file) => {
               const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
               const draftMeta = draftsIndex[file.id];
-              const hasDraft = Boolean(draftMeta);
+              // Ignore orphaned 'historique' drafts — they were created during import and then finalized
+              const hasDraft = Boolean(draftMeta) && draftMeta?.reportType !== 'historique';
               const activityDate = previewMeta.metrics.lastFormalReportDate || previewMeta.metrics.lastAssessmentDate || file.lastInteraction;
               const isInitialCompleted = previewMeta.flags.hasInitialReport;
               const followup = !file.archived ? buildSyntheticFollowup(file) : null;

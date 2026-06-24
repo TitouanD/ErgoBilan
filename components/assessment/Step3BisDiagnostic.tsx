@@ -1,9 +1,10 @@
 ﻿
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ClinicalSynthesis, TestData, Observations, Patient, ScoreResult } from '../../types';
 import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, AlertTriangle, Check } from 'lucide-react';
 import { VoiceTextarea } from '../shared/VoiceTextarea';
 import { useCatalog } from '../../contexts/CatalogContext';
+import { supabase } from '../../services/db';
 const hasScoreValue = (r: any): boolean => Boolean(r && ((r.raw && String(r.raw).trim()) || (r.standard && String(r.standard).trim()) || (r.percentile && String(r.percentile).trim()) || (typeof r.zScore === 'number' && Number.isFinite(r.zScore)) || r.qualitativeCode || r.observation));
 const isReviewedScore = (r: any): boolean => Boolean(r && (r.reviewState === 'reviewed' || r.status === 'validated' || r.status === 'certified'));
 
@@ -307,54 +308,132 @@ const RECO_SUGGESTIONS = [
 
 const CHIP_SEPARATOR = '\n';
 
+// Contextual recommendations keyed by lowercase diagnostic keyword
+const DIAG_KEYWORD_TO_RECO: { keywords: string[]; suggestions: string[] }[] = [
+    { keywords: ['tdc', 'coordination', 'dyspraxie', 'moteur'], suggestions: ['Ergothérapie graphomotricité', 'Aménagements sportifs (EPS)', 'PAP', 'Tiers-temps aux examens'] },
+    { keywords: ['dysgraphie', 'écriture', 'grapho', 'graphomotrice'], suggestions: ['Réduction de la copie', 'Textes à trous / photocopies', 'Outil numérique (clavier)', 'PAP', 'Tiers-temps aux examens'] },
+    { keywords: ['tdah', 'attention', 'concentration', 'hyperactivité'], suggestions: ['Consignes segmentées', 'Timer visuel en classe', 'Poste face au tableau', 'Pauses motrices régulières'] },
+    { keywords: ['visuo', 'spatial', 'perception', 'visuelle'], suggestions: ["Police agrandie (14pt)", 'Interligne double', 'Repères couleur sur cahier', 'Éclairage adapté'] },
+    { keywords: ['autisme', 'tsa', 'trouble du spectre'], suggestions: ['AESH', 'Emploi du temps visuel', 'PPS', 'Guidance parentale structurée'] },
+    { keywords: ['dyslexie', 'lecture', 'décodage'], suggestions: ['Évaluation orale possible', "Police d'écriture adaptée", 'Livres audio', 'Tiers-temps'] },
+    { keywords: ['dys', 'neuropsy'], suggestions: ['PAP', 'PPS si nécessaire', 'Bilan de contrôle dans 6 mois'] },
+];
+
+const getContextualRecos = (diagnosticInput: string): string[] => {
+    const lower = diagnosticInput.toLowerCase();
+    const found = new Set<string>();
+    for (const rule of DIAG_KEYWORD_TO_RECO) {
+        if (rule.keywords.some(k => lower.includes(k))) {
+            rule.suggestions.forEach(s => found.add(s));
+        }
+    }
+    return [...found];
+};
+
+/**
+ * Build anonymous profile tags from patient age + domain z-scores.
+ * Mirrors the same function in useAssessmentFlow.ts — no PII, no raw values.
+ */
+const buildProfileTags = (
+    patientAge: string | undefined,
+    tests: Record<string, Record<string, { zScore?: number }>>,
+    catalogCategories: { name: string; tests: { id: string }[] }[],
+): string[] => {
+    const tags: string[] = [];
+    const age = parseInt(patientAge || '0', 10);
+    if (age >= 3 && age < 8) tags.push('age_lt8');
+    else if (age >= 8 && age <= 12) tags.push('age_8_12');
+    else if (age > 12) tags.push('age_gt12');
+
+    const testToSlug: Record<string, string> = {};
+    for (const cat of catalogCategories) {
+        const slug = cat.name.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 20);
+        for (const t of cat.tests) testToSlug[t.id] = slug;
+    }
+
+    const domainZ: Record<string, number[]> = {};
+    for (const [testId, subtests] of Object.entries(tests)) {
+        const slug = testToSlug[testId];
+        if (!slug) continue;
+        if (!domainZ[slug]) domainZ[slug] = [];
+        for (const res of Object.values(subtests)) {
+            if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) domainZ[slug].push(res.zScore);
+        }
+    }
+
+    for (const [slug, zs] of Object.entries(domainZ)) {
+        if (!zs.length) continue;
+        const avg = zs.reduce((a, b) => a + b, 0) / zs.length;
+        if (avg <= -2) tags.push(`severe_${slug}`);
+        else if (avg <= -1) tags.push(`modere_${slug}`);
+    }
+    return tags;
+};
+
+const MAX_CHIPS_VISIBLE = 9;
+
 const ToggleChips: React.FC<{
     suggestions: { label: string; category: string }[];
+    contextualSuggestions?: string[];
+    crowdSuggestions?: string[];
     currentValue: string;
     onToggle: (val: string) => void;
     colorScheme: 'indigo' | 'emerald';
-}> = ({ suggestions, currentValue, onToggle, colorScheme }) => {
-    // Parse: prefer newline separator, fallback to ' - ' for backward compat with old drafts
+}> = ({ suggestions, contextualSuggestions = [], crowdSuggestions = [], currentValue, onToggle, colorScheme }) => {
     const activeLabels = (currentValue.includes('\n') ? currentValue.split('\n') : currentValue.split(' - '))
         .map(s => s.trim()).filter(Boolean);
 
     const handleToggle = (label: string) => {
         if (activeLabels.includes(label)) {
-            const newLabels = activeLabels.filter(l => l !== label);
-            onToggle(newLabels.join(CHIP_SEPARATOR));
+            onToggle(activeLabels.filter(l => l !== label).join(CHIP_SEPARATOR));
         } else {
             onToggle([...activeLabels, label].join(CHIP_SEPARATOR));
         }
     };
 
     const colors = colorScheme === 'indigo'
-        ? { active: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700/40', hover: 'hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-100 dark:hover:border-indigo-700/20' }
-        : { active: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40', hover: 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-100 dark:hover:border-emerald-700/20' };
+        ? { active: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700/40' }
+        : { active: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40' };
 
-    // Group by category
-    const categories = [...new Set(suggestions.map(s => s.category))];
+    // Build a single priority-sorted list: contextual → crowd → base
+    // (contextual/crowd surface first when the profile matches, otherwise fallback to base)
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+
+    const push = (label: string) => { if (!seen.has(label)) { seen.add(label); ordered.push(label); } };
+
+    contextualSuggestions.forEach(push);
+    crowdSuggestions.forEach(push);
+    suggestions.forEach(s => push(s.label));
+
+    // Active chips always visible; fill remaining slots up to cap with non-active
+    const activeSet = new Set(activeLabels);
+    const activeChips = ordered.filter(l => activeSet.has(l));
+    const inactiveChips = ordered.filter(l => !activeSet.has(l));
+    const slots = Math.max(0, MAX_CHIPS_VISIBLE - activeChips.length);
+    const visible = [...activeChips, ...inactiveChips.slice(0, slots)];
 
     return (
-        <div className="space-y-3">
-            {categories.map(cat => (
-                <div key={cat} className="flex flex-wrap gap-2">
-                    {suggestions.filter(s => s.category === cat).map(({ label }) => {
-                        const isActive = activeLabels.includes(label);
-                        return (
-                            <button
-                                key={label}
-                                onClick={() => handleToggle(label)}
-                                className={`px-3 py-1.5 border rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${isActive
-                                    ? `${colors.active} shadow-sm`
-                                    : `bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)] ${colors.hover}`
-                                    }`}
-                            >
-                                {isActive && <Check size={10} strokeWidth={3} />}
-                                {label}
-                            </button>
-                        );
-                    })}
-                </div>
-            ))}
+        <div className="flex flex-wrap gap-2">
+            {visible.map(label => {
+                const isActive = activeSet.has(label);
+                return (
+                    <button
+                        key={label}
+                        onClick={() => handleToggle(label)}
+                        className={`px-3 py-1.5 border rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            isActive
+                                ? `${colors.active} shadow-sm`
+                                : 'bg-[var(--hover-bg)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-current hover:text-[var(--text-heading)] hover:bg-[var(--card-bg)]'
+                        }`}
+                    >
+                        {isActive && <Check size={10} strokeWidth={3} />}
+                        {label}
+                    </button>
+                );
+            })}
         </div>
     );
 };
@@ -366,6 +445,32 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
     const handleDiagChange = (val: string) => updateSynthesis({ diagnosticInput: val });
     const handleProjectChange = (val: string) => updateSynthesis({ projectInput: val });
     const handleRecoChange = (val: string) => updateSynthesis({ recommendationsInput: val });
+
+    // Contextual reco suggestions based on diagnostic input
+    const contextualRecos = useMemo(() => getContextualRecos(synthesis.diagnosticInput), [synthesis.diagnosticInput]);
+
+    // Crowd-sourced suggestions fetched from Supabase (populated in Bloc 2c)
+    const [crowdSuggestions, setCrowdSuggestions] = useState<string[]>([]);
+    const crowdFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const { catalog } = useCatalog();
+
+    useEffect(() => {
+        if (crowdFetchTimerRef.current) clearTimeout(crowdFetchTimerRef.current);
+        if (!synthesis.diagnosticInput.trim()) { setCrowdSuggestions([]); return; }
+        crowdFetchTimerRef.current = setTimeout(async () => {
+            try {
+                const diagKeywords = synthesis.diagnosticInput.toLowerCase().split(/[\s,;.]+/).filter(w => w.length > 3).slice(0, 10);
+                const profileTags = buildProfileTags(patient?.age, tests, catalog);
+                const allKeywords = [...new Set([...diagKeywords, ...profileTags])];
+                const { data } = await supabase.rpc('get_contextual_recommendations', { p_keywords: allKeywords, p_limit: 8 });
+                if (data) setCrowdSuggestions((data as { recommendation_text: string }[]).map(r => r.recommendation_text));
+            } catch { /* best effort */ }
+        }, 600);
+        return () => { if (crowdFetchTimerRef.current) clearTimeout(crowdFetchTimerRef.current); };
+    }, [synthesis.diagnosticInput, patient?.age, tests, catalog]);
+
+    const isReadyToGenerate = synthesis.diagnosticInput.trim().length > 0 && !isGenerating;
 
     // Review stats
     const reviewStats = useMemo(() => {
@@ -416,19 +521,19 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceTextarea
-                            value={synthesis.diagnosticInput}
-                            onChange={handleDiagChange}
-                            placeholder="Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."
-                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all mb-4"
-                            rows={7}
-                        />
-
                         <ToggleChips
                             suggestions={DIAG_SUGGESTIONS}
                             currentValue={synthesis.diagnosticInput}
                             onToggle={handleDiagChange}
                             colorScheme="indigo"
+                        />
+
+                        <VoiceTextarea
+                            value={synthesis.diagnosticInput}
+                            onChange={handleDiagChange}
+                            placeholder={synthesis.diagnosticInput.trim() ? "Précisez ou complétez..." : "Ex: TDC mixte associé à une dysgraphie. L'impact sur la scolarité est majeur..."}
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-indigo-200 transition-all mt-4"
+                            rows={4}
                         />
                     </div>
 
@@ -442,19 +547,19 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceTextarea
-                            value={synthesis.projectInput || ''}
-                            onChange={handleProjectChange}
-                            placeholder="Ex: Suivi ergo hebdomadaire. Accompagnement parental. Coordination équipe pluridisciplinaire."
-                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all mb-4"
-                            rows={7}
-                        />
-
                         <ToggleChips
                             suggestions={PROJECT_SUGGESTIONS}
                             currentValue={synthesis.projectInput || ''}
                             onToggle={handleProjectChange}
                             colorScheme="emerald"
+                        />
+
+                        <VoiceTextarea
+                            value={synthesis.projectInput || ''}
+                            onChange={handleProjectChange}
+                            placeholder={synthesis.projectInput?.trim() ? "Précisez ou complétez..." : "Ex: Suivi ergo hebdomadaire. Accompagnement parental. Coordination équipe pluridisciplinaire."}
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-emerald-200 transition-all mt-4"
+                            rows={4}
                         />
                     </div>
 
@@ -470,19 +575,21 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                             </div>
                         </div>
 
-                        <VoiceTextarea
-                            value={synthesis.recommendationsInput}
-                            onChange={handleRecoChange}
-                            placeholder="Ex: Tiers-temps aux examens. Mise en place du clavier caché. PAP."
-                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-teal-200 transition-all mb-4"
-                            rows={7}
-                        />
-
                         <ToggleChips
                             suggestions={RECO_SUGGESTIONS}
+                            contextualSuggestions={contextualRecos}
+                            crowdSuggestions={crowdSuggestions}
                             currentValue={synthesis.recommendationsInput}
                             onToggle={handleRecoChange}
                             colorScheme="emerald"
+                        />
+
+                        <VoiceTextarea
+                            value={synthesis.recommendationsInput}
+                            onChange={handleRecoChange}
+                            placeholder={synthesis.recommendationsInput.trim() ? "Précisez ou complétez..." : "Ex: Tiers-temps aux examens. Mise en place du clavier caché. PAP."}
+                            className="bg-[var(--app-bg)] rounded-2xl border-2 border-transparent focus:bg-[var(--card-bg)] focus:border-teal-200 transition-all mt-4"
+                            rows={4}
                         />
                     </div>
 
@@ -516,7 +623,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                 <button
                     onClick={onNext}
                     disabled={isGenerating || !synthesis.diagnosticInput.trim()}
-                    className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-[#3D405B] hover:bg-[#E07A5F]"
+                    className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed ${
+                        isReadyToGenerate
+                            ? 'bg-gradient-to-r from-[#E07A5F] to-[#d97706] hover:shadow-orange-200 dark:hover:shadow-orange-900/40 hover:scale-[1.02]'
+                            : 'bg-[#3D405B] hover:bg-[#E07A5F]'
+                    }`}
                 >
                     {isGenerating ? (
                         <>
@@ -525,7 +636,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                         </>
                     ) : (
                         <>
-                            <Sparkles size={20} />
+                            <Sparkles size={20} className={isReadyToGenerate ? 'animate-bounce' : ''} />
                             <span>{!synthesis.diagnosticInput.trim() ? 'Diagnostic requis' : 'Générer le Bilan'}</span>
                         </>
                     )}

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { Patient, TestData, Observations, ReportSection, ClinicalSynthesis } from '../types';
+import type { Patient, TestData, Observations, ReportSection, ClinicalSynthesis, PatientAssessment } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
 import { Logger } from '../utils/logger';
@@ -11,9 +11,15 @@ interface AssessmentContextType {
   observations: Observations;
   synthesis: ClinicalSynthesis;
   sections: ReportSection[];
-  reportType: 'initial' | 'reevaluation';
+  reportType: 'initial' | 'reevaluation' | 'historique';
+  historicalDate: string;
   step: number;
   isAutoSaving: boolean;
+
+  previousAssessment: PatientAssessment | null;
+  setPreviousAssessment: (a: PatientAssessment | null) => void;
+
+  setHistoricalDate: (d: string) => void;
 
   setPatient: (p: Patient) => void;
   updatePatient: (p: Partial<Patient>) => void;
@@ -29,7 +35,7 @@ interface AssessmentContextType {
 
   setSections: (s: ReportSection[]) => void;
   updateSection: (id: string, update: Partial<ReportSection>) => void;
-  setReportType: (t: 'initial' | 'reevaluation') => void;
+  setReportType: (t: 'initial' | 'reevaluation' | 'historique') => void;
 
   setStep: (s: number) => void;
   resetAssessment: () => void;
@@ -77,9 +83,11 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [observations, setObservations] = useState<Observations>(initialObs);
   const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis);
   const [sections, setSections] = useState<ReportSection[]>([]);
-  const [reportType, setReportType] = useState<'initial' | 'reevaluation'>('initial');
+  const [reportType, setReportType] = useState<'initial' | 'reevaluation' | 'historique'>('initial');
+  const [historicalDate, setHistoricalDate] = useState<string>('');
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [previousAssessment, setPreviousAssessment] = useState<PatientAssessment | null>(null);
 
   const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const identitySyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,11 +169,11 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [patientIdentity, sessionKey, isDemoMode, patient, ensurePatientId]);
 
   // EFFECT B: Autosave draft with debounce (3s)
-  // Runs when assessment data changes, debounced to avoid excessive saves
-  // Stabilized by assessmentData memo to avoid re-debouncing unnecessarily
+  // Skip for 'historique' imports — they are one-shot and handled by handleFinalizeHistorical.
   useEffect(() => {
     if (!sessionKey && !isDemoMode) return;
     if (!isPatientCreationReady(patient)) return;
+    if (reportType === 'historique') return; // ⚠️ Never auto-save historical imports
 
     if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
 
@@ -185,6 +193,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           synthesis: assessmentData.synthesis,
           sections: assessmentData.sections,
           step: assessmentData.step,
+          reportType,
           version: DRAFT_VERSION,
           timestamp: new Date().toISOString(),
         };
@@ -200,7 +209,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => {
       if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
     };
-  }, [assessmentData, sessionKey, isDemoMode, ensurePatientId, beginAutoSave, endAutoSave]);
+  }, [assessmentData, reportType, sessionKey, isDemoMode, ensurePatientId, beginAutoSave, endAutoSave]);
 
   // EFFECT C: Sync patient identity (encrypted preview) when identity changes
   // Separate from draft autosave to isolate identity mutations
@@ -261,7 +270,9 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setSynthesis(initialSynthesis);
     setSections([]);
     setReportType('initial');
+    setHistoricalDate('');
     setStep(1);
+    setPreviousAssessment(null);
   };
 
   const loadFromDraft = (draft: any) => {
@@ -272,7 +283,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (draft.observations) setObservations({ ...initialObs, ...draft.observations });
     if (draft.synthesis) setSynthesis({ ...initialSynthesis, ...draft.synthesis });
     if (draft.sections) setSections([...draft.sections]);
-    if (draft.reportType === 'initial' || draft.reportType === 'reevaluation') setReportType(draft.reportType);
+    if (draft.reportType === 'initial' || draft.reportType === 'reevaluation' || draft.reportType === 'historique') setReportType(draft.reportType);
+    if (draft.historicalDate) setHistoricalDate(draft.historicalDate);
     if (draft.step) setStep(draft.step);
   };
 
@@ -284,8 +296,10 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       synthesis, setSynthesis, updateSynthesis,
       sections, setSections, updateSection,
       reportType, setReportType,
+      historicalDate, setHistoricalDate,
       step, setStep,
       isAutoSaving,
+      previousAssessment, setPreviousAssessment,
       resetAssessment, loadFromDraft
     }}>
       {children}

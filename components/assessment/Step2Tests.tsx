@@ -236,7 +236,7 @@ const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
   return getSubtestDisplayName(a).localeCompare(getSubtestDisplayName(b), 'fr', { sensitivity: 'base' });
 };
 
-const METRIC_LABEL: Record<string, string> = { raw: 'BRUT', standard: 'NS', z: 'ET', percentile: '%' };
+const METRIC_LABEL: Record<string, string> = { standard: 'NS', z: 'ET', percentile: '%' };
 
 // Simple z-score coloring (no norms lookup, just statistical interpretation)
 const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
@@ -508,7 +508,6 @@ const NumericRow: React.FC<{
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Active metric: prefer stored value, default to 'standard' (NS)
   const activeMetric: Metric = (() => {
     const em = result.entryMetric as Metric | undefined;
     if (em && em !== 'raw') return em;

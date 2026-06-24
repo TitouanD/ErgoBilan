@@ -191,4 +191,34 @@ export const AIService = {
       throw e;
     }
   },
+
+  generateReevaluationComment: async (payload: {
+    childContext: string;
+    previousScoresSummary: string;
+    newScoresSummary: string;
+    evolutionSummary: string;
+    styleDirectives?: string;
+  }, patient: Patient): Promise<{ evolution: string; recommandations: string }> => {
+    Logger.info('AI', 'Starting reevaluation comment generation', { patientId: patient.id });
+    try {
+      const response = await callAIProxyTask({
+        task: 'report_reevaluation',
+        payload: {
+          childContext: payload.childContext,
+          previousScoresSummary: payload.previousScoresSummary,
+          newScoresSummary: payload.newScoresSummary,
+          evolutionSummary: payload.evolutionSummary,
+          ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
+        },
+      });
+      const json = cleanAndParseJson(response.text) as { evolution_commentee?: string; recommandations?: string } | null;
+      return {
+        evolution: sanitizeReportText(hydrateReport(json?.evolution_commentee || 'Non généré.', patient)),
+        recommandations: sanitizeReportText(hydrateReport(json?.recommandations || 'Non généré.', patient)),
+      };
+    } catch (e: unknown) {
+      Logger.error('AI', 'Reevaluation generation failed', e);
+      throw e;
+    }
+  },
 };

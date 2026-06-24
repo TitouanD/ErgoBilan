@@ -31,7 +31,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("AI_ALLOWED_ORIGINS") || "")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
 
-type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback';
+type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback' | 'report_reevaluation';
 
 type BuildResult = {
   contents: unknown;
@@ -666,10 +666,72 @@ const buildFeedbackTask = (payload: Record<string, unknown>): BuildResult => {
   };
 };
 
+const REEVALUATION_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    evolution_commentee: { type: 'string' },
+    recommandations: { type: 'string' },
+  },
+  required: ['evolution_commentee', 'recommandations'],
+};
+
+const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult => {
+  const profile = String(payload.profile || 'pediatric');
+  const childContext = String(payload.childContext || '');
+  const previousScoresSummary = String(payload.previousScoresSummary || 'Non disponible');
+  const newScoresSummary = String(payload.newScoresSummary || 'Non disponible');
+  const evolutionSummary = String(payload.evolutionSummary || 'Non disponible');
+  const styleBlock = String(payload.styleDirectives || '').trim();
+  const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
+
+  const userPrompt = [
+    SECURITY_INSTRUCTION,
+    '',
+    ...(styleBlock ? [
+      'PREFERENCES DE STYLE DU PRATICIEN :',
+      styleBlock,
+      '',
+    ] : []),
+    `CONTEXTE ${subjectLabel} : ${childContext}`,
+    '',
+    'SCORES BILAN INITIAL (note standard / score etalonne) :',
+    previousScoresSummary,
+    '',
+    'SCORES REEVALUATION (note standard / score etalonne) :',
+    newScoresSummary,
+    '',
+    'RESUME DE L\'EVOLUTION (delta par sous-test, etabli cote client) :',
+    evolutionSummary,
+    '',
+    'TACHE : Redige un JSON avec 2 champs (valeurs = strings Markdown) :',
+    '',
+    '1. "evolution_commentee" (150-300 mots) :',
+    '   Analyse l\'evolution des scores entre le bilan initial et la reevaluation.',
+    '   Identifie les domaines ameliores, stables, et les points de vigilance.',
+    '   Lie les progres observes aux prises en charge et aux axes de travail.',
+    '   Utilise des formulations attribuees et cliniques. Sois factuel et precis.',
+    '',
+    '2. "recommandations" (100-200 mots) :',
+    '   Propose des recommandations therapeutiques actualisees en fonction de l\'evolution.',
+    '   Tiens compte des progres et des axes encore fragiles.',
+    '   Formule des objectifs concrets pour la prochaine periode.',
+    '',
+    'STYLE : Clinique, accessible, paragraphes aeres, orthographe francaise avec accents.',
+  ].join('\n');
+
+  return {
+    contents: userPrompt,
+    systemInstruction: profile === 'adult' ? ADULT_SYSTEM : PEDIATRIC_SYSTEM,
+    responseMimeType: 'application/json',
+    responseSchema: REEVALUATION_RESPONSE_SCHEMA,
+  };
+};
+
 const buildTask = (task: AITask, payload: Record<string, unknown>): BuildResult => {
   if (task === 'report_bio') return buildBioTask(payload);
   if (task === 'report_diagnostic') return buildDiagnosticTask(payload);
   if (task === 'extract_style_feedback') return buildFeedbackTask(payload);
+  if (task === 'report_reevaluation') return buildReevaluationTask(payload);
   throw new Error(`Invalid task: ${task}`);
 };
 
@@ -750,7 +812,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!['report_bio', 'report_diagnostic', 'extract_style_feedback'].includes(task)) {
+    if (!['report_bio', 'report_diagnostic', 'extract_style_feedback', 'report_reevaluation'].includes(task)) {
       return new Response(JSON.stringify({ error: 'INVALID_TASK' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -982,6 +1044,11 @@ Deno.serve(async (req: Request) => {
       finalized = true;
     }
 
+    if (task === 'report_reevaluation') {
+      await safeFinalize(adminSupabase, generationId, userId, true);
+      finalized = true;
+    }
+
     return new Response(JSON.stringify({ text, generationId }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -992,7 +1059,7 @@ Deno.serve(async (req: Request) => {
       tags: { task: currentTask || 'unknown' },
       extra: { userId, generationId },
     });
-    if (!finalized && (currentTask === 'report_bio' || currentTask === 'report_diagnostic')) {
+    if (!finalized && (currentTask === 'report_bio' || currentTask === 'report_diagnostic' || currentTask === 'report_reevaluation')) {
       await safeFinalize(adminSupabase, generationId, userId, false, 'INTERNAL_ERROR');
       finalized = true;
     }

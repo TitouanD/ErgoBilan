@@ -284,7 +284,7 @@ export interface PractitionerProfile {
     aiStylePreferences?: string;
 }
 
-export type PatientAssessmentKind = 'initial' | 'reevaluation' | 'mini_reevaluation';
+export type PatientAssessmentKind = 'initial' | 'reevaluation';
 
 export interface PatientAssessmentReport {
     status: 'completed';
@@ -298,7 +298,9 @@ export interface PatientAssessment {
     kind: PatientAssessmentKind;
     hasFormalReport: boolean;
     testName?: string;
+    previousAssessmentId?: string;
     results?: Record<string, ScoreResult>;
+    tests?: TestData;
     report?: PatientAssessmentReport;
 }
 
@@ -508,13 +510,15 @@ export interface DraftPayload {
     observations?: Observations;
     synthesis?: ClinicalSynthesis;
     sections?: ReportSection[];
-    reportType?: 'initial' | 'reevaluation';
+    reportType?: 'initial' | 'reevaluation' | 'historique';
+    historicalDate?: string;
     step?: number;
 }
 
 export interface DashboardDraftMeta {
     updatedAt: string;
     step: number | null;
+    reportType?: 'initial' | 'reevaluation' | 'historique';
 }
 
 /** Row from the admin_candidates_promotion SQL view */

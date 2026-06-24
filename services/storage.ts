@@ -289,42 +289,19 @@ const buildFallbackFollowupFromAssessments = (
 const buildDemoAssessments = (patientId: string): PatientAssessment[] => {
   if (patientId === DEMO_PATIENTS.SARAH.id) {
     const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & {
-      history?: Array<{ id: string; date: string; testName: string; results: Record<string, ScoreResult> }>;
       reports?: Array<{ id: string; date: string; type: 'initial' | 'reevaluation'; patientName: string; sections: unknown[] }>;
     };
-    const history = sarahDemo.history || [];
     const reports = sarahDemo.reports || [];
-    return [
-      ...reports.map((report) => ({
+    return reports
+      .map((report) => ({
         id: report.id,
         date: report.date,
         kind: report.type as PatientAssessmentKind,
         hasFormalReport: true,
-        testName: report.type === 'initial' ? 'Bilan initial' : 'Reevaluation',
+        testName: report.type === 'initial' ? 'Bilan initial' : 'Réévaluation',
         report: { status: 'completed' as const, patientName: report.patientName, sections: report.sections as ReportSection[] },
-      })),
-      ...history.map((entry) => ({
-        id: entry.id,
-        date: entry.date,
-        kind: 'mini_reevaluation' as const,
-        hasFormalReport: false,
-        testName: entry.testName,
-        results: entry.results as Record<string, ScoreResult>,
-      })),
-    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }
-
-  if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
-    return [
-      {
-        id: 'demo-assessment-leo',
-        date: new Date(Date.now() - 86400000 * 21).toISOString(),
-        kind: 'mini_reevaluation',
-        hasFormalReport: false,
-        testName: 'Bilan multi-tests',
-        results: DEMO_PATIENTS.LEO.tests as unknown as Record<string, ScoreResult>,
-      },
-    ];
+      }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   return [];
@@ -389,8 +366,25 @@ export const StorageService = {
     }
 
     const normalizedPatient = normalizePatientIdentity(patientData);
+
+    // Load real assessments so we preserve hasInitialReport and other computed flags.
+    // Using assessments:[] would incorrectly reset hasInitialReport=false for patients
+    // who already have a finalized report.
+    const assessmentRows = await db().assessments.where('patientId').equals(patientId).toArray();
+    const assessments: PatientAssessment[] = assessmentRows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      kind: r.kind as PatientAssessmentKind,
+      hasFormalReport: r.hasFormalReport,
+      testName: r.testName,
+      previousAssessmentId: r.previousAssessmentId,
+      results: r.results,
+      tests: r.tests,
+      report: r.report,
+    }));
+
     const previewMeta = toPreviewMeta(
-      buildPreviewPayload(normalizedPatient, { archived: existing.archived, assessments: [] }),
+      buildPreviewPayload(normalizedPatient, { archived: existing.archived, assessments }),
     );
 
     await db().patients.update(patientId, {
@@ -430,6 +424,7 @@ export const StorageService = {
       map[row.patientId] = {
         updatedAt: row.updatedAt,
         step: typeof row.draftData?.step === 'number' ? row.draftData.step : null,
+        reportType: row.draftData?.reportType ?? 'initial',
       };
     }
     return map;
@@ -480,7 +475,9 @@ export const StorageService = {
         hasFormalReport: a.hasFormalReport,
         date: a.date,
         testName: a.testName,
+        previousAssessmentId: a.previousAssessmentId,
         results: a.results,
+        tests: a.tests,
         report: a.report,
         createdAt: now,
       }));
@@ -541,6 +538,41 @@ export const StorageService = {
       previewMeta: row.previewMeta,
     }));
 
+    // Background repair: fix stale previewMeta for patients where hasInitialReport=false
+    // but they actually have formal assessments (caused by old syncPatientIdentityPreview bug).
+    // Fire-and-forget — does NOT block the caller.
+    const staleIds = files
+      .filter((f) => !f.previewMeta?.flags?.hasInitialReport)
+      .map((f) => f.id);
+    if (staleIds.length > 0) {
+      (async () => {
+        try {
+          const formalRows = await db().assessments
+            .where('patientId').anyOf(staleIds)
+            .toArray();
+          const patientsWithFormal = new Set(
+            formalRows.filter((r) => r.hasFormalReport).map((r) => r.patientId),
+          );
+          for (const patientId of patientsWithFormal) {
+            const allRows = await db().assessments.where('patientId').equals(patientId).toArray();
+            const assessments: PatientAssessment[] = allRows.map((r) => ({
+              id: r.id, date: r.date, kind: r.kind as PatientAssessmentKind,
+              hasFormalReport: r.hasFormalReport, testName: r.testName,
+              previousAssessmentId: r.previousAssessmentId,
+              results: r.results, tests: r.tests, report: r.report,
+            }));
+            const fileToRepair = files.find((f) => f.id === patientId);
+            if (!fileToRepair) continue;
+            const repairedMeta = toPreviewMeta(
+              buildPreviewPayload(fileToRepair.patient, { archived: fileToRepair.archived, assessments }),
+            );
+            await db().patients.update(patientId, { previewMeta: repairedMeta, updatedAt: new Date().toISOString() });
+            fileToRepair.previewMeta = repairedMeta;
+          }
+        } catch (_e) { /* silent — background repair, non-critical */ }
+      })();
+    }
+
     return { files, hasMore, nextOffset: offset + pageSize };
   },
 
@@ -594,7 +626,9 @@ export const StorageService = {
       kind: row.kind,
       hasFormalReport: row.hasFormalReport,
       testName: row.testName,
+      previousAssessmentId: row.previousAssessmentId,
       results: row.results,
+      tests: row.tests,
       report: row.report,
     }));
 
