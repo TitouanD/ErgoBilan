@@ -454,8 +454,23 @@ export const StorageService = {
     if (!file.id) throw new Error('saveFile: missing patient ID');
 
     const normalizedPatient = normalizePatientIdentity(file.patient);
+
+    // Load all existing assessments so previewMeta includes history that isn't
+    // carried in the paginated patientFiles list (assessments: [] in list view).
+    const existingRows = await db().assessments.where('patientId').equals(file.id).toArray();
+    const incomingIds = new Set(file.assessments.map((a) => a.id));
+    const existingAssessments: PatientAssessment[] = existingRows
+      .filter((r) => !incomingIds.has(r.id))
+      .map((r) => ({
+        id: r.id, date: r.date, kind: r.kind as PatientAssessmentKind,
+        hasFormalReport: r.hasFormalReport, testName: r.testName,
+        previousAssessmentId: r.previousAssessmentId,
+        results: r.results, tests: r.tests, report: r.report,
+      }));
+    const mergedAssessments = [...file.assessments, ...existingAssessments];
+
     const previewMeta = toPreviewMeta(
-      buildPreviewPayload(normalizedPatient, { archived: file.archived, assessments: file.assessments }),
+      buildPreviewPayload(normalizedPatient, { archived: file.archived, assessments: mergedAssessments }),
     );
 
     await db().patients.update(file.id, {
@@ -569,7 +584,7 @@ export const StorageService = {
             await db().patients.update(patientId, { previewMeta: repairedMeta, updatedAt: new Date().toISOString() });
             fileToRepair.previewMeta = repairedMeta;
           }
-        } catch (_e) { /* silent — background repair, non-critical */ }
+        } catch (_e) { Logger.warn('DB', 'Background previewMeta repair failed', _e); }
       })();
     }
 

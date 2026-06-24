@@ -265,6 +265,13 @@ export const Dashboard: React.FC<Props> = ({
 
   const kpis = useMemo(() => {
     const now = new Date();
+    // Count patients with a formal report finalized this month (from previewMeta)
+    const bilansThisMonth = activeFiles.filter((file) => {
+      const d = file.previewMeta?.metrics?.lastFormalReportDate;
+      if (!d) return false;
+      const date = new Date(d);
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    }).length;
     const newThisMonth = activeFiles.filter((file) => {
       const d = new Date(file.lastInteraction);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -272,8 +279,8 @@ export const Dashboard: React.FC<Props> = ({
     const followups = activeFiles.map((file) => buildSyntheticFollowup(file)).filter((item): item is PatientFollowup => item !== null);
     const dueFollowups = followups.filter((item) => item.status === 'due' || item.status === 'overdue').length;
     const reevaluationOpportunities = activeFiles.filter((file) => (file.previewMeta || deriveFallbackPreviewMeta(file)).flags.hasReevaluationOpportunity).length;
-    return { hoursSaved: Math.round(userProfile.totalBilansGenerated * 1.5), activeCount: activeFiles.length, newThisMonth, dueFollowups, reevaluationOpportunities };
-  }, [activeFiles, userProfile.totalBilansGenerated]);
+    return { hoursSaved: Math.round(bilansThisMonth * 1.5), activeCount: activeFiles.length, newThisMonth, dueFollowups, reevaluationOpportunities };
+  }, [activeFiles]);
 
   const pendingCompleted = useMemo(
     () => pendingQuestionnaires.filter((q) => q.status === 'completed'),

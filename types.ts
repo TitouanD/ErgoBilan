@@ -359,7 +359,7 @@ export type PatientFollowupStatus = 'upcoming' | 'due' | 'overdue' | 'scheduled'
 export interface PatientFollowup {
     id: string;
     patientId: string;
-    organizationId: string;
+    organizationId: string | null;
     status: PatientFollowupStatus;
     dueAt: string;
     snoozedUntil?: string | null;

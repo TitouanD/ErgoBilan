@@ -62,6 +62,7 @@ export interface LocalFollowupRow {
   id: string;
   /** Unique per patient */
   patientId: string;
+  organizationId?: string | null;
   status: PatientFollowupStatus;
   dueAt: string;
   snoozedUntil?: string | null;
