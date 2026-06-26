@@ -11,6 +11,7 @@ import {
   ChevronRight,
   BellOff,
   FileText,
+  History,
   TrendingUp,
   Trash2,
   X,
@@ -28,7 +29,7 @@ interface Props {
   file: PatientFile;
   onBack: () => void;
   onDelete?: (patientId: string) => void;
-  onNewBilan: (type: 'initial' | 'reevaluation') => void;
+  onNewBilan: (type: 'initial' | 'reevaluation' | 'historique') => void;
   onOpenReport: (reportId: string) => void;
   draftAvailable?: boolean;
   onResumeDraft?: () => void;
@@ -351,6 +352,9 @@ export const PatientDetail: React.FC<Props> = ({
           {followup && <p className="mt-2 text-sm font-semibold text-[var(--text-heading)]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
         </div>
         <div className="flex gap-3">
+          <button onClick={() => onNewBilan('historique')} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-5 py-4 text-sm font-bold text-[var(--text-main)] hover:bg-[var(--hover-bg)]">
+            <History size={16} /> Importer bilan antérieur
+          </button>
           <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[var(--secondary)] px-8 py-4 text-sm font-bold text-white hover:brightness-90">
             <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation 1 clic
           </button>

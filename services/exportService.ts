@@ -10,6 +10,7 @@
  */
 
 import { getLocalDB, type LocalPatientRow, type LocalDraftRow, type LocalAssessmentRow, type LocalFollowupRow } from './localDB';
+import { setLastBackupDate } from '../utils/backupTracking';
 
 // ─── Bundle format ─────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export const ExportService = {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setLastBackupDate(userId);
   },
 
   /**

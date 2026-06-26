@@ -33,7 +33,7 @@ export function deriveFromNS(
 export function zColor(z: number | null): string {
     if (z === null) return 'text-[var(--text-secondary)]';
     if (z <= -2) return 'text-rose-600';
-    if (z <= -1) return 'text-amber-500';
+    if (z <= -1) return 'text-amber-600';
     return 'text-emerald-600';
 }
 

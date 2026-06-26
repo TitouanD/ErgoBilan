@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, User, Phone, Building, MapPin, Save, Loader2, Download, Upload, HardDrive, PenLine, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, User, Phone, Building, MapPin, Save, Loader2, Download, Upload, HardDrive, PenLine, Trash2, ChevronDown, ChevronUp, Clock, Shield } from 'lucide-react';
 import { supabase } from '../../services/db';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { ExportService } from '../../services/exportService';
+import { getLastBackupDate, formatLastBackupLabel } from '../../utils/backupTracking';
 
 interface ProfileEditorProps {
     onClose: () => void;
@@ -17,13 +18,17 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
     const [isImporting, setIsImporting] = useState(false);
     const [isResettingPrefs, setIsResettingPrefs] = useState(false);
     const [prefsExpanded, setPrefsExpanded] = useState(false);
+    const [lastBackup, setLastBackup] = useState<Date | null>(() =>
+        getLastBackupDate(practitioner?.id ?? '')
+    );
 
     const handleExport = async () => {
         if (!practitioner) return;
         setIsExporting(true);
         try {
             await ExportService.exportAll(practitioner.id);
-            toast.success('Backup téléchargé');
+            setLastBackup(new Date());
+            toast.success('Backup sauvegardé — vos données restent sous votre seul contrôle.');
         } catch {
             toast.error('Erreur lors de l\'export');
         } finally {
@@ -290,6 +295,12 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                     <p className="text-sm text-[var(--text-secondary)] mt-1">Vos bilans sont stockés sur cet appareil. Exportez régulièrement un backup.</p>
                 </div>
                 <div className="p-8 space-y-3">
+                    {/* Last backup indicator */}
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium ${lastBackup ? 'text-[var(--text-secondary)] bg-[var(--hover-bg)]' : 'text-amber-700 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700'}`}>
+                        <Clock size={14} className="flex-shrink-0" />
+                        <span>Dernier backup : <strong>{formatLastBackupLabel(lastBackup)}</strong></span>
+                    </div>
+
                     <button
                         onClick={handleExport}
                         disabled={isExporting}
@@ -314,6 +325,16 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                         {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                         Restaurer depuis un backup
                     </button>
+
+                    {/* Data sovereignty message */}
+                    <div className="flex items-start gap-3 p-4 bg-[var(--card-bg-raised)] border border-[var(--border-color)] rounded-xl mt-2">
+                        <Shield size={18} className="text-[var(--primary)] flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                            <strong className="text-[var(--text-main)]">Vos patients ne quittent jamais cet appareil.</strong>{' '}
+                            ErgoBilan ne peut pas lire vos données — vous seul en avez la clé.
+                            En cas de perte ou changement d'appareil, seul votre fichier <code className="font-mono bg-[var(--hover-bg)] px-1 rounded">.ergobilan</code> vous permettra de les retrouver.
+                        </p>
+                    </div>
 
                     <p className="text-xs text-[var(--text-secondary)] text-center pt-1">
                         ⚠️ Utilisez toujours le même navigateur. Les données ne se synchronisent pas entre Chrome, Firefox ou Safari.

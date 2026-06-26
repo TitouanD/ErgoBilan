@@ -221,7 +221,7 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                             </div>
 
                             <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">
-                                Vos données restent chez vous.
+                                Vous seul maîtrisez vos données.
                             </h2>
                             
                             <p className="text-stone-500 leading-relaxed">
@@ -240,10 +240,21 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                                 </ul>
                             </div>
 
+                            {/* Backup reminder — framed as a strength */}
+                            <div className="flex items-start gap-3 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl">
+                                <ShieldCheck size={18} className="text-emerald-600 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300 mb-1">Votre liberté, votre responsabilité</p>
+                                    <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                                        Contrairement aux logiciels cloud, personne d'autre ne peut accéder à vos bilans — ni ErgoBilan, ni un serveur tiers. En contrepartie, <strong>exportez régulièrement un backup</strong> depuis votre profil (bouton avatar en haut à droite) pour ne rien perdre en cas de changement d'appareil ou de navigateur.
+                                    </p>
+                                </div>
+                            </div>
+
                             <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
                                 <span className="text-amber-500 mt-0.5 shrink-0">⚠️</span>
                                 <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                                    <strong>Utilisez toujours le même navigateur sur ce poste.</strong> Les données ne se synchronisent pas entre Chrome, Firefox ou Safari. Exportez régulièrement un backup depuis le tableau de bord.
+                                    <strong>Utilisez toujours le même navigateur sur ce poste.</strong> Les données ne se synchronisent pas entre Chrome, Firefox ou Safari.
                                 </p>
                             </div>
 

@@ -139,7 +139,7 @@ const deriveScores = (value: number, metric: 'standard' | 'z' | 'percentile', sc
 const zToneClass = (z: number | null): string => {
   if (z === null || !Number.isFinite(z)) return 'text-[var(--text-secondary)]';
   if (z <= -2) return 'text-rose-600 font-bold';
-  if (z < -1)  return 'text-amber-600 font-bold';
+  if (z <= -1) return 'text-amber-600 font-bold';
   return 'text-emerald-600 font-bold';
 };
 
@@ -242,7 +242,7 @@ const METRIC_LABEL: Record<string, string> = { standard: 'NS', z: 'ET', percenti
 const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
   if (z === null || !Number.isFinite(z)) return null;
   if (z <= -2) return 'bad';
-  if (z < -1) return 'warn';
+  if (z <= -1) return 'warn';
   return 'good';
 };
 

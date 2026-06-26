@@ -248,11 +248,24 @@ export const ReevStep2Comment: React.FC<Props> = ({
             const newSummary = buildScoresSummary(newTests, subtestNameMap);
             const evoSummary = buildEvolutionSummary(deltas);
 
+            // Build a text block from previous report sections (profil, diagnostic, objectifs, project)
+            const prevSections = previousAssessment?.report?.sections ?? [];
+            const contextSectionIds = ['profil', 'diagnostic', 'objectifs', 'project', 'recommandations'];
+            const previousReportContext = prevSections
+                .filter(s => contextSectionIds.includes(s.id) && s.content?.trim())
+                .map(s => {
+                    // Strip basic HTML tags for plain-text AI context
+                    const plain = s.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                    return `[${s.title}]\n${plain}`;
+                })
+                .join('\n\n');
+
             const result = await AIService.generateReevaluationComment({
                 childContext: anonContext,
                 previousScoresSummary: prevSummary,
                 newScoresSummary: newSummary,
                 evolutionSummary: evoSummary,
+                ...(previousReportContext && { previousReportContext }),
                 styleDirectives: userProfile.aiStylePreferences,
             }, patient);
 

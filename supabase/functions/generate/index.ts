@@ -453,7 +453,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   1. Commence par les OBSERVATIONS FONCTIONNELLES : ce qui est preserve, ce qui est fragile, ce qui est deficitaire.',
     '   2. Decris les MANIFESTATIONS CONCRETES observees ou rapportees : "ce qui se manifeste par des sauts de ligne lors de la copie", "engendrant des confusions de lettres".',
     '   3. NE CITE AUCUN SCORE NI NOM DE TEST.',
-    '   4. PRESERVE LES OBSERVATIONS SPECIFIQUES : Si l\'ergotherapeute a note une observation precise sur une epreuve (ex: performance sur une epreuve particuliere, comportement specifique observe), integre ce detail en le reformulant. Ne generalise PAS un fait specifique en formulation vague.
+    '   4. PRESERVE LES OBSERVATIONS SPECIFIQUES : Si l\'ergotherapeute a note une observation precise sur une epreuve (ex: performance sur une epreuve particuliere, comportement specifique observe), integre ce detail en le reformulant. Ne generalise PAS un fait specifique en formulation vague.',
     '',
     '   DOMAINES POSSIBLES (n\'utilise que ceux pour lesquels tu as des donnees) :',
     '   - "Sur le plan de la motricite fine et de la coordination bi-manuelle" : motricite fine, coordination bimanuelle, coordination oculo-manuelle. Decris ce qui est fonctionnel et ce qui est fragile.',
@@ -497,7 +497,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   Chaque recommandation doit pouvoir etre mise en oeuvre immediatement par l\'ecole ou la famille.',
     '   SUGGESTIONS ERGONOMIQUES STANDARDS : Inclus ces adaptations UNIQUEMENT si elles sont directement justifiees par les observations du praticien. NE PAS ajouter de maniere systematique si l\'observation correspondante est absente des notes cliniques.',
     '   - Plan incline : A PROPOSER UNIQUEMENT si une problematique posturale est EXPLICITEMENT notee dans les observations (tete proche de la feuille, mauvaise posture du buste, dos voute...). Ne pas proposer si la posture est decrite comme correcte ou si elle n\'est pas mentionnee.',
-    '   - Assise dynamique (coussin a air) : A PROPOSER UNIQUEMENT si agitation motrice ou besoin de mouvement important sont EXPLICITEMENT notes dans les observations du praticien.'
+    '   - Assise dynamique (coussin a air) : A PROPOSER UNIQUEMENT si agitation motrice ou besoin de mouvement important sont EXPLICITEMENT notes dans les observations du praticien.',
     '   INTERDIT : recommandations vagues ("sensibilisation de l\'equipe"), recommandations materielles trop specifiques (noms de produits) sauf si justifie par les observations.',
     '   Si tout est normal, mentionne que l\'accompagnement n\'est pas necessaire.',
     '   STYLE : Formule LARGE et PRAGMATIQUE avec des exemples concrets entre parentheses. Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte.',
@@ -681,6 +681,7 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
   const previousScoresSummary = String(payload.previousScoresSummary || 'Non disponible');
   const newScoresSummary = String(payload.newScoresSummary || 'Non disponible');
   const evolutionSummary = String(payload.evolutionSummary || 'Non disponible');
+  const previousReportContext = String(payload.previousReportContext || '').trim();
   const styleBlock = String(payload.styleDirectives || '').trim();
   const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
 
@@ -694,29 +695,40 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
     ] : []),
     `CONTEXTE ${subjectLabel} : ${childContext}`,
     '',
-    'SCORES BILAN INITIAL (note standard / score etalonne) :',
+    ...(previousReportContext ? [
+      'CONTENU DU BILAN INITIAL (sections cliniques du rapport precedent) :',
+      previousReportContext,
+      '',
+    ] : []),
+    'SCORES BILAN INITIAL (note standard NS / score etalonne) :',
     previousScoresSummary,
     '',
-    'SCORES REEVALUATION (note standard / score etalonne) :',
+    'SCORES REEVALUATION (note standard NS / score etalonne) :',
     newScoresSummary,
     '',
-    'RESUME DE L\'EVOLUTION (delta par sous-test, etabli cote client) :',
+    'EVOLUTION PAR SOUS-TEST (delta calcule automatiquement) :',
     evolutionSummary,
     '',
     'TACHE : Redige un JSON avec 2 champs (valeurs = strings Markdown) :',
     '',
-    '1. "evolution_commentee" (150-300 mots) :',
+    '1. "evolution_commentee" (200-350 mots) :',
     '   Analyse l\'evolution des scores entre le bilan initial et la reevaluation.',
+    '   Commence par situer le contexte clinique (profil general, motif de reevaluation).',
     '   Identifie les domaines ameliores, stables, et les points de vigilance.',
-    '   Lie les progres observes aux prises en charge et aux axes de travail.',
-    '   Utilise des formulations attribuees et cliniques. Sois factuel et precis.',
+    '   Mets en lien les progres observes avec les prises en charge effectuees depuis le bilan initial.',
+    '   Signale les domaines qui restent fragiles et necessitent une attention continue.',
+    '   Utilise des formulations attribuees et cliniques (ex: "on observe", "les resultats indiquent").',
+    '   Sois factuel, nuance, et evite les generalisations.',
     '',
-    '2. "recommandations" (100-200 mots) :',
+    '2. "recommandations" (120-250 mots) :',
     '   Propose des recommandations therapeutiques actualisees en fonction de l\'evolution.',
-    '   Tiens compte des progres et des axes encore fragiles.',
-    '   Formule des objectifs concrets pour la prochaine periode.',
+    '   Ajuste les objectifs en fonction des progres realises et des axes encore fragiles.',
+    '   Formule des objectifs concrets et mesurables pour la prochaine periode.',
+    '   Si le profil occupationnel ou le projet d\'accompagnement etait mentionne dans le bilan initial,',
+    '   fais y reference et indique comment il evolue.',
     '',
     'STYLE : Clinique, accessible, paragraphes aeres, orthographe francaise avec accents.',
+    'Ne mentionne jamais le prenom ou le nom du patient (utilise uniquement "le/la patient(e)" ou les pronoms).',
   ].join('\n');
 
   return {

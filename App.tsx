@@ -20,9 +20,11 @@ import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile, ReportSection } from './types';
-import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail } from 'lucide-react';
+import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail, Download, Upload } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
+import { ExportService } from './services/exportService';
+import { getDaysSinceBackup } from './utils/backupTracking';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
 
@@ -90,6 +92,9 @@ const AppRouter = () => {
     const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
+    const menuImportRef = useRef<HTMLInputElement>(null);
+    const [backupOverdue, setBackupOverdue] = useState(false);
+    const [isExportingFromMenu, setIsExportingFromMenu] = useState(false);
     const [stepperConfirm, setStepperConfirm] = useState<{ target: number } | null>(null);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [viewingReport, setViewingReport] = useState<import('./types').PatientAssessment | null>(null);
@@ -184,6 +189,27 @@ const AppRouter = () => {
         setShowAccountMenu(false);
     }, [mode]);
 
+    // Compute backup overdue badge whenever the user changes
+    useEffect(() => {
+        if (!practitioner?.id || isDemoMode) { setBackupOverdue(false); return; }
+        const days = getDaysSinceBackup(practitioner.id);
+        setBackupOverdue(days === null || days > 30);
+    }, [practitioner?.id, isDemoMode]);
+
+    // Show a warning toast once per browser session if backup is missing or very old
+    useEffect(() => {
+        if (!practitioner?.id || isDemoMode || authState !== 'authenticated') return;
+        if (sessionStorage.getItem('ergo_backup_reminder_shown')) return;
+        const days = getDaysSinceBackup(practitioner.id);
+        if (days === null) {
+            toast.warning('Aucun backup détecté — exportez vos données depuis votre profil pour ne rien perdre.');
+            sessionStorage.setItem('ergo_backup_reminder_shown', '1');
+        } else if (days > 180) {
+            toast.warning('Votre dernier backup date de plus de 6 mois — pensez à exporter vos données depuis votre profil.');
+            sessionStorage.setItem('ergo_backup_reminder_shown', '1');
+        }
+    }, [practitioner?.id, authState, isDemoMode]);
+
     useEffect(() => {
         if (authState !== 'authenticated' || isDemoMode || hasCatalogLoaded) return;
         if (mode !== 'dashboard' && mode !== 'detail' && mode !== 'assessment') return;
@@ -246,6 +272,48 @@ const AppRouter = () => {
     };
     const handleStartDemo = async () => { await startDemo(); setShowOnboarding(true); };
     const handleAdminAccess = async () => { const allowed = await verifyAdminAccess(); if (allowed) setMode('admin'); else toast.error("Accès refusé par le serveur."); };
+
+    const handleMenuExport = async () => {
+        if (!practitioner) return;
+        setShowAccountMenu(false);
+        setIsExportingFromMenu(true);
+        try {
+            await ExportService.exportAll(practitioner.id);
+            setBackupOverdue(false);
+            toast.success('Backup sauvegardé — vos données restent sous votre seul contrôle.');
+        } catch {
+            toast.error("Erreur lors de l'export.");
+        } finally {
+            setIsExportingFromMenu(false);
+        }
+    };
+
+    const handleMenuImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !practitioner) return;
+        if (!file.name.endsWith('.ergobilan')) {
+            toast.error('Fichier invalide. Choisissez un fichier .ergobilan');
+            return;
+        }
+        setShowAccountMenu(false);
+        try {
+            const preview = await ExportService.peekBundle(file);
+            const ok = window.confirm(
+                `Importer ce backup ?\n` +
+                `Date\u00a0: ${new Date(preview.exportedAt).toLocaleString()}\n` +
+                `${preview.patients} patient(s) \u2022 ${preview.assessments} bilan(s) \u2022 ${preview.drafts} brouillon(s)\n\n` +
+                `Les données existantes pour ces patients seront \u00e9crasées.`
+            );
+            if (!ok) return;
+            const result = await ExportService.importFromFile(file, practitioner.id);
+            toast.success(`Import réussi\u00a0: ${result.patients} patients, ${result.assessments} bilans`);
+            void loadData();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Erreur lors de l'import");
+        } finally {
+            if (menuImportRef.current) menuImportRef.current.value = '';
+        }
+    };
 
 
     const onTriggerGeneration = useCallback(async () => { setShowConfirmGeneration(false); await handleGenerateReport(); }, [handleGenerateReport]);
@@ -316,7 +384,7 @@ const AppRouter = () => {
         const file = patientId ? patientFiles.find((f) => f.id === patientId) : null;
         const hasCompletedInitial = file?.previewMeta?.flags?.hasInitialReport ?? false;
         const draftMeta = patientId ? draftsIndex[patientId] : null;
-        const isStale = hasCompletedInitial && (!draftMeta?.reportType || draftMeta?.reportType === 'initial' || draftMeta?.reportType === 'historique');
+        const isStale = hasCompletedInitial && (!draftMeta?.reportType || draftMeta?.reportType === 'initial');
         if (isStale && file) {
             await StorageService.deleteDraft(patientId);
             // Load full patient details to get actual assessments (list page has assessments:[])
@@ -577,8 +645,13 @@ const AppRouter = () => {
                                     onClick={() => setShowAccountMenu((prev) => !prev)}
                                     className="flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 transition-colors hover:border-[var(--text-main)]"
                                 >
-                                    <div className="h-8 w-8 rounded-full bg-[#3D405B] text-white text-xs font-bold flex items-center justify-center">
-                                        {accountInitials}
+                                    <div className="relative h-8 w-8 flex-shrink-0">
+                                        <div className="h-8 w-8 rounded-full bg-[#3D405B] text-white text-xs font-bold flex items-center justify-center">
+                                            {accountInitials}
+                                        </div>
+                                        {backupOverdue && (
+                                            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[var(--card-bg)]" />
+                                        )}
                                     </div>
                                     <ChevronDown size={14} className={`text-[var(--text-light)] transition-transform ${showAccountMenu ? 'rotate-180' : ''}`} />
                                 </button>
@@ -590,6 +663,22 @@ const AppRouter = () => {
                                             <p className="text-xs text-[var(--text-light)] truncate">{userProfile.email}</p>
                                         </div>
 
+                                        <div className="pt-1 pb-1">
+                                            <button
+                                                onClick={handleMenuExport}
+                                                disabled={isExportingFromMenu}
+                                                className={`w-full px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2 disabled:opacity-60 transition-colors ${backupOverdue ? 'text-amber-600' : 'text-[var(--text-main)]'}`}
+                                            >
+                                                {isExportingFromMenu ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                                Sauvegarder mes données
+                                                {backupOverdue && <span className="ml-auto text-amber-500 text-xs font-bold">!</span>}
+                                            </button>
+                                            <label className="w-full px-3 py-2 text-left text-sm font-semibold text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2 cursor-pointer transition-colors">
+                                                <Upload size={14} /> Importer un backup
+                                                <input ref={menuImportRef} type="file" accept=".ergobilan" className="hidden" onChange={handleMenuImport} />
+                                            </label>
+                                        </div>
+                                        <div className="mx-2 h-px bg-[var(--border-color)]" />
 
                                         <button onClick={() => { setShowAccountMenu(false); setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }} className="w-full px-3 py-2 text-left text-sm font-medium text-[var(--text-main)] hover:bg-[var(--hover-bg)] rounded-xl flex items-center gap-2">
                                             <User size={14} /> Mon Profil
@@ -675,7 +764,7 @@ const AppRouter = () => {
                                 });
                                 setSelectedFile(null);
                             }}
-                            onNewBilan={(type) => {
+                            onNewBilan={(type: 'initial' | 'reevaluation' | 'historique') => {
                                 assessment.resetAssessment();
                                 assessment.setPatient(selectedFile.patient);
                                 assessment.setReportType(type);
@@ -696,9 +785,11 @@ const AppRouter = () => {
                             }}
                             draftAvailable={(() => {
                                 const meta = draftsIndex[selectedFile.id];
-                                if (!meta || meta.reportType === 'historique') return false;
+                                if (!meta) return false;
                                 const hasInitial = selectedFile.assessments?.some(a => a.hasFormalReport) ?? false;
+                                // Stale check: initial draft for patient who already has a formal report
                                 if (hasInitial && (!meta.reportType || meta.reportType === 'initial')) return false;
+                                // Historique drafts are always resumable (used for patients without formal reports too)
                                 return true;
                             })()}
                             onResumeDraft={() => onResumeDraft(selectedFile.id)}

@@ -501,8 +501,7 @@ export const Dashboard: React.FC<Props> = ({
             {filteredFiles.map((file) => {
               const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
               const draftMeta = draftsIndex[file.id];
-              // Ignore orphaned 'historique' drafts — they were created during import and then finalized
-              const hasDraft = Boolean(draftMeta) && draftMeta?.reportType !== 'historique';
+              const hasDraft = Boolean(draftMeta);
               const activityDate = previewMeta.metrics.lastFormalReportDate || previewMeta.metrics.lastAssessmentDate || file.lastInteraction;
               const isInitialCompleted = previewMeta.flags.hasInitialReport;
               const followup = !file.archived ? buildSyntheticFollowup(file) : null;

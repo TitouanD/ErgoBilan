@@ -197,6 +197,7 @@ export const AIService = {
     previousScoresSummary: string;
     newScoresSummary: string;
     evolutionSummary: string;
+    previousReportContext?: string;
     styleDirectives?: string;
   }, patient: Patient): Promise<{ evolution: string; recommandations: string }> => {
     Logger.info('AI', 'Starting reevaluation comment generation', { patientId: patient.id });
@@ -208,6 +209,7 @@ export const AIService = {
           previousScoresSummary: payload.previousScoresSummary,
           newScoresSummary: payload.newScoresSummary,
           evolutionSummary: payload.evolutionSummary,
+          ...(payload.previousReportContext && { previousReportContext: payload.previousReportContext }),
           ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
         },
       });

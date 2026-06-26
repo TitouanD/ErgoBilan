@@ -7,23 +7,27 @@
  */
 import React, { useState, useCallback } from 'react';
 import type { Patient, ReportSection } from '../../types';
-import { FileText, Plus, Trash2, ArrowLeft, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, ArrowLeft, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 
-// ─── Default section templates ────────────────────────────────────────────────
+// ─── Standard ErgoBilan sections (same IDs as AI generation uses) ─────────────
+// Order and IDs MUST match the sections emitted by AIService.generateFullReport.
+// This ensures the reevaluation AI can correctly reference previous sections.
 
-const DEFAULT_SECTIONS: { title: string }[] = [
-    { title: 'Anamnèse clinique' },
-    { title: 'Bilan des tests' },
-    { title: 'Diagnostic et interprétation' },
-    { title: 'Projet thérapeutique' },
-    { title: 'Recommandations' },
+const DEFAULT_SECTIONS: { id: string; title: string }[] = [
+    { id: 'mandat_ref',     title: 'Mandat de référencement en ergothérapie' },
+    { id: 'mandat_eval',    title: 'Mandat d\'évaluation en ergothérapie' },
+    { id: 'profil',         title: 'Profil occupationnel' },
+    { id: 'diagnostic',     title: 'Diagnostique en ergothérapie' },
+    { id: 'objectifs',      title: 'Les objectifs généraux' },
+    { id: 'project',        title: 'Projet d\'accompagnement' },
+    { id: 'recommandations', title: 'Recommandations' },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface LocalSection {
-    id: string;
+    id: string;      // stable ErgoBilan section ID
     title: string;
     content: string;
     isOpen: boolean;
@@ -64,7 +68,7 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
 
     const [sections, setSections] = useState<LocalSection[]>(() =>
         DEFAULT_SECTIONS.map((s) => ({
-            id: crypto.randomUUID(),
+            id: s.id,
             title: s.title,
             content: '',
             isOpen: false,
@@ -73,17 +77,6 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
 
     const updateSection = useCallback((id: string, patch: Partial<LocalSection>) => {
         setSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-    }, []);
-
-    const addSection = useCallback(() => {
-        setSections((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), title: 'Nouvelle section', content: '', isOpen: true },
-        ]);
-    }, []);
-
-    const removeSection = useCallback((id: string) => {
-        setSections((prev) => prev.filter((s) => s.id !== id));
     }, []);
 
     const toggleSection = useCallback((id: string) => {
@@ -156,22 +149,15 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
             </div>
 
             {/* Progress */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6">
                 <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                     {filledCount}/{sections.length} sections remplies
                 </span>
-                <button
-                    type="button"
-                    onClick={addSection}
-                    className="flex items-center gap-1.5 rounded-xl border border-dashed border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-secondary)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)]"
-                >
-                    <Plus size={13} /> Ajouter une section
-                </button>
             </div>
 
             {/* Sections */}
             <div className="flex flex-col gap-3">
-                {sections.map((section, index) => (
+                {sections.map((section) => (
                     <div
                         key={section.id}
                         className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] overflow-hidden shadow-sm transition-shadow hover:shadow-md"
@@ -180,35 +166,18 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
                         <div className="flex items-center gap-3 px-5 py-3.5 bg-[var(--card-bg-raised)] border-b border-[var(--border-color)]">
                             <div className="flex-1 flex items-center gap-3">
                                 <FileText size={15} className={section.content.trim() ? 'text-emerald-500' : 'text-[var(--text-disabled)]'} />
-                                <input
-                                    type="text"
-                                    value={section.title}
-                                    onChange={(e) => updateSection(section.id, { title: e.target.value })}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex-1 bg-transparent text-sm font-bold text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] focus:outline-none"
-                                    placeholder={`Section ${index + 1}`}
-                                />
+                                <span className="flex-1 text-sm font-bold text-[var(--text-heading)]">
+                                    {section.title}
+                                </span>
                             </div>
-                            <div className="flex items-center gap-1">
-                                {sections.length > 1 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => removeSection(section.id)}
-                                        className="rounded-lg p-1.5 text-[var(--text-disabled)] transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
-                                        aria-label="Supprimer la section"
-                                    >
-                                        <Trash2 size={13} />
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => toggleSection(section.id)}
-                                    className="rounded-lg p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
-                                    aria-label={section.isOpen ? 'Réduire' : 'Développer'}
-                                >
-                                    {section.isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => toggleSection(section.id)}
+                                className="rounded-lg p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
+                                aria-label={section.isOpen ? 'Réduire' : 'Développer'}
+                            >
+                                {section.isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                            </button>
                         </div>
 
                         {/* Section body */}
