@@ -55,6 +55,42 @@ interface PdfDocumentProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
+/** Format an ISO date string (YYYY-MM-DD or similar) to French format DD/MM/YYYY */
+const formatDobFr = (dob?: string): string | null => {
+    if (!dob) return null;
+    // Avoid UTC timezone offset by splitting ISO YYYY-MM-DD directly
+    const isoMatch = dob.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    const d = new Date(dob);
+    if (isNaN(d.getTime())) return dob;
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+/** Scale parameters — mirrors SCALE_PARAMS in ScorePage.tsx */
+const PDF_SCALE_PARAMS: Record<string, { mean: number; sd: number } | null> = {
+    scaled:     { mean: 10,  sd: 3  },
+    standard:   { mean: 100, sd: 15 },
+    't-score':  { mean: 50,  sd: 10 },
+    sten:       { mean: 5.5, sd: 2  },
+    stanine:    { mean: 5,   sd: 2  },
+    percentile: null,
+    none:       null,
+};
+
+/**
+ * Recompute z-score from the stored standard score and the subtest's scoreType.
+ * Falls back to result.zScore if recomputation is not possible.
+ */
+const getZ = (result: ScoreResult, scoreType?: string): number | null => {
+    const st = scoreType || '';
+    const params = PDF_SCALE_PARAMS[st];
+    if (params && result.standard) {
+        const n = parseFloat(String(result.standard).replace(',', '.'));
+        if (Number.isFinite(n)) return parseFloat(((n - params.mean) / params.sd).toFixed(2));
+    }
+    return typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+};
+
 const hasValidZ = (r?: ScoreResult): boolean =>
     typeof r?.zScore === 'number' && Number.isFinite(r.zScore);
 
@@ -232,7 +268,7 @@ const PdfHeader: React.FC<{
             return (
                 <View style={{ alignItems: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start' }}>
                     <Text style={{ fontSize: 16, fontWeight: 700, color: COLORS.stone800, textAlign }}>{patient.firstName} {patient.lastName}</Text>
-                    {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone500, marginTop: 2, textAlign }}>Né(e) le {patient.dob}</Text> : null}
+                    {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone500, marginTop: 2, textAlign }}>Né(e) le {formatDobFr(patient.dob)}</Text> : null}
                     {patient.age ? <Text style={{ fontSize: 9, color: COLORS.stone500, marginTop: 1, textAlign }}>{patient.age}</Text> : null}
                     {patient.address ? <Text style={{ fontSize: 8, color: COLORS.stone400, marginTop: 2, textAlign }}>{patient.address}</Text> : null}
                 </View>
@@ -244,7 +280,7 @@ const PdfHeader: React.FC<{
             <View style={{ padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone100}`, borderRadius: radius }}>
                 <Text style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: COLORS.stone400, marginBottom: 4, textAlign }}>Patient</Text>
                 <Text style={{ fontSize: 13, fontWeight: 700, color: COLORS.stone800, textAlign }}>{patient.firstName} {patient.lastName}</Text>
-                {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {patient.dob}</Text> : null}
+                {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {formatDobFr(patient.dob)}</Text> : null}
                 {patient.age ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 1, textAlign }}>{patient.age}</Text> : null}
             </View>
         );
@@ -433,9 +469,12 @@ const PdfRadarChart: React.FC<{
         if (!stats[categoryId]) {
             stats[categoryId] = { sum: 0, count: 0, name: catDef?.name || 'Autres' };
         }
-        Object.values(subtests).forEach(res => {
-            if (!hasValidZ(res)) return;
-            let z = res.zScore as number;
+        Object.entries(subtests).forEach(([subId, res]) => {
+            const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+            const subDef = def?.subtests.find(s => s.id === subId);
+            const zVal = getZ(res, subDef?.scoreType);
+            if (zVal === null) return;
+            let z = zVal;
             if (z < -3) z = -3;
             if (z > 3) z = 3;
             stats[categoryId].sum += z;
@@ -576,10 +615,10 @@ const PdfBarChart: React.FC<{
         const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
         // Include tests not in catalog — use subId as label fallback
         Object.entries(subtests)
-            .filter(([, val]) => hasValidZ(val))
             .forEach(([subId, result]) => {
                 const subDef = def?.subtests.find(s => s.id === subId);
-                const z = result.zScore as number;
+                const z = getZ(result, subDef?.scoreType);
+                if (z === null) return;
                 let color = COLORS.green;
                 if (z <= -2) color = COLORS.red;
                 else if (z <= -1) color = COLORS.orange;
@@ -826,7 +865,8 @@ const PdfScoreTable: React.FC<{
         const subDef = def.subtests.find(s => s.id === subId);
         const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
         const isScoreable = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
-        return { subId, result, subDef, isQualitative, isScoreable };
+        const zComputed = isScoreable ? getZ(result, subDef?.scoreType) : null;
+        return { subId, result, subDef, isQualitative, isScoreable, zComputed };
     });
 
     const quantitativeSubtests = enrichedSubtests.filter(s => !s.isQualitative);
@@ -834,23 +874,21 @@ const PdfScoreTable: React.FC<{
     const hasScoreableSubtests = quantitativeSubtests.some(s => s.isScoreable);
     const currentMode = hasScoreableSubtests ? scoreMode : 'Brut';
 
-    const getDisplayScore = (result: ScoreResult, isScoreable: boolean): string => {
+    const getDisplayScore = (result: ScoreResult, isScoreable: boolean, zComputed: number | null): string => {
         if (!isScoreable && currentMode !== 'Brut') return '-';
-        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
 
         if (currentMode === 'Brut') return result.raw || '-';
         if (currentMode === 'NS') return isScoreable ? (result.standard || '-') : '-';
-        if (currentMode === 'ET') return (isScoreable && z !== null) ? `${z > 0 ? '+' : ''}${z.toFixed(2)} ET` : '-';
+        if (currentMode === 'ET') return (isScoreable && zComputed !== null) ? `${zComputed > 0 ? '+' : ''}${zComputed.toFixed(2)} ET` : '-';
         if (currentMode === '%') return (isScoreable && result.percentile !== undefined && result.percentile !== null) ? `${result.percentile}%` : '-';
         return '-';
     };
 
-    const getScoreColor = (result: ScoreResult, isScoreable: boolean): string => {
+    const getScoreColor = (isScoreable: boolean, zComputed: number | null): string => {
         if (!isScoreable || currentMode === 'Brut') return COLORS.stone500;
-        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
-        if (z === null) return COLORS.stone500;
-        if (z <= -2) return COLORS.red;
-        if (z <= -1) return COLORS.orange;
+        if (zComputed === null) return COLORS.stone500;
+        if (zComputed <= -2) return COLORS.red;
+        if (zComputed <= -1) return COLORS.orange;
         return COLORS.green;
     };
 
@@ -900,11 +938,11 @@ const PdfScoreTable: React.FC<{
                         </View>
 
                         {/* Rows */}
-                        {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => (
+                        {quantitativeSubtests.map(({ subId, result, subDef, isScoreable, zComputed }) => (
                             <View key={subId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4, alignItems: 'flex-start' }}>
                                 <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {subDef?.displayName || subDef?.name}</Text>
-                                <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: getScoreColor(result, isScoreable) }}>
-                                    {getDisplayScore(result, isScoreable)}
+                                <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: getScoreColor(isScoreable, zComputed) }}>
+                                    {getDisplayScore(result, isScoreable, zComputed)}
                                 </Text>
                                 <Text style={{ width: '50%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 8 }}>
                                     {result.observation || '-'}

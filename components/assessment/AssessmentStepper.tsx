@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Check, User, Activity, Brain, FileCheck, Download, ClipboardList, MessageSquare, FileText } from 'lucide-react';
+import { Check, User, Activity, Brain, FileCheck, Download, TrendingUp, FileText } from 'lucide-react';
 
 interface Props {
     currentStep: number;
@@ -19,9 +19,10 @@ export const AssessmentStepper: React.FC<Props> = ({ currentStep, onStepClick, d
     ];
 
     const REEV_STEPS = [
-        { num: 1, label: 'Scores', icon: ClipboardList },
-        { num: 2, label: 'Commentaire', icon: MessageSquare },
-        { num: 3, label: 'Export', icon: Download },
+        { num: 1, label: 'Tests', icon: Activity },
+        { num: 2, label: 'Évolution', icon: TrendingUp },
+        { num: 3, label: 'Validation', icon: FileCheck },
+        { num: 4, label: 'Export', icon: Download },
     ];
 
     const HISTORICAL_STEPS = [

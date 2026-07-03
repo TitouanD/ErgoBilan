@@ -1,5 +1,5 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
-import type { PatientAssessment, PatientFile, PatientFollowup, ScoreResult } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { Patient, PatientAssessment, PatientFile, PatientFollowup } from '../../types';
 import {
   AlertTriangle,
   Archive,
@@ -8,22 +8,25 @@ import {
   CheckCircle2,
   Clock3,
   Calendar,
-  ChevronRight,
   BellOff,
   FileText,
+  GraduationCap,
   History,
-  TrendingUp,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Save,
+  Stethoscope,
   Trash2,
+  User,
+  Users,
   X,
   Zap,
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { useToast } from '../../contexts/ToastContext';
-import { useCatalog } from '../../contexts/CatalogContext';
-
-const PatientEvolutionChart = React.lazy(() =>
-  import('./PatientEvolutionChart').then((module) => ({ default: module.PatientEvolutionChart })),
-);
+import { getPatientAgeForIdentity } from '../../utils';
 
 interface Props {
   file: PatientFile;
@@ -32,6 +35,7 @@ interface Props {
   onNewBilan: (type: 'initial' | 'reevaluation' | 'historique') => void;
   onOpenReport: (reportId: string) => void;
   draftAvailable?: boolean;
+  draftReportType?: 'initial' | 'reevaluation' | 'historique' | null;
   onResumeDraft?: () => void;
   hasMoreHistory?: boolean;
   isLoadingMoreHistory?: boolean;
@@ -80,26 +84,6 @@ const deriveTemporalStatus = (dueAt: string): PatientFollowup['status'] => {
   return 'overdue';
 };
 
-const parseScoreValue = (value: string | number | null | undefined): number | null => {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const normalized = String(value).replace(',', '.');
-  const num = parseFloat(normalized);
-  return Number.isFinite(num) ? num : null;
-};
-
-const computeAverage = (results?: Record<string, ScoreResult>): number | null => {
-  if (!results) return null;
-  const valid = Object.values(results).filter(
-    (item) => item.reviewState === 'reviewed' || item.status === 'validated' || item.status === 'certified',
-  );
-  const nums = valid
-    .map((item) => parseScoreValue(item.standard) ?? parseScoreValue(item.raw))
-    .filter((value): value is number => value !== null);
-  if (nums.length === 0) return null;
-  return nums.reduce((acc, value) => acc + value, 0) / nums.length;
-};
-
 const DeleteConfirmationModal: React.FC<{ onConfirm: () => void; onCancel: () => void }> = ({ onConfirm, onCancel }) => {
   const [input, setInput] = useState('');
   const isValid = input.toLowerCase() === 'supprimer';
@@ -144,6 +128,7 @@ export const PatientDetail: React.FC<Props> = ({
   onNewBilan,
   onOpenReport,
   draftAvailable,
+  draftReportType,
   onResumeDraft,
   hasMoreHistory = false,
   isLoadingMoreHistory = false,
@@ -151,12 +136,13 @@ export const PatientDetail: React.FC<Props> = ({
   onFollowupChange,
 }) => {
   const toast = useToast();
-  const { catalog } = useCatalog();
-  const subtestNameMap = useMemo(() =>
-    new Map(catalog.flatMap(c => c.tests.flatMap(t =>
-      t.subtests.map(s => [s.id, s.displayName ?? s.name])
-    ))),
-  [catalog]);
+
+  // ── local patient state (editable inline without reloading parent) ───────
+  const [localPatient, setLocalPatient] = useState<Patient>(file.patient);
+  const [editingSection, setEditingSection] = useState<'identity' | 'school' | 'family' | null>(null);
+  const [editDraft, setEditDraft] = useState<Partial<Patient>>({});
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFollowupBusy, setIsFollowupBusy] = useState(false);
@@ -169,21 +155,19 @@ export const PatientDetail: React.FC<Props> = ({
   );
 
   const formalAssessments = useMemo(() => assessments.filter((item) => item.hasFormalReport), [assessments]);
-  const chartData = useMemo(() => {
-    return assessments
-      .map((item) => ({ date: new Date(item.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), score: computeAverage(item.results), label: item.testName || kindLabel[item.kind] }))
-      .filter((item) => item.score !== null);
-  }, [assessments]);
 
   const filteredTimeline = useMemo(() => {
     if (timelineFilter === 'formal') return formalAssessments;
-    return assessments;
     return assessments;
   }, [assessments, formalAssessments, timelineFilter]);
 
   useEffect(() => {
     setFollowupState(file.followup || null);
   }, [file.followup]);
+
+  useEffect(() => {
+    setLocalPatient(file.patient);
+  }, [file.patient]);
 
   const fallbackFollowup = useMemo(() => {
     const lastFormal = formalAssessments[0];
@@ -203,30 +187,7 @@ export const PatientDetail: React.FC<Props> = ({
   }, [formalAssessments, file.id]);
 
   const followup = followupState || fallbackFollowup;
-
   const latestFormalIsReevaluation = formalAssessments[0]?.kind === 'reevaluation';
-
-  const matrixSnapshots = useMemo(
-    () => assessments.filter((item) => item.results && Object.keys(item.results).length > 0).slice(0, 4),
-    [assessments],
-  );
-
-  const matrixRows = useMemo(() => {
-    const rowIds: string[] = [];
-    matrixSnapshots.forEach((snapshot) => {
-      Object.keys(snapshot.results || {}).forEach((subtestId) => {
-        if (!rowIds.includes(subtestId)) rowIds.push(subtestId);
-      });
-    });
-    return rowIds.slice(0, 12);
-  }, [matrixSnapshots]);
-
-  const getScoreValue = (result?: ScoreResult) => {
-    if (!result) return '-';
-    if (result.standard && result.standard.trim() !== '') return result.standard;
-    if (result.raw && result.raw.trim() !== '') return result.raw;
-    return '-';
-  };
 
   const refreshFollowup = async () => {
     const latest = await StorageService.getPatientFollowup(file.id);
@@ -234,6 +195,38 @@ export const PatientDetail: React.FC<Props> = ({
     if (onFollowupChange) onFollowupChange(latest);
   };
 
+  // ── Profile inline edit helpers ──────────────────────────────────────────
+  const startEdit = (section: 'identity' | 'school' | 'family') => {
+    setEditingSection(section);
+    setEditDraft({ ...localPatient });
+  };
+
+  const cancelEdit = () => {
+    setEditingSection(null);
+    setEditDraft({});
+  };
+
+  const saveEdit = async () => {
+    if (!file.id) return;
+    setIsSavingProfile(true);
+    try {
+      const merged: Patient = { ...localPatient, ...editDraft };
+      merged.age = getPatientAgeForIdentity(merged);
+      await StorageService.syncPatientIdentityPreview(file.id, merged);
+      setLocalPatient(merged);
+      setEditingSection(null);
+      setEditDraft({});
+      toast.success('Profil mis à jour.');
+    } catch {
+      toast.error('Impossible de sauvegarder les modifications.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const updateDraft = (updates: Partial<Patient>) => setEditDraft(prev => ({ ...prev, ...updates }));
+
+  // ── Followup handlers ────────────────────────────────────────────────────
   const handleScheduleFollowup = async () => {
     setIsFollowupBusy(true);
     try {
@@ -324,154 +317,398 @@ export const PatientDetail: React.FC<Props> = ({
     }
   };
 
+  // ── Shared style helpers ─────────────────────────────────────────────────
+  const inputCls = 'w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 transition-all';
+  const labelCls = 'block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1';
+  const emptyVal = <span className="text-[var(--text-disabled)] italic text-xs">Non renseigné</span>;
+
+  const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; sectionKey: 'identity' | 'school' | 'family' }> = ({ icon, title, sectionKey }) => (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+        {icon}
+        <h3 className="text-[10px] font-bold uppercase tracking-widest">{title}</h3>
+      </div>
+      {editingSection !== sectionKey && (
+        <button onClick={() => startEdit(sectionKey)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-heading)] transition-colors">
+          <Pencil size={11} /> Modifier
+        </button>
+      )}
+    </div>
+  );
+
+  const EditActions: React.FC = () => (
+    <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--border-color)]">
+      <button onClick={saveEdit} disabled={isSavingProfile} className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-bold text-white hover:brightness-90 disabled:opacity-60 transition-all">
+        <Save size={12} /> Enregistrer
+      </button>
+      <button onClick={cancelEdit} className="rounded-xl border border-[var(--border-color)] px-4 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-all">
+        Annuler
+      </button>
+    </div>
+  );
+
   return (
     <div className="mx-auto max-w-7xl animate-in slide-in-from-right px-6 py-10 duration-500">
+      {/* Back */}
       <button onClick={onBack} className="mb-8 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-heading)]">
         <ArrowLeft size={16} /> Retour Dashboard
       </button>
 
-      {draftAvailable && (
-        <div className="mb-8 flex items-center justify-between rounded-xl border-l-4 border-amber-400 bg-amber-50 p-4">
+      {/* Draft banners */}
+      {draftAvailable && draftReportType === 'reevaluation' && (
+        <div className="mb-6 flex items-center justify-between rounded-xl border-l-4 border-[var(--secondary)] bg-[var(--secondary)]/10 p-4">
+          <div className="flex items-center gap-3">
+            <Zap size={20} className="text-[var(--secondary)] shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-[var(--text-heading)]">Réévaluation en cours</p>
+              <p className="text-xs text-[var(--text-secondary)]">Un brouillon de réévaluation est disponible.</p>
+            </div>
+          </div>
+          <button onClick={onResumeDraft} className="rounded-lg bg-[var(--secondary)] px-5 py-2 text-xs font-bold uppercase text-white hover:brightness-90">Reprendre</button>
+        </div>
+      )}
+      {draftAvailable && draftReportType !== 'reevaluation' && (
+        <div className="mb-6 flex items-center justify-between rounded-xl border-l-4 border-amber-400 bg-amber-50 p-4">
           <div className="flex items-center gap-3">
             <AlertTriangle size={20} className="text-amber-500" />
             <div>
-              <p className="text-sm font-bold text-amber-900">Brouillon non termine</p>
+              <p className="text-sm font-bold text-amber-900">Brouillon non terminé</p>
               <p className="text-xs text-amber-700">Un travail est en cours pour ce patient.</p>
             </div>
           </div>
-          <button onClick={onResumeDraft} className="rounded-lg bg-amber-500 px-5 py-2 text-xs font-bold uppercase text-white hover:bg-amber-600">
-            Reprendre
-          </button>
+          <button onClick={onResumeDraft} className="rounded-lg bg-amber-500 px-5 py-2 text-xs font-bold uppercase text-white hover:bg-amber-600">Reprendre</button>
         </div>
       )}
 
-      <div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
+      {/* Page header */}
+      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div>
-          <h1 className="font-serif text-4xl font-bold text-[var(--text-heading)]">{file.patient.firstName} {file.patient.lastName}</h1>
-          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
-          {followup && <p className="mt-2 text-sm font-semibold text-[var(--text-heading)]">Rappel réévaluation : {followupLabel[followup.status]} (échéance {new Date(followup.dueAt).toLocaleDateString('fr-FR')})</p>}
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => onNewBilan('historique')} className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-5 py-4 text-sm font-bold text-[var(--text-main)] hover:bg-[var(--hover-bg)]">
-            <History size={16} /> Importer bilan antérieur
-          </button>
-          <button onClick={() => onNewBilan('reevaluation')} className="flex items-center gap-2 rounded-2xl bg-[var(--secondary)] px-8 py-4 text-sm font-bold text-white hover:brightness-90">
-            <Zap size={18} className="text-[#F2CC8F]" /> Réévaluation 1 clic
-          </button>
+          <h1 className="font-serif text-4xl font-bold text-[var(--text-heading)]">
+            {localPatient.firstName} {localPatient.lastName}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {localPatient.age && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.age}</span>}
+            {localPatient.gender && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.gender === 'M' ? 'Garçon' : 'Fille'}</span>}
+            {localPatient.classLevel && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.classLevel}</span>}
+            {followup && (
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${followupTone[followup.status]}`}>
+                <Clock3 size={10} /> Rééval. {followupLabel[followup.status]}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Main grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="space-y-8 lg:col-span-2">
-          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><TrendingUp size={22} className="text-[var(--primary)]" /> Evolution</h2>
-            {chartData.length >= 3 ? (
-              <div className="h-[280px] w-full">
-                <Suspense fallback={<div className="h-full w-full rounded-lg bg-[var(--hover-bg)] animate-pulse" />}>
-                  <PatientEvolutionChart data={chartData} />
-                </Suspense>
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--text-secondary)]">Pas assez de points comparables (minimum 3) pour afficher une courbe pertinente.</p>
-            )}
-          </div>
 
-          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] p-8 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]"><FileText size={20} className="text-[var(--text-heading)]" /> Matrice résultats multi-tests</h2>
-            {matrixSnapshots.length === 0 || matrixRows.length === 0 ? (
-              <p className="text-sm text-[var(--text-secondary)]">Aucun jeu de scores exploitable pour afficher la matrice.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-separate border-spacing-0">
-                  <thead>
-                    <tr>
-                      <th className="sticky left-0 z-10 bg-[var(--card-bg)] px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Sous-test</th>
-                      {matrixSnapshots.map((snapshot) => (
-                        <th key={snapshot.id} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                          {new Date(snapshot.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matrixRows.map((subtestId) => (
-                      <tr key={subtestId} className="odd:bg-[var(--hover-bg)]">
-                        <td className="sticky left-0 bg-inherit px-3 py-2 text-xs font-semibold text-[var(--text-heading)]">{subtestNameMap.get(subtestId) ?? subtestId}</td>
-                        {matrixSnapshots.map((snapshot) => (
-                          <td key={`${snapshot.id}-${subtestId}`} className="px-3 py-2 text-xs text-[var(--text-secondary)]">
-                            {getScoreValue(snapshot.results?.[subtestId])}
-                          </td>
+        {/* ── LEFT column ── */}
+        <div className="space-y-6 lg:col-span-2">
+
+          {/* ── PROFIL PATIENT ── */}
+          <div className="rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] divide-y divide-[var(--border-color)] overflow-hidden shadow-sm">
+
+            {/* Section Identité */}
+            <div className="p-6">
+              <SectionHeader icon={<User size={14} />} title="Identité" sectionKey="identity" />
+              {editingSection === 'identity' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Prénom</label>
+                      <input className={inputCls} value={editDraft.firstName ?? ''} onChange={e => updateDraft({ firstName: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Nom</label>
+                      <input className={inputCls} value={editDraft.lastName ?? ''} onChange={e => updateDraft({ lastName: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date de naissance</label>
+                      <input type="date" className={inputCls} value={editDraft.dob ?? ''} max={new Date().toISOString().slice(0, 10)} onChange={e => updateDraft({ dob: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Genre</label>
+                      <div className="flex gap-5 pt-2.5">
+                        {(['M', 'F'] as const).map(g => (
+                          <label key={g} className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]">
+                            <input type="radio" name="edit-gender" value={g} checked={editDraft.gender === g} onChange={() => updateDraft({ gender: g })} className="accent-[var(--primary)] w-4 h-4" />
+                            {g === 'M' ? 'Garçon' : 'Fille'}
+                          </label>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Adresse</label>
+                    <input className={inputCls} value={editDraft.address ?? ''} onChange={e => updateDraft({ address: e.target.value })} placeholder="Adresse postale" />
+                  </div>
+                  <EditActions />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <div>
+                    <span className={labelCls}>Date de naissance</span>
+                    {localPatient.dob ? (
+                      <span className="font-medium text-[var(--text-main)]">
+                        {(() => { const m = localPatient.dob.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : localPatient.dob; })()}
+                      </span>
+                    ) : emptyVal}
+                  </div>
+                  <div>
+                    <span className={labelCls}>Genre</span>
+                    {localPatient.gender ? <span className="font-medium text-[var(--text-main)]">{localPatient.gender === 'M' ? 'Garçon' : 'Fille'}</span> : emptyVal}
+                  </div>
+                  {localPatient.address && (
+                    <div className="col-span-2 flex items-start gap-2">
+                      <MapPin size={13} className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
+                      <span className="text-[var(--text-main)]">{localPatient.address}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Section École */}
+            <div className="p-6">
+              <SectionHeader icon={<GraduationCap size={14} />} title="Scolarité" sectionKey="school" />
+              {editingSection === 'school' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Établissement</label>
+                      <input className={inputCls} value={editDraft.school ?? ''} onChange={e => updateDraft({ school: e.target.value })} placeholder="Nom de l'école" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Classe</label>
+                      <input className={inputCls} value={editDraft.classLevel ?? ''} onChange={e => updateDraft({ classLevel: e.target.value })} placeholder="ex. CM2, 6ème…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Type d'établissement</label>
+                      <input className={inputCls} value={editDraft.schoolType ?? ''} onChange={e => updateDraft({ schoolType: e.target.value })} placeholder="Privé, Public…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Enseignant(e)</label>
+                      <input className={inputCls} value={editDraft.teacher ?? ''} onChange={e => updateDraft({ teacher: e.target.value })} placeholder="Nom de l'enseignant" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className={labelCls}>AVS / AESH</label>
+                      <div className="flex gap-5 pt-1">
+                        {(['Oui', 'Non', 'En cours'] as const).map(v => (
+                          <label key={v} className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]">
+                            <input type="radio" name="edit-avs" value={v} checked={editDraft.avs === v} onChange={() => updateDraft({ avs: v })} className="accent-[var(--primary)] w-4 h-4" />
+                            {v}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {(editDraft.avs === 'Oui' || editDraft.avs === 'En cours') && (
+                      <div className="col-span-2">
+                        <label className={labelCls}>Détails AESH</label>
+                        <input className={inputCls} value={editDraft.avsDetails ?? ''} onChange={e => updateDraft({ avsDetails: e.target.value })} placeholder="Temps plein, partiel…" />
+                      </div>
+                    )}
+                  </div>
+                  <EditActions />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <div>
+                    <span className={labelCls}>Établissement</span>
+                    {localPatient.school ? <span className="font-medium text-[var(--text-main)]">{localPatient.school}</span> : emptyVal}
+                  </div>
+                  <div>
+                    <span className={labelCls}>Classe</span>
+                    {localPatient.classLevel ? <span className="font-medium text-[var(--text-main)]">{localPatient.classLevel}</span> : emptyVal}
+                  </div>
+                  {localPatient.teacher && (
+                    <div>
+                      <span className={labelCls}>Enseignant(e)</span>
+                      <span className="font-medium text-[var(--text-main)]">{localPatient.teacher}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className={labelCls}>AESH</span>
+                    {localPatient.avs ? (
+                      <span className="font-medium text-[var(--text-main)]">{localPatient.avs}{localPatient.avsDetails ? ` — ${localPatient.avsDetails}` : ''}</span>
+                    ) : emptyVal}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Section Famille */}
+            <div className="p-6">
+              <SectionHeader icon={<Users size={14} />} title="Famille" sectionKey="family" />
+              {editingSection === 'family' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Responsable légal 1</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Nom</label>
+                        <input className={inputCls} value={editDraft.parent1Name ?? ''} onChange={e => updateDraft({ parent1Name: e.target.value })} placeholder="Nom complet" />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Téléphone</label>
+                        <input type="tel" className={inputCls} value={editDraft.parent1Phone ?? ''} onChange={e => updateDraft({ parent1Phone: e.target.value })} placeholder="06 XX XX XX XX" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className={labelCls}>Email</label>
+                        <input type="email" className={inputCls} value={editDraft.parent1Email ?? ''} onChange={e => updateDraft({ parent1Email: e.target.value })} placeholder="email@exemple.fr" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mt-2">Responsable légal 2</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Nom</label>
+                        <input className={inputCls} value={editDraft.parent2Name ?? ''} onChange={e => updateDraft({ parent2Name: e.target.value })} placeholder="Nom complet" />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Téléphone</label>
+                        <input type="tel" className={inputCls} value={editDraft.parent2Phone ?? ''} onChange={e => updateDraft({ parent2Phone: e.target.value })} placeholder="06 XX XX XX XX" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className={labelCls}>Email</label>
+                        <input type="email" className={inputCls} value={editDraft.parent2Email ?? ''} onChange={e => updateDraft({ parent2Email: e.target.value })} placeholder="email@exemple.fr" />
+                      </div>
+                    </div>
+                  </div>
+                  <EditActions />
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  {(localPatient.parent1Name || localPatient.parent1Phone || localPatient.parent1Email) ? (
+                    <div className="flex flex-col gap-1">
+                      {localPatient.parent1Name && <span className="font-semibold text-[var(--text-main)]">{localPatient.parent1Name}</span>}
+                      {localPatient.parent1Phone && (
+                        <span className="flex items-center gap-1.5 text-[var(--text-secondary)]"><Phone size={12} /> {localPatient.parent1Phone}</span>
+                      )}
+                      {localPatient.parent1Email && (
+                        <span className="flex items-center gap-1.5 text-[var(--text-secondary)]"><Mail size={12} /> {localPatient.parent1Email}</span>
+                      )}
+                    </div>
+                  ) : emptyVal}
+                  {(localPatient.parent2Name || localPatient.parent2Phone || localPatient.parent2Email) && (
+                    <div className="flex flex-col gap-1 pt-2 border-t border-[var(--border-color)]">
+                      {localPatient.parent2Name && <span className="font-semibold text-[var(--text-main)]">{localPatient.parent2Name}</span>}
+                      {localPatient.parent2Phone && (
+                        <span className="flex items-center gap-1.5 text-[var(--text-secondary)]"><Phone size={12} /> {localPatient.parent2Phone}</span>
+                      )}
+                      {localPatient.parent2Email && (
+                        <span className="flex items-center gap-1.5 text-[var(--text-secondary)]"><Mail size={12} /> {localPatient.parent2Email}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Section Contexte clinique (conditionnel) */}
+            {(localPatient.medicalDiagnosis || localPatient.reason) && (
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-4 text-[var(--text-secondary)]">
+                  <Stethoscope size={14} />
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest">Contexte clinique</h3>
+                </div>
+                <div className="space-y-3 text-sm">
+                  {localPatient.medicalDiagnosis && (
+                    <div>
+                      <span className={labelCls}>Diagnostic</span>
+                      <p className="text-[var(--text-main)]">{localPatient.medicalDiagnosis}</p>
+                    </div>
+                  )}
+                  {localPatient.reason && (
+                    <div>
+                      <span className={labelCls}>Motif de consultation</span>
+                      <p className="text-[var(--text-main)]">{localPatient.reason}</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
 
-          <div className="rounded-[32px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-sm">
+          {/* ── HISTORIQUE DES BILANS ── */}
+          <div className="rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] overflow-hidden shadow-sm">
             <div className="flex items-center justify-between border-b border-[var(--border-color)] p-5">
-              <h2 className="flex items-center gap-2 font-serif text-2xl font-bold text-[var(--text-heading)]"><Calendar size={22} /> Evenements cliniques</h2>
+              <h2 className="flex items-center gap-2 font-serif text-xl font-bold text-[var(--text-heading)]">
+                <FileText size={20} className="text-[var(--primary)]" /> Historique des bilans
+              </h2>
               <div className="flex gap-2">
                 {(['all', 'formal'] as const).map((tab) => (
-                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${timelineFilter === tab ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}>
+                  <button key={tab} onClick={() => setTimelineFilter(tab)} className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase transition-colors ${timelineFilter === tab ? 'border-[var(--secondary)] bg-[var(--secondary)] text-white' : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-heading)]'}`}>
                     {tab === 'all' ? 'Tout' : 'Formels'}
                   </button>
                 ))}
               </div>
             </div>
+
             {filteredTimeline.length === 0 ? (
-              <p className="p-8 text-center text-sm text-[var(--text-secondary)]">Aucun evenement.</p>
+              <p className="p-8 text-center text-sm text-[var(--text-secondary)] italic">Aucun bilan enregistré.</p>
             ) : (
               <div className="divide-y divide-[var(--border-color)]">
                 {filteredTimeline.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-5">
-                    <div>
-                      <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
-                      <p className="text-xs text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} • {item.testName || 'Sans libelle'}</p>
+                  <div key={item.id} className={`flex items-center justify-between p-5 transition-colors ${item.hasFormalReport ? 'hover:bg-[var(--hover-bg)]' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.hasFormalReport ? 'bg-[var(--primary)]/10 text-[var(--primary)]' : 'bg-[var(--hover-bg)] text-[var(--text-secondary)]'}`}>
+                        <FileText size={15} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
+                        <p className="text-xs text-[var(--text-secondary)]">
+                          {new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                          {item.testName && <span className="ml-1.5 text-[var(--text-disabled)]">· {item.testName}</span>}
+                        </p>
+                      </div>
                     </div>
                     {item.hasFormalReport ? (
-                      <button onClick={() => onOpenReport(item.id)} className="flex items-center gap-2 rounded-lg bg-[var(--primary)]/10 px-3 py-1 text-[10px] font-bold uppercase text-[var(--primary)]">
-                        <FileText size={12} /> Document
+                      <button onClick={() => onOpenReport(item.id)} className="flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white hover:brightness-90 transition-all">
+                        <FileText size={11} /> Voir le rapport
                       </button>
                     ) : (
-                      <span className="text-[10px] font-bold uppercase text-[var(--text-secondary)]">{Object.keys(item.results || {}).length} scores</span>
+                      <span className="rounded-full border border-[var(--border-color)] px-2.5 py-1 text-[10px] font-bold uppercase text-[var(--text-secondary)]">
+                        {Object.keys(item.results || {}).length} scores
+                      </span>
                     )}
                   </div>
                 ))}
               </div>
             )}
-          </div>
-          {hasMoreHistory && onLoadMoreHistory && (
-            <div className="flex justify-center">
-              <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-[var(--border-color)] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-heading)] disabled:opacity-50">
-                {isLoadingMoreHistory ? 'Chargement...' : 'Charger plus'}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="space-y-3">
-            <h3 className="font-serif text-lg font-bold text-[var(--text-heading)]">Documents formels</h3>
-            {formalAssessments.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)]">Aucun document formel.</p>
-            ) : (
-              formalAssessments.map((item) => (
-                <button key={item.id} onClick={() => onOpenReport(item.id)} className="flex w-full items-center justify-between rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 text-left hover:border-[var(--primary)]">
-                  <div>
-                    <p className="text-sm font-bold text-[var(--text-heading)]">{kindLabel[item.kind]}</p>
-                    <p className="text-[10px] font-bold text-[var(--text-secondary)]">{new Date(item.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                  </div>
-                  <ChevronRight size={16} className="text-[var(--text-disabled)]" />
+            {hasMoreHistory && onLoadMoreHistory && (
+              <div className="border-t border-[var(--border-color)] p-4 flex justify-center">
+                <button onClick={onLoadMoreHistory} disabled={isLoadingMoreHistory} className="rounded-xl border border-[var(--border-color)] px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-heading)] disabled:opacity-50 transition-colors">
+                  {isLoadingMoreHistory ? 'Chargement…' : 'Charger plus'}
                 </button>
-              ))
+              </div>
             )}
           </div>
+        </div>
 
-          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6">
-            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Rappel reevaluation</h4>
+        {/* ── RIGHT sidebar ── */}
+        <div className="space-y-6">
+
+          {/* Actions */}
+          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-5">
+            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Actions</h4>
+            <div className="space-y-3">
+              {draftAvailable && draftReportType === 'reevaluation' ? (
+                <button onClick={onResumeDraft} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
+                  <Zap size={14} className="text-[#F2CC8F]" /> Reprendre la réévaluation
+                </button>
+              ) : (
+                <button onClick={() => onNewBilan('reevaluation')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
+                  <Zap size={14} className="text-[#F2CC8F]" /> Réévaluation 1 clic
+                </button>
+              )}
+              <button onClick={() => onNewBilan('historique')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-main)] hover:bg-[var(--hover-bg)]">
+                <History size={14} /> Importer bilan antérieur
+              </button>
+            </div>
+          </div>
+
+          {/* Rappel réévaluation */}
+          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-5">
+            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Rappel réévaluation</h4>
             {followup ? (
               <div className="space-y-4">
                 <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${followupTone[followup.status]}`}>
@@ -480,7 +717,7 @@ export const PatientDetail: React.FC<Props> = ({
                 </div>
                 <div className="text-xs text-[var(--text-secondary)]">
                   <p>Échéance : <span className="font-bold text-[var(--text-heading)]">{new Date(followup.dueAt).toLocaleDateString('fr-FR')}</span></p>
-                  {followup.snoozedUntil && <p>Reporté jusqu'au : <span className="font-bold text-[var(--text-heading)]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
+                  {followup.snoozedUntil && <p className="mt-0.5">Reporté jusqu'au : <span className="font-bold text-[var(--text-heading)]">{new Date(followup.snoozedUntil).toLocaleDateString('fr-FR')}</span></p>}
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   <button onClick={handleScheduleFollowup} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
@@ -491,25 +728,26 @@ export const PatientDetail: React.FC<Props> = ({
                   </button>
                   {latestFormalIsReevaluation && (
                     <button onClick={handleMarkFollowupCompleted} disabled={isFollowupBusy} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-[var(--card-bg)] py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">
-                      <CheckCircle2 size={12} /> Marquer complete
+                      <CheckCircle2 size={12} /> Marquer complété
                     </button>
                   )}
                 </div>
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)]">Aucun rappel actif. Creez un bilan formel pour demarrer le suivi.</p>
+              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)] italic">Aucun rappel actif. Créez un bilan formel pour démarrer le suivi.</p>
             )}
           </div>
 
-          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6">
-            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Actions dossier</h4>
+          {/* Actions dossier */}
+          <div className="rounded-[24px] border border-[var(--border-color)] bg-[var(--card-bg)] p-5">
+            <h4 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">Dossier</h4>
             <div className="space-y-3">
               <button onClick={handleArchive} disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--progress-bg)] py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--border-color)]">
-                {file.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                {file.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                 {file.archived ? 'Désarchiver' : 'Archiver'}
               </button>
               <button onClick={() => setShowDeleteModal(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 bg-[var(--card-bg)] py-3 text-xs font-bold uppercase tracking-wider text-rose-500 hover:bg-rose-50">
-                <Trash2 size={16} /> Supprimer
+                <Trash2 size={14} /> Supprimer
               </button>
             </div>
           </div>

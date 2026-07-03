@@ -20,6 +20,20 @@ interface Props {
     isPerformance?: boolean;
 }
 
+// Parse a dob string (YYYY-MM-DD or other) to DD/MM/YYYY safely without timezone issues
+const formatDobFrSafe = (dob?: string): string => {
+    if (!dob) return '';
+    // Handle ISO YYYY-MM-DD (avoid UTC offset issue by splitting directly)
+    const isoMatch = dob.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+        return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    }
+    // Fallback: try Date parsing with explicit locale
+    const d = new Date(dob);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('fr-FR');
+    return dob;
+};
+
 // Helper pour le gras (**text**)
 const parseBold = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
@@ -355,10 +369,13 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
                 stats[categoryId] = { sum: 0, count: 0, name: catDef?.name || 'Autres' };
             }
 
-            Object.values(subtests).forEach(res => {
-                if (!hasValidZ(res)) return;
+        Object.entries(subtests).forEach(([subId, res]) => {
+                const testDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+                const subDef = testDef?.subtests.find(s => s.id === subId);
+                const zVal = getZrv(res, subDef?.scoreType);
+                if (zVal === null) return;
                 // On clamp les valeurs extremes pour le graphique (-3 a +3)
-                let z = res.zScore as number;
+                let z = zVal;
                 if (z < -3) z = -3;
                 if (z > 3) z = 3;
 
@@ -740,10 +757,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         {Object.entries(tests).flatMap(([testId, subtests]) => {
                             const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                             return Object.entries(subtests)
-                                .filter(([, val]) => hasValidZ(val))
                                 .map(([subId, result]) => {
                                     const subDef = def?.subtests.find(s => s.id === subId);
-                                    const z = result.zScore as number;
+                                    const z = getZrv(result, subDef?.scoreType);
+                                    if (z === null) return null;
                                     const clamped = Math.max(-3.5, Math.min(3.5, z));
                                     const left = ((clamped + 3.5) / 7) * 100;
                                     let color = '#81B29A';
@@ -762,7 +779,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                             <span className="w-10 text-right font-bold shrink-0" style={{ color }}>{z > 0 ? '+' : ''}{z}</span>
                                         </div>
                                     );
-                                });
+                                }).filter(Boolean);
                         })}
                         <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
                             <span className="w-32"></span>
@@ -804,7 +821,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                             const subDef = def.subtests.find(s => s.id === subId);
                             const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
                             const isScoreable = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
-                            return { subId, result, subDef, isQualitative, isScoreable };
+                            const zComputed = isScoreable ? getZrv(result, subDef?.scoreType) : null;
+                            return { subId, result, subDef, isQualitative, isScoreable, zComputed };
                         });
 
                         const quantitativeSubtests = enrichedSubtests.filter((item) => !item.isQualitative);
@@ -860,8 +878,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-stone-700">
-                                                    {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => {
-                                                        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+                                                    {quantitativeSubtests.map(({ subId, result, subDef, isScoreable, zComputed }) => {
+                                                        const z = zComputed;
                                                         const isPathological = z !== null && z <= -2;
                                                         const isFragile = z !== null && z <= -1 && z > -2;
                                                         const colorClass = isPathological ? "text-[var(--primary)] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
@@ -977,7 +995,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 return (
                     <div className={`w-full text-${align}`}>
                         <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
-                        <p className="text-sm text-stone-600 font-medium">Né(e) le {new Date(patient.dob).toLocaleDateString()}</p>
+                        <p className="text-sm text-stone-600 font-medium">Né(e) le {formatDobFrSafe(patient.dob)}</p>
                         <p className="text-sm text-stone-500">{patient.age}</p>
                         {patient.address && <p className="text-xs text-stone-400 mt-1">{patient.address}</p>}
                     </div>
@@ -987,7 +1005,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             return (
                 <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass} min-w-[200px] w-full text-${align}`}>
                     <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
-                    <p className="text-sm text-stone-600 font-medium">Né(e) le {new Date(patient.dob).toLocaleDateString()}</p>
+                    <p className="text-sm text-stone-600 font-medium">Né(e) le {formatDobFrSafe(patient.dob)}</p>
                     <p className="text-sm text-stone-500">{patient.age}</p>
                 </div>
             );
@@ -1114,6 +1132,27 @@ const hasAnyScoreValue = (result?: any): boolean => {
 };
 
 const hasValidZ = (result?: any): boolean => typeof result?.zScore === 'number' && Number.isFinite(result.zScore);
+
+/** Scale parameters — mirrors SCALE_PARAMS in ScorePage.tsx */
+const RV_SCALE_PARAMS: Record<string, { mean: number; sd: number } | null> = {
+    scaled:     { mean: 10,  sd: 3  },
+    standard:   { mean: 100, sd: 15 },
+    't-score':  { mean: 50,  sd: 10 },
+    sten:       { mean: 5.5, sd: 2  },
+    stanine:    { mean: 5,   sd: 2  },
+    percentile: null,
+    none:       null,
+};
+
+/** Recompute z from standard score + scoreType; falls back to stored zScore */
+const getZrv = (result: any, scoreType?: string): number | null => {
+    const params = RV_SCALE_PARAMS[scoreType || ''];
+    if (params && result?.standard) {
+        const n = parseFloat(String(result.standard).replace(',', '.'));
+        if (Number.isFinite(n)) return parseFloat(((n - params.mean) / params.sd).toFixed(2));
+    }
+    return typeof result?.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+};
 
 const isReviewedScore = (result?: any): boolean =>
     result?.reviewState === 'reviewed' || result?.status === 'validated' || result?.status === 'certified';

@@ -244,7 +244,15 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Step 2 always sends the full tests object. Replace instead of merge so deletions persist.
-  const updateTests = (data: TestData) => setTests({ ...data });
+  // Two-level deep copy: prevents mutations from propagating back to previousAssessment.tests
+  // when the reevaluation pre-fills from it (shallow copy would share inner subtest references).
+  const updateTests = (data: TestData) => {
+    const deep: TestData = {};
+    for (const [tid, subtests] of Object.entries(data)) {
+      deep[tid] = { ...subtests };
+    }
+    setTests(deep);
+  };
   const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
   const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
 

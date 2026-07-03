@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Save, Info, Zap, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import type { Patient, PatientAssessment, ScoreResult } from '../../types';
-import { SubtestRowCheck, TestCatalogModal } from '../assessment/Step2Tests';
+import { SubtestRowCheck, TestCatalogModal } from '../assessment/pages/ScorePage';
 import type { TestDef } from '../../data/testCatalog';
 import { useCatalog } from '../../contexts/CatalogContext';
 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, useRef, useMemo } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment } from './contexts/AssessmentContext';
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext';
@@ -10,9 +10,9 @@ import { PatientPortal } from './components/portal/PatientPortal';
 import { AuthWizard } from './components/auth/AuthWizard';
 import { PinUnlock } from './components/auth/PinUnlock';
 import { NetworkErrorScreen } from './components/auth/NetworkErrorScreen';
-import { Step1Admin } from './components/assessment/Step1Admin';
+import { Step1Admin } from './components/assessment/initial/Step1Admin';
 import { GenerationLoader } from './components/shared/GenerationLoader';
-import { AssessmentStepper } from './components/assessment/AssessmentStepper';
+import { AssessmentStepper } from './components/assessment/shared/AssessmentStepper';
 import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { CriticalErrorModal } from './components/shared/CriticalErrorModal';
 import { ConfirmModal } from './components/shared/ConfirmModal';
@@ -23,6 +23,7 @@ import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfi
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail, Download, Upload } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
+import { decodeResidualEntities } from './utils/textSanitizer';
 import { ExportService } from './services/exportService';
 import { getDaysSinceBackup } from './utils/backupTracking';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
@@ -34,21 +35,22 @@ import { useAssessmentFlow } from './hooks/useAssessmentFlow';
 import { useLinkManager } from './hooks/useLinkManager';
 import { usePendingProcessor } from './hooks/usePendingProcessor';
 
-// --- LAZY IMPORTS ---
-const Step2Tests = React.lazy(() => import('./components/assessment/Step2Tests').then(module => ({ default: module.Step2Tests })));
-// Step 3 Observations est supprimé du flux principal (fusionné dans Step 2)
-const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/Step3BisDiagnostic').then(module => ({ default: module.Step3BisDiagnostic })));
-const Step4Validation = React.lazy(() => import('./components/assessment/Step4Validation').then(module => ({ default: module.Step4Validation })));
-const Step5Export = React.lazy(() => import('./components/assessment/Step5Export').then(module => ({ default: module.Step5Export })));
+// --- LAZY IMPORTS — pages (shared across flows) ---
+const ScorePage = React.lazy(() => import('./components/assessment/pages/ScorePage').then(module => ({ default: module.Step2Tests })));
+const ValidationPage = React.lazy(() => import('./components/assessment/pages/ValidationPage').then(module => ({ default: module.Step4Validation })));
+const ExportPage = React.lazy(() => import('./components/assessment/pages/ExportPage').then(module => ({ default: module.Step5Export })));
 
-// --- Reevaluation 1-clic steps ---
-const ReevStep1Scores = React.lazy(() => import('./components/assessment/ReevStep1Scores').then(module => ({ default: module.ReevStep1Scores })));
-const ReevStep2Comment = React.lazy(() => import('./components/assessment/ReevStep2Comment').then(module => ({ default: module.ReevStep2Comment })));
-const ReevStep3Export = React.lazy(() => import('./components/assessment/ReevStep3Export').then(module => ({ default: module.ReevStep3Export })));
+// --- LAZY IMPORTS — initial flow ---
+const Step3BisDiagnostic = React.lazy(() => import('./components/assessment/initial/Step3Diagnostic').then(module => ({ default: module.Step3BisDiagnostic })));
 
-// --- Historical import step ---
-const HistoricalPatientForm = React.lazy(() => import('./components/assessment/HistoricalPatientForm').then(module => ({ default: module.HistoricalPatientForm })));
-const HistoricalSectionsStep = React.lazy(() => import('./components/assessment/HistoricalSectionsStep').then(module => ({ default: module.HistoricalSectionsStep })));
+// --- LAZY IMPORTS — reevaluation flow ---
+const ReevStep1Scores = React.lazy(() => import('./components/assessment/reevaluation/Step1Scores').then(module => ({ default: module.Step1Scores })));
+const ReevStep2Evolution = React.lazy(() => import('./components/assessment/reevaluation/Step2Evolution').then(module => ({ default: module.Step2Evolution })));
+// Step3Synthesis removed — AI generation merged into Step2Evolution
+
+// --- LAZY IMPORTS — historical flow ---
+const HistoricalPatientForm = React.lazy(() => import('./components/assessment/historical/Step1Form').then(module => ({ default: module.HistoricalPatientForm })));
+const HistoricalSectionsStep = React.lazy(() => import('./components/assessment/historical/Step3Report').then(module => ({ default: module.HistoricalSectionsStep })));
 
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then(module => ({ default: module.AdminPanel })));
 
@@ -77,6 +79,18 @@ const AppRouter = () => {
     const { catalog, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
     const assessment = useAssessment();
     const toast = useToast();
+
+    // ── Catalog name resolution maps (for bilan viewer) ──────────────────────
+    const subtestNameMap = useMemo(() =>
+        new Map(catalog.flatMap(c => c.tests.flatMap(t =>
+            t.subtests.map(s => [s.id, s.displayName ?? s.name])
+        ))),
+    [catalog]);
+    const subtestToTestMap = useMemo(() => {
+        const map = new Map<string, { testId: string; testName: string }>();
+        catalog.forEach(cat => cat.tests.forEach(t => t.subtests.forEach(s => map.set(s.id, { testId: t.id, testName: t.name }))));
+        return map;
+    }, [catalog]);
 
     // --- UI mode / navigation ---
     const [mode, setMode] = useState<'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile'>('landing');
@@ -394,6 +408,10 @@ const AppRouter = () => {
             assessment.setPatient(file.patient);
             assessment.setReportType('reevaluation');
             assessment.setPreviousAssessment(prevAssessment);
+            // Pre-populate tests from previous assessment
+            if (prevAssessment?.tests && Object.keys(prevAssessment.tests).length > 0) {
+                assessment.updateTests(prevAssessment.tests);
+            }
             assessment.setStep(1);
             setMode('assessment');
             return;
@@ -773,6 +791,11 @@ const AppRouter = () => {
                                         .filter(a => a.hasFormalReport)
                                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null;
                                     assessment.setPreviousAssessment(prevAssessment);
+                                    // Pre-populate tests from previous assessment so ScorePage
+                                    // shows them as current values (no prop needed on ScorePage)
+                                    if (prevAssessment?.tests && Object.keys(prevAssessment.tests).length > 0) {
+                                        assessment.updateTests(prevAssessment.tests);
+                                    }
                                 } else {
                                     assessment.setPreviousAssessment(null);
                                 }
@@ -792,6 +815,7 @@ const AppRouter = () => {
                                 // Historique drafts are always resumable (used for patients without formal reports too)
                                 return true;
                             })()}
+                            draftReportType={draftsIndex[selectedFile.id]?.reportType ?? null}
                             onResumeDraft={() => onResumeDraft(selectedFile.id)}
                             hasMoreHistory={detailPaging.hasMoreAssessments}
                             isLoadingMoreHistory={detailPaging.isLoadingMore}
@@ -816,21 +840,24 @@ const AppRouter = () => {
                             {/* Navigation Stepper */}
                             <AssessmentStepper currentStep={assessment.step} onStepClick={handleStepperClick} disabled={isGenerating} reportType={assessment.reportType} />
 
-                            {/* ─── FLUX RÉÉVALUATION 1 CLIC (3 étapes) ─── */}
+                            {/* ─── FLUX RÉÉVALUATION (5 étapes) ─── */}
                             {assessment.reportType === 'reevaluation' && (
                                 <>
                                     {assessment.step === 1 && (
                                         <ReevStep1Scores
                                             patient={assessment.patient}
-                                            previousAssessment={assessment.previousAssessment}
-                                            currentTests={assessment.tests}
-                                            onUpdateTests={assessment.updateTests}
+                                            tests={assessment.tests}
+                                            updateTests={assessment.updateTests}
+                                            observations={assessment.observations}
+                                            updateObservations={assessment.updateObservations}
                                             onNext={() => assessment.setStep(2)}
-                                            onQuit={handleQuitAssessment}
+                                            onBack={handleQuitAssessment}
+                                            userProfile={userProfile}
+                                            previousAssessmentDate={assessment.previousAssessment?.date}
                                         />
                                     )}
                                     {assessment.step === 2 && (
-                                        <ReevStep2Comment
+                                        <ReevStep2Evolution
                                             patient={assessment.patient}
                                             previousAssessment={assessment.previousAssessment}
                                             newTests={assessment.tests}
@@ -841,15 +868,30 @@ const AppRouter = () => {
                                         />
                                     )}
                                     {assessment.step === 3 && (
-                                        <ReevStep3Export
+                                        <ValidationPage
+                                            sections={assessment.sections}
+                                            patient={assessment.patient}
+                                            onValidateSection={(id, c, fmt) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}), ...(fmt ? { contentFormat: fmt } : {}) })}
+                                            onNext={() => assessment.setStep(4)}
+                                            onBack={() => assessment.setStep(2)}
+                                        />
+                                    )}
+                                    {assessment.step === 4 && (
+                                        <ExportPage
                                             patient={assessment.patient}
                                             sections={assessment.sections}
-                                            newTests={assessment.tests}
-                                            previousAssessment={assessment.previousAssessment}
-                                            branding={userProfile.branding}
+                                            tests={assessment.tests}
+                                            reportType="reevaluation"
                                             onValidate={onFinalize}
-                                            onBack={() => assessment.setStep(2)}
+                                            onUpdateSection={assessment.updateSection}
+                                            branding={userProfile.branding}
+                                            onUpdateBranding={(newBranding) => updateUserProfile({ branding: newBranding })}
+                                            isPremium={userProfile.subscriptionPlan !== 'free'}
+                                            onShowPricing={() => setPricingModalMode('plans')}
+                                            onBack={() => assessment.setStep(3)}
                                             isDemoMode={isDemoMode}
+                                            onDemoConvert={(action) => setDemoConversion({ show: true, action })}
+                                            onOpenProfile={() => { setPreviousMode(mode as 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail'); setMode('profile'); }}
                                         />
                                     )}
                                 </>
@@ -867,7 +909,7 @@ const AppRouter = () => {
                                         />
                                     )}
                                     {assessment.step === 2 && (
-                                        <Step2Tests
+                                        <ScorePage
                                             patient={assessment.patient}
                                             tests={assessment.tests}
                                             updateTests={assessment.updateTests}
@@ -897,7 +939,7 @@ const AppRouter = () => {
 
                                     {/* Step 2: Tests & Observations (FUSIONNÉ) */}
                                     {assessment.step === 2 && (
-                                        <Step2Tests
+                                        <ScorePage
                                             patient={assessment.patient}
                                             tests={assessment.tests}
                                             updateTests={assessment.updateTests}
@@ -924,14 +966,15 @@ const AppRouter = () => {
                                     )}
 
                                     {/* Step 4: Validation */}
-                                    {assessment.step === 4 && <Step4Validation sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c, fmt) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}), ...(fmt ? { contentFormat: fmt } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
+                                    {assessment.step === 4 && <ValidationPage sections={assessment.sections} patient={assessment.patient} onValidateSection={(id, c, fmt) => assessment.updateSection(id, { status: 'validated', ...(c !== undefined ? { content: c } : {}), ...(fmt ? { contentFormat: fmt } : {}) })} onNext={() => assessment.setStep(5)} onBack={() => assessment.setStep(3)} />}
 
                                     {/* Step 5: Export */}
                                     {assessment.step === 5 && (
-                                        <Step5Export
+                                        <ExportPage
                                             patient={assessment.patient}
                                             sections={assessment.sections}
                                             tests={assessment.tests}
+                                            reportType="initial"
                                             onValidate={onFinalize}
                                             onUpdateSection={assessment.updateSection}
                                             branding={userProfile.branding}
@@ -1003,57 +1046,101 @@ const AppRouter = () => {
                 </div>
             )}
 
-            {/* Read-only report viewer modal */}
-            {viewingReport && selectedFile && (
-                <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto" onClick={() => setViewingReport(null)}>
-                    <div className="bg-[var(--card-bg)] rounded-[24px] shadow-2xl w-full max-w-2xl border border-[var(--border-color)] animate-in fade-in slide-in-from-bottom-4 duration-200" onClick={(e) => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-6 border-b border-[var(--border-color)]">
+            {/* Read-only report viewer — full page overlay */}
+            {viewingReport && selectedFile && (() => {
+                // Group flat results by parent test for display
+                const groups: Map<string, { testName: string; rows: Array<{ id: string; name: string; score: import('./types').ScoreResult }> }> = new Map();
+                Object.entries(viewingReport.results || {}).forEach(([key, score]) => {
+                    const testInfo = subtestToTestMap.get(key);
+                    const groupKey = testInfo?.testId ?? '_custom';
+                    const groupName = testInfo?.testName ?? 'Tests personnalisés';
+                    if (!groups.has(groupKey)) groups.set(groupKey, { testName: groupName, rows: [] });
+                    const name = (score as any).customLabel || subtestNameMap.get(key) || key.replace(/_[a-f0-9]{8}$/i, '').replace(/[_-]/g, ' ');
+                    groups.get(groupKey)!.rows.push({ id: key, name, score });
+                });
+                const scoreGroups = Array.from(groups.values());
+                const fmtScore = (s: import('./types').ScoreResult) =>
+                    s.standard ? `NS ${s.standard}` : s.zScore != null ? `ET ${s.zScore}` : s.percentile ? `${s.percentile}%` : s.raw ? `Brut ${s.raw}` : '—';
+
+                return (
+                    <div className="fixed inset-0 z-[200] overflow-y-auto animate-in fade-in duration-200" style={{ backgroundColor: 'var(--card-bg, #fff)' }}>
+                        {/* Sticky header bar */}
+                        <div className="sticky top-0 z-10 border-b border-[var(--border-color)] px-6 py-4 flex items-center justify-between shadow-sm" style={{ backgroundColor: 'var(--card-bg, #fff)' }}>
                             <div>
-                                <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest mb-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">
                                     {viewingReport.kind === 'reevaluation' ? 'Réévaluation' : 'Bilan initial'}
                                     {' · '}
                                     {new Date(viewingReport.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </p>
-                                <h2 className="font-serif text-xl font-bold text-[var(--text-heading)]">{viewingReport.report?.patientName ?? selectedFile.patient.displayName}</h2>
+                                <h2 className="font-serif text-xl font-bold text-[var(--text-heading)] mt-0.5">{viewingReport.report?.patientName ?? selectedFile.patient.firstName + ' ' + selectedFile.patient.lastName}</h2>
                             </div>
-                            <button onClick={() => setViewingReport(null)} className="p-2 rounded-xl hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"><X size={20} /></button>
+                            <button onClick={() => setViewingReport(null)} className="flex items-center gap-2 rounded-xl border border-[var(--border-color)] px-4 py-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors">
+                                <X size={14} /> Fermer
+                            </button>
                         </div>
-                        {/* Scores */}
-                        {viewingReport.results && Object.keys(viewingReport.results).length > 0 && (
-                            <div className="p-6 border-b border-[var(--border-color)]">
-                                <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-3">Scores</h3>
-                                <div className="space-y-1">
-                                    {Object.entries(viewingReport.results).map(([key, score]) => (
-                                        <div key={key} className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-[var(--hover-bg)] text-sm">
-                                            <span className="text-[var(--text-primary)] font-medium">{key}</span>
-                                            <span className="text-[var(--text-secondary)] font-mono text-xs">
-                                                {score.standard ? `NS ${score.standard}` : score.zScore != null ? `ET ${score.zScore}` : score.percentile ? `${score.percentile}%` : '—'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {/* Sections */}
-                        {viewingReport.report?.sections && viewingReport.report.sections.length > 0 ? (
-                            <div className="p-6 space-y-4">
-                                <h3 className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-1">Rapport</h3>
-                                {viewingReport.report.sections.map((section) => (
-                                    <div key={section.id} className="space-y-1.5">
-                                        <h4 className="font-semibold text-sm text-[var(--text-heading)]">{section.title}</h4>
-                                        <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap rounded-xl bg-[var(--card-bg-raised)] p-3">
-                                            {section.content || <span className="text-[var(--text-secondary)] italic">Section vide</span>}
-                                        </p>
+
+                        {/* Document body */}
+                        <div className="max-w-3xl mx-auto px-6 py-10 space-y-10">
+
+                            {/* Scores section */}
+                            {scoreGroups.length > 0 && (
+                                <section>
+                                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-4">Scores</h3>
+                                    <div className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] overflow-hidden divide-y divide-[var(--border-color)]">
+                                        {scoreGroups.map((group) => (
+                                            <div key={group.testName}>
+                                                <div className="px-5 py-3 bg-[var(--hover-bg)]">
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">{group.testName}</p>
+                                                </div>
+                                                {group.rows.map((row) => (
+                                                    <div key={row.id} className="flex items-center justify-between px-5 py-2.5 even:bg-[var(--hover-bg)]/40">
+                                                        <span className="text-sm text-[var(--text-main)]">{row.name}</span>
+                                                        <span className="font-mono text-xs font-bold text-[var(--text-secondary)] bg-[var(--hover-bg)] px-2 py-0.5 rounded-md">{fmtScore(row.score)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="p-6 text-center text-sm text-[var(--text-secondary)] italic">Aucun contenu de rapport enregistré.</div>
-                        )}
+                                </section>
+                            )}
+
+                            {/* Rapport sections */}
+                            {viewingReport.report?.sections && viewingReport.report.sections.length > 0 && (
+                                <section>
+                                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-4">Rapport</h3>
+                                    <div className="space-y-6">
+                                        {viewingReport.report.sections.map((section) => (
+                                            <div key={section.id} className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] overflow-hidden">
+                                                <div className="border-l-4 border-[var(--primary)] px-5 py-4 bg-[var(--hover-bg)]">
+                                                    <h4 className="font-semibold text-base text-[var(--text-heading)]">{section.title}</h4>
+                                                </div>
+                                                <div className="px-5 py-4">
+                                                    {section.content ? (
+                                                        section.contentFormat === 'html' ? (
+                                                            <div
+                                                                className="text-sm text-[var(--text-main)] leading-relaxed prose-sm [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mt-1 [&_h2]:font-bold [&_h2]:text-base [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:font-semibold [&_h3]:text-sm [&_h3]:mt-2 [&_h3]:mb-0.5 [&_p]:mt-1"
+                                                                dangerouslySetInnerHTML={{ __html: decodeResidualEntities(section.content) }}
+                                                            />
+                                                        ) : (
+                                                            <p className="text-sm text-[var(--text-main)] leading-relaxed whitespace-pre-wrap">{section.content}</p>
+                                                        )
+                                                    ) : (
+                                                        <p className="text-sm text-[var(--text-secondary)] italic">Section vide</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
+                            {!scoreGroups.length && !viewingReport.report?.sections?.length && (
+                                <div className="text-center py-16 text-[var(--text-secondary)] italic text-sm">Aucun contenu enregistré pour ce bilan.</div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {demoConversion.show && <DemoConversionModal action={demoConversion.action} onClose={() => setDemoConversion({ show: false, action: '' })} onConvert={() => { setDemoConversion({ show: false, action: '' }); logout(); }} />}
             </GlobalErrorBoundary>

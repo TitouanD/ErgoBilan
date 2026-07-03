@@ -199,7 +199,7 @@ export const AIService = {
     evolutionSummary: string;
     previousReportContext?: string;
     styleDirectives?: string;
-  }, patient: Patient): Promise<{ evolution: string; recommandations: string }> => {
+  }, patient: Patient): Promise<{ resumeInitial: string; evolution: string; recommandations: string; conclusion: string }> => {
     Logger.info('AI', 'Starting reevaluation comment generation', { patientId: patient.id });
     try {
       const response = await callAIProxyTask({
@@ -213,10 +213,12 @@ export const AIService = {
           ...(payload.styleDirectives && { styleDirectives: payload.styleDirectives }),
         },
       });
-      const json = cleanAndParseJson(response.text) as { evolution_commentee?: string; recommandations?: string } | null;
+      const json = cleanAndParseJson(response.text) as { resume_initial?: string; evolution_commentee?: string; recommandations?: string; conclusion?: string } | null;
       return {
+        resumeInitial: sanitizeReportText(hydrateReport(json?.resume_initial || 'Non généré.', patient)),
         evolution: sanitizeReportText(hydrateReport(json?.evolution_commentee || 'Non généré.', patient)),
         recommandations: sanitizeReportText(hydrateReport(json?.recommandations || 'Non généré.', patient)),
+        conclusion: sanitizeReportText(hydrateReport(json?.conclusion || 'Non généré.', patient)),
       };
     } catch (e: unknown) {
       Logger.error('AI', 'Reevaluation generation failed', e);

@@ -8,7 +8,7 @@ import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, C
 interface Props {
   data: Patient;
   onChange: (data: Partial<Patient>) => void;
-  mode: 'family' | 'practitioner';
+  mode: 'family' | 'practitioner' | 'historical';
 }
 
 type SectionKey = 'identity' | 'parents' | 'medical' | 'reason' | 'dev' | 'daily' | 'school' | 'emotions' | 'goals';
@@ -353,6 +353,105 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
           </div>
       );
   };
+
+  // ─── Historical mode: minimal flat form (display fields only) ───────────────
+  if (mode === 'historical') {
+    return (
+      <div className="space-y-5">
+        {/* Identité */}
+        <div className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-5 text-[var(--text-secondary)]">
+            <User size={15} />
+            <h3 className="font-bold text-sm uppercase tracking-wider">Identité</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className={labelClass}>Prénom <span className="text-rose-500">*</span></label>
+              <DebouncedInput name="firstName" value={data.firstName || ''} onChange={(v) => handleFieldChange('firstName', v)} className={inputClass} placeholder="Prénom" />
+            </div>
+            <div>
+              <label className={labelClass}>Nom <span className="text-rose-500">*</span></label>
+              <DebouncedInput name="lastName" value={data.lastName || ''} onChange={(v) => handleFieldChange('lastName', v)} className={inputClass} placeholder="Nom de famille" />
+            </div>
+            <div>
+              <label className={labelClass}>Date de naissance <span className="text-rose-500">*</span></label>
+              <input type="date" value={data.dob || ''} max={new Date().toISOString().slice(0, 10)} onChange={(e) => handleFieldChange('dob', e.target.value)} className={inputClass} />
+              {data.age && <p className="text-xs text-[var(--text-secondary)] mt-1.5">{data.age}</p>}
+            </div>
+            <div>
+              <label className={labelClass}>Genre</label>
+              <div className="flex gap-5 pt-3">
+                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]">
+                  <input type="radio" name="gender" value="M" checked={data.gender === 'M'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4" /> Garçon
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]">
+                  <input type="radio" name="gender" value="F" checked={data.gender === 'F'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4" /> Fille
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Scolarité */}
+        <div className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-5 text-[var(--text-secondary)]">
+            <GraduationCap size={15} />
+            <h3 className="font-bold text-sm uppercase tracking-wider">Scolarité</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className={labelClass}>Établissement scolaire</label>
+              <DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} placeholder="Nom de l'école" />
+            </div>
+            <div>
+              <label className={labelClass}>Classe</label>
+              <select name="classLevel" value={data.classLevel || ''} onChange={handleChange} className={inputClass}>
+                <option value="">Sélectionner…</option>
+                {SCHOOL_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        {/* Famille — contacts optionnels */}
+        <div className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-5 text-[var(--text-secondary)]">
+            <Users size={15} />
+            <h3 className="font-bold text-sm uppercase tracking-wider">Famille <span className="text-[10px] normal-case font-normal text-[var(--text-disabled)]">— optionnel</span></h3>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>Responsable légal 1 — Nom</label>
+                <DebouncedInput name="parent1Name" value={data.parent1Name || ''} onChange={(v) => handleFieldChange('parent1Name', v)} className={inputClass} placeholder="Nom complet" />
+              </div>
+              <div>
+                <label className={labelClass}>Téléphone</label>
+                <DebouncedInput name="parent1Phone" value={data.parent1Phone || ''} onChange={(v) => handleFieldChange('parent1Phone', v)} className={inputClass} placeholder="06 XX XX XX XX" />
+              </div>
+              <div>
+                <label className={labelClass}>Email</label>
+                <DebouncedInput name="parent1Email" value={data.parent1Email || ''} onChange={(v) => handleFieldChange('parent1Email', v)} className={inputClass} placeholder="email@exemple.fr" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>Responsable légal 2 — Nom</label>
+                <DebouncedInput name="parent2Name" value={data.parent2Name || ''} onChange={(v) => handleFieldChange('parent2Name', v)} className={inputClass} placeholder="Nom complet" />
+              </div>
+              <div>
+                <label className={labelClass}>Téléphone</label>
+                <DebouncedInput name="parent2Phone" value={data.parent2Phone || ''} onChange={(v) => handleFieldChange('parent2Phone', v)} className={inputClass} placeholder="06 XX XX XX XX" />
+              </div>
+              <div>
+                <label className={labelClass}>Email</label>
+                <DebouncedInput name="parent2Email" value={data.parent2Email || ''} onChange={(v) => handleFieldChange('parent2Email', v)} className={inputClass} placeholder="email@exemple.fr" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20">
