@@ -368,7 +368,7 @@ const RowHeader: React.FC<{
       className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)] shrink-0"
       aria-label="Refermer le sous-test"
     >
-      <ChevronDown size={12} />
+      <ChevronDown size={12} className="rotate-180" />
     </button>
     <div className="min-w-0 flex-1">
       <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
@@ -750,6 +750,7 @@ const CustomTextRow: React.FC<{
     <div className="bg-[var(--card-bg)] p-4 md:p-5">
       <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
       <div className="mb-3">
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
         <input
           type="text"
           value={result.customLabel || ''}
@@ -757,16 +758,19 @@ const CustomTextRow: React.FC<{
           onFocus={onFocus}
           onBlur={handleBlur}
           onChange={(e) => setPatch({ customLabel: e.target.value })}
-          placeholder="Intitulé personnalisé..."
+          placeholder="Ex : Observation en classe, Bilan écologique..."
           className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] transition-colors"
         />
       </div>
-      <VoiceObservation
-        value={result.observation || ''}
-        onChange={(v) => { setPatch({ observation: v }); }}
-        readOnly={readOnly}
-        onFocus={onFocus}
-      />
+      <div>
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Notes libres</label>
+        <VoiceObservation
+          value={result.observation || ''}
+          onChange={(v) => { setPatch({ observation: v }); }}
+          readOnly={readOnly}
+          onFocus={onFocus}
+        />
+      </div>
     </div>
   );
 };
@@ -1077,10 +1081,38 @@ const TableView: React.FC<{
             const res = getResult(st.id);
             const isQual = st.inputModel === 'qualitative_category';
             const isRawOnly = st.inputModel === 'raw_only';
+            const isCustomText = st.inputModel === 'custom_text';
             const isRev = reviewed(res);
             const hasData = hasValue(res);
             const hasZ = typeof res.zScore === 'number' && Number.isFinite(res.zScore);
             const tone = scoreToneFromZ(hasZ ? res.zScore! : null);
+
+            if (isCustomText) {
+              return (
+                <tr key={st.id} className="border-b border-[var(--border-color)]">
+                  <td colSpan={6} className="py-3 px-3">
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="text"
+                        value={res.customLabel || ''}
+                        onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { customLabel: e.target.value }))}
+                        onBlur={() => { if (hasValue(res) && !reviewed(res)) updateSubtest(testId, st.id, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' }); }}
+                        placeholder="Titre de l'observation (ex : Bilan écologique, Questionnaire...)"
+                        className="w-full text-sm font-semibold bg-transparent outline-none border-b border-transparent focus:border-[var(--primary)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors py-1"
+                      />
+                      <textarea
+                        value={res.observation || ''}
+                        onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
+                        onBlur={() => { if (hasValue(res) && !reviewed(res)) updateSubtest(testId, st.id, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' }); }}
+                        placeholder="Notes libres..."
+                        rows={3}
+                        className="w-full text-xs bg-transparent outline-none border border-[var(--border-color)] rounded-lg px-3 py-2 focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none"
+                      />
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
 
             if (isQual) {
               const options = [...(st.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
@@ -1237,9 +1269,19 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
         if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
       });
       const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
+
+      // For custom_observations, build a display name from the customLabels of subtests
+      let displayName = testNameMap[testId];
+      if (!displayName && testId === 'custom_observations') {
+        const labels = Object.values(subtests)
+          .map((res) => res.customLabel?.trim())
+          .filter(Boolean);
+        displayName = labels.length > 0 ? labels.join(', ') : 'Observations libres';
+      }
+
       rows.push({
         testId,
-        name: testNameMap[testId] || testId,
+        name: displayName || testId,
         avg,
         subtestCount: Object.keys(subtests).length,
         zCount: zScores.length,
@@ -1362,9 +1404,14 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               </h2>
               <p className="text-sm text-[var(--text-secondary)] mt-1">Sélection rapide des tests et sous-tests.</p>
             </div>
-            <button onClick={onClose} className="p-2 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--border-color)] transition-colors text-[var(--text-secondary)]">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              {totalSelected > 0 && (
+                <span className="rounded-full bg-[var(--primary)] text-white px-3 py-1 text-xs font-bold">{totalSelected} sélectionné(s)</span>
+              )}
+              <button onClick={onClose} className="p-2 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--border-color)] transition-colors text-[var(--text-secondary)]">
+                <X size={20} />
+              </button>
+            </div>
           </div>
           <div className="mt-4 flex items-center gap-2">
             {searchTerm.trim() && (
@@ -1491,16 +1538,6 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   </button>
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 grid grid-cols-1 gap-2">
-                      {test.subtests.length > 8 && (
-                        <div className="pb-1">
-                          <input
-                            value={subtestSearchByTest[test.id] || ''}
-                            onChange={(e) => setSubtestSearchByTest((prev) => ({ ...prev, [test.id]: e.target.value }))}
-                            placeholder="Rechercher un sous-test..."
-                            className="w-full rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none bg-[var(--input-bg)]"
-                          />
-                        </div>
-                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
                         {(() => {
                           const sortedSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
@@ -1568,6 +1605,13 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               className="flex items-center gap-1.5 text-xs font-bold text-[var(--primary)] hover:underline"
             >
               <Plus size={13} /> Créer un test
+            </button>
+            <button
+              type="button"
+              onClick={() => { const customId = `custom_${Date.now()}`; onAddTests({ custom_observations: [customId] }); }}
+              className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--primary)] hover:underline transition-colors"
+            >
+              <MessageSquare size={13} /> Observation libre
             </button>
           </div>
           <div className="flex gap-2">

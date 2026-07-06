@@ -21,6 +21,7 @@ export interface Sibling {
     livesPartially?: boolean;
     residenceStatus?: 'with' | 'partial' | 'away' | 'other';
     residenceOther?: string;
+    notes?: string;
 }
 
 export interface Patient {
@@ -128,6 +129,16 @@ export interface Patient {
     emotionalNotes?: string;
     prescribingDoctorProfession?: string;
     organizationId?: string;
+    siblingNotes?: string;
+    timeSpaceClockDigital?: string;
+    schoolCity?: string;
+    classLevelOther?: string;
+    schoolTypeOther?: string;
+    classroomBehaviorTags?: string;
+    peerRelationTags?: string;
+    behaviorOutdoors?: string;
+    behaviorHome?: string;
+    emotionManagement?: string;
 }
 
 export interface ScoreResult {

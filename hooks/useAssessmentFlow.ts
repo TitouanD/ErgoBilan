@@ -343,9 +343,12 @@ export const useAssessmentFlow = ({
       Object.entries(assessment.tests).forEach(([testId, subtests]) => {
         Object.entries(subtests).forEach(([subId, res]) => {
           if (res.observation?.trim()) {
-            const subtestName = subtestNameByTestAndId.get(`${testId}:${subId}`) || subId;
-            const testName = testNameById.get(testId) || testId;
-            subtestObs.push(`[${subtestName} — ${testName}] (id:${subId}) ${res.observation.trim()}`);
+            const isCustomObs = subId.startsWith('custom_');
+            const subtestName = isCustomObs
+              ? (res.customLabel?.trim() || 'Observation libre')
+              : (subtestNameByTestAndId.get(`${testId}:${subId}`) || subId);
+            const testName = isCustomObs ? 'Observations libres' : (testNameById.get(testId) || testId);
+            subtestObs.push(`[${subtestName} — ${testName}] ${res.observation.trim()}`);
           }
         });
       });

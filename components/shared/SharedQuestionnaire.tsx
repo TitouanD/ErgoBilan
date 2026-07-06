@@ -210,15 +210,20 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       const currentIndex = SECTIONS_CONFIG.findIndex(s => s.id === currentId);
       if (currentIndex < SECTIONS_CONFIG.length - 1) {
           const nextId = SECTIONS_CONFIG[currentIndex + 1].id;
-          toggleSection(currentId, false); // Ferme l'actuelle
-          toggleSection(nextId, true); // Ouvre la suivante
+          toggleSection(currentId, false);
           setTimeout(() => {
-              const el = document.getElementById(`section-${nextId}`);
-              if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  window.scrollBy({ top: -120, behavior: 'smooth' });
-              }
-          }, 450);
+              toggleSection(nextId, true);
+              setTimeout(() => {
+                  const el = document.getElementById(`section-${nextId}`);
+                  if (el) {
+                      const top = el.getBoundingClientRect().top + window.scrollY - 80;
+                      window.scrollTo({ top, behavior: 'smooth' });
+                  }
+              }, 100);
+          }, 50);
+      } else {
+          // Dernière section : on ferme simplement
+          toggleSection(currentId, false);
       }
   };
 
@@ -513,6 +518,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]"><input type="radio" name="gender" value="F" checked={data.gender === 'F'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Fille</label>
                                                 </div>
                                             </div>
+                                            {mode !== 'family' && (
                                             <div className="md:col-span-2">
                                                 <label className={labelClass}>Adresse</label>
                                                 <div className="relative">
@@ -520,6 +526,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     <DebouncedInput name="address" value={data.address || ''} onChange={(v) => handleFieldChange('address', v)} className={`${inputClass} pl-10`} placeholder="Adresse complète" />
                                                 </div>
                                             </div>
+                                            )}
                                         </div>
                                     </div>
                                     <FamilyNextButton sectionId={section.id} />
@@ -692,6 +699,10 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             ))}
                                             {(!data.siblings || data.siblings.length === 0) && <p className="text-xs text-[var(--text-secondary)] italic text-center py-2">Aucun frère ou sœur renseigné.</p>}
                                         </div>
+                                        <div className="mt-3">
+                                            <label className={labelClass}>Détails fratrie</label>
+                                            <DebouncedTextarea name="siblingNotes" value={data.siblingNotes || ''} onChange={(v) => handleFieldChange('siblingNotes', v)} className={inputClass} rows={2} placeholder="Précisions complémentaires sur la fratrie..." />
+                                        </div>
                                     </div>
                                     <FamilyNextButton sectionId={section.id} />
                                 </div>
@@ -702,8 +713,15 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 <div className="space-y-6">
                                     <div className="bg-[var(--card-bg-raised)] border border-[var(--border-color)] p-5 rounded-2xl space-y-4">
                                         <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Book size={14}/> Scolarité</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                            <div><label className={labelClass}>École</label><DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} /></div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                            <div>
+                                                <label className={labelClass}>Nom de l'école</label>
+                                                <DebouncedInput name="school" value={data.school || ''} onChange={(v) => handleFieldChange('school', v)} className={inputClass} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Ville</label>
+                                                <DebouncedInput name="schoolCity" value={data.schoolCity || ''} onChange={(v) => handleFieldChange('schoolCity', v)} className={inputClass} placeholder="Ville de l'établissement" />
+                                            </div>
                                             <div>
                                                 <label className={labelClass}>Classe</label>
                                                 <select name="classLevel" value={data.classLevel || ''} onChange={handleChange} className={inputClass}>
@@ -712,6 +730,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         <option key={level} value={level}>{level}</option>
                                                     ))}
                                                 </select>
+                                                {data.classLevel === 'Autre' && (
+                                                    <div className="mt-2 animate-in slide-in-from-top-2">
+                                                        <DebouncedInput name="classLevelOther" value={data.classLevelOther || ''} onChange={(v) => handleFieldChange('classLevelOther', v)} className={inputClass} placeholder="Préciser la classe..." />
+                                                    </div>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Type de filière</label>
@@ -724,6 +747,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     <option value="bts">BTS / BUT</option>
                                                     <option value="autre">Autre</option>
                                                 </select>
+                                                {data.schoolType === 'autre' && (
+                                                    <div className="mt-2 animate-in slide-in-from-top-2">
+                                                        <DebouncedInput name="schoolTypeOther" value={data.schoolTypeOther || ''} onChange={(v) => handleFieldChange('schoolTypeOther', v)} className={inputClass} placeholder="Préciser le type de filière..." />
+                                                    </div>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Redoublement</label>
@@ -737,7 +765,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
                                         <div className="bg-[#fff9f9] dark:bg-rose-950/20 border border-rose-100 dark:border-rose-800/20 p-4 rounded-2xl">
                                             <ToggleSwitch
-                                                label="Une AESH / AVS est-elle présente ?"
+                                                label="Une AESH est-elle présente ?"
                                                 checked={data.avs === 'OUI'}
                                                 onChange={(checked) => handleFieldChange('avs', checked ? 'OUI' : 'NON')}
                                             />
@@ -778,7 +806,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                             />
                                         </div>
                                         <div>
-                                            <label className={labelClass}>Aménagements rattachés</label>
+                                            <label className={labelClass}>Aménagements mis en place en classe</label>
                                             <DebouncedTextarea name="schoolAccommodations" value={data.schoolAccommodations || ''} onChange={(v) => handleFieldChange('schoolAccommodations', v)} className={inputClass} placeholder="Placement, supports adaptés, tiers-temps, outils de compensation..." rows={2} />
                                         </div>
                                     </div>
@@ -799,9 +827,26 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         )}
                                         <div>
                                             <label className={labelClass}>Comportement en classe</label>
-                                            <DebouncedInput name="classroomBehavior" value={data.classroomBehavior || ''} onChange={(v) => handleFieldChange('classroomBehavior', v)} className={inputClass} placeholder="Calme, impulsif, opposition, agitation..." />
+                                            <ChipGroup
+                                                options={[
+                                                    {value: 'concentre', label: 'Concentré'},
+                                                    {value: 'disperse', label: 'Dispersé'},
+                                                    {value: 'participe', label: 'Participe au cours'},
+                                                    {value: 'ne_participe_pas', label: 'Ne participe pas au cours'},
+                                                    {value: 'calme', label: 'Calme'},
+                                                    {value: 'impulsif', label: 'Impulsif'},
+                                                    {value: 'opposition', label: 'Opposition'},
+                                                    {value: 'agitation', label: 'Agitation'},
+                                                ]}
+                                                value={data.classroomBehaviorTags}
+                                                onChange={(v) => handleFieldChange('classroomBehaviorTags', v)}
+                                                multi
+                                            />
+                                            <div className="mt-2">
+                                                <DebouncedInput name="classroomBehavior" value={data.classroomBehavior || ''} onChange={(v) => handleFieldChange('classroomBehavior', v)} className={inputClass} placeholder="Précisions complémentaires..." />
+                                            </div>
                                         </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className={labelClass}>Organisation</label>
                                                 <DebouncedInput name="schoolOrganization" value={data.schoolOrganization || ''} onChange={(v) => handleFieldChange('schoolOrganization', v)} className={inputClass} placeholder="Cartable, matériel, consignes..." />
@@ -810,18 +855,32 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <label className={labelClass}>Mémorisation</label>
                                                 <DebouncedInput name="schoolMemory" value={data.schoolMemory || ''} onChange={(v) => handleFieldChange('schoolMemory', v)} className={inputClass} placeholder="Leçons, consignes, automatismes..." />
                                             </div>
-                                            <div>
-                                                <label className={labelClass}>Attention & participation</label>
-                                                <DebouncedInput name="schoolAttention" value={data.schoolAttention || ''} onChange={(v) => handleFieldChange('schoolAttention', v)} className={inputClass} placeholder="Concentration, participation, distractibilité..." />
-                                            </div>
                                         </div>
                                         <div>
                                             <label className={labelClass}>Relation avec ses pairs</label>
-                                            <DebouncedInput name="peerRelations" value={data.peerRelations || data.socialBehavior || ''} onChange={(v) => handleFieldChange('peerRelations', v)} className={inputClass} placeholder="Jeux, interactions, conflits, isolement..." />
+                                            <ChipGroup
+                                                options={[
+                                                    {value: 'vers_autres', label: 'Va facilement vers les autres'},
+                                                    {value: 'retrait', label: 'Reste en retrait'},
+                                                    {value: 'evite_contact', label: 'Évite le contact'},
+                                                    {value: 'jeu_groupe', label: 'Participe aux jeux de groupe'},
+                                                    {value: 'joue_seul', label: 'Préfère jouer seul'},
+                                                    {value: 'contact_adultes', label: 'Préfère le contact des adultes'},
+                                                    {value: 'partage_attente', label: 'Le partage et l\'attente'},
+                                                    {value: 'se_fache', label: 'Se fâche ou se décourage vite'},
+                                                    {value: 'efface_groupe', label: 'Peut être facilement effacé dans un groupe'},
+                                                ]}
+                                                value={data.peerRelationTags}
+                                                onChange={(v) => handleFieldChange('peerRelationTags', v)}
+                                                multi
+                                            />
+                                            <div className="mt-2">
+                                                <DebouncedInput name="peerRelations" value={data.peerRelations || data.socialBehavior || ''} onChange={(v) => handleFieldChange('peerRelations', v)} className={inputClass} placeholder="Jeux, interactions, conflits, isolement..." />
+                                            </div>
                                         </div>
                                         <div>
                                             <label className={labelClass}>Devoirs</label>
-                                            <DebouncedTextarea name="homeworkHabits" value={data.homeworkHabits || ''} onChange={(v) => handleFieldChange('homeworkHabits', v)} className={inputClass} placeholder="Autonomie, aide nécessaire, durée, fatigue..." rows={2} />
+                                            <DebouncedTextarea name="homeworkHabits" value={data.homeworkHabits || ''} onChange={(v) => handleFieldChange('homeworkHabits', v)} className={inputClass} placeholder="Autonomie, aide nécessaire, durée, fatigue..." rows={4} />
                                         </div>
                                     </div>
 
@@ -837,10 +896,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 options={[
                                                     {value: 'orthographe', label: "Fautes d'orthographe"},
                                                     {value: 'miroir', label: 'Lettres/chiffres en miroir'},
-                                                    {value: 'lisibilite', label: 'Lisibilité difficile'},
+                                                    {value: 'lisibilite_tiers', label: 'Lisibilité difficile par un tiers'},
+                                                    {value: 'lisibilite_enfant', label: 'Lisibilité difficile par l\'enfant'},
                                                     {value: 'lenteur', label: 'Lenteur'},
                                                     {value: 'prise_crayon_atypique', label: 'Prise du crayon atypique'},
-                                                    {value: 'sauts_lignes', label: 'Lettres non régulières'},
+                                                    {value: 'ecriture_sur_ligne', label: 'Difficulté à écrire sur la ligne'},
+                                                    {value: 'former_lettres', label: 'Difficulté à former les lettres'},
                                                     {value: 'interlignes_non_respectees', label: 'Interlignes non respectées'},
                                                     {value: 'taille_lettres_non_respectee', label: 'Taille des lettres non respectée'},
                                                     {value: 'lettres_capitales', label: 'Utilise uniquement les lettres capitales'},
@@ -974,8 +1035,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-purple-800 dark:text-purple-300 uppercase tracking-wider flex items-center gap-2 mb-4">🟣 Périnatalité</h4>
                                         <div>
-                                            <label className={labelClass}>Grossesse & Naissance (particularités)</label>
-                                            <DebouncedTextarea name="pregnancyBirth" value={data.pregnancyBirth || ''} onChange={(v) => handleFieldChange('pregnancyBirth', v)} className={inputClass} placeholder="Naissance à terme, prématuré, complications, césarienne, poids de naissance..." rows={2} />
+                                            <label className={labelClass}>Grossesse & Naissance</label>
+                                            <DebouncedTextarea name="pregnancyBirth" value={data.pregnancyBirth || ''} onChange={(v) => handleFieldChange('pregnancyBirth', v)} className={inputClass} placeholder="Naissance à terme, prématuré, complications, césarienne..." rows={2} />
                                         </div>
                                     </div>
 
@@ -985,11 +1046,12 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <div className="space-y-4">
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                 <div>
-                                                    <label className={labelClass}>Âge de la marche</label>
-                                                    <div className="flex items-center gap-2">
-                                                        <input type="number" value={parseInt(data.walkingAge || '0') || ''} onChange={(e) => handleFieldChange('walkingAge', e.target.value + ' mois')} className="w-20 p-2 bg-[var(--input-bg)] rounded-lg font-bold text-center border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]" placeholder="Mois" />
-                                                        <span className="text-sm font-bold text-[var(--text-secondary)]">mois</span>
-                                                    </div>
+                                                    <label className={labelClass}>Ramper</label>
+                                                    <ChipGroup
+                                                        options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'ne_sais_pas', label: 'Je ne sais pas'}]}
+                                                        value={data.crawlingRamper}
+                                                        onChange={(v) => handleFieldChange('crawlingRamper', v)}
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className={labelClass}>4 pattes</label>
@@ -1003,12 +1065,11 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className={labelClass}>Ramper</label>
-                                                    <ChipGroup
-                                                        options={[{value: 'oui', label: 'Oui'}, {value: 'non', label: 'Non'}, {value: 'ne_sais_pas', label: 'Je ne sais pas'}]}
-                                                        value={data.crawlingRamper}
-                                                        onChange={(v) => handleFieldChange('crawlingRamper', v)}
-                                                    />
+                                                    <label className={labelClass}>Âge de la marche</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="number" value={parseInt(data.walkingAge || '0') || ''} onChange={(e) => handleFieldChange('walkingAge', e.target.value + ' mois')} className="w-20 p-2 bg-[var(--input-bg)] rounded-lg font-bold text-center border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]" placeholder="Mois" />
+                                                        <span className="text-sm font-bold text-[var(--text-secondary)]">mois</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div>
@@ -1133,9 +1194,14 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         {value: 'distrait', label: 'Distrait'},
                                                         {value: 'lenteur', label: 'Lenteur'},
                                                         {value: 'couverts', label: 'Utilise les couverts'},
+                                                        {value: 'peu_couverts', label: 'Utilisent peu les couverts'},
+                                                        {value: 'difficulte_couper', label: 'Difficulté pour couper la viande'},
+                                                        {value: 'sans_couverts', label: 'N\'utilise pas les couverts'},
                                                         {value: 'mains', label: 'Mange avec les mains'},
                                                         {value: 'salit', label: 'Se salit beaucoup'},
                                                         {value: 'appetit_ok', label: 'Appétit satisfaisant'},
+                                                        {value: 'faible_appetit', label: 'Faible appétit'},
+                                                        {value: 'fort_appetit', label: 'Fort appétit'},
                                                     ]}
                                                     value={data.eatingHabits} 
                                                     onChange={(v) => handleFieldChange('eatingHabits', v)}
@@ -1250,11 +1316,24 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Clock size={14}/> Repérage Temps & Espace</h4>
                                         <div className="space-y-4">
                                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 dark:border-indigo-800/20 pb-2">
-                                                <span className="text-sm font-bold text-[var(--text-main)]">Lecture de l'heure</span>
+                                                <span className="text-sm font-bold text-[var(--text-main)]">Lecture de l'heure analogique</span>
                                                 <div className="flex gap-2">
                                                     {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
                                                         <label key={opt} className="cursor-pointer">
                                                             <input type="radio" name="timeSpaceClockReading" value={opt} checked={data.timeSpaceClockReading === opt} onChange={handleChange} className="peer sr-only"/>
+                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
+                                                                {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 dark:border-indigo-800/20 pb-2">
+                                                <span className="text-sm font-bold text-[var(--text-main)]">Lecture de l'heure numérique</span>
+                                                <div className="flex gap-2">
+                                                    {['acquis', 'difficile', 'en_cours', 'pas_encore'].map(opt => (
+                                                        <label key={opt} className="cursor-pointer">
+                                                            <input type="radio" name="timeSpaceClockDigital" value={opt} checked={data.timeSpaceClockDigital === opt} onChange={handleChange} className="peer sr-only"/>
                                                             <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
                                                                 {opt === 'acquis' ? 'Acquis' : opt === 'difficile' ? 'Difficile' : opt === 'en_cours' ? 'En cours' : 'Pas encore'}
                                                             </div>
@@ -1312,42 +1391,48 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             {section.id === 'emotions' && (
                                 <div className="space-y-4">
                                     <div className="bg-[#faf5ff] dark:bg-purple-950/20 border border-purple-100 dark:border-purple-800/20 p-4 rounded-2xl">
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className={labelClass}>Comportement global</label>
-                                                <ChipGroup
-                                                    options={[
-                                                        { value: 'calme_adaptable', label: 'Calme / Adaptable' },
-                                                        { value: 'agite_public', label: 'Agité en public' },
-                                                        { value: 'opposition', label: 'Opposition' },
-                                                        { value: 'separation_difficile', label: 'Séparation difficile' },
-                                                        { value: 'conflits_fratrie', label: 'Conflits fratrie' },
-                                                        { value: 'devoirs_difficiles', label: 'Devoirs difficiles' },
-                                                    ]}
-                                                    value={data.emotionalGlobalTags}
-                                                    onChange={(v) => handleFieldChange('emotionalGlobalTags', v)}
-                                                    multi
-                                                />
+                                        <div className="space-y-5">
+                                            {/* Comportement à l'extérieur */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-100 dark:border-purple-800/20 pb-4">
+                                                <span className="text-sm font-bold text-[var(--text-main)] shrink-0">Comportement à l'extérieur</span>
+                                                <div className="flex gap-2 flex-wrap justify-end">
+                                                    {['adapte', 'non_adapte', 'non_mesurable'].map(opt => (
+                                                        <label key={opt} className="cursor-pointer">
+                                                            <input type="radio" name="behaviorOutdoors" value={opt} checked={data.behaviorOutdoors === opt} onChange={handleChange} className="peer sr-only"/>
+                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
+                                                                {opt === 'adapte' ? 'Adapté' : opt === 'non_adapte' ? 'Non adapté' : 'Non mesurable'}
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className={labelClass}>Émotions & Réactions</label>
-                                                <ChipGroup
-                                                    options={[
-                                                        { value: 'verbalise_emotions', label: 'Verbalise ses émotions' },
-                                                        { value: 'accepte_imprevu', label: "Accepte l'imprévu" },
-                                                        { value: 'coleres_crises', label: 'Colères / Crises' },
-                                                        { value: 'agressivite', label: 'Agressivité' },
-                                                        { value: 'anxiete', label: 'Anxiété' },
-                                                        { value: 'intolerant_changement', label: 'Intolérant au changement' },
-                                                    ]}
-                                                    value={data.emotionalReactionTags}
-                                                    onChange={(v) => handleFieldChange('emotionalReactionTags', v)}
-                                                    multi
-                                                />
+                                            {/* Comportement à la maison */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-100 dark:border-purple-800/20 pb-4">
+                                                <span className="text-sm font-bold text-[var(--text-main)] shrink-0">Comportement à la maison</span>
+                                                <div className="flex gap-2 flex-wrap justify-end">
+                                                    {['adapte', 'non_adapte', 'non_mesurable'].map(opt => (
+                                                        <label key={opt} className="cursor-pointer">
+                                                            <input type="radio" name="behaviorHome" value={opt} checked={data.behaviorHome === opt} onChange={handleChange} className="peer sr-only"/>
+                                                            <div className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[10px] font-bold uppercase text-[var(--text-secondary)] peer-checked:bg-[var(--primary)] peer-checked:text-white peer-checked:border-[var(--primary)] transition-all">
+                                                                {opt === 'adapte' ? 'Adapté' : opt === 'non_adapte' ? 'Non adapté' : 'Non mesurable'}
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             </div>
+                                            {/* Précisions comportement */}
                                             <div>
                                                 <label className={labelClass}>Précisions</label>
-                                                <DebouncedTextarea name="emotionalNotes" value={data.emotionalNotes || data.emotionalRegulation || ''} onChange={(v) => { handleFieldChange('emotionalNotes', v); handleFieldChange('emotionalRegulation', v); }} className={inputClass} placeholder="Ex : méthode Barkley envisagée, très agité dans les supermarchés, tape quand il est frustré..." rows={2} />
+                                                <DebouncedTextarea name="emotionalGlobalTags" value={data.emotionalGlobalTags || ''} onChange={(v) => handleFieldChange('emotionalGlobalTags', v)} className={inputClass} placeholder="Comportement avec les parents, avec la fratrie, avec un étranger, au restaurant, au magasin, au repas de famille..." rows={2} />
+                                            </div>
+                                            {/* Gestion des émotions */}
+                                            <div>
+                                                <label className={labelClass}>Gestion des émotions</label>
+                                                <DebouncedTextarea name="emotionManagement" value={data.emotionManagement || ''} onChange={(v) => handleFieldChange('emotionManagement', v)} className={inputClass} placeholder="Agressivité, caprice, colère, anxiété, tolère le changement de routine, verbalise ses émotions..." rows={2} />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Précisions complémentaires</label>
+                                                <DebouncedTextarea name="emotionalNotes" value={data.emotionalNotes || data.emotionalRegulation || ''} onChange={(v) => { handleFieldChange('emotionalNotes', v); handleFieldChange('emotionalRegulation', v); }} className={inputClass} placeholder="Informations complémentaires sur les émotions et interactions sociales..." rows={2} />
                                             </div>
                                         </div>
                                     </div>

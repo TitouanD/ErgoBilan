@@ -364,7 +364,7 @@ const RowHeader: React.FC<{
       className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)] shrink-0"
       aria-label="Refermer le sous-test"
     >
-      <ChevronDown size={12} />
+      <ChevronDown size={12} className="rotate-180" />
     </button>
     <div className="min-w-0 flex-1">
       <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
@@ -734,6 +734,7 @@ const CustomTextRow: React.FC<{
     <div className="bg-[var(--card-bg)] p-4 md:p-5">
       <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
       <div className="mb-3">
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
         <input
           type="text"
           value={result.customLabel || ''}
@@ -741,16 +742,19 @@ const CustomTextRow: React.FC<{
           onFocus={onFocus}
           onBlur={handleBlur}
           onChange={(e) => setPatch({ customLabel: e.target.value })}
-          placeholder="Intitulé personnalisé..."
+          placeholder="Ex : Observation en classe, Bilan écologique..."
           className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] transition-colors"
         />
       </div>
-      <VoiceObservation
-        value={result.observation || ''}
-        onChange={(v) => { setPatch({ observation: v }); }}
-        readOnly={readOnly}
-        onFocus={onFocus}
-      />
+      <div>
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Notes libres</label>
+        <VoiceObservation
+          value={result.observation || ''}
+          onChange={(v) => { setPatch({ observation: v }); }}
+          readOnly={readOnly}
+          onFocus={onFocus}
+        />
+      </div>
     </div>
   );
 };
@@ -1331,9 +1335,14 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
               </h2>
               <p className="text-sm text-[var(--text-secondary)] mt-1">Sélection rapide des tests et sous-tests.</p>
             </div>
-            <button onClick={onClose} className="p-2 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--border-color)] transition-colors text-[var(--text-secondary)]">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              {totalSelected > 0 && (
+                <span className="rounded-full bg-[var(--primary)] text-white px-3 py-1 text-xs font-bold">{totalSelected} sélectionné(s)</span>
+              )}
+              <button onClick={onClose} className="p-2 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--border-color)] transition-colors text-[var(--text-secondary)]">
+                <X size={20} />
+              </button>
+            </div>
           </div>
           <div className="mt-4 flex items-center gap-2">
             {searchTerm.trim() && (
@@ -1460,16 +1469,6 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   </button>
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 grid grid-cols-1 gap-2">
-                      {test.subtests.length > 8 && (
-                        <div className="pb-1">
-                          <input
-                            value={subtestSearchByTest[test.id] || ''}
-                            onChange={(e) => setSubtestSearchByTest((prev) => ({ ...prev, [test.id]: e.target.value }))}
-                            placeholder="Rechercher un sous-test..."
-                            className="w-full rounded-lg border border-[var(--border-color)] px-3 py-2 text-sm text-[var(--text-heading)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none bg-[var(--input-bg)]"
-                          />
-                        </div>
-                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
                         {(() => {
                           const sortedSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
