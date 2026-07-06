@@ -30,6 +30,8 @@
   "exclude": [
     "dist",
     "node_modules",
-    "supabase/functions/**"
+    "supabase/functions/**",
+    "ARCHIVE/**",
+    "_archived/**"
   ]
 }

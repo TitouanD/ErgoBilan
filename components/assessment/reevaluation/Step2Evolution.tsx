@@ -43,10 +43,18 @@ interface Props {
 
 const buildInitialSections = (prev: PatientAssessment | null): ReportSection[] => {
     const prevSections = prev?.report?.sections ?? [];
-    const resumeSource = prevSections.find(s => s.id === 'profil' || s.id === 'diagnostic');
+    const diagSource = prevSections.find(s => s.id === 'diagnostic');
+    const objectifsSource = prevSections.find(s => s.id === 'objectifs' || s.id === 'project');
     const dateStr = prev?.date ? new Date(prev.date).toLocaleDateString('fr-FR') : '';
-    const resumeContent = resumeSource
-        ? `<p><strong>Extrait du bilan initial${dateStr ? ` (${dateStr})` : ''}</strong></p>${resumeSource.content}`
+
+    const resumeParts: string[] = [];
+    if (dateStr) resumeParts.push(`<p><strong>Bilan initial r\u00e9alis\u00e9 le ${dateStr}</strong></p>`);
+    if (diagSource?.content?.trim()) resumeParts.push(diagSource.content);
+    if (objectifsSource?.content?.trim()) {
+        resumeParts.push(`<p><strong>Objectifs de prise en charge :</strong></p>${objectifsSource.content}`);
+    }
+    const resumeContent = resumeParts.length > 0
+        ? resumeParts.join('\n')
         : '<p>Résumé du bilan initial à compléter.</p>';
 
     return [
@@ -415,13 +423,23 @@ export const Step2Evolution: React.FC<Props> = ({
         setShowCreditConfirm(false);
         setIsGenerating(true);
         try {
+            const prevDateStr = previousAssessment?.date
+                ? new Date(previousAssessment.date).toLocaleDateString('fr-FR', { month: '2-digit', year: 'numeric' })
+                : null;
+            const reevDateStr = new Date().toLocaleDateString('fr-FR', { month: '2-digit', year: 'numeric' });
+
+            const dateContext = [
+                prevDateStr ? `Bilan initial réalisé : ${prevDateStr}` : '',
+                `Réévaluation réalisée : ${reevDateStr}`,
+            ].filter(Boolean).join(' | ');
+
             const { text: anonContext } = anonymizeData(
-                `Patient: ${patient.firstName} ${patient.lastName}, ${patient.age ?? ''}, ${patient.classLevel ?? 'classe non renseignée'}.${sessionNotes ? ` Observations session: ${sessionNotes}` : ''}`,
+                `Patient: ${patient.firstName} ${patient.lastName}, ${patient.age ?? ''}, ${patient.classLevel ?? 'classe non renseignée'}. ${dateContext}.${sessionNotes ? ` Observations session de réévaluation: ${sessionNotes}` : ''}`,
                 patient,
             );
 
-            const prevSummary = buildScoresSummaryText(previousTests, subtestNameMap);
-            const newSummary = buildScoresSummaryText(newTests, subtestNameMap);
+            const prevSummary = buildScoresSummaryText(previousTests, subtestNameMap, prevDateStr ?? undefined);
+            const newSummary = buildScoresSummaryText(newTests, subtestNameMap, reevDateStr);
             const evoSummary = buildEvolutionSummaryText(deltas);
 
             const prevSections = previousAssessment?.report?.sections ?? [];
@@ -588,7 +606,7 @@ export const Step2Evolution: React.FC<Props> = ({
                             value={sessionNotes}
                             onChange={e => setSessionNotes(e.target.value)}
                             rows={4}
-                            placeholder="Comportement, fatigue, motivation, conditions particulières…"
+                            placeholder="Comportement, concentration, douleurs (ex : douleur 4/10 aux doigts en copie), stratégies spontanées, conditions particulières…"
                             className="w-full resize-none rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] p-3 text-sm text-[var(--text-main)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 transition-all"
                         />
                     </div>

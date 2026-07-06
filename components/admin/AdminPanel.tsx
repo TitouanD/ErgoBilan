@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../../types';
 import { AdminService } from '../../services/admin';
-import { ClinicalInsights } from './ClinicalInsights';
 import { OpsMonitoring } from './OpsMonitoring';
 import { AdminLibrary } from './AdminLibrary';
 import { AdminUsers } from './AdminUsers';
-import { AdminSignalements } from './AdminSignalements';
-import { X, ShieldAlert, Layers, Loader2, Ban, Activity, Cpu, Users2, Flag } from 'lucide-react';
+import { X, ShieldAlert, Layers, Loader2, Ban, Cpu, Users2 } from 'lucide-react';
 import { Logger } from '../../utils/logger';
 
 interface Props {
@@ -15,7 +13,7 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'catalogue' | 'signalements' | 'users' | 'insights' | 'ops'>('catalogue');
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'users' | 'ops'>('catalogue');
   const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
 
@@ -82,21 +80,8 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
             <Users2 size={18} /> Utilisateurs
           </button>
 
-          <button
-            onClick={() => setActiveTab('signalements')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'signalements' ? 'bg-amber-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
-          >
-            <Flag size={18} /> Signalements
-          </button>
-
           <div className="my-4 h-px bg-white/5"></div>
 
-          <button
-            onClick={() => setActiveTab('insights')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'insights' ? 'bg-indigo-600 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
-          >
-            <Activity size={18} /> Science & Insights
-          </button>
           <button
             onClick={() => setActiveTab('ops')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'ops' ? 'bg-emerald-700 text-white' : 'text-stone-500 hover:bg-white/5 hover:text-white'} `}
@@ -117,9 +102,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
         <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#1A1C23]">
           <h2 className="font-bold text-white text-lg">
             {activeTab === 'catalogue' && "Catalogue Officiel"}
-            {activeTab === 'signalements' && "Signalements Score Type"}
             {activeTab === 'users' && "Gestion Utilisateurs & Abonnements"}
-            {activeTab === 'insights' && "Analyse Statistique & Normative"}
             {activeTab === 'ops' && "Supervision Technique & IA"}
           </h2>
           <div className="flex items-center gap-4">
@@ -140,9 +123,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
               focusNonce={0}
             />
           )}
-          {activeTab === 'signalements' && <AdminSignalements />}
           {activeTab === 'users' && <AdminUsers />}
-          {activeTab === 'insights' && <ClinicalInsights />}
           {activeTab === 'ops' && <OpsMonitoring />}
         </main>
       </div>

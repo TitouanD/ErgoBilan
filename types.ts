@@ -390,127 +390,11 @@ export interface PendingQuestionnaire {
     accessToken?: string;
 }
 
-export interface ExtractedRow {
-    id: string;
-    subtest: string;
-    label?: string;
-    raw: string;
-    standard: string;
-    zScore: string;
-    percentile: string;
-    mean?: string;
-    sd?: string;
-    // NOUVEAUX CHAMPS CALCULÉS (IA -> DB)
-    hidden_age_min?: number;
-    hidden_age_max?: number;
-    hidden_raw_min?: number;
-    hidden_raw_max?: number;
-    hidden_group_label?: string;
-    /** Original column abbreviation from the source image (e.g. 'MF', 'MFDC') */
-    source_abbreviation?: string;
-    /**
-     * Stable source column identifier produced at extraction time.
-     * Used to prevent accidental fusion of distinct columns that share
-     * the same subtest name and abbreviation.
-     */
-    source_column_key?: string;
-}
 
-export type DisplayFilterMode = 'all' | 'flagged';
 
-export interface DisplayLookupRow {
-    id: string;
-    row?: ExtractedRow;
-    isPlaceholder: boolean;
-    displayRaw: string;
-    displayStandard: string;
-    displayZScore: string;
-    displayPercentile: string;
-}
 
-export type ReviewSeverity = 'blocking' | 'warning' | 'info';
 
-export type ReviewFlagCode =
-    | 'LOOKUP_PERCENTILE_OUT_OF_BOUNDS'
-    | 'LOOKUP_COLLAPSED_INTERVAL'
-    | 'LOOKUP_SCORE_WITHOUT_RAW'
-    | 'LOOKUP_INTERNAL_SCORE_GAP'
-    | 'LOOKUP_BOUNDARY_UNSCORED'
-    | 'LOOKUP_STANDARD_STEP_OUTLIER'
-    | 'LOOKUP_PERCENTILE_STEP_OUTLIER'
-    | 'LOOKUP_SUBTEST_AGE_HEADER_CAPTURED'
-    | 'LOOKUP_REQUIRED_FIELD_MISSING'
-    | 'LOOKUP_Z_PERCENTILE_INCONSISTENT'
-    | 'LOOKUP_STANDARD_Z_INCONSISTENT'
-    | 'LOOKUP_STANDARD_NON_MONOTONIC'
-    | 'LOOKUP_PERCENTILE_NON_MONOTONIC'
-    | 'LOOKUP_RAW_RANGE_OVERLAP'
-    | 'LOOKUP_RAW_DUPLICATE_CONFLICT'
-    | 'LOOKUP_RAW_DUPLICATE_PARTIAL'
-    | 'GROUP_ROW_COUNT_MISMATCH'
-    | 'PARAMETRIC_REQUIRED_FIELD_MISSING'
-    | 'AGE_RANGE_MISSING_OR_INVALID'
-    | 'LOOKUP_ZERO_Z_PLATEAU'
-    | 'LOOKUP_NON_INTEGER_SCORE'
-    | 'SUBTEST_CONTENT_DUPLICATE'
-    | 'SUBTEST_CONTENT_REASSIGNED'
-    | 'LOOKUP_SUBTEST_STAT_HEADER_CAPTURED'
-    | 'LOOKUP_ROW_COUNT_SUSPICIOUSLY_LOW'
-    | 'LOOKUP_MAX_RAW_OUTLIER'
-    | 'LOOKUP_NS_RANGE_INCOMPLETE'
-    | 'LOOKUP_GROUP_AGE_MISMATCH'
-    | 'LOOKUP_COLUMN_SHIFT_SUSPECT'
-    | 'LOOKUP_ADJACENT_COLUMN_DUPLICATE'
-    | 'LOOKUP_SUBTEST_LOW_RAW_COVERAGE'
-    | 'LOOKUP_RAW_WITHOUT_SCORE'
-    | 'LOOKUP_RAW_RANGE_GAP'
-    | 'EXTRACTION_MISSING_SOURCE_COLUMNS'
-    | 'EXTRACTION_NOT_VERIFIED'
-    | 'EXTRACTION_LOW_CONFIDENCE'
-    | 'CROSS_PAGE_CONFLICT';
-export type ReviewFixField = 'raw' | 'standard' | 'zScore' | 'percentile' | 'mean' | 'sd' | 'label';
 
-export interface ReviewSuggestedFix {
-    rowId: string;
-    field: ReviewFixField;
-    value: string;
-    reason?: string;
-}
-
-export interface ReviewFlag {
-    id: string;
-    code: ReviewFlagCode;
-    severity: ReviewSeverity;
-    message: string;
-    pageId: string;
-    subtest: string;
-    groupLabel: string;
-    rowId?: string;
-    suggestedFix?: ReviewSuggestedFix;
-    confidence: number;
-    blocking: boolean;
-}
-
-export interface ReviewFlagCounts {
-    blocking: number;
-    warning: number;
-    info: number;
-    total: number;
-    withFix: number;
-}
-
-export interface Contribution {
-    id: string;
-    userId: string;
-    userName: string;
-    testName: string;
-    docType: 'image' | 'pdf';
-    status: 'pending' | 'validated' | 'rejected';
-    vigilanceScore: 'pass' | 'flagged';
-    submittedAt: string;
-    structureType: 'PARAMETRIC' | 'LOOKUP' | 'CONVERSION' | 'UNKNOWN';
-    rows: ExtractedRow[];
-}
 
 // --- Types ajoutés pour éliminer les `any` ---
 
@@ -532,25 +416,6 @@ export interface DashboardDraftMeta {
     reportType?: 'initial' | 'reevaluation' | 'historique';
 }
 
-/** Row from the admin_candidates_promotion SQL view */
-export interface CandidateRow {
-    id: string;
-    name: string;
-    author: string;
-    created_at: string;
-    subtest_count?: number;
-    organization_id?: string;
-}
-
-/** Return shape of AdminService.getCandidateDetails */
-export interface CandidateDetails {
-    id: string;
-    testName: string;
-    author: string;
-    submittedAt: string;
-    rows: ExtractedRow[];
-}
-
 /** Admin library types */
 export interface AdminTestSummary {
     id: string;
@@ -559,7 +424,6 @@ export interface AdminTestSummary {
     organization_id?: string | null;
     created_at: string;
     subtest_count?: number;
-    pending_norms_count?: number;
 }
 
 export interface AdminTestRecord {
@@ -593,8 +457,11 @@ export interface AdminSubtestRecord {
     is_override_clone?: boolean;
     always_show_raw?: boolean;
     raw_display_decimals?: number | null;
+    display_order?: number | null;
+    display_group_order?: number | null;
 }
 
+/** @deprecated */
 export interface AdminNormRecord {
     id?: string;
     subtest_id: string;
@@ -608,12 +475,6 @@ export interface AdminNormRecord {
     sd?: number | null;
     standard_score?: number | null;
     percentile?: number | null;
-}
-
-export interface AdminTestBundle {
-    test: AdminTestRecord;
-    subtests: AdminSubtestRecord[];
-    norms: AdminNormRecord[];
 }
 
 /** AI monitoring types */
@@ -649,227 +510,7 @@ export interface GeneratedReportSection {
 }
 
 
-// ── Deduplication types ──
 
-/** A similar test found by find_similar_tests RPC */
-export interface SimilarTestMatch {
-    id: string;
-    name: string;
-    organization_id: string | null;
-    similarity_score: number;
-    subtests_count: number;
-}
-
-/** A pair of duplicate tests detected by admin_find_duplicates */
-export interface DuplicatePair {
-    test_id_a: string;
-    test_name_a: string;
-    org_id_a: string | null;
-    subtests_count_a: number;
-    norms_count_a: number;
-    test_id_b: string;
-    test_name_b: string;
-    org_id_b: string | null;
-    subtests_count_b: number;
-    norms_count_b: number;
-    similarity_score: number;
-}
-
-/** Result of admin_merge_tests RPC */
-export interface MergeResult {
-    merged_tests: number;
-    moved_subtests: number;
-    migrated_norms: number;
-    updated_sessions: number;
-    target_name: string;
-}
-
-/** Result of attach_subtests_to_test RPC */
-export interface AttachResult {
-    new_subtests: number;
-    new_norms: number;
-    test_id: string;
-}
-
-/** A pair of duplicate subtests within a test */
-export interface SubtestDuplicatePair {
-    subtest_id_a: string;
-    subtest_name_a: string;
-    org_id_a: string | null;
-    norms_count_a: number;
-    subtest_id_b: string;
-    subtest_name_b: string;
-    org_id_b: string | null;
-    norms_count_b: number;
-    similarity_score: number;
-}
-
-/** Summary of duplicate norms for a subtest */
-export interface NormDuplicateSummary {
-    subtest_id: string;
-    subtest_name: string;
-    duplicate_group_count: number;
-    total_excess_rows: number;
-}
-
-/** A flagged norm from quality check */
-export interface NormQualityFlag {
-    norm_id: string;
-    subtest_id: string;
-    subtest_name: string;
-    flag_code: string;
-    flag_label: string;
-    details: string;
-}
-
-export type FittingScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
-export type FittingStructure = 'LOOKUP' | 'PARAMETRIC';
-export type FittingIssueSeverity = 'blocking' | 'warning' | 'info';
-export type FittingSuggestionKind = 'score_type' | 'value_fix';
-export type FittingIssueCode =
-    | 'FIT_SCORE_TYPE_MISMATCH'
-    | 'FIT_SCORE_TYPE_NONE_WITH_DATA'
-    | 'FIT_LOW_CONFIDENCE'
-    | 'FIT_LOOKUP_NON_MONOTONIC'
-    | 'FIT_LOOKUP_STEP_OUTLIER'
-    | 'FIT_LOOKUP_VALUE_INCONSISTENT'
-    | 'FIT_LOOKUP_VALUE_OUT_OF_RANGE'
-    | 'FIT_LOOKUP_NON_INTEGER_SCORE'
-    | 'FIT_PARAMETRIC_MEAN_SD_DRIFT';
-
-export interface FittingRow {
-    normId?: string | null;
-    seriesKey?: string | null;
-    rawText?: string | null;
-    rawMin?: number | null;
-    rawMax?: number | null;
-    standardScore?: number | null;
-    percentile?: number | null;
-    mean?: number | null;
-    sd?: number | null;
-}
-
-export interface FittingIssue {
-    id: string;
-    code: FittingIssueCode;
-    severity: FittingIssueSeverity;
-    message: string;
-    confidence: number;
-    normId?: string | null;
-}
-
-export interface FittingSuggestion {
-    id: string;
-    kind: FittingSuggestionKind;
-    confidence: number;
-    reason: string;
-    scoreType?: FittingScoreType;
-    normId?: string | null;
-    field?: 'standard_score' | 'percentile' | 'mean' | 'sd';
-    value?: number;
-}
-
-export interface FittingResult {
-    structure: FittingStructure;
-    currentScoreType: FittingScoreType;
-    suggestedScoreType: FittingScoreType | null;
-    confidence: number;
-    riskScore: number;
-    issues: FittingIssue[];
-    suggestions: FittingSuggestion[];
-}
-
-export interface AdminNormFittingDatasetRow {
-    test_id: string;
-    test_name: string;
-    organization_id: string | null;
-    subtest_id: string;
-    subtest_name: string;
-    score_type: string | null;
-    computation_mode: string | null;
-    norm_id: string;
-    age_min_months: number | null;
-    age_max_months: number | null;
-    gender: string | null;
-    raw_min: number | null;
-    raw_max: number | null;
-    mean: number | null;
-    sd: number | null;
-    standard_score: number | null;
-    percentile: number | null;
-}
-
-export interface AdminNormFittingIssueOverride {
-    issue_key: string;
-    test_id: string;
-    subtest_id: string;
-    issue_code: string;
-    dismissed: boolean;
-    reason: string | null;
-    dismissed_by: string | null;
-    dismissed_at: string;
-    updated_at: string;
-}
-
-export interface AdminNormFittingSubtestAudit {
-    testId: string;
-    testName: string;
-    organizationId: string | null;
-    subtestId: string;
-    subtestName: string;
-    structure: FittingStructure;
-    currentScoreType: FittingScoreType;
-    suggestedScoreType: FittingScoreType | null;
-    confidence: number;
-    riskScore: number;
-    issues: FittingIssue[];
-    suggestions: FittingSuggestion[];
-}
-
-/**
- * Subtest-level direction quality issue returned by `admin_list_direction_issues()`.
- *
- * Flag codes:
- *  - `DIRECTION_AUTO_WITH_NORMS`  — raw_direction='auto' but norms exist → will use
- *    name-regex fallback at score time. Must be fixed before going live.
- *  - `DIRECTION_NAME_MISMATCH`    — DB says higher_better but subtest name contains a
- *    "lower-is-better" keyword. May be intentional; review and confirm or correct.
- */
-export interface SubtestDirectionIssue {
-    subtest_id: string;
-    subtest_name: string;
-    test_id: string;
-    test_name: string;
-    current_direction: string;
-    issue_code: 'DIRECTION_AUTO_WITH_NORMS' | 'DIRECTION_NAME_MISMATCH';
-    issue_label: string;
-    details: string;
-}
-
-/** Aggregated cross-test issue backlog row */
-export interface AdminIssueBacklogItem {
-    test_id: string;
-    test_name: string;
-    organization_id: string | null;
-    subtest_count: number;
-    missing_ambiguous_tags: number;
-    duplicate_subtest_excess: number;
-    duplicate_norm_groups: number;
-    duplicate_norm_excess: number;
-    quality_flag_count: number;
-    zero_norm_subtests_count: number;
-    low_confidence_score_type_count: number;
-    total_issues: number;
-}
-
-/** Insight anomaly alert based on score-type-aware thresholds */
-export interface InsightQualityAlert {
-    testId: string;
-    testName: string;
-    total: number;
-    extreme: number;
-    extremeRate: number;
-}
 
 /** Admin user row enriched with org + subscription state */
 export interface AdminUserRow {
