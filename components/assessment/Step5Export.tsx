@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Patient, ReportSection, TestData, BrandingConfig } from '../../types';
+import type { Patient, ReportSection, TestData, BrandingConfig, ReportContentVisibility } from '../../types';
 import { Download, Check, Palette, X, Upload, Palette as PaletteIcon, Type, Home, Crown, Lock, Layout, MousePointerClick, Star, Sparkles, FileType, User, ArrowLeft, Brush, Loader2 } from 'lucide-react';
 import { ReportView } from './ReportView';
 import { useToast } from '../../contexts/ToastContext';
@@ -59,7 +59,9 @@ const ReportToolbar: React.FC<{
     const PRESETS = [
         { name: "Moderne", primary: "#264653", secondary: "#E9C46A", font: "Open Sans", template: "corporate" },
         { name: "Douceur", primary: "#81B29A", secondary: "#F2CC8F", font: "Quicksand", template: "centered" },
-        { name: "Sérieux", primary: "#1D3557", secondary: "#457B9D", font: "Roboto", template: "classic" }
+        { name: "Sérieux", primary: "#1D3557", secondary: "#457B9D", font: "Roboto", template: "classic" },
+        { name: "Cabinet", primary: "#1a2744", secondary: "#4a7c99", font: "Merriweather", template: "boxed" },
+        { name: "Épuré", primary: "#2c3e50", secondary: "#7f8c8d", font: "Open Sans", template: "classic" },
     ];
 
     return (
@@ -76,11 +78,13 @@ const ReportToolbar: React.FC<{
                             if (!isPremium) { onOpenEditor(); return; } // Trigger pricing via editor flow
                             onApply({
                                 ...currentBranding,
-                                isEnabled: true, // Auto-enable
+                                isEnabled: true,
                                 primaryColor: preset.primary,
                                 secondaryColor: preset.secondary,
                                 fontFamily: preset.font as any,
-                                headerTemplate: preset.template as any
+                                headerTemplate: preset.template as any,
+                                ...(preset.template === 'boxed' ? { contentVisibility: { showScoreChart: true, showScoreTables: true, showScoreGuide: true, showAssessmentDate: true, showConsentBlock: true } } : {}),
+                                ...(preset.name === 'Épuré' ? { contentVisibility: { showScoreChart: true, showScoreTables: true, showScoreGuide: false, showAssessmentDate: true, showConsentBlock: false } } : {}),
                             })
                         }}
                         className="w-8 h-8 rounded-full border-2 border-white shadow-md hover:scale-110 transition-transform relative overflow-hidden group"
@@ -197,6 +201,17 @@ const BrandingEditor: React.FC<{
                                         <div className="w-2/3 h-1.5 bg-[var(--hover-bg)] rounded-sm"></div>
                                     </div>
                                     <span className={`text-xs font-bold ${branding.headerTemplate === 'centered' ? 'text-[#E07A5F]' : 'text-[var(--text-secondary)]'}`}>Centré</span>
+                                </button>
+
+                                <button
+                                    onClick={() => onUpdate({ ...branding, headerTemplate: 'boxed', headerLayout: 'column', headerAlignment: 'center' })}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col gap-2 ${branding.headerTemplate === 'boxed' ? 'border-[#E07A5F] bg-[#fff5f2]' : 'border-[var(--border-color)] bg-[var(--hover-bg)] hover:border-[var(--text-secondary)]'}`}
+                                >
+                                    <div className="w-full h-10 bg-[var(--card-bg)] rounded border-2 border-[var(--border-color)] p-1 flex items-center justify-between gap-1">
+                                        <div className="w-4 h-6 border border-[var(--border-color)] rounded-sm"></div>
+                                        <div className="flex-1 mx-1 h-4 border border-[var(--border-color)] rounded-sm"></div>
+                                    </div>
+                                    <span className={`text-xs font-bold ${branding.headerTemplate === 'boxed' ? 'text-[#E07A5F]' : 'text-[var(--text-secondary)]'}`}>Encadré</span>
                                 </button>
                             </div>
                         </div>
@@ -316,6 +331,7 @@ const BrandingEditor: React.FC<{
                                 {[
                                     { id: 'simple', label: 'Simple' },
                                     { id: 'underline', label: 'Souligné' },
+                                    { id: 'filled', label: 'Bandeau' },
                                     { id: 'filled-shape', label: 'Formes', icon: Home },
                                     { id: 'icon-star', label: 'Étoile', icon: Star },
                                     { id: 'icon-sparkle', label: 'Sparkle', icon: Sparkles },
@@ -332,23 +348,52 @@ const BrandingEditor: React.FC<{
                             </div>
                         </div>
 
-                        {/* --- PALETTE (déplacé en fin) --- */}
+                        {/* --- COINS --- */}
+                        <div>
+                            <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3 flex items-center gap-2"><MousePointerClick size={14} /> Coins</label>
+                            <div className="flex gap-2">
+                                {([
+                                    { id: 'sharp', label: 'Carré' },
+                                    { id: 'rounded', label: 'Arrondi' },
+                                    { id: 'extra-rounded', label: 'Très arrondi' },
+                                ] as const).map((opt) => (
+                                    <button
+                                        key={opt.id}
+                                        onClick={() => onUpdate({ ...branding, cornerStyle: opt.id })}
+                                        className={`flex-1 py-2 text-xs font-bold border transition-all ${
+                                            opt.id === 'sharp' ? 'rounded-none' : opt.id === 'rounded' ? 'rounded-xl' : 'rounded-2xl'
+                                        } ${branding.cornerStyle === opt.id ? 'bg-[#3D405B] text-white border-[#3D405B]' : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--hover-bg)]'}`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* --- PALETTE (déplacé en fin) --- */}}
                         <div>
                             <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3 flex items-center gap-2"><PaletteIcon size={14} /> Palette</label>
-                            <div className="flex gap-4">
-                                <div className="flex-1">
+                            <div className="flex gap-4 flex-wrap">
+                                <div className="flex-1 min-w-[60px]">
                                     <DebouncedColorInput
                                         value={branding.primaryColor}
                                         onChange={(val) => onUpdate({ ...branding, primaryColor: val })}
                                     />
                                     <span className="text-[10px] text-[var(--text-secondary)] font-mono font-bold">Titres</span>
                                 </div>
-                                <div className="flex-1">
+                                <div className="flex-1 min-w-[60px]">
                                     <DebouncedColorInput
                                         value={branding.secondaryColor}
                                         onChange={(val) => onUpdate({ ...branding, secondaryColor: val })}
                                     />
                                     <span className="text-[10px] text-[var(--text-secondary)] font-mono font-bold">Accents</span>
+                                </div>
+                                <div className="flex-1 min-w-[60px]">
+                                    <DebouncedColorInput
+                                        value={branding.boxBgColor || (branding.primaryColor + '26')}
+                                        onChange={(val) => onUpdate({ ...branding, boxBgColor: val })}
+                                    />
+                                    <span className="text-[10px] text-[var(--text-secondary)] font-mono font-bold">Boîtes</span>
                                 </div>
                             </div>
                         </div>
@@ -390,6 +435,32 @@ const BrandingEditor: React.FC<{
                                 Afficher la numérotation des pages
                             </label>
                         </div>
+
+                        {/* --- CONTENU & SECTIONS --- */}
+                        <div className="space-y-3 pt-4 border-t border-[var(--border-color)]">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2"><Layout size={14} /> Contenu & Sections</label>
+                            {([
+                                { key: 'showScoreChart', label: 'Graphique des scores' },
+                                { key: 'showScoreTables', label: 'Tableaux de résultats (annexes)' },
+                                { key: 'showScoreGuide', label: 'Guide de lecture' },
+                                { key: 'showAssessmentDate', label: 'Date du bilan' },
+                                { key: 'showConsentBlock', label: 'Bloc consentement' },
+                            ] as { key: keyof ReportContentVisibility; label: string }[]).map(({ key, label }) => {
+                                const cv = branding.contentVisibility;
+                                const isOn = cv?.[key] !== false;
+                                return (
+                                    <label key={key} className="flex items-center justify-between text-sm text-[var(--text-secondary)] cursor-pointer py-1">
+                                        <span>{label}</span>
+                                        <button
+                                            onClick={() => onUpdate({ ...branding, contentVisibility: { showScoreChart: true, showScoreTables: true, showScoreGuide: true, showAssessmentDate: true, showConsentBlock: true, ...cv, [key]: !isOn } })}
+                                            className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${isOn ? 'bg-[#E07A5F]' : 'bg-[var(--border-color)]'}`}
+                                        >
+                                            <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-transform shadow-sm ${isOn ? 'left-[22px]' : 'left-[3px]'}`}></div>
+                                        </button>
+                                    </label>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>
@@ -401,8 +472,16 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
     const [showBranding, setShowBranding] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-    const [scoreDisplayModes, setScoreDisplayModes] = useState<Record<string, 'Brut' | 'NS' | 'ET' | '%'>>({});
-    const [chartType, setChartType] = useState<'radar' | 'bar' | 'percentile'>('bar');
+    // Derived from branding so preferences persist across sessions
+    const chartType: 'radar' | 'bar' | 'percentile' = (branding.chartType as 'radar' | 'bar' | 'percentile') || 'bar';
+    const scoreDisplayModes: Record<string, 'NS' | 'ET' | '%'> = branding.scoreDisplayModes || {};
+
+    const handleChartTypeChange = (type: 'radar' | 'bar' | 'percentile') => {
+        onUpdateBranding({ ...branding, chartType: type });
+    };
+    const handleScoreDisplayModeChange = (modes: Record<string, 'NS' | 'ET' | '%'>) => {
+        onUpdateBranding({ ...branding, scoreDisplayModes: modes });
+    };
     const { toast } = useToast();
     const { catalog } = useCatalog();
 
@@ -605,9 +684,9 @@ export const Step5Export: React.FC<Props> = ({ patient, sections, tests, onValid
                     tests={tests}
                     branding={branding}
                     scoreDisplayModes={scoreDisplayModes}
-                    onScoreDisplayModeChange={setScoreDisplayModes}
+                    onScoreDisplayModeChange={handleScoreDisplayModeChange}
                     chartType={chartType}
-                    onChartTypeChange={setChartType}
+                    onChartTypeChange={handleChartTypeChange}
                     isPerformance={isPremium}
                 />
             </div>

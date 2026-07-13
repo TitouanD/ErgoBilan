@@ -47,8 +47,6 @@ interface PdfDocumentProps {
     catalog: CategoryDef[];
     scoreDisplayModes?: Record<string, 'Brut' | 'NS' | 'ET' | '%'>;
     chartType?: 'radar' | 'bar' | 'percentile';
-    /** Sections ordering: flattened from the pages state in ReportView */
-    sectionOrder?: string[];
     /** Pre-converted attachment URLs (blob: → base64 data URLs) */
     attachmentUrls?: Record<string, string>;
 }
@@ -178,6 +176,14 @@ const PdfSectionTitle: React.FC<{
         );
     }
 
+    if (titleStyle === 'filled') {
+        return (
+            <View style={{ marginBottom: 16, marginTop: 12, backgroundColor: primary, borderRadius: radius, paddingHorizontal: 12, paddingVertical: 7 }}>
+                <Text style={{ ...titleTextStyle, color: COLORS.white, fontSize: 11 }}>{title}</Text>
+            </View>
+        );
+    }
+
     if (titleStyle === 'icon-star' || titleStyle === 'icon-sparkle' || titleStyle === 'icon-house') {
         return (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16, marginTop: 12 }}>
@@ -192,7 +198,7 @@ const PdfSectionTitle: React.FC<{
     // 'simple' (default)
     return (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16, marginTop: 12 }}>
-            <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: primary + '15', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: branding?.boxBgColor || primary + '15', alignItems: 'center', justifyContent: 'center' }}>
                 <View style={{ width: 10, height: 2, backgroundColor: primary, borderRadius: 1 }} />
             </View>
             <View>
@@ -214,6 +220,7 @@ const PdfHeader: React.FC<{
     const isCustom = branding?.isEnabled;
     const radius = getCornerRadius(branding?.cornerStyle);
     const template = isCustom ? branding.headerTemplate : 'classic';
+    const boxBg = isCustom ? (branding.boxBgColor || primary + '15') : COLORS.stone50;
 
     const LogoBlock = () => {
         if (!branding?.logoUrl) return null;
@@ -277,7 +284,7 @@ const PdfHeader: React.FC<{
 
         // 'modern' (default) — boxed
         return (
-            <View style={{ padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone100}`, borderRadius: radius }}>
+            <View style={{ padding: 10, backgroundColor: boxBg, border: `0.5pt solid ${COLORS.stone100}`, borderRadius: radius }}>
                 <Text style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: COLORS.stone400, marginBottom: 4, textAlign }}>Patient</Text>
                 <Text style={{ fontSize: 13, fontWeight: 700, color: COLORS.stone800, textAlign }}>{patient.firstName} {patient.lastName}</Text>
                 {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {formatDobFr(patient.dob)}</Text> : null}
@@ -311,6 +318,25 @@ const PdfHeader: React.FC<{
                 <CabinetTitle />
                 <PractitionerDetails />
                 <View style={{ width: '66%', borderTopWidth: 1, borderTopColor: COLORS.stone100, paddingTop: 12, marginTop: 12 }}>
+                    <PatientBlock align="center" />
+                </View>
+            </View>
+        );
+    }
+
+    if (template === 'boxed') {
+        return (
+            <View style={{ marginBottom: 32, borderWidth: 0.5, borderColor: COLORS.stone200, borderRadius: radius, padding: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200, paddingBottom: 12 }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                        <LogoBlock />
+                        <CabinetTitle />
+                    </View>
+                    <View style={{ borderWidth: 0.5, borderColor: primary + '80', borderRadius: 4, padding: 8, width: '42%' }}>
+                        <PractitionerDetails />
+                    </View>
+                </View>
+                <View style={{ alignItems: 'center' }}>
                     <PatientBlock align="center" />
                 </View>
             </View>
@@ -1016,14 +1042,14 @@ const PdfAnnexes: React.FC<{
                 </Text>
             </View>
 
-            {/* Chart: conditionally rendered by chartType */}
-            {chartType === 'radar' && <PdfRadarChart tests={tests} catalog={catalog} branding={branding} />}
-            {chartType === 'bar' && <PdfBarChart tests={tests} catalog={catalog} branding={branding} />}
-            {chartType === 'bar' && <PdfReadingGuide branding={branding} />}
-            {chartType === 'percentile' && <PdfPercentileChart tests={tests} catalog={catalog} branding={branding} />}
+            {/* Chart: conditionally rendered by chartType and contentVisibility */}
+            {branding.contentVisibility?.showScoreChart !== false && chartType === 'radar' && <PdfRadarChart tests={tests} catalog={catalog} branding={branding} />}
+            {branding.contentVisibility?.showScoreChart !== false && chartType === 'bar' && <PdfBarChart tests={tests} catalog={catalog} branding={branding} />}
+            {branding.contentVisibility?.showScoreChart !== false && chartType === 'bar' && branding.contentVisibility?.showScoreGuide !== false && <PdfReadingGuide branding={branding} />}
+            {branding.contentVisibility?.showScoreChart !== false && chartType === 'percentile' && <PdfPercentileChart tests={tests} catalog={catalog} branding={branding} />}
 
-            {/* Per-test score tables — always rendered at Step 5 */}
-            {Object.entries(tests).map(([testId, subtests]) => {
+            {/* Per-test score tables */}
+            {branding.contentVisibility?.showScoreTables !== false && Object.entries(tests).map(([testId, subtests]) => {
                 if (Object.keys(subtests).length === 0) return null;
 
                 const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
@@ -1084,10 +1110,10 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
     branding,
     catalog,
     scoreDisplayModes,
-    chartType = 'bar',
-    sectionOrder,
+    chartType: chartTypeProp,
     attachmentUrls,
 }) => {
+    const chartType = chartTypeProp ?? branding.chartType ?? 'bar';
     const { primary, secondary } = getColors(branding);
     const fontFamily = getFontFamily(branding);
     const isCustom = branding?.isEnabled;
@@ -1095,9 +1121,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
 
     // Determine section order
     const defaultOrder = ['mandat_ref', 'mandat_eval', 'profil', 'diagnostic', 'objectifs', 'project', 'recommandations'];
-    const orderedSectionIds = sectionOrder
-        ? sectionOrder.filter(id => id !== 'annexes')
-        : defaultOrder;
+    const orderedSectionIds = defaultOrder;
 
     const getSection = (id: string) => sections.find(s => s.id === id);
 
@@ -1132,9 +1156,11 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
                 <PdfHeader patient={patient} branding={branding} />
 
                 {/* Date */}
+                {branding.contentVisibility?.showAssessmentDate !== false && (
                 <Text style={{ fontSize: 9, fontStyle: 'italic', color: COLORS.stone500, textAlign: 'right', marginBottom: 20 }}>
                     Fait le {new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}
                 </Text>
+                )}
 
                 {/* Document title */}
                 <Text style={documentTitleStyle}>
@@ -1142,6 +1168,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
                 </Text>
 
                 {/* Consent / Intro block */}
+                {branding.contentVisibility?.showConsentBlock !== false && (
                 <View style={{
                     marginBottom: 24,
                     borderLeftWidth: 3,
@@ -1159,6 +1186,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
                         Ce bilan a pour objectif d'analyser les capacités fonctionnelles et de proposer des axes d'intervention adaptés.
                     </Text>
                 </View>
+                )}
 
                 {/* Report sections */}
                 {orderedSectionIds.map(sectionId => {

@@ -241,13 +241,21 @@ export interface InfoBlock {
     extraLines: InfoBlockExtraLine[];
 }
 
+export interface ReportContentVisibility {
+    showScoreChart: boolean;
+    showScoreTables: boolean;
+    showScoreGuide: boolean;
+    showAssessmentDate: boolean;
+    showConsentBlock: boolean;
+}
+
 export interface BrandingConfig {
     isEnabled: boolean;
     primaryColor: string;
     secondaryColor: string;
     fontFamily: 'Merriweather' | 'Quicksand' | 'Roboto' | 'Playfair Display' | 'Open Sans' | 'Lato';
-    headerTemplate: 'classic' | 'corporate' | 'centered';
-    titleStyle: 'simple' | 'underline' | 'filled-shape' | 'icon-star' | 'icon-sparkle' | 'icon-house';
+    headerTemplate: 'classic' | 'corporate' | 'centered' | 'boxed';
+    titleStyle: 'simple' | 'underline' | 'filled-shape' | 'icon-star' | 'icon-sparkle' | 'icon-house' | 'filled';
     headerLayout: 'row' | 'column';
     headerAlignment: 'left' | 'right' | 'center';
     logoSize: 'small' | 'medium' | 'large';
@@ -265,6 +273,14 @@ export interface BrandingConfig {
     showPageNumbers: boolean;
     logoUrl?: string;
     infoBlock?: InfoBlock;
+    /** Independent background color for boxes/cards (patient block, chart headers, etc.). Defaults to primaryColor+15 if not set. */
+    boxBgColor?: string;
+    /** Persisted chart type preference (defaults to 'bar') */
+    chartType?: 'radar' | 'bar' | 'percentile';
+    /** Persisted per-test score display mode */
+    scoreDisplayModes?: Record<string, 'NS' | 'ET' | '%'>;
+    /** Fine-grained visibility flags for report content blocks */
+    contentVisibility?: ReportContentVisibility;
 }
 
 export interface UserProfile {

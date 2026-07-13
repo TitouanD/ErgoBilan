@@ -336,6 +336,23 @@ const EditableSectionTitle: React.FC<{
         );
     }
 
+    if (titleStyle === 'filled') {
+        return (
+            <div className="mb-6 -mx-0">
+                <div
+                    className={`flex items-center px-4 py-2.5 ${roundedClass}`}
+                    style={{ backgroundColor: primaryColor }}
+                    onClick={editable ? () => setEditing(true) : undefined}
+                >
+                    <h2 className={`text-sm font-bold uppercase tracking-widest text-white ${editable ? 'cursor-pointer' : ''}`} style={{ fontFamily }}>
+                        {title}
+                        {editable && <Pencil size={10} className="inline-block ml-2 opacity-0 hover:opacity-70 transition-opacity no-print" />}
+                    </h2>
+                </div>
+            </div>
+        );
+    }
+
     // Icon styles
     return (
         <div className="flex items-center gap-3 mb-6">
@@ -621,6 +638,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
     const headerTemplate = isCustom ? (branding.headerTemplate || 'classic') : 'classic';
     const titleStyle = isCustom ? (branding.titleStyle || 'simple') : 'simple';
     const patientBlockStyle = isCustom ? (branding.patientBlockStyle || 'modern') : 'modern';
+    /** Box/card background: explicit boxBgColor, else primaryColor at 12% opacity */
+    const boxBg = isCustom ? (branding.boxBgColor || primaryColor + '15') : '#f8f8f8';
 
     const roundedClass = corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl';
     const titleStyleCss = { fontFamily, color: primaryColor };
@@ -742,6 +761,8 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                     ))}
                 </div>
 
+                {branding?.contentVisibility?.showScoreChart !== false && (
+                <>
                 {/* Radar Chart */}
                 {chartType === 'radar' && <ProfileRadarChart tests={tests} branding={branding} />}
 
@@ -803,9 +824,9 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                 )}
 
                 {/* Percentile Chart */}
-                {chartType === 'percentile' && <ProfilePercentileChart tests={tests} branding={branding} />}
+                {branding?.contentVisibility?.showScoreChart !== false && chartType === 'percentile' && <ProfilePercentileChart tests={tests} branding={branding} />}
                 <div className="space-y-12">
-                    {Object.entries(tests).map(([testId, subtests]) => {
+                {branding?.contentVisibility?.showScoreTables !== false && Object.entries(tests).map(([testId, subtests]) => {
                         const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                         // Fallback for private/custom tests absent from catalog — still display their data
                         const def = catalogDef || {
@@ -1003,7 +1024,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             }
             // Modern (Boxed) - Default
             return (
-                <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass} min-w-[200px] w-full text-${align}`}>
+                <div className={`p-4 border border-stone-100 ${roundedClass} min-w-[200px] w-full text-${align}`} style={{ backgroundColor: boxBg }}>
                     <h2 className="font-bold text-2xl text-stone-900 mb-1">{patient.firstName} {patient.lastName}</h2>
                     <p className="text-sm text-stone-600 font-medium">Né(e) le {formatDobFrSafe(patient.dob)}</p>
                     <p className="text-sm text-stone-500">{patient.age}</p>
@@ -1043,6 +1064,26 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
             );
         }
 
+        // MODE BOXED : Bordered cabinet box right, logo left, patient centered below
+        if (headerTemplate === 'boxed') {
+            return (
+                <header className="flex flex-col mb-12 border-b-2 border-stone-100 pb-8">
+                    <div className="flex justify-between items-start gap-4 mb-4">
+                        <div className="flex-1">
+                            <LogoBlock />
+                            <CabinetTitle />
+                        </div>
+                        <div className="border rounded-lg p-3 text-xs space-y-1 min-w-[180px]" style={{ borderColor: primaryColor + '40', backgroundColor: boxBg }}>
+                            <PractitionerDetails />
+                        </div>
+                    </div>
+                    <div className="w-full flex justify-center">
+                        <PatientBlock align="center" />
+                    </div>
+                </header>
+            );
+        }
+
         // MODE CLASSIC (Default) : Logo/Prac Left, Patient Right
         return (
             <header className="flex flex-col mb-12 border-b-2 border-stone-100 pb-8">
@@ -1068,19 +1109,23 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, onUpdate
                         <>
                             <HeaderRenderer />
 
+                            {branding?.contentVisibility?.showAssessmentDate !== false && (
                             <div className="mb-8 text-sm text-stone-500 italic text-right">
                                 Fait le {new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}
                             </div>
+                            )}
 
                             {/* TITRE DOCUMENT CONFIGURABLE */}
                             <h1 className="text-center font-bold text-3xl mb-12" style={titleStyle === 'underline' ? { ...titleStyleCss, borderBottom: `4px solid ${secondaryColor}`, display: 'inline-block', paddingBottom: '8px' } : titleStyleCss}>
                                 {branding?.documentTitle || "Rapport d’évaluation"}
                             </h1>
 
+                            {branding?.contentVisibility?.showConsentBlock !== false && (
                             <div className={`text-xs text-stone-600 text-justify mb-10 leading-relaxed border-l-4 pl-4 py-2 bg-stone-50 ${roundedClass}`} style={{ borderColor: secondaryColor }}>
                                 <p className="mb-2"><strong>{patient.firstName}</strong> et ses parents consentent à cette évaluation.</p>
                                 <p>Ce bilan a pour objectif d'analyser les capacités fonctionnelles et de proposer des axes d'intervention adaptés.</p>
                             </div>
+                            )}
                         </>
                     )}
                     {pageSections.map((sectionId, idx) => {
