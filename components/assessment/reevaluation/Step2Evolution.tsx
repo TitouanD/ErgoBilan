@@ -7,12 +7,13 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import {
-    ArrowLeft, ArrowRight, Sparkles, Loader2, ShieldCheck, FileText,
+    Sparkles, Loader2, ShieldCheck, FileText, ArrowRight,
 } from 'lucide-react';
 import type { Patient, PatientAssessment, TestData, ReportSection } from '../../../types';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
+import { StepNavFooter } from '../shared/StepNavFooter';
 import { AIService } from '../../../services/ai';
 import { anonymizeData } from '../../../utils/anonymizer';
 import {
@@ -136,6 +137,14 @@ export const Step2Evolution: React.FC<Props> = ({
             setAiGenerated(true);
 
             toast.success('Sections générées — relisez et ajustez si besoin.');
+
+            // Auto-advance to validation
+            const mkContent = (html: string) => html || '';
+            onSetSections([
+                { id: 'conclusion', title: 'Conclusion', content: mkContent(result.conclusion), contentFormat: 'html', status: 'draft', isAiGenerated: true },
+                { id: 'recommandations_reev', title: 'Péconisations', content: mkContent(result.recommandations), contentFormat: 'html', status: 'draft', isAiGenerated: true },
+            ]);
+            onNext();
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             if (msg.includes('CREDIT_INSUFFICIENT')) {
@@ -206,7 +215,7 @@ export const Step2Evolution: React.FC<Props> = ({
                                 Retour
                             </button>
                             <button onClick={handleGenerateConfirmed} className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all">
-                                {isDemoMode ? 'Générer' : 'Générer (1 crédit)'}
+                                Confirmer
                             </button>
                         </div>
                     </div>
@@ -238,19 +247,26 @@ export const Step2Evolution: React.FC<Props> = ({
                 <textarea value={precoText} onChange={e => setPrecoText(e.target.value)} rows={7} placeholder="Rédigez vos préconisations ou cliquez sur Générer..." className="w-full resize-none rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] p-3 text-sm text-[var(--text-main)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 transition-all" />
             </div>
 
-            <div className="flex items-center justify-between pt-6 border-t border-[var(--border-color)]">
-                <button onClick={onBack} className="flex items-center gap-2 rounded-xl border border-[var(--border-color)] px-6 py-3 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] transition-colors">
-                    <ArrowLeft size={16} /> Retour
-                </button>
-                <div className="flex items-center gap-3">
-                    <button onClick={handleGenerateClick} disabled={isGenerating} className="flex items-center gap-2 rounded-2xl bg-[#E07A5F] px-6 py-3 text-sm font-bold text-white hover:bg-[#d0694e] hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-orange-200 transition-all">
-                        {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Génération…</> : <><Sparkles size={16} /> {isDemoMode ? 'Générer' : 'Générer (1 crédit)'}</>}
+            <StepNavFooter onBack={onBack}>
+                {aiGenerated ? (
+                    <button
+                        onClick={handleNext}
+                        className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all bg-[var(--secondary)] hover:bg-[var(--primary)]"
+                    >
+                        Continuer <ArrowRight size={20} />
                     </button>
-                    <button onClick={handleNext} className="flex items-center gap-2 rounded-2xl bg-[var(--primary)] px-8 py-4 text-sm font-bold text-white hover:brightness-90 hover:-translate-y-0.5 active:translate-y-0 shadow-lg transition-all">
-                        {aiGenerated ? 'Valider & continuer' : 'Continuer'} <ArrowRight size={16} />
+                ) : (
+                    <button
+                        onClick={handleGenerateClick}
+                        disabled={isGenerating}
+                        className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-gradient-to-r from-[#E07A5F] to-[#d97706] hover:shadow-orange-200 hover:scale-[1.02]"
+                    >
+                        {isGenerating
+                            ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Génération…</>
+                            : <><Sparkles size={20} /> Générer</>}
                     </button>
-                </div>
-            </div>
+                )}
+            </StepNavFooter>
         </div>
     );
 };

@@ -7,7 +7,8 @@
  */
 import React, { useState, useCallback } from 'react';
 import type { Patient, ReportSection } from '../../../types';
-import { FileText, ArrowLeft, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { StepNavFooter } from '../shared/StepNavFooter';
 import { useToast } from '../../../contexts/ToastContext';
 
 // ─── Standard ErgoBilan sections (same IDs as AI generation uses) ─────────────
@@ -234,34 +235,25 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
             </div>
 
             {/* Actions */}
-            <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                    type="button"
-                    onClick={onBack}
-                    disabled={isSaving}
-                    className="flex items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-5 py-3 text-sm font-bold text-[var(--text-secondary)] transition-all hover:border-[var(--text-light)] hover:text-[var(--text-main)] disabled:opacity-50"
-                >
-                    <ArrowLeft size={16} /> Retour aux scores
-                </button>
-
+            <StepNavFooter onBack={onBack} backLabel="Retour aux scores" backDisabled={isSaving}>
                 <button
                     type="button"
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="flex items-center gap-2 rounded-2xl bg-[#E07A5F] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#E07A5F]/25 transition-all hover:bg-[#d16a4e] hover:shadow-xl disabled:opacity-60"
+                    className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-gradient-to-r from-[#E07A5F] to-[#d97706] hover:shadow-orange-200 hover:scale-[1.02]"
                 >
                     {isSaving ? (
                         <>
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                             Enregistrement…
                         </>
                     ) : (
                         <>
-                            <Save size={16} /> Enregistrer le bilan de référence
+                            <Save size={20} /> Enregistrer
                         </>
                     )}
                 </button>
-            </div>
+            </StepNavFooter>
 
             <p className="mt-4 text-center text-[10px] text-[var(--text-secondary)]">
                 Ce bilan sera enregistré comme bilan initial formel.

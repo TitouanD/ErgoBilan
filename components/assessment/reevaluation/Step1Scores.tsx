@@ -10,6 +10,7 @@
 import React, { useMemo, useCallback } from 'react';
 import type { Patient, TestData, Observations, UserProfile, ScoreResult } from '../../../types';
 import { Activity, ArrowRight, Lock, Trash2 } from 'lucide-react';
+import { StepNavFooter } from '../shared/StepNavFooter';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { detectMetric } from '../../../utils/reevaluationHelpers';
 import { TableView, compareSubtestsForDisplay, type Metric } from '../Step2Tests';
@@ -185,13 +186,7 @@ export const Step1Scores: React.FC<Props> = ({
             </div>
 
             {/* Navigation */}
-            <div className="mt-10 flex justify-between items-center gap-4">
-                <button
-                    onClick={onBack}
-                    className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
-                >
-                    Retour
-                </button>
+            <StepNavFooter onBack={onBack}>
                 <button
                     onClick={onNext}
                     className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all bg-[var(--secondary)] hover:bg-[var(--primary)]"
@@ -199,7 +194,7 @@ export const Step1Scores: React.FC<Props> = ({
                     <span>Voir l'évolution</span>
                     <ArrowRight size={20} />
                 </button>
-            </div>
+            </StepNavFooter>
         </div>
     );
 };

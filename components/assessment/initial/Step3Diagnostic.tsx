@@ -5,6 +5,7 @@ import { Sparkles, Brain, Target, Lightbulb, Activity, Quote, ShieldCheck, Alert
 import { VoiceTextarea } from '../../shared/VoiceTextarea';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { supabase } from '../../../services/db';
+import { StepNavFooter } from '../shared/StepNavFooter';
 const hasScoreValue = (r: any): boolean => Boolean(r && ((r.raw && String(r.raw).trim()) || (r.standard && String(r.standard).trim()) || (r.percentile && String(r.percentile).trim()) || (typeof r.zScore === 'number' && Number.isFinite(r.zScore)) || r.qualitativeCode || r.observation));
 const isReviewedScore = (r: any): boolean => Boolean(r && (r.reviewState === 'reviewed' || r.status === 'validated' || r.status === 'certified'));
 
@@ -615,11 +616,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
             </div>
 
             {/* NAVIGATION FOOTER */}
-            <div className="mt-10 flex justify-between items-center gap-4">
-                <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">
-                    Retour
-                </button>
-
+            <StepNavFooter onBack={onBack}>
                 <button
                     onClick={onNext}
                     disabled={isGenerating || !synthesis.diagnosticInput.trim()}
@@ -637,11 +634,11 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
                     ) : (
                         <>
                             <Sparkles size={20} className={isReadyToGenerate ? 'animate-bounce' : ''} />
-                            <span>{!synthesis.diagnosticInput.trim() ? 'Diagnostic requis' : 'Générer le Bilan'}</span>
+                            <span>{!synthesis.diagnosticInput.trim() ? 'Diagnostic requis' : 'Générer'}</span>
                         </>
                     )}
                 </button>
-            </div>
+            </StepNavFooter>
         </div>
     );
 };

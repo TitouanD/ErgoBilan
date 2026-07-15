@@ -32,6 +32,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { StepNavFooter } from '../shared/StepNavFooter';
 
 interface Props {
   patient: Patient;
@@ -1999,8 +2000,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
         {Object.keys(tests).length > 0 && <div className="hidden lg:block w-72 shrink-0"><SummaryPanel tests={tests} /></div>}
       </div>
 
-      <div className="mt-10 flex justify-between items-center gap-4">
-          <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors">Retour</button>
+      <StepNavFooter onBack={onBack}>
           <button
             onClick={() => (stat.pending > 0 ? setShowWarning(true) : onNext())}
             className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all bg-[var(--secondary)] hover:bg-[var(--primary)]"
@@ -2008,7 +2008,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
             <span>Passer au diagnostic</span>
             <ArrowRight size={20} />
           </button>
-      </div>
+      </StepNavFooter>
 
       <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} initialExpandedTestId={catalogTargetTestId} />
 

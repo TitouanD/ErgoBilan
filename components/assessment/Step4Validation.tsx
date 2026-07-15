@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import type { ReportSection, Patient } from '../../types';
 import { Check, Edit2, Download, FileCheck, CheckCheck } from 'lucide-react';
+import { StepNavFooter } from './shared/StepNavFooter';
 import { sanitizeReportText, decodeResidualEntities } from '../../utils/textSanitizer';
 import { ConfirmModal } from '../shared/ConfirmModal';
 import { TipTapEditor } from './TipTapEditor';
@@ -213,14 +214,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
         )}
       </div>
 
-      <div className="mt-10 flex items-center justify-between gap-4">
-          <button 
-              onClick={() => handleNavigate('back')} 
-              className="text-[var(--text-secondary)] hover:text-[var(--text-heading)] font-bold text-sm uppercase tracking-widest px-2 transition-colors"
-          >
-              Retour
-          </button>
-          
+      <StepNavFooter onBack={() => handleNavigate('back')}>
           <button 
               onClick={() => handleNavigate('next')}
               disabled={displayedSections.length === 0}
@@ -229,7 +223,7 @@ export const Step4Validation: React.FC<Props> = ({ sections, patient, onValidate
               <Download size={18} />
               <span className="uppercase tracking-wider">Visualiser le document</span>
           </button>
-      </div>
+      </StepNavFooter>
 
       {/* Unsaved changes warning (A2) */}
       <ConfirmModal

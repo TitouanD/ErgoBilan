@@ -9,6 +9,7 @@ import {
   Clock3,
   Calendar,
   BellOff,
+  Edit3,
   FileText,
   GraduationCap,
   History,
@@ -695,14 +696,15 @@ export const PatientDetail: React.FC<Props> = ({
                 <button onClick={onResumeDraft} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
                   <Zap size={14} className="text-[#F2CC8F]" /> Reprendre la réévaluation
                 </button>
+              ) : draftAvailable ? (
+                <button onClick={onResumeDraft} className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-amber-600">
+                  <Edit3 size={14} /> Reprendre le bilan
+                </button>
               ) : (
                 <button onClick={() => onNewBilan('reevaluation')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
                   <Zap size={14} className="text-[#F2CC8F]" /> Réévaluation 1 clic
                 </button>
               )}
-              <button onClick={() => onNewBilan('historique')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] py-3 text-xs font-bold uppercase tracking-wider text-[var(--text-main)] hover:bg-[var(--hover-bg)]">
-                <History size={14} /> Importer bilan antérieur
-              </button>
             </div>
           </div>
 
