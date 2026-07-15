@@ -1,14 +1,12 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../types';
-import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel, type SubtestItem, type ItemsAggregation } from '../../data/testCatalog';
+import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel } from '../../data/testCatalog';
 import { useCatalog } from '../../contexts/CatalogContext';
-import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { useFavoriteTests } from '../../hooks/useFavoriteTests';
 import { useToast } from '../../contexts/ToastContext';
-import { Logger } from '../../utils/logger';
 import { CustomTestEditor as CustomTestEditorLazy } from './CustomTestEditor';
 import {
   Activity,
@@ -21,14 +19,9 @@ import {
   ChevronRight,
   GripVertical,
   Layers,
-  MessageSquare,
-  Mic,
-  MicOff,
-  PenTool,
   Plus,
   Search,
   Star,
-  Table2,
   Trash2,
   X,
 } from 'lucide-react';
@@ -44,7 +37,7 @@ interface Props {
   userProfile?: UserProfile;
 }
 
-type Metric = 'raw' | 'standard' | 'z' | 'percentile';
+export type Metric = 'standard' | 'z' | 'percentile';
 
 const parseNum = (value: string): number | null => {
   const n = parseFloat(String(value || '').replace(',', '.'));
@@ -59,7 +52,7 @@ const isManualOnlyScoreType = (scoreType?: ScoreType | string): boolean => (
 
 const SCALE_LABELS: Record<string, string> = {
   scaled:    'NS (m=10, \u03c3=3)',
-  standard:  'QI (m=100, \u03c3=15)',
+  standard:  '(m=100, \u03c3=15)',
   't-score': 'T (m=50, \u03c3=10)',
   sten:      'Sten (m=5.5, \u03c3=2)',
   stanine:   'Stanine (m=5, \u03c3=2)',
@@ -214,7 +207,7 @@ const getDisplayOrderIndex = (subtest: SubtestDef): number => {
   return Number.isFinite(inferred) ? Number(inferred) : 999;
 };
 
-const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
+export const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
   const goA = getDisplayGroupOrder(a);
   const goB = getDisplayGroupOrder(b);
   if (goA !== goB) return goA - goB;
@@ -236,8 +229,6 @@ const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
   return getSubtestDisplayName(a).localeCompare(getSubtestDisplayName(b), 'fr', { sensitivity: 'base' });
 };
 
-const METRIC_LABEL: Record<string, string> = { standard: 'NS', z: 'ET', percentile: '%' };
-
 // Simple z-score coloring (no norms lookup, just statistical interpretation)
 const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
   if (z === null || !Number.isFinite(z)) return null;
@@ -245,12 +236,6 @@ const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
   if (z <= -1) return 'warn';
   return 'good';
 };
-
-const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): string => {
-  if (metric === 'standard') return scoreType === 'percentile' ? '%ile' : 'NS';
-  return METRIC_LABEL[metric] || metric.toUpperCase();
-};
-
 
 const hasValue = (r?: Partial<ScoreResult>): boolean => {
   if (!r) return false;
@@ -291,97 +276,6 @@ const mergePatch = (current: ScoreResult, patch: Partial<ScoreResult>): Partial<
   }
   return { ...patch, status: current.status === 'empty' ? 'draft' : current.status };
 };
-
-const VoiceObservation: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-}> = ({ value, onChange, readOnly, onFocus }) => {
-  const onTranscript = useCallback(
-    (text: string) => {
-      onChange(value ? `${value} ${text}` : text);
-    },
-    [value, onChange],
-  );
-
-  const { isListening, isSupported, interimText, toggleListening } = useVoiceDictation({ onTranscript });
-
-  return (
-    <div className="relative mt-3">
-      <textarea
-        value={isListening && interimText ? (value ? `${value} ${interimText}` : interimText) : value}
-        onChange={(e) => !readOnly && onChange(e.target.value)}
-        onFocus={onFocus}
-        placeholder="Observation clinique rapide..."
-        className="w-full p-3 pl-9 pr-10 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:border-[var(--primary)] focus:bg-[var(--card-bg)] outline-none resize-none transition-all placeholder:text-[var(--text-disabled)]"
-        rows={2}
-      />
-      <MessageSquare size={14} className="absolute top-3 left-3 text-[var(--text-disabled)]" />
-      {isSupported && !readOnly && (
-        <button
-          type="button"
-          onClick={toggleListening}
-          className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg transition-all ${isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'text-[var(--text-disabled)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)]'
-            }`}
-        >
-          {isListening ? <Mic size={12} /> : <MicOff size={12} />}
-        </button>
-      )}
-    </div>
-  );
-};
-
-
-
-// ─── Aggregate computation for computed_items subtests ───
-const computeAggregate = (
-  items: SubtestItem[],
-  values: Record<string, number | undefined>,
-  agg: ItemsAggregation,
-): number | null => {
-  const vals = items
-    .filter((it) => !it.isMaster)
-    .map((it) => values[it.id])
-    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-  if (vals.length === 0) return null;
-  if (agg === 'sum') return vals.reduce((a, b) => a + b, 0);
-  if (agg === 'best_of') return Math.max(...vals);
-  if (agg === 'mean') return vals.reduce((a, b) => a + b, 0) / vals.length;
-  return null; // 'custom' — manual entry
-};
-
-// ─── Shared row header + collapse button ───
-const RowHeader: React.FC<{
-  subtest: SubtestDef;
-  badge?: React.ReactNode;
-  onToggleExpand?: () => void;
-}> = ({ subtest, badge, onToggleExpand }) => (
-  <div className="flex items-start gap-1.5 mb-4">
-    <button
-      type="button"
-      onClick={() => onToggleExpand?.()}
-      className="mt-0.5 rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--hover-bg)] shrink-0"
-      aria-label="Refermer le sous-test"
-    >
-      <ChevronDown size={12} className="rotate-180" />
-    </button>
-    <div className="min-w-0 flex-1">
-      <h4 className="font-semibold text-[var(--text-heading)] text-sm md:text-base leading-tight break-words">
-        {getSubtestDisplayName(subtest)}
-      </h4>
-      <div className="flex items-center flex-wrap gap-1.5 mt-1">
-        {subtest.unit && <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">{subtest.unit}</span>}
-        {getScaleLabel(subtest.scoreType) && (
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300">
-            {getScaleLabel(subtest.scoreType)}
-          </span>
-        )}
-        {badge}
-      </div>
-    </div>
-  </div>
-);
 
 // ─── ScoreTypeReportModal: practitioner flags a wrong score_type ─────────────
 const ScoreTypeReportModal: React.FC<{
@@ -474,517 +368,15 @@ const ScoreTypeReportModal: React.FC<{
   );
 };
 
-// ─── NumericRow: NS-centric entry with auto-conversion ───────────────────────
-const NumericRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-  preferredMetric?: Metric;
-  onPreferredMetricChange?: (m: Metric) => void;
-  onAdvance?: () => void;
-}> = ({
-  subtest, result, onChange, readOnly, onFocus, onToggleExpand,
-  preferredMetric, onPreferredMetricChange, onAdvance,
-}) => {
-  const scoreType = String(subtest.scoreType || 'standard');
-  const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
-  const cfg = subtest.inputConfig || {};
-  const items: SubtestItem[] = cfg.items || [];
-  const aggregation: ItemsAggregation = (cfg.itemsAggregation || 'sum') as ItemsAggregation;
-  const hasItems = items.length > 0 && subtest.inputModel === 'computed_items';
-
-  const [localItemValues, setLocalItemValues] = useState<Record<string, number | undefined>>(
-    () => (result.rawItems as Record<string, number | undefined> | undefined) || {},
-  );
-  const [itemsExpanded, setItemsExpanded] = useState(true);
-
-  React.useEffect(() => {
-    if (result.rawItems && Object.keys(result.rawItems).length > 0) {
-      setLocalItemValues(result.rawItems as Record<string, number | undefined>);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const activeMetric: Metric = (() => {
-    const em = result.entryMetric as Metric | undefined;
-    if (em && em !== 'raw') return em;
-    if (!hasValue(result) && preferredMetric && preferredMetric !== 'raw') return preferredMetric;
-    return 'standard';
-  })();
-
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-
-  const handleSetMetric = (m: Metric) => {
-    setPatch({ entryMetric: m });
-    onPreferredMetricChange?.(m);
-  };
-
-  const handleItemChange = (itemId: string, text: string) => {
-    if (readOnly) return;
-    const n = parseNum(text);
-    const newVals = { ...localItemValues, [itemId]: n ?? undefined };
-    setLocalItemValues(newVals);
-    const agg = computeAggregate(items, newVals, aggregation);
-    const decimals = subtest.rawDisplayDecimals ?? 0;
-    const rawStr = agg !== null ? (decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg))) : result.raw || '';
-    setPatch({ rawItems: newVals, raw: rawStr, scoreSource: 'manual_raw' });
-  };
-
-  const handleInput = (text: string) => {
-    if (readOnly) return;
-    const n = parseNum(text);
-    const m = activeMetric === 'raw' ? 'standard' : activeMetric as 'standard' | 'z' | 'percentile';
-    const derived: DerivedScores = (n !== null && !conversionLocked) ? deriveScores(n, m, scoreType) : {};
-    if (m === 'standard') {
-      setPatch({ entryMetric: 'standard', standard: text, ...derived, scoreSource: 'manual_ns' });
-    } else if (m === 'z') {
-      setPatch({ entryMetric: 'z', zScore: n ?? undefined, ...derived, scoreSource: 'manual_et' });
-    } else {
-      setPatch({ entryMetric: 'percentile', percentile: text, ...derived, scoreSource: 'manual_pct' });
-    }
-  };
-
-  const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-      setTimeout(() => onAdvance?.(), 200);
-    }
-  };
-
-  const getInputValue = (): string => {
-    if (activeMetric === 'z') {
-      const z = result.zScore;
-      return typeof z === 'number' && Number.isFinite(z) ? String(z) : '';
-    }
-    if (activeMetric === 'percentile') return result.percentile || '';
-    return result.standard || '';
-  };
-
-  const filledCount = items.filter((it) => !it.isMaster && localItemValues[it.id] !== undefined).length;
-  const displayGroup = cfg.displayGroup ?? 'column';
-  const gridClass =
-    displayGroup === 'grid_2' ? 'grid grid-cols-2 gap-2' :
-    displayGroup === 'grid_3' ? 'grid grid-cols-3 gap-2' :
-    displayGroup === 'table' ? 'divide-y divide-[var(--border-color)]' : 'space-y-2';
-
-  const metrics: Metric[] = conversionLocked ? [] : ['standard', 'z', 'percentile'];
-  const metricLabel = (m: Metric): string => {
-    if (m === 'standard') return getScaleLabel(subtest.scoreType) || 'NS';
-    if (m === 'z') return 'ET';
-    if (m === 'percentile') return '%';
-    return m.toUpperCase();
-  };
-
-  const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-  const derivedBadges: { label: string; value: string; z: number | null }[] = [];
-  if (!conversionLocked) {
-    if (activeMetric !== 'standard' && result.standard) derivedBadges.push({ label: 'NS', value: result.standard, z: null });
-    if (activeMetric !== 'z' && hasZ) derivedBadges.push({ label: 'ET', value: `${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`, z: result.zScore! });
-    if (activeMetric !== 'percentile' && result.percentile) derivedBadges.push({ label: '%', value: `${result.percentile}\u202f%`, z: null });
-  }
-  const [showReportModal, setShowReportModal] = useState(false);
-
-  return (
-    <div className="bg-[var(--card-bg)]">
-      <div className="p-4 md:p-5">
-        <RowHeader
-          subtest={subtest}
-          onToggleExpand={onToggleExpand}
-          badge={hasItems ? (
-            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300">
-              <Layers size={9} className="inline mr-0.5" />Items
-            </span>
-          ) : undefined}
-        />
-
-        {/* Items section (computed_items) */}
-        {hasItems && (
-          <div className="mb-4 rounded-xl border border-[var(--border-color)] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setItemsExpanded((e) => !e)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-[var(--hover-bg)] text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <Layers size={11} />Items
-                <span className="rounded-full bg-[var(--border-color)] px-1.5 py-0.5 text-[9px] font-medium">
-                  {filledCount}/{items.filter((it) => !it.isMaster).length}
-                </span>
-              </span>
-              {itemsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </button>
-            {itemsExpanded && (
-              <div className={`p-3 ${gridClass}`}>
-                {items.map((item) => {
-                  const val = localItemValues[item.id];
-                  const strVal = val !== undefined ? String(val) : '';
-                  if (item.type === 'boolean') {
-                    return (
-                      <div key={item.id} className="flex items-center justify-between gap-2 py-1.5">
-                        <span className="text-xs text-[var(--text-main)] font-medium">{item.label}</span>
-                        <button type="button" disabled={readOnly}
-                          onClick={() => handleItemChange(item.id, String(val === 1 ? 0 : 1))}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${val === 1 ? 'bg-emerald-500 text-white border-emerald-500' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
-                        >{val === 1 ? 'Oui' : 'Non'}</button>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={item.id} className={`flex items-center gap-2 ${item.wide ? 'col-span-full' : ''}`}>
-                      <label className="text-xs text-[var(--text-main)] font-medium flex-1 min-w-0 truncate">{item.label}</label>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <input type="number" value={strVal} min={item.min} max={item.max}
-                          step={item.decimals !== undefined ? Math.pow(10, -item.decimals) : 1}
-                          disabled={readOnly || item.isMaster} onFocus={() => onFocus?.()}
-                          onChange={(e) => handleItemChange(item.id, e.target.value)}
-                          placeholder="—"
-                          className="w-20 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors disabled:opacity-50"
-                          aria-label={item.label}
-                        />
-                        {item.unit && <span className="text-[10px] text-[var(--text-secondary)] font-medium w-8">{item.unit}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Metric selector + primary input */}
-        <div className="mb-3">
-          {metrics.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {metrics.map((m) => (
-                <button key={m} type="button" disabled={readOnly} onClick={() => handleSetMetric(m)}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
-                    activeMetric === m
-                      ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
-                      : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)]'
-                  } ${readOnly ? 'cursor-not-allowed opacity-60' : ''}`}
-                >{metricLabel(m)}</button>
-              ))}
-            </div>
-          )}
-          <input
-            value={getInputValue()} disabled={readOnly} inputMode="decimal"
-            onFocus={() => onFocus?.()} onBlur={handleBlur}
-            onChange={(e) => handleInput(e.target.value)}
-            placeholder="—"
-            className={`w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors ${readOnly ? 'cursor-not-allowed opacity-70' : ''}`}
-            aria-label={`${metricLabel(activeMetric)} pour ${getSubtestDisplayName(subtest)}`}
-          />
-          {derivedBadges.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] font-medium items-center">
-              {derivedBadges.map((b) => (
-                <span key={b.label} className={b.label === 'ET' ? zToneClass(b.z) : 'text-[var(--text-secondary)]'}>
-                  {b.label}&nbsp;{b.value}
-                </span>
-              ))}
-              {!readOnly && (
-                <button
-                  type="button"
-                  title="Signaler un score type incorrect"
-                  onClick={() => setShowReportModal(true)}
-                  className="ml-auto p-0.5 rounded text-amber-400 hover:text-amber-600 transition-colors opacity-50 hover:opacity-100"
-                >
-                  <AlertCircle size={13} />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
-      </div>
-      {showReportModal && (
-        <ScoreTypeReportModal
-          subtest={subtest}
-          enteredNS={typeof result.standard === 'string' ? parseFloat(result.standard) : null}
-          enteredET={result.zScore ?? null}
-          enteredPct={typeof result.percentile === 'string' ? parseFloat(result.percentile) : null}
-          onClose={() => setShowReportModal(false)}
-        />
-      )}
-    </div>
-  );
-};
-
-// ─── CustomTextRow: free text / observation entry ───
-const CustomTextRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-  onAdvance?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-  const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-      setTimeout(() => onAdvance?.(), 200);
-    }
-  };
-  return (
-    <div className="bg-[var(--card-bg)] p-4 md:p-5">
-      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
-      <div className="mb-3">
-        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Titre de l&apos;observation</label>
-        <input
-          type="text"
-          value={result.customLabel || ''}
-          disabled={readOnly}
-          onFocus={onFocus}
-          onBlur={handleBlur}
-          onChange={(e) => setPatch({ customLabel: e.target.value })}
-          placeholder="Ex : Observation en classe, Bilan écologique..."
-          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm font-medium text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] transition-colors"
-        />
-      </div>
-      <div>
-        <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Notes libres</label>
-        <VoiceObservation
-          value={result.observation || ''}
-          onChange={(v) => { setPatch({ observation: v }); }}
-          readOnly={readOnly}
-          onFocus={onFocus}
-        />
-      </div>
-    </div>
-  );
-};
-
-// ─── QualitativeRow: qualitative category selection ───
-const QualitativeRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-  onAdvance?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-  const options = [...(subtest.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
-  const layout = subtest.inputConfig?.qualitativeLayout || 'toggle';
-  const selected = result.qualitativeCode || result.raw || '';
-
-  const selectOption = (code: string) => {
-    if (readOnly) return;
-    const opt = options.find((o) => o.code === code);
-    onChange(mergePatch(result, {
-      raw: code, qualitativeCode: code,
-      qualitativeLabel: opt?.label || '', standard: '', percentile: '',
-      zScore: undefined, scoreSource: 'manual_ns',
-    }));
-    setTimeout(() => onAdvance?.(), 250);
-  };
-
-  return (
-    <div className="bg-[var(--card-bg)] p-4 md:p-5">
-      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
-      {layout === 'toggle' ? (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {options.map((opt) => (
-            <button
-              key={opt.code}
-              type="button"
-              disabled={readOnly}
-              onFocus={onFocus}
-              onClick={() => selectOption(opt.code)}
-              className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${selected === opt.code ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm' : 'border-[var(--border-color)] text-[var(--text-main)] hover:border-[var(--primary)]'}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <select
-          value={selected}
-          disabled={readOnly}
-          onFocus={onFocus}
-          onChange={(e) => selectOption(e.target.value)}
-          className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-4 py-2.5 text-sm text-[var(--text-heading)] outline-none focus:border-[var(--primary)] mb-3"
-        >
-          <option value="">— Sélectionner —</option>
-          {options.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
-        </select>
-      )}
-      <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
-    </div>
-  );
-};
-
-// ─── RawOnlyRow: single value entry for scoreType=none ───
-const RawOnlyRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  onToggleExpand?: () => void;
-  onAdvance?: () => void;
-}> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
-  const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
-  const cfg = subtest.inputConfig || {};
-  const rawLabel = cfg.rawValueLabel || 'Valeur';
-  const showFraction = cfg.showRawFraction && cfg.maxRawScore != null;
-
-  const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-      setTimeout(() => onAdvance?.(), 200);
-    }
-  };
-
-  return (
-    <div className="bg-[var(--card-bg)] p-4 md:p-5">
-      <RowHeader subtest={subtest} onToggleExpand={onToggleExpand} />
-      <div className="mb-4">
-        <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">{rawLabel}</span>
-        <div className="flex items-baseline gap-2">
-          <input
-            value={result.raw || ''}
-            disabled={readOnly}
-            inputMode="decimal"
-            onFocus={onFocus}
-            onBlur={handleBlur}
-            onChange={(e) => setPatch({ raw: e.target.value, entryMetric: 'raw', scoreSource: 'manual_raw' })}
-            placeholder="—"
-            className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
-          />
-          {showFraction && <span className="text-xl font-semibold text-[var(--text-secondary)]">/ {cfg.maxRawScore}</span>}
-          {subtest.unit && !showFraction && <span className="text-sm text-[var(--text-secondary)] font-medium">{subtest.unit}</span>}
-        </div>
-      </div>
-      <VoiceObservation value={result.observation || ''} onChange={(v) => setPatch({ observation: v })} readOnly={readOnly} onFocus={onFocus} />
-    </div>
-  );
-};
-
-// CompositeItemsRow = NumericRow (handles computed_items via hasItems check)
-const CompositeItemsRow = NumericRow;
-
-const FlexibleSubtestRow = React.memo((props: {
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onChange: (patch: Partial<ScoreResult>) => void;
-  readOnly?: boolean;
-  onFocus?: () => void;
-  isExpanded?: boolean;
-  onToggleExpand?: () => void;
-  preferredMetric?: Metric;
-  onPreferredMetricChange?: (m: Metric) => void;
-  onAdvance?: () => void;
-}) => {
-  const { subtest, result, onChange, readOnly, onFocus, onToggleExpand, preferredMetric, onPreferredMetricChange, onAdvance } = props;
-  const model = subtest.inputModel || 'numeric_4mode';
-  if (model === 'custom_text') return <CustomTextRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
-  if (model === 'qualitative_category') return <QualitativeRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
-  if (model === 'raw_only') return <RawOnlyRow subtest={subtest} result={result} onChange={onChange} readOnly={readOnly} onFocus={onFocus} onToggleExpand={onToggleExpand} onAdvance={onAdvance} />;
-  return (
-    <NumericRow
-      subtest={subtest}
-      result={result}
-      onChange={onChange}
-      readOnly={readOnly}
-      onFocus={onFocus}
-      onToggleExpand={onToggleExpand}
-      preferredMetric={preferredMetric}
-      onPreferredMetricChange={onPreferredMetricChange}
-      onAdvance={onAdvance}
-    />
-  );
-});
-
-const CompactSubtestRow: React.FC<{
-  subtest: SubtestDef;
-  result: ScoreResult;
-  onClick: () => void;
-  onDelete?: () => void;
-  onInlineChange?: (patch: Partial<ScoreResult>) => void;
-}> = ({ subtest, result, onClick, onDelete, onInlineChange }) => {
-  const isReviewed = reviewed(result);
-  const hasData = hasValue(result);
-  const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-  const tone = scoreToneFromZ(hasZ ? result.zScore! : null);
-
-  const parts: string[] = [];
-  if (result.standard) parts.push(`NS ${result.standard}`);
-  if (hasZ) parts.push(`ET ${result.zScore! > 0 ? '+' : ''}${result.zScore!.toFixed(2)}`);
-  if (result.percentile) parts.push(`${result.percentile}\u202F%`);
-  if (result.qualitativeLabel) parts.push(result.qualitativeLabel);
-
-  return (
-    <div className="w-full flex items-center group">
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex-1 flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--hover-bg)] transition-colors min-w-0"
-      >
-        <ChevronRight size={14} className="text-[var(--text-disabled)] group-hover:text-[var(--primary)] transition-colors shrink-0" />
-        <span className="font-medium text-sm text-[var(--text-heading)] truncate min-w-0 flex-1">
-          {subtest.inputModel === 'custom_text'
-            ? (result.customLabel || 'Observation personnalisée')
-            : getSubtestDisplayName(subtest)}
-        </span>
-        {hasData && parts.length > 0 && (
-          <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${tone === 'bad' ? 'text-rose-500' : tone === 'warn' ? 'text-amber-600' : tone === 'good' ? 'text-emerald-600' : 'text-[var(--text-secondary)]'
-            }`}>
-            {parts.join(' \u00b7 ')}
-          </span>
-        )}
-        <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
-          }`} />
-      </button>
-      {onInlineChange && subtest.inputModel !== 'custom_text' && subtest.inputModel !== 'qualitative_category' && !isManualOnlyScoreType(subtest.scoreType) && (
-        <div className="shrink-0 flex items-center mr-1" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={result.standard || ''}
-            onChange={(e) => {
-              const n = parseNum(e.target.value);
-              const derived = n !== null ? deriveScores(n, 'standard', String(subtest.scoreType || 'standard')) : {};
-              onInlineChange(mergePatch(result, { standard: e.target.value, entryMetric: 'standard', scoreSource: 'manual_ns', ...derived }));
-            }}
-            onBlur={() => {
-              if (hasValue(result) && !reviewed(result)) {
-                onInlineChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="NS"
-            className="w-16 text-center text-sm font-bold bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
-          />
-        </div>
-      )}
-      {onDelete && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="shrink-0 mr-2 p-1.5 rounded-lg bg-rose-50 text-rose-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
-          title="Supprimer ce sous-test"
-        >
-          <Trash2 size={12} />
-        </button>
-      )}
-    </div>
-  );
-};
-
 /* â”€â”€â”€ Table View: spreadsheet-style quick entry â”€â”€â”€ */
-const TableView: React.FC<{
+export const TableView: React.FC<{
   testId: string;
   subtests: SubtestDef[];
   tests: TestData;
   updateSubtest: (testId: string, subId: string, patch: Partial<ScoreResult>) => void;
-}> = ({ testId, subtests, tests, updateSubtest }) => {
+  readOnly?: boolean;
+  singleMetric?: Metric | null;
+}> = ({ testId, subtests, tests, updateSubtest, readOnly = false, singleMetric = null }) => {
   const [localZ, setLocalZ] = useState<Record<string, string>>({});
   const [reportingSubtest, setReportingSubtest] = useState<SubtestDef | null>(null);
 
@@ -1038,18 +430,19 @@ const TableView: React.FC<{
         <thead>
           <tr className="border-b border-[var(--border-color)]">
             <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">Épreuve</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">NS</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">ET</th>
-            <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] w-[8%]">%</th>
+            {(!singleMetric || singleMetric === 'standard') && <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">NS</th>}
+            {(!singleMetric || singleMetric === 'z') && <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">ET</th>}
+            {(!singleMetric || singleMetric === 'percentile') && <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] w-[8%]">%</th>}
             <th className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-auto">Observation</th>
-            <th className="text-center py-2 px-1 w-[3%]" />
+            {!readOnly && <th className="text-center py-2 px-1 w-[3%]" />}
           </tr>
         </thead>
         <tbody>
           {subtests.map(st => {
             const res = getResult(st.id);
             const isQual = st.inputModel === 'qualitative_category';
-            const isRawOnly = st.inputModel === 'raw_only';
+            // raw_only model OR score_type='none': no standardized scale → NS/ET/% not applicable
+            const isUnscored = st.inputModel === 'raw_only' || isManualOnlyScoreType(st.scoreType);
             const isRev = reviewed(res);
             const hasData = hasValue(res);
             const hasZ = typeof res.zScore === 'number' && Number.isFinite(res.zScore);
@@ -1057,37 +450,48 @@ const TableView: React.FC<{
 
             if (isQual) {
               const options = [...(st.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
+              const metricColCount = singleMetric ? 1 : 3;
               return (
                 <tr key={st.id} className="border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors">
                   <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{getSubtestDisplayName(st)}</td>
-                  <td colSpan={3} className="py-2 px-1">
-                    <select
-                      value={res.qualitativeCode || res.raw || ''}
-                      onChange={(e) => {
-                        const opt = options.find(o => o.code === e.target.value);
-                        updateSubtest(testId, st.id, mergePatch(res, {
-                          raw: e.target.value, qualitativeCode: e.target.value,
-                          qualitativeLabel: opt?.label || '', standard: '', percentile: '',
-                          zScore: undefined, derived: undefined, scoreSource: 'manual_ns',
-                        }));
-                      }}
-                      className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
-                    >
-                      <option value="">—</option>
-                      {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
-                    </select>
+                  <td colSpan={metricColCount} className="py-2 px-1">
+                    {readOnly ? (
+                      <div className={cellDisplay}>{res.qualitativeLabel || res.raw || '—'}</div>
+                    ) : (
+                      <select
+                        value={res.qualitativeCode || res.raw || ''}
+                        onChange={(e) => {
+                          const opt = options.find(o => o.code === e.target.value);
+                          updateSubtest(testId, st.id, mergePatch(res, {
+                            raw: e.target.value, qualitativeCode: e.target.value,
+                            qualitativeLabel: opt?.label || '', standard: '', percentile: '',
+                            zScore: undefined, derived: undefined, scoreSource: 'manual_ns',
+                          }));
+                        }}
+                        className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
+                      >
+                        <option value="">—</option>
+                        {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                      </select>
+                    )}
                   </td>
                   <td className="py-1 px-2">
-                    <input
-                      value={res.observation || ''}
-                      onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
-                      placeholder="Note..."
-                    />
+                    {readOnly ? (
+                      <div className="text-xs text-[var(--text-secondary)] py-1.5 italic">{res.observation || ''}</div>
+                    ) : (
+                      <input
+                        value={res.observation || ''}
+                        onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
+                        className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                        placeholder="Note..."
+                      />
+                    )}
                   </td>
-                  <td className="py-2 px-1 text-center">
-                    <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
-                  </td>
+                  {!readOnly && (
+                    <td className="py-2 px-1 text-center">
+                      <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
+                    </td>
+                  )}
                 </tr>
               );
             }
@@ -1101,78 +505,98 @@ const TableView: React.FC<{
                   )}
                 </td>
                 {/* NS */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={res.standard || ''}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'standard', e.target.value, st)}
-                      onBlur={() => handleBlurField(st.id)}
-                      className={`${cellInput} ${res.entryMetric === 'standard' ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
+                {(!singleMetric || singleMetric === 'standard') && (
+                  <td className="py-1 px-1">
+                    {isUnscored ? (
+                      <div className={cellDisplay}>—</div>
+                    ) : readOnly ? (
+                      <div className={cellDisplay}>{res.standard || '—'}</div>
+                    ) : (
+                      <input
+                        value={res.standard || ''}
+                        inputMode="decimal"
+                        onChange={(e) => handleInput(st.id, 'standard', e.target.value, st)}
+                        onBlur={() => handleBlurField(st.id)}
+                        className={`${cellInput} ${res.entryMetric === 'standard' ? 'border-b-[var(--primary)]' : ''}`}
+                        placeholder="—"
+                      />
+                    )}
+                  </td>
+                )}
                 {/* ET — colored by z score */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={localZ[st.id] !== undefined ? localZ[st.id] : (hasZ ? String(res.zScore) : '')}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'z', e.target.value, st)}
-                      onBlur={() => {
-                        if (localZ[st.id] !== undefined) {
-                          setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
-                        }
-                        handleBlurField(st.id);
-                      }}
-                      className={`${cellInput} ${res.entryMetric === 'z' ? 'border-b-[var(--primary)]' : ''} ${hasZ ? zToneClass(res.zScore!) : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
-                {/* % — editable */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={res.percentile || ''}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'percentile', e.target.value, st)}
-                      onBlur={() => handleBlurField(st.id)}
-                      className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
+                {(!singleMetric || singleMetric === 'z') && (
+                  <td className="py-1 px-1">
+                    {isUnscored ? (
+                      <div className={cellDisplay}>—</div>
+                    ) : readOnly ? (
+                      <div className={`${cellDisplay} ${hasZ ? zToneClass(res.zScore!) : ''}`}>
+                        {hasZ ? String(res.zScore) : '—'}
+                      </div>
+                    ) : (
+                      <input
+                        value={localZ[st.id] !== undefined ? localZ[st.id] : (hasZ ? String(res.zScore) : '')}
+                        inputMode="decimal"
+                        onChange={(e) => handleInput(st.id, 'z', e.target.value, st)}
+                        onBlur={() => {
+                          if (localZ[st.id] !== undefined) {
+                            setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
+                          }
+                          handleBlurField(st.id);
+                        }}
+                        className={`${cellInput} ${res.entryMetric === 'z' ? 'border-b-[var(--primary)]' : ''} ${hasZ ? zToneClass(res.zScore!) : ''}`}
+                        placeholder="—"
+                      />
+                    )}
+                  </td>
+                )}
+                {/* % */}
+                {(!singleMetric || singleMetric === 'percentile') && (
+                  <td className="py-1 px-1">
+                    {isUnscored ? (
+                      <div className={cellDisplay}>—</div>
+                    ) : readOnly ? (
+                      <div className={cellDisplay}>{res.percentile || '—'}</div>
+                    ) : (
+                      <input
+                        value={res.percentile || ''}
+                        inputMode="decimal"
+                        onChange={(e) => handleInput(st.id, 'percentile', e.target.value, st)}
+                        onBlur={() => handleBlurField(st.id)}
+                        className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[var(--primary)]' : ''}`}
+                        placeholder="—"
+                      />
+                    )}
+                  </td>
+                )}
                 {/* Observation */}
                 <td className="py-1 px-2">
-                  <input
-                    value={res.observation || ''}
-                    onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
-                    placeholder="Note..."
-                  />
+                  {readOnly ? (
+                    <div className="text-xs text-[var(--text-secondary)] py-1.5 italic">{res.observation || ''}</div>
+                  ) : (
+                    <input
+                      value={res.observation || ''}
+                      onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
+                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                      placeholder="Note..."
+                    />
+                  )}
                 </td>
                 {/* Status dot + report */}
-                <td className="py-1 px-1 text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
-                    <button
-                      type="button"
-                      title="Signaler un score type incorrect"
-                      onClick={() => setReportingSubtest(st)}
-                      className="p-0.5 rounded text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                    >
-                      <AlertCircle size={11} />
-                    </button>
-                  </div>
-                </td>
+                {!readOnly && (
+                  <td className="py-1 px-1 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
+                      <button
+                        type="button"
+                        title="Signaler un score type incorrect"
+                        onClick={() => setReportingSubtest(st)}
+                        className="p-0.5 rounded text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      >
+                        <AlertCircle size={11} />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -1590,14 +1014,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogTargetTestId, setCatalogTargetTestId] = useState<string | null>(null);
   const [collapsedTests, setCollapsedTests] = useState<Record<string, boolean>>({});
-  const [editMode, setEditMode] = useState<Record<string, boolean>>({});
-  const [subtestFilters, setSubtestFilters] = useState<Record<string, string>>({});
   const [showWarning, setShowWarning] = useState(false);
-  const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<Record<string, 'accordion' | 'table'>>({});
   const [testOrder, setTestOrder] = useState<string[]>(() => Object.keys(tests));
-  const [preferredMetricByTest, setPreferredMetricByTest] = useState<Record<string, Metric>>({});
-  const prevExpandedTestIdRef = useRef<string | null>(null);
 
   // Keep testOrder in sync when tests keys change externally (e.g. initial load)
   useEffect(() => {
@@ -1628,20 +1046,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     }
   }, []);
 
-  // Auto-collapse the previously active test when the user opens a subtest in a different test
-  useEffect(() => {
-    if (!expandedSubKey) {
-      prevExpandedTestIdRef.current = null;
-      return;
-    }
-    const currentTestId = expandedSubKey.split('__')[0];
-    const prevTestId = prevExpandedTestIdRef.current;
-    if (prevTestId && prevTestId !== currentTestId) {
-      setCollapsedTests((prev) => ({ ...prev, [prevTestId]: true }));
-    }
-    prevExpandedTestIdRef.current = currentTestId;
-  }, [expandedSubKey]);
-
   useEffect(() => {
     ensureCatalogLoaded();
   }, [ensureCatalogLoaded]);
@@ -1660,11 +1064,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
     if (newTestIds.length > 0) {
       setTestOrder((prev) => [...prev, ...newTestIds.filter((id) => !prev.includes(id))]);
-      setViewMode((prev) => {
-        const patch: Record<string, 'accordion' | 'table'> = {};
-        newTestIds.forEach((id) => { if (!prev[id]) patch[id] = 'table'; });
-        return { ...prev, ...patch };
-      });
       pushRecent(newTestIds);
     }
     updateTests(next);
@@ -1738,29 +1137,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
     });
     return map;
   }, [grouped, catalog]);
-
-  const orderedSubKeys = useMemo(() => {
-    const keys: string[] = [];
-    testOrder.forEach((testId) => {
-      const entry = testDefMap[testId];
-      if (!entry) return;
-      const { def: test } = entry;
-      const selectedIds = Object.keys(tests[testId] || {});
-      const visible = test.subtests.filter((st) => selectedIds.includes(st.id));
-      [...visible].sort(compareSubtestsForDisplay).forEach((st) => keys.push(`${testId}__${st.id}`));
-    });
-    return keys;
-  }, [testOrder, testDefMap, tests]);
-
-  const handleAdvance = useCallback(() => {
-    if (!expandedSubKey) return;
-    const idx = orderedSubKeys.indexOf(expandedSubKey);
-    if (idx >= 0 && idx < orderedSubKeys.length - 1) {
-      setExpandedSubKey(orderedSubKeys[idx + 1]);
-    } else {
-      setExpandedSubKey(null);
-    }
-  }, [expandedSubKey, orderedSubKeys]);
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
@@ -1840,13 +1216,8 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                 const { cat, def: test } = entry;
                 const CatIcon = ICON_MAP[cat?.iconKey || 'Box'];
                 const collapsed = collapsedTests[test.id];
-                const editing = editMode[test.id];
                 const selectedIds = Object.keys(tests[test.id] || {});
                 const visibleSubtests = test.subtests.filter((st) => selectedIds.includes(st.id));
-                const subtestQuery = (subtestFilters[test.id] || '').trim().toLowerCase();
-                const filteredSubtests = subtestQuery
-                  ? visibleSubtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestQuery))
-                  : visibleSubtests;
                 const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
                 const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
                 return (
@@ -1874,16 +1245,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => setViewMode((p) => ({ ...p, [test.id]: p[test.id] === 'table' ? 'accordion' : 'table' }))}
-                              className={`hidden md:flex p-2 rounded-lg border transition-all ${viewMode[test.id] === 'table' ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}
-                              title={viewMode[test.id] === 'table' ? 'Vue détaillée' : 'Vue tableau'}
-                            >
-                              <Table2 size={14} />
-                            </button>
-                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[var(--primary)] text-white border-[var(--primary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}>
-                              <PenTool size={14} />
-                            </button>
                             <button onClick={() => removeTest(test.id)} className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200">
                               <Trash2 size={14} />
                             </button>
@@ -1892,88 +1253,15 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                       </div>
                       {!collapsed && (
                         <div>
-                
                           {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>}
-
-                          {viewMode[test.id] === 'table' ? (
-                            /* â”€â”€ Table mode â”€â”€ */
-                            <div className="p-3">
-                              <TableView
-                                testId={test.id}
-                                subtests={filteredSubtests}
-                                tests={tests}
-                                updateSubtest={updateSubtest}
-                              />
-                            </div>
-                          ) : (
-                            /* â”€â”€ Accordion mode â”€â”€ */
-                            <>
-                              {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
-                              {(() => {
-                                const sortedAccSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
-                                const accItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
-                                let lastAccGKey = '';
-                                for (const st of sortedAccSTs) {
-                                  const gKey = getDisplayGroupKey(st);
-                                  if (gKey && gKey !== lastAccGKey && !subtestQuery) {
-                                    accItems.push({ type: 'header', gkey: gKey, label: getDisplayGroupLabel(st) || gKey });
-                                    lastAccGKey = gKey;
-                                  }
-                                  accItems.push({ type: 'sub', st });
-                                }
-                                return accItems.map((item) => {
-                                  if (item.type === 'header') {
-                                    return (
-                                      <div key={`grp-${item.gkey}`} className="px-5 py-2 flex items-center gap-3 bg-[var(--hover-bg)] border-t border-[var(--border-color)]">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">{item.label}</span>
-                                        <div className="flex-1 h-px bg-[var(--primary)]/20" />
-                                      </div>
-                                    );
-                                  }
-                                  const { st } = item;
-                                  const res = tests[test.id]?.[st.id] || emptyScore();
-                                  const subKey = `${test.id}__${st.id}`;
-                                  const isSubExpanded = expandedSubKey === subKey;
-                                  const isSubReviewed = reviewed(res);
-                                  const hasData = hasValue(res);
-                                  return (
-                                    <div
-                                      key={st.id}
-                                      className={`relative border-l-[3px] transition-all ${isSubReviewed
-                                          ? 'border-l-emerald-400'
-                                          : hasData
-                                            ? 'border-l-amber-300'
-                                            : 'border-l-transparent'
-                                        } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
-                                    >
-                                      {isSubExpanded ? (
-                                        <FlexibleSubtestRow
-                                          subtest={st}
-                                          result={res}
-                                          onChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                          isExpanded={isSubExpanded}
-                                          onToggleExpand={() => setExpandedSubKey((prev) => (prev === subKey ? null : subKey))}
-                                          onFocus={() => setExpandedSubKey(subKey)}
-                                          preferredMetric={preferredMetricByTest[test.id]}
-                                          onPreferredMetricChange={(m) => setPreferredMetricByTest((p) => ({ ...p, [test.id]: m }))}
-                                          onAdvance={handleAdvance}
-                                        />
-                                      ) : (
-                                        <CompactSubtestRow
-                                          subtest={st}
-                                          result={res}
-                                          onClick={() => setExpandedSubKey(subKey)}
-                                          onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
-                                          onInlineChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                        />
-                                      )}
-                                      {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
-                                    </div>
-                                  );
-                                });
-                              })()}
-                            </>
-                          )}
+                          <div className="p-3">
+                            <TableView
+                              testId={test.id}
+                              subtests={[...visibleSubtests].sort(compareSubtestsForDisplay)}
+                              tests={tests}
+                              updateSubtest={updateSubtest}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2014,5 +1302,4 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
   );
 };
 
-export const SubtestRowCheck = FlexibleSubtestRow;
 

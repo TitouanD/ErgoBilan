@@ -24,7 +24,6 @@ import {
     buildDeltaEntries,
     buildScoresSummaryText,
     buildEvolutionSummaryText,
-    type DeltaEntry,
 } from '../../../utils/reevaluationHelpers';
 import { DeltaTable } from '../shared/DeltaTable';
 
@@ -178,15 +177,6 @@ export const Step3Synthesis: React.FC<Props> = ({
         [previousTests, newTests, subtestNameMap, testNameMap],
     );
 
-    const deltasByTest = useMemo(() => {
-        const grouped: Record<string, DeltaEntry[]> = {};
-        deltas.forEach(d => {
-            if (!grouped[d.testName]) grouped[d.testName] = [];
-            grouped[d.testName].push(d);
-        });
-        return grouped;
-    }, [deltas]);
-
     // Initialise sections from prop or build fresh defaults
     const [localSections, setLocalSections] = useState<ReportSection[]>(() =>
         propSections.length > 0 ? propSections : buildInitialSections(previousAssessment)
@@ -292,7 +282,7 @@ export const Step3Synthesis: React.FC<Props> = ({
                                 </p>
                             </div>
                             <div className="max-h-[280px] overflow-y-auto">
-                                <DeltaTable deltasByTest={deltasByTest} compact />
+                                <DeltaTable entries={deltas} compact />
                             </div>
                         </div>
 

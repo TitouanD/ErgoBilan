@@ -518,15 +518,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-[var(--text-main)]"><input type="radio" name="gender" value="F" checked={data.gender === 'F'} onChange={handleChange} className="accent-[#E07A5F] w-4 h-4"/> Fille</label>
                                                 </div>
                                             </div>
-                                            {mode !== 'family' && (
-                                            <div className="md:col-span-2">
-                                                <label className={labelClass}>Adresse</label>
-                                                <div className="relative">
-                                                    <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"/>
-                                                    <DebouncedInput name="address" value={data.address || ''} onChange={(v) => handleFieldChange('address', v)} className={`${inputClass} pl-10`} placeholder="Adresse complète" />
-                                                </div>
-                                            </div>
-                                            )}
+
                                         </div>
                                     </div>
                                     <FamilyNextButton sectionId={section.id} />
@@ -1183,30 +1175,62 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                     <div className="bg-[#fffbf0] dark:bg-amber-950/20 border border-amber-100 dark:border-amber-800/20 p-4 rounded-2xl">
                                         <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4"><Utensils size={14}/> Repas</h4>
                                         <div className="space-y-4">
-                                            <div>
-                                                <label className={labelClass}>Autonomie & Habitudes (plusieurs choix possibles)</label>
-                                                <ChipGroup 
-                                                    options={[
-                                                        {value: 'autonomie', label: 'Mange en autonomie'},
-                                                        {value: 'aide_repas', label: 'A besoin d\'aide pour manger'},
-                                                        {value: 'agite_repas', label: 'Agité à table'},
-                                                        {value: 'refus_alimentaire', label: 'Refus alimentaire'},
-                                                        {value: 'distrait', label: 'Distrait'},
-                                                        {value: 'lenteur', label: 'Lenteur'},
-                                                        {value: 'couverts', label: 'Utilise les couverts'},
-                                                        {value: 'peu_couverts', label: 'Utilisent peu les couverts'},
-                                                        {value: 'difficulte_couper', label: 'Difficulté pour couper la viande'},
-                                                        {value: 'sans_couverts', label: 'N\'utilise pas les couverts'},
-                                                        {value: 'mains', label: 'Mange avec les mains'},
-                                                        {value: 'salit', label: 'Se salit beaucoup'},
-                                                        {value: 'appetit_ok', label: 'Appétit satisfaisant'},
-                                                        {value: 'faible_appetit', label: 'Faible appétit'},
-                                                        {value: 'fort_appetit', label: 'Fort appétit'},
-                                                    ]}
-                                                    value={data.eatingHabits} 
-                                                    onChange={(v) => handleFieldChange('eatingHabits', v)}
-                                                    multi
-                                                />
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Autonomie</p>
+                                                    <ChipGroup
+                                                        options={[
+                                                            {value: 'autonomie', label: 'Mange en autonomie'},
+                                                            {value: 'aide_repas', label: 'A besoin d\'aide pour manger'},
+                                                        ]}
+                                                        value={data.eatingHabits}
+                                                        onChange={(v) => handleFieldChange('eatingHabits', v)}
+                                                        multi
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Comportement à table</p>
+                                                    <ChipGroup
+                                                        options={[
+                                                            {value: 'agite_repas', label: 'Agité à table'},
+                                                            {value: 'refus_alimentaire', label: 'Refus alimentaire'},
+                                                            {value: 'distrait', label: 'Distrait'},
+                                                            {value: 'lenteur', label: 'Lenteur'},
+                                                        ]}
+                                                        value={data.eatingHabits}
+                                                        onChange={(v) => handleFieldChange('eatingHabits', v)}
+                                                        multi
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Couverts</p>
+                                                    <ChipGroup
+                                                        options={[
+                                                            {value: 'couverts', label: 'Utilise les couverts'},
+                                                            {value: 'peu_couverts', label: 'Peu de couverts'},
+                                                            {value: 'difficulte_couper', label: 'Difficulté pour couper'},
+                                                            {value: 'sans_couverts', label: 'N\'utilise pas les couverts'},
+                                                            {value: 'mains', label: 'Mange avec les mains'},
+                                                            {value: 'salit', label: 'Se salit beaucoup'},
+                                                        ]}
+                                                        value={data.eatingHabits}
+                                                        onChange={(v) => handleFieldChange('eatingHabits', v)}
+                                                        multi
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Appétit</p>
+                                                    <ChipGroup
+                                                        options={[
+                                                            {value: 'appetit_ok', label: 'Appétit satisfaisant'},
+                                                            {value: 'faible_appetit', label: 'Faible appétit'},
+                                                            {value: 'fort_appetit', label: 'Fort appétit'},
+                                                        ]}
+                                                        value={data.eatingHabits}
+                                                        onChange={(v) => handleFieldChange('eatingHabits', v)}
+                                                        multi
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className={labelClass}>Précisions</label>
@@ -1232,7 +1256,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                     onChange={(v) => handleFieldChange('dressingAutonomy', v)}
                                                 />
                                             </div>
-                                            {[{key: 'clothingButtons', label: 'Boutons'}, {key: 'clothingLaces', label: 'Lacets'}, {key: 'clothingZippers', label: 'Fermetures Éclair'}].map((item) => (
+                                            {[{key: 'clothingButtons', label: 'Boutons'}, {key: 'clothingLaces', label: 'Lacets'}, {key: 'clothingZippers', label: 'Fermetures Éclair'}, {key: 'clothingPressureStuds', label: 'Pressions'}].map((item) => (
                                                 <div key={item.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-100 dark:border-rose-800/20 last:border-0 pb-2">
                                                     <span className="text-sm font-bold text-[var(--text-main)]">{item.label}</span>
                                                     <div className="flex gap-2">

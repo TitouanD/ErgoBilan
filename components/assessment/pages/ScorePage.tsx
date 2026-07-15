@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -532,8 +532,7 @@ const NumericRow: React.FC<{
     const newVals = { ...localItemValues, [itemId]: n ?? undefined };
     setLocalItemValues(newVals);
     const agg = computeAggregate(items, newVals, aggregation);
-    const decimals = subtest.rawDisplayDecimals ?? 0;
-    const rawStr = agg !== null ? (decimals > 0 ? agg.toFixed(decimals) : String(Math.round(agg))) : result.raw || '';
+    const rawStr = agg !== null ? String(Math.round(agg)) : result.raw || '';
     setPatch({ rawItems: newVals, raw: rawStr, scoreSource: 'manual_raw' });
   };
 
@@ -1066,6 +1065,7 @@ const TableView: React.FC<{
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
+        {testId !== 'custom_observations' && (
         <thead>
           <tr className="border-b border-[var(--border-color)]">
             <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">Épreuve</th>
@@ -1076,6 +1076,7 @@ const TableView: React.FC<{
             <th className="text-center py-2 px-1 w-[3%]" />
           </tr>
         </thead>
+        )}
         <tbody>
           {subtests.map(st => {
             const res = getResult(st.id);
@@ -1105,7 +1106,7 @@ const TableView: React.FC<{
                         onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
                         onBlur={() => { if (hasValue(res) && !reviewed(res)) updateSubtest(testId, st.id, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' }); }}
                         placeholder="Notes libres..."
-                        rows={3}
+                        rows={5}
                         className="w-full text-xs bg-transparent outline-none border border-[var(--border-color)] rounded-lg px-3 py-2 focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none"
                       />
                     </div>
@@ -1137,10 +1138,11 @@ const TableView: React.FC<{
                     </select>
                   </td>
                   <td className="py-1 px-2">
-                    <input
+                    <textarea
                       value={res.observation || ''}
-                      onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                      onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                      rows={1}
+                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
                       placeholder="Note..."
                     />
                   </td>
@@ -1211,10 +1213,11 @@ const TableView: React.FC<{
                 </td>
                 {/* Observation */}
                 <td className="py-1 px-2">
-                  <input
+                  <textarea
                     value={res.observation || ''}
-                    onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors"
+                    onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                    rows={1}
+                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
                     placeholder="Note..."
                   />
                 </td>
@@ -1538,6 +1541,15 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
                   </button>
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)] px-3 pb-3 pt-2 grid grid-cols-1 gap-2">
+                      <div className="relative">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" />
+                        <input
+                          value={subtestSearchByTest[test.id] || ''}
+                          onChange={(e) => setSubtestSearchByTest(prev => ({ ...prev, [test.id]: e.target.value }))}
+                          placeholder="Filtrer les sous-tests..."
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl outline-none focus:ring-1 focus:ring-[var(--primary-opacity-20)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)]"
+                        />
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
                         {(() => {
                           const sortedSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
@@ -1608,7 +1620,7 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
             </button>
             <button
               type="button"
-              onClick={() => { const customId = `custom_${Date.now()}`; onAddTests({ custom_observations: [customId] }); }}
+              onClick={() => { const customId = `custom_${Date.now()}`; onAddTests({ custom_observations: [customId] }); onClose(); }}
               className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--primary)] hover:underline transition-colors"
             >
               <MessageSquare size={13} /> Observation libre
@@ -1950,13 +1962,6 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => setViewMode((p) => ({ ...p, [test.id]: p[test.id] === 'table' ? 'accordion' : 'table' }))}
-                              className={`hidden md:flex p-2 rounded-lg border transition-all ${viewMode[test.id] === 'table' ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}
-                              title={viewMode[test.id] === 'table' ? 'Vue détaillée' : 'Vue tableau'}
-                            >
-                              <Table2 size={14} />
-                            </button>
                             <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[var(--primary)] text-white border-[var(--primary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}>
                               <PenTool size={14} />
                             </button>
@@ -1971,85 +1976,15 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                 
                           {visibleSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>}
 
-                          {viewMode[test.id] === 'table' ? (
-                            /* â”€â”€ Table mode â”€â”€ */
-                            <div className="p-3">
-                              <TableView
-                                testId={test.id}
-                                subtests={filteredSubtests}
-                                tests={tests}
-                                updateSubtest={updateSubtest}
-                              />
-                            </div>
-                          ) : (
-                            /* â”€â”€ Accordion mode â”€â”€ */
-                            <>
-                              {visibleSubtests.length > 0 && filteredSubtests.length === 0 && <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucun sous-test ne correspond au filtre.</div>}
-                              {(() => {
-                                const sortedAccSTs = [...filteredSubtests].sort(compareSubtestsForDisplay);
-                                const accItems: Array<{ type: 'header'; gkey: string; label: string } | { type: 'sub'; st: SubtestDef }> = [];
-                                let lastAccGKey = '';
-                                for (const st of sortedAccSTs) {
-                                  const gKey = getDisplayGroupKey(st);
-                                  if (gKey && gKey !== lastAccGKey && !subtestQuery) {
-                                    accItems.push({ type: 'header', gkey: gKey, label: getDisplayGroupLabel(st) || gKey });
-                                    lastAccGKey = gKey;
-                                  }
-                                  accItems.push({ type: 'sub', st });
-                                }
-                                return accItems.map((item) => {
-                                  if (item.type === 'header') {
-                                    return (
-                                      <div key={`grp-${item.gkey}`} className="px-5 py-2 flex items-center gap-3 bg-[var(--hover-bg)] border-t border-[var(--border-color)]">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">{item.label}</span>
-                                        <div className="flex-1 h-px bg-[var(--primary)]/20" />
-                                      </div>
-                                    );
-                                  }
-                                  const { st } = item;
-                                  const res = tests[test.id]?.[st.id] || emptyScore();
-                                  const subKey = `${test.id}__${st.id}`;
-                                  const isSubExpanded = expandedSubKey === subKey;
-                                  const isSubReviewed = reviewed(res);
-                                  const hasData = hasValue(res);
-                                  return (
-                                    <div
-                                      key={st.id}
-                                      className={`relative border-l-[3px] transition-all ${isSubReviewed
-                                          ? 'border-l-emerald-400'
-                                          : hasData
-                                            ? 'border-l-amber-300'
-                                            : 'border-l-transparent'
-                                        } ${isSubExpanded ? 'bg-[var(--hover-bg)]' : ''}`}
-                                    >
-                                      {isSubExpanded ? (
-                                        <FlexibleSubtestRow
-                                          subtest={st}
-                                          result={res}
-                                          onChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                          isExpanded={isSubExpanded}
-                                          onToggleExpand={() => setExpandedSubKey((prev) => (prev === subKey ? null : subKey))}
-                                          onFocus={() => setExpandedSubKey(subKey)}
-                                          preferredMetric={preferredMetricByTest[test.id]}
-                                          onPreferredMetricChange={(m) => setPreferredMetricByTest((p) => ({ ...p, [test.id]: m }))}
-                                          onAdvance={handleAdvance}
-                                        />
-                                      ) : (
-                                        <CompactSubtestRow
-                                          subtest={st}
-                                          result={res}
-                                          onClick={() => setExpandedSubKey(subKey)}
-                                          onDelete={editing ? () => removeSubtest(test.id, st.id) : undefined}
-                                          onInlineChange={(patch) => updateSubtest(test.id, st.id, patch)}
-                                        />
-                                      )}
-                                      {editing && isSubExpanded && <button onClick={() => removeSubtest(test.id, st.id)} className="absolute right-2 top-2 p-2 bg-rose-50 text-rose-500 rounded-lg"><Trash2 size={14} /></button>}
-                                    </div>
-                                  );
-                                });
-                              })()}
-                            </>
-                          )}
+                          <div className="p-3">
+                            <TableView
+                              testId={test.id}
+                              subtests={filteredSubtests}
+                              tests={tests}
+                              updateSubtest={updateSubtest}
+                            />
+                          </div>
+
                         </div>
                       )}
                     </div>

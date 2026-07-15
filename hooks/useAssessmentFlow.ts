@@ -503,6 +503,7 @@ export const useAssessmentFlow = ({
         hasFormalReport: true,
         testName: testNames.join(', ') || 'Bilan',
         results: flatResultsClean,
+        tests: assessment.tests,
         report: {
           status: 'completed',
           patientName: `${patientSnapshot.firstName} ${patientSnapshot.lastName}`,
@@ -644,13 +645,13 @@ export const useAssessmentFlow = ({
   // Resume a draft
   // ------------------------------------------------------------------
   const handleResumeDraft = useCallback(
-    async (patientId?: string) => {
+    async (patientId?: string): Promise<import('../types').DraftPayload | false> => {
       if (!sessionKey && !isDemoMode) return false;
       const draftContent = await StorageService.getDraft(patientId);
       if (draftContent) {
         assessment.resetAssessment();
         assessment.loadFromDraft(draftContent);
-        return true;
+        return draftContent;
       }
       if (isDemoMode) {
         toast.info('Brouillons désactivés en démo.');

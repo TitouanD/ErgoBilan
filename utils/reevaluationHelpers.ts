@@ -8,12 +8,16 @@ import type { ScoreResult, TestData } from '../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export type ScoreMetric = 'NS' | 'ET' | '%';
+
 export interface DeltaEntry {
     subtestId: string;
     subtestName: string;
     testName: string;
-    prevNS: number | null;
-    newNS: number | null;
+    /** The metric actually entered in the previous assessment */
+    metric: ScoreMetric;
+    prevValue: number | null;
+    newValue: number | null;
     delta: number | null;
 }
 
@@ -30,6 +34,35 @@ export const deltaClass = (delta: number | null): string => {
     if (delta > 0.5) return 'text-emerald-600 font-bold';
     if (delta < -0.5) return 'text-rose-600 font-bold';
     return 'text-amber-500';
+};
+
+/** Detect which metric was actually entered for a ScoreResult */
+export const detectMetric = (score?: ScoreResult): ScoreMetric => {
+    if (!score) return 'NS';
+    if (score.entryMetric === 'z') return 'ET';
+    if (score.entryMetric === 'standard') return 'NS';
+    if (score.entryMetric === 'percentile') return '%';
+    if (typeof score.zScore === 'number' && isFinite(score.zScore)) return 'ET';
+    if (score.standard) {
+        const n = parseFloat(String(score.standard).replace(',', '.'));
+        if (isFinite(n)) return 'NS';
+    }
+    if (score.percentile) {
+        const n = parseFloat(String(score.percentile).replace(',', '.'));
+        if (isFinite(n)) return '%';
+    }
+    return 'NS';
+};
+
+/** Extract the numeric value for the given (or auto-detected) metric */
+export const extractMetricValue = (score?: ScoreResult, metric?: ScoreMetric): number | null => {
+    if (!score) return null;
+    const m = metric ?? detectMetric(score);
+    if (m === 'ET') return typeof score.zScore === 'number' && isFinite(score.zScore) ? score.zScore : null;
+    if (m === 'NS') return parseNS(score);
+    if (!score.percentile) return null;
+    const n = parseFloat(String(score.percentile).replace(',', '.'));
+    return isFinite(n) ? n : null;
 };
 
 /**
@@ -52,15 +85,19 @@ export const buildDeltaEntries = (
         const allSubIds = new Set([...Object.keys(prevSubtests), ...Object.keys(newSubtests)]);
 
         allSubIds.forEach(subtestId => {
-            const prevNS = parseNS(prevSubtests[subtestId] as ScoreResult | undefined);
-            const newNS = parseNS(newSubtests[subtestId] as ScoreResult | undefined);
+            const prevScore = prevSubtests[subtestId] as ScoreResult | undefined;
+            const newScore = newSubtests[subtestId] as ScoreResult | undefined;
+            const metric = detectMetric(prevScore ?? newScore);
+            const prevValue = extractMetricValue(prevScore, metric);
+            const newValue = extractMetricValue(newScore, metric);
             result.push({
                 subtestId,
                 subtestName: subtestNameMap.get(subtestId) ?? subtestId,
                 testName: testNameMap.get(testId) ?? testId,
-                prevNS,
-                newNS,
-                delta: prevNS !== null && newNS !== null ? newNS - prevNS : null,
+                metric,
+                prevValue,
+                newValue,
+                delta: prevValue !== null && newValue !== null ? parseFloat((newValue - prevValue).toFixed(2)) : null,
             });
         });
     });
@@ -91,12 +128,10 @@ export const buildScoresSummaryText = (
         Object.entries(subtests).forEach(([subtestId, score]) => {
             const r = score as ScoreResult;
             const name = subtestNameMap.get(subtestId) ?? subtestId;
-            const isET = r.scoreSource === 'manual_et' || r.entryMetric === 'z';
-            const ns = parseNS(r);
-            if (ns !== null) {
-                lines.push(`${name}: ${isET ? 'ET' : 'NS'} ${ns}`);
-            } else if (typeof r.zScore === 'number' && isFinite(r.zScore)) {
-                lines.push(`${name}: ET ${r.zScore.toFixed(2)}`);
+            const metric = detectMetric(r);
+            const value = extractMetricValue(r, metric);
+            if (value !== null) {
+                lines.push(`${name}: ${value} ${metric}`);
             } else if (r.raw) {
                 lines.push(`${name}: brut ${r.raw}`);
             }
@@ -112,6 +147,6 @@ export const buildEvolutionSummaryText = (deltas: DeltaEntry[]): string =>
         .map(d => {
             const sign = (d.delta! > 0 ? '+' : '') + d.delta!.toFixed(1);
             const trend = d.delta! > 0.5 ? 'amélioration' : d.delta! < -0.5 ? 'régression' : 'stable';
-            return `${d.subtestName} (${d.testName}): ${sign} points (${trend})`;
+            return `${d.subtestName} (${d.testName}): ${sign} ${d.metric} (${trend})`;
         })
         .join('\n') || 'Pas assez de données pour calculer des deltas.';

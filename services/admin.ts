@@ -5,6 +5,8 @@ import type {
     AdminSubtestRecord,
     AdminUserRow,
     AdminUserUpdatePayload,
+    TestData,
+    Patient,
 } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -26,15 +28,11 @@ export const AdminService = {
 
     // ── Catalogue — test detail (test + subtests) ───────────────────────
     loadTestDetail: async (testId: string): Promise<{ test: AdminTestRecord; subtests: AdminSubtestRecord[] }> => {
-        const [{ data: test, error: testError }, { data: subtests, error: subError }] = await Promise.all([
-            supabase.from('official_tests').select('*').eq('id', testId).single(),
-            supabase.from('official_subtests').select('*').eq('test_id', testId).order('display_order', { ascending: true }).order('name', { ascending: true }),
-        ]);
-        if (testError) throw testError;
-        if (subError) throw subError;
+        const { data, error } = await supabase.rpc('admin_get_test_detail', { p_test_id: testId });
+        if (error) throw error;
         return {
-            test: test as AdminTestRecord,
-            subtests: (subtests || []) as AdminSubtestRecord[],
+            test: data.test as AdminTestRecord,
+            subtests: (data.subtests || []) as AdminSubtestRecord[],
         };
     },
 
@@ -44,38 +42,24 @@ export const AdminService = {
         subtests: AdminSubtestRecord[],
         deletedSubtestIds: string[],
     ): Promise<void> => {
-        const { error: testError } = await supabase
-            .from('official_tests')
-            .update({ name: test.name, category_id: test.category_id, author: test.author, version: test.version })
-            .eq('id', test.id);
-        if (testError) throw testError;
-
-        for (const sid of deletedSubtestIds) {
-            const { error } = await supabase.rpc('admin_delete_subtest', { p_subtest_id: sid });
-            if (error) Logger.warn('DB', `Failed to delete subtest ${sid}`, error);
-        }
-
-        if (subtests.length > 0) {
-            const rows = subtests.map((s, idx) => ({
+        const { error } = await supabase.rpc('admin_save_test_detail', {
+            p_test_id: test.id,
+            p_test_data: { name: test.name, category_id: test.category_id, author: test.author ?? null, version: test.version ?? null },
+            p_subtests: subtests.map((s, idx) => ({
                 id: s.id,
                 test_id: s.test_id,
                 name: s.name,
-                abbreviation: s.abbreviation ?? null,
                 unit: s.unit ?? null,
                 score_type: s.score_type ?? 'standard',
-                computation_mode: s.computation_mode ?? 'NONE',
                 input_model: s.input_model ?? null,
                 input_config: s.input_config ?? null,
-                raw_direction: s.raw_direction ?? null,
-                always_show_raw: s.always_show_raw ?? false,
-                raw_display_decimals: s.raw_display_decimals ?? null,
                 display_order: s.display_order ?? idx + 1,
                 display_group_order: (s as any).display_group_order ?? null,
                 organization_id: s.organization_id ?? null,
-            }));
-            const { error: upsertError } = await supabase.from('official_subtests').upsert(rows, { onConflict: 'id' });
-            if (upsertError) throw upsertError;
-        }
+            })),
+            p_deleted_subtest_ids: deletedSubtestIds,
+        });
+        if (error) throw error;
     },
 
     // ── Catalogue — delete ─────────────────────────────────────────────
@@ -130,5 +114,45 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('admin_get_ai_health_stats');
         if (error) throw error;
         return data as { daily: Array<{ date: string; requests: number; errors: number }>; total_requests: number; total_errors: number; error_rate_pct: number; };
+    },
+
+    // ── Anonymous telemetry ────────────────────────────────────────────
+    logAnonymousStats: (tests: TestData, patient: Patient): void => {
+        const testIds = Object.keys(tests);
+        if (testIds.length === 0) return;
+
+        // Derive age bucket from DOB — no PII stored
+        let ageBucket = 'unknown';
+        if (patient.dob) {
+            const dob = new Date(patient.dob);
+            if (!isNaN(dob.getTime())) {
+                const ageYears = Math.floor(
+                    (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+                );
+                ageBucket = ageYears < 6 ? '<6'
+                    : ageYears <= 8 ? '6-8'
+                    : ageYears <= 11 ? '9-11'
+                    : ageYears <= 14 ? '12-14'
+                    : ageYears <= 17 ? '15-17'
+                    : '18+';
+            }
+        }
+
+        const payload = {
+            test_ids: testIds,
+            age_bucket: ageBucket,
+            gender: patient.gender ?? null,
+        };
+
+        Logger.info('anonymous_stats', payload);
+
+        // Best-effort persist — errors are silently swallowed (fire-and-forget)
+        supabase
+            .from('recommendation_crowd')
+            .insert({ test_ids: testIds, age_bucket: ageBucket, gender: patient.gender ?? null })
+            .then(({ error }) => {
+                if (error) Logger.info('anonymous_stats_skip', { reason: error.message });
+            })
+            .catch(() => {});
     },
 };

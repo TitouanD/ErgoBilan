@@ -5,8 +5,6 @@ import type {
   TestDef,
   SubtestDef,
   ScoreType,
-  ComputationMode,
-  RawDirection,
   SubtestInputConfig,
   SubtestInputModel,
   SubtestItem,
@@ -79,13 +77,13 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         let subError: any = null;
         ({ data: subtestsData, error: subError } = await supabase
           .from('view_unified_subtests')
-          .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone, always_show_raw, raw_display_decimals, display_group_order, display_order'));
+          .select('id, test_id, name, unit, score_type, input_model, input_config, display_group_order, display_order'));
 
         if (subError && String(subError.code || '') === '42703') {
           // Backward-compat: allow older DB schema before new columns.
           ({ data: subtestsData, error: subError } = await supabase
             .from('view_unified_subtests')
-            .select('id, test_id, name, unit, score_type, computation_mode, input_model, input_config, raw_direction, source_subtest_id, is_override_clone'));
+            .select('id, test_id, name, unit, score_type, input_model, input_config'));
         }
 
         if (subError) {
@@ -112,14 +110,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return 'standard';
         };
 
-        const normalizeComputationMode = (value?: string | null): ComputationMode => {
-          if (!value) return 'LOOKUP';
-          const normalized = value.toUpperCase().trim();
-          if (normalized === 'PARAMETRIC') return 'PARAMETRIC';
-          if (normalized === 'NONE') return 'NONE';
-          return 'LOOKUP';
-        };
-
         const normalizeInputModel = (value?: string | null): SubtestInputModel => {
           if (!value) return 'numeric_4mode';
           const normalized = value.toLowerCase().trim();
@@ -128,13 +118,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           if (normalized === 'computed_items') return 'computed_items';
           if (normalized === 'custom_text') return 'custom_text';
           return 'numeric_4mode';
-        };
-
-        const normalizeRawDirection = (value?: string | null): RawDirection => {
-          const normalized = String(value || '').toLowerCase().trim();
-          if (normalized === 'higher_better') return 'higher_better';
-          if (normalized === 'lower_better') return 'lower_better';
-          return 'auto';
         };
 
         const normalizeInputConfig = (value: unknown): SubtestInputConfig | undefined => {
@@ -157,15 +140,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 .sort((a, b) => a.order - b.order)
             : undefined;
 
-          const defaultMetricRaw = typeof raw.defaultMetric === 'string' ? raw.defaultMetric.trim() : '';
-          const defaultMetric = ['raw', 'standard', 'z', 'percentile'].includes(defaultMetricRaw)
-            ? (defaultMetricRaw as 'raw' | 'standard' | 'z' | 'percentile')
-            : undefined;
-
           // items for computed_items model
           const items = Array.isArray(raw.items) ? (raw.items as SubtestItem[]) : undefined;
           const itemsAggregation = typeof raw.itemsAggregation === 'string' ? (raw.itemsAggregation as ItemsAggregation) : undefined;
-          const aggregationHint = typeof raw.aggregationHint === 'string' ? raw.aggregationHint : undefined;
           const displayGroup = typeof raw.displayGroup === 'string' ? (raw.displayGroup as ItemsDisplayGroup) : undefined;
           const maxRawScore = typeof raw.maxRawScore === 'number' ? raw.maxRawScore : undefined;
           const rawValueLabel = typeof raw.rawValueLabel === 'string' ? raw.rawValueLabel : undefined;
@@ -179,10 +156,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           if (
             (!options || options.length === 0) &&
-            !defaultMetric &&
             !items &&
             !itemsAggregation &&
-            !aggregationHint &&
             !displayGroup &&
             !maxRawScore &&
             !rawValueLabel &&
@@ -196,10 +171,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           ) return undefined;
           return {
             ...(options && options.length > 0 ? { options } : {}),
-            ...(defaultMetric ? { defaultMetric } : {}),
             ...(items ? { items } : {}),
             ...(itemsAggregation ? { itemsAggregation } : {}),
-            ...(aggregationHint ? { aggregationHint } : {}),
             ...(displayGroup ? { displayGroup } : {}),
             ...(maxRawScore !== undefined ? { maxRawScore } : {}),
             ...(rawValueLabel ? { rawValueLabel } : {}),
@@ -240,14 +213,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
             unit: s.unit || 'pts',
             scoreType: normalizeScoreType(s.score_type),
             lowerIsBetter: false,
-            rawDirection: normalizeRawDirection(s.raw_direction),
-            sourceSubtestId: s.source_subtest_id || null,
-            isOverrideClone: s.is_override_clone === true,
-            computationMode: normalizeComputationMode(s.computation_mode),
             inputModel,
             inputConfig,
-            alwaysShowRaw: s.always_show_raw === true,
-            rawDisplayDecimals: typeof s.raw_display_decimals === 'number' ? s.raw_display_decimals : undefined,
           };
 
           if (!subtestsByTestId[s.test_id]) {

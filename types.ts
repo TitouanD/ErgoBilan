@@ -86,6 +86,7 @@ export interface Patient {
     clothingButtons?: string;
     clothingLaces?: string;
     clothingZippers?: string;
+    clothingPressureStuds?: string;
     dressingObservations?: string;
     continence: string;
     hygieneTeeth?: string;
@@ -456,23 +457,15 @@ export interface AdminSubtestRecord {
     id: string;
     test_id: string;
     name: string;
-    abbreviation?: string | null;
     unit?: string;
     score_type?: string;
-    computation_mode?: string;
     input_model?: 'numeric_4mode' | 'qualitative_category' | 'raw_only';
     input_config?: {
         options?: Array<{ code: string; label: string; order: number; reportText?: string }>;
-        defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
         score_type_detection_confidence?: number | string;
         score_type_detection_source?: string;
     };
     organization_id?: string | null;
-    raw_direction?: 'auto' | 'higher_better' | 'lower_better' | null;
-    source_subtest_id?: string | null;
-    is_override_clone?: boolean;
-    always_show_raw?: boolean;
-    raw_display_decimals?: number | null;
     display_order?: number | null;
     display_group_order?: number | null;
 }

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import type { Patient } from '../../types';
 import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../utils';
 import { User, Lock, AlertTriangle, Mic, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
@@ -171,7 +171,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
       { title: 'État Civil', filled: !!(data.firstName && data.lastName && data.dob), fields: [
           { label: 'Prénom', value: data.firstName }, { label: 'Nom', value: data.lastName },
           { label: 'Naissance', value: data.dob }, { label: 'Genre', value: humanize(data.gender) },
-          { label: 'Âge', value: data.age }, { label: 'Adresse', value: data.address },
+          { label: 'Âge', value: data.age },
       ]},
       { title: 'Situation Familiale', filled: !!(data.parentNames || data.guardMode), fields: [
           { label: 'Responsable 1 (Nom et prénom)', value: data.parent1Name }, { label: 'Tél. resp. 1', value: data.parent1Phone },
@@ -232,6 +232,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'Boutons', value: humanize(data.clothingButtons) },
           { label: 'Lacets', value: humanize(data.clothingLaces) },
           { label: 'Fermetures', value: humanize(data.clothingZippers) },
+          { label: 'Pressions', value: humanize(data.clothingPressureStuds) },
           { label: 'Habillage (observations)', value: humanize(data.dressingObservations) },
           { label: 'Habillage (précisions)', value: data.dressing },
           { label: 'Hygiène (observations)', value: humanize(data.hygieneObservations) },
@@ -255,7 +256,13 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   const filledSections = sectionDefs.filter(s => s.filled).length;
   const totalSections = sectionDefs.length;
     const isFullyCompleted = totalSections > 0 && filledSections === totalSections;
-    const shouldAutoUseCondensed = hasParentData || isFullyCompleted;
+    // Freeze the condensed-mode trigger to the initial mount value so that typing
+    // a guardian name mid-session does not abruptly collapse the form.
+    const initialCondensedRef = useRef<boolean | null>(null);
+    if (initialCondensedRef.current === null) {
+        initialCondensedRef.current = hasParentData || isFullyCompleted;
+    }
+    const shouldAutoUseCondensed = initialCondensedRef.current;
     const isCondensedMode = viewMode === 'review' && (shouldAutoUseCondensed || userSwitchedToReview);
 
   const ensurePatientPersisted = async (): Promise<void> => {

@@ -21,12 +21,6 @@ const SCORE_TYPES = [
   { value: 'stanine',    label: 'Stanine (1-9)' },
 ];
 
-const COMPUTATION_MODES = [
-  { value: 'NONE',       label: 'Aucun (brut seul)' },
-  { value: 'PARAMETRIC', label: 'Paramétrique (NS → ET)' },
-  { value: 'LOOKUP',     label: 'Lookup (manuel)' },
-];
-
 const makeSubtestId = (testId: string) => {
   const suffix = crypto.randomUUID().slice(0, 8);
   return `${testId}_sub_${suffix}`;
@@ -151,11 +145,7 @@ export const AdminLibrary: React.FC = () => {
       id: makeSubtestId(testRecord.id),
       test_id: testRecord.id,
       name: '',
-      abbreviation: null,
       score_type: 'standard',
-      computation_mode: 'NONE',
-      raw_direction: null,
-      always_show_raw: false,
       display_order: subtests.length + 1,
       display_group_order: null,
       organization_id: testRecord.organization_id ?? null,
@@ -363,31 +353,15 @@ export const AdminLibrary: React.FC = () => {
                           value={sub.name}
                           onChange={e => updateSubtest(sub.id, { name: e.target.value })}
                           placeholder="Nom *"
-                          className="col-span-4 bg-transparent border-b border-white/10 text-sm text-white py-1 outline-none focus:border-[var(--primary)] placeholder:text-stone-600"
-                        />
-                        {/* Abbreviation */}
-                        <input
-                          value={sub.abbreviation ?? ''}
-                          onChange={e => updateSubtest(sub.id, { abbreviation: e.target.value || null })}
-                          placeholder="Abrév."
-                          maxLength={8}
-                          className="col-span-2 bg-transparent border-b border-white/10 text-sm text-white py-1 outline-none focus:border-[var(--primary)] placeholder:text-stone-600"
+                          className="col-span-6 bg-transparent border-b border-white/10 text-sm text-white py-1 outline-none focus:border-[var(--primary)] placeholder:text-stone-600"
                         />
                         {/* Score type */}
                         <select
                           value={sub.score_type ?? 'standard'}
                           onChange={e => updateSubtest(sub.id, { score_type: e.target.value })}
-                          className="col-span-3 bg-[#1A1C23] border border-white/5 rounded-lg text-xs text-stone-300 px-2 py-1 outline-none focus:border-white/20"
+                          className="col-span-6 bg-[#1A1C23] border border-white/5 rounded-lg text-xs text-stone-300 px-2 py-1 outline-none focus:border-white/20"
                         >
                           {SCORE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                        </select>
-                        {/* Computation mode */}
-                        <select
-                          value={sub.computation_mode ?? 'NONE'}
-                          onChange={e => updateSubtest(sub.id, { computation_mode: e.target.value })}
-                          className="col-span-3 bg-[#1A1C23] border border-white/5 rounded-lg text-xs text-stone-300 px-2 py-1 outline-none focus:border-white/20"
-                        >
-                          {COMPUTATION_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
                       </div>
                       <button

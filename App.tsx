@@ -19,7 +19,7 @@ import { ConfirmModal } from './components/shared/ConfirmModal';
 import { ThemeToggle } from './components/shared/ThemeToggle';
 import { supabase } from './services/db';
 import { StorageService } from './services/storage';
-import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile, ReportSection } from './types';
+import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile, ReportSection, TestData } from './types';
 import { Sparkles, ArrowRight, LogOut, FilePlus, Crown, ShieldCheck, X, User, Loader2, Info, Save, FileText, ShieldAlert, ChevronDown, Mail, Download, Upload } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { Logger } from './utils/logger';
@@ -235,7 +235,38 @@ const AppRouter = () => {
         return () => window.clearTimeout(timer);
     }, [authState, isDemoMode, hasCatalogLoaded, mode, ensureCatalogLoaded]);
 
-    // --- Simple action handlers ---
+    // ── Retroactive previousTests reconstruction ───────────────────────────
+    // If a reevaluation was started before the catalog finished loading,
+    // previousAssessment.tests may be empty. Re-run the reconstruction once
+    // the catalog (and subtestToTestMap) is ready — or whenever previousAssessment
+    // changes (e.g., when reevaluation is started after catalog already loaded).
+    useEffect(() => {
+        if (!hasCatalogLoaded || subtestToTestMap.size === 0) return;
+        if (assessment.reportType !== 'reevaluation') return;
+        const prev = assessment.previousAssessment;
+        if (!prev) return;
+        const existingTests = prev.tests ?? {};
+        if (Object.keys(existingTests).length > 0) return; // already fine
+        if (!prev.results || Object.keys(prev.results).length === 0) return;
+
+        const rebuilt: TestData = {};
+        Object.entries(prev.results).forEach(([subtestId, score]) => {
+            const info = subtestToTestMap.get(subtestId);
+            if (info) {
+                if (!rebuilt[info.testId]) rebuilt[info.testId] = {};
+                rebuilt[info.testId][subtestId] = score as import('./types').ScoreResult;
+            }
+        });
+        if (Object.keys(rebuilt).length === 0) return;
+
+        assessment.setPreviousAssessment({ ...prev, tests: rebuilt });
+        if (Object.keys(assessment.tests).length === 0) {
+            assessment.updateTests(rebuilt);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasCatalogLoaded, subtestToTestMap, assessment.reportType, assessment.previousAssessment]);
+
+
     const handleLogin = async (email: string, pass: string) => {
         if (shouldUseCaptcha && !loginCaptchaToken) {
             toast.error("Veuillez compléter le CAPTCHA.");
@@ -398,26 +429,71 @@ const AppRouter = () => {
         const file = patientId ? patientFiles.find((f) => f.id === patientId) : null;
         const hasCompletedInitial = file?.previewMeta?.flags?.hasInitialReport ?? false;
         const draftMeta = patientId ? draftsIndex[patientId] : null;
-        const isStale = hasCompletedInitial && (!draftMeta?.reportType || draftMeta?.reportType === 'initial');
+        const isStale = hasCompletedInitial && (!draftMeta?.reportType || draftMeta?.reportType === 'initial' || draftMeta?.reportType === 'historique');
         if (isStale && file) {
             await StorageService.deleteDraft(patientId);
             // Load full patient details to get actual assessments (list page has assessments:[])
             const details = await StorageService.loadPatientDetails(patientId);
             const prevAssessment = details ? [...(details.assessments || [])].filter(a => a.hasFormalReport).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null : null;
+            // Resolve tests: use stored field, or reconstruct from flat results (retroactive fix)
+            let prevTests: TestData = prevAssessment?.tests ?? {};
+            if (Object.keys(prevTests).length === 0 && prevAssessment?.results && Object.keys(prevAssessment.results).length > 0) {
+                const rebuilt: TestData = {};
+                Object.entries(prevAssessment.results).forEach(([subtestId, score]) => {
+                    const info = subtestToTestMap.get(subtestId);
+                    if (info) {
+                        if (!rebuilt[info.testId]) rebuilt[info.testId] = {};
+                        rebuilt[info.testId][subtestId] = score;
+                    }
+                });
+                prevTests = rebuilt;
+            }
             assessment.resetAssessment();
             assessment.setPatient(file.patient);
             assessment.setReportType('reevaluation');
-            assessment.setPreviousAssessment(prevAssessment);
-            // Pre-populate tests from previous assessment
-            if (prevAssessment?.tests && Object.keys(prevAssessment.tests).length > 0) {
-                assessment.updateTests(prevAssessment.tests);
+            assessment.setPreviousAssessment(prevAssessment ? { ...prevAssessment, tests: prevTests } : null);
+            if (Object.keys(prevTests).length > 0) {
+                assessment.updateTests(prevTests);
             }
             assessment.setStep(1);
             setMode('assessment');
             return;
         }
-        const ok = await handleResumeDraft(patientId);
-        if (ok) setMode('assessment');
+        const resumedDraft = await handleResumeDraft(patientId);
+        if (resumedDraft) {
+            // DraftPayload has no previousAssessment field. For reevaluation drafts,
+            // look up the most recent formal assessment and restore it.
+            if (resumedDraft.reportType === 'reevaluation' && patientId) {
+                try {
+                    const details = await StorageService.loadPatientDetails(patientId);
+                    const prevAssessment = details
+                        ? [...(details.assessments || [])].filter(a => a.hasFormalReport).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null
+                        : null;
+                    if (prevAssessment) {
+                        let prevTests: TestData = prevAssessment.tests ?? {};
+                        if (Object.keys(prevTests).length === 0 && prevAssessment.results && Object.keys(prevAssessment.results).length > 0) {
+                            const rebuilt: TestData = {};
+                            Object.entries(prevAssessment.results).forEach(([subtestId, score]) => {
+                                const info = subtestToTestMap.get(subtestId);
+                                if (info) {
+                                    if (!rebuilt[info.testId]) rebuilt[info.testId] = {};
+                                    rebuilt[info.testId][subtestId] = score;
+                                }
+                            });
+                            prevTests = rebuilt;
+                        }
+                        assessment.setPreviousAssessment({ ...prevAssessment, tests: prevTests });
+                        // Pre-populate new tests only if the draft had none (first open)
+                        if (Object.keys(resumedDraft.tests ?? {}).length === 0 && Object.keys(prevTests).length > 0) {
+                            assessment.updateTests(prevTests);
+                        }
+                    }
+                } catch (e) {
+                    Logger.warn('App', 'Failed to restore previousAssessment on reevaluation resume', e);
+                }
+            }
+            setMode('assessment');
+        }
     }, [handleResumeDraft, patientFiles, draftsIndex, assessment]);
 
     // --- Guarded stepper navigation (A1): warn when going back before step 4 with existing sections ---
@@ -449,11 +525,22 @@ const AppRouter = () => {
         }
     }, [assessment]);
 
-    const handleQuitDiscard = useCallback(() => {
+    const handleQuitDiscard = useCallback(async () => {
         setShowQuitConfirm(false);
+        const patientId = assessment.patient.id;
+        if (patientId && !isDemoMode) {
+            try {
+                await StorageService.deleteDraft(patientId);
+                setDraftsIndex(prev => {
+                    const next = { ...prev };
+                    delete next[patientId];
+                    return next;
+                });
+            } catch { /* ignore — dashboard will refresh on next load */ }
+        }
         assessment.resetAssessment();
         setMode('dashboard');
-    }, [assessment]);
+    }, [assessment, isDemoMode, setDraftsIndex]);
 
     const handleQuitSave = useCallback(async () => {
         setShowQuitConfirm(false);
@@ -790,11 +877,23 @@ const AppRouter = () => {
                                     const prevAssessment = [...(selectedFile.assessments || [])]
                                         .filter(a => a.hasFormalReport)
                                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null;
-                                    assessment.setPreviousAssessment(prevAssessment);
-                                    // Pre-populate tests from previous assessment so ScorePage
-                                    // shows them as current values (no prop needed on ScorePage)
-                                    if (prevAssessment?.tests && Object.keys(prevAssessment.tests).length > 0) {
-                                        assessment.updateTests(prevAssessment.tests);
+                                    // Resolve tests: use stored tests field, or reconstruct from flat results
+                                    // using the catalog map (retroactive fix for older assessments saved without tests).
+                                    let prevTests = prevAssessment?.tests ?? {};
+                                    if (Object.keys(prevTests).length === 0 && prevAssessment?.results && Object.keys(prevAssessment.results).length > 0) {
+                                        const rebuilt: TestData = {};
+                                        Object.entries(prevAssessment.results).forEach(([subtestId, score]) => {
+                                            const info = subtestToTestMap.get(subtestId);
+                                            if (info) {
+                                                if (!rebuilt[info.testId]) rebuilt[info.testId] = {};
+                                                rebuilt[info.testId][subtestId] = score;
+                                            }
+                                        });
+                                        prevTests = rebuilt;
+                                    }
+                                    assessment.setPreviousAssessment(prevAssessment ? { ...prevAssessment, tests: prevTests } : null);
+                                    if (Object.keys(prevTests).length > 0) {
+                                        assessment.updateTests(prevTests);
                                     }
                                 } else {
                                     assessment.setPreviousAssessment(null);
@@ -810,9 +909,8 @@ const AppRouter = () => {
                                 const meta = draftsIndex[selectedFile.id];
                                 if (!meta) return false;
                                 const hasInitial = selectedFile.assessments?.some(a => a.hasFormalReport) ?? false;
-                                // Stale check: initial draft for patient who already has a formal report
-                                if (hasInitial && (!meta.reportType || meta.reportType === 'initial')) return false;
-                                // Historique drafts are always resumable (used for patients without formal reports too)
+                                // Stale check: initial or historique draft for patient who already has a formal report
+                                if (hasInitial && (!meta.reportType || meta.reportType === 'initial' || meta.reportType === 'historique')) return false;
                                 return true;
                             })()}
                             draftReportType={draftsIndex[selectedFile.id]?.reportType ?? null}
@@ -854,6 +952,7 @@ const AppRouter = () => {
                                             onBack={handleQuitAssessment}
                                             userProfile={userProfile}
                                             previousAssessmentDate={assessment.previousAssessment?.date}
+                                            previousTests={assessment.previousAssessment?.tests ?? {}}
                                         />
                                     )}
                                     {assessment.step === 2 && (

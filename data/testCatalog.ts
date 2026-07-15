@@ -18,7 +18,6 @@ export const ICON_MAP: Record<string, any> = {
 };
 
 export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
-export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
 /**
  * Input model for a subtest:
  * - numeric_4mode      : standard 4-field input (brut / NS / ET / %)
@@ -29,14 +28,13 @@ export type ComputationMode = 'LOOKUP' | 'PARAMETRIC' | 'NONE';
  *                        before hitting the standard scoring pipeline
  */
 export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text' | 'computed_items';
-export type RawDirection = 'auto' | 'higher_better' | 'lower_better';
 
 /** How the sub-items of a computed_items subtest are combined into the raw score. */
 export type ItemsAggregation =
   | 'sum'          // Σ of all items (e.g. FigRey: sum of 18 element scores)
   | 'best_of'      // best trial wins — max if higher_better, min if lower_better
   | 'mean'         // arithmetic mean
-  | 'custom';      // formula defined in aggregationHint; brut editable manually
+  | 'custom';      // formula-based; brut editable manually
 
 /** Visual layout for the sub-items form. */
 export type ItemsDisplayGroup = 'column' | 'grid_2' | 'grid_3' | 'table';
@@ -93,19 +91,10 @@ export interface RawSection {
 export interface SubtestInputConfig {
   /** For qualitative_category: the list of selectable options. */
   options?: SubtestInputOption[];
-  /** Preferred primary metric shown to the practitioner. */
-  defaultMetric?: 'raw' | 'standard' | 'z' | 'percentile';
-  /** @deprecated — use the `raw_direction` DB column instead. */
-  rawDirectionHint?: RawDirection;
   /** For computed_items: the list of sub-items to present. */
   items?: SubtestItem[];
   /** For computed_items: how sub-items are combined into the raw score. */
   itemsAggregation?: ItemsAggregation;
-  /**
-   * Human-readable formula hint (displayed in the UI).
-   * E.g. "chars × 300 / seconds" for BHK speed, "Σ(essais)", "meilleur de 3".
-   */
-  aggregationHint?: string;
   /** Visual layout for the sub-items grid. Default: 'column'. */
   displayGroup?: ItemsDisplayGroup;
   /**
@@ -162,22 +151,13 @@ export interface SubtestDef {
   displayName?: string;
   displayGroupOrder?: number;
   displayOrder?: number;
-  abbreviation?: string | null;
   isAmbiguous?: boolean;
   isHiddenInvalidAmbiguous?: boolean;
   unit: string;
   lowerIsBetter?: boolean;
-  rawDirection?: RawDirection;
-  sourceSubtestId?: string | null;
-  isOverrideClone?: boolean;
   scoreType: ScoreType;
-  computationMode?: ComputationMode;
   inputModel: SubtestInputModel;
   inputConfig?: SubtestInputConfig;
-  /** Always show raw score input even when no norms are available (Regime B) */
-  alwaysShowRaw?: boolean;
-  /** Number of decimal places to display for raw score (e.g. 1 for BHK) */
-  rawDisplayDecimals?: number;
 }
 
 export interface TestDef {
