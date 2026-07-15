@@ -152,7 +152,7 @@ export const AIService = {
         },
         {
           id: 'diagnostic',
-          title: 'Diagnostique en ergoth\u00e9rapie',
+          title: 'Diagnostic en ergothérapie',
           content: sanitizeReportText(hydrateReport(jsonDiag?.synthese_diagnostic || 'Non g\u00e9n\u00e9r\u00e9.', patient)),
           status: 'draft',
           isAiGenerated: true,

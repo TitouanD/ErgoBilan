@@ -4,6 +4,7 @@ import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
 import { Logger } from '../utils/logger';
 import { buildPatientIdentitySignature, getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
+import { normalizeTestData } from '../utils/scoring';
 
 interface AssessmentContextType {
   patient: Patient;
@@ -87,7 +88,12 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [historicalDate, setHistoricalDate] = useState<string>('');
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [previousAssessment, setPreviousAssessment] = useState<PatientAssessment | null>(null);
+  const [previousAssessment, setPreviousAssessmentState] = useState<PatientAssessment | null>(null);
+  // Normalize legacy ScoreResult shapes in previousAssessment.tests on the way in
+  // (e.g. reevaluation comparisons against an older bilan saved before this simplification).
+  const setPreviousAssessment = useCallback((a: PatientAssessment | null) => {
+    setPreviousAssessmentState(a ? { ...a, tests: normalizeTestData(a.tests ?? {}) } : null);
+  }, []);
 
   const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const identitySyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,12 +252,10 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Step 2 always sends the full tests object. Replace instead of merge so deletions persist.
   // Two-level deep copy: prevents mutations from propagating back to previousAssessment.tests
   // when the reevaluation pre-fills from it (shallow copy would share inner subtest references).
+  // Also normalizes legacy ScoreResult shapes (raw/standard/percentile/zScore/status/...)
+  // to the new minimal { value, unit } shape so older bilans keep working transparently.
   const updateTests = (data: TestData) => {
-    const deep: TestData = {};
-    for (const [tid, subtests] of Object.entries(data)) {
-      deep[tid] = { ...subtests };
-    }
-    setTests(deep);
+    setTests(normalizeTestData(data));
   };
   const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
   const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
@@ -287,7 +291,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     Logger.debug('DB', 'Context: Loading Draft...', draft);
     // Merge with initial defaults to handle schema evolution (B3)
     if (draft.patient) setPatient({ ...initialPatient, ...draft.patient });
-    if (draft.tests) setTests({ ...draft.tests });
+    if (draft.tests) setTests(normalizeTestData(draft.tests));
     if (draft.observations) setObservations({ ...initialObs, ...draft.observations });
     if (draft.synthesis) setSynthesis({ ...initialSynthesis, ...draft.synthesis });
     if (draft.sections) setSections([...draft.sections]);

@@ -5,6 +5,7 @@
  */
 
 import type { ScoreResult, TestData } from '../types';
+import { parseNum } from './scoring';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,10 +24,14 @@ export interface DeltaEntry {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Scores read here have already been normalized to { value, unit } by
+// normalizeTestData() when loaded into AssessmentContext — the legacy
+// standard/zScore/percentile fallbacks below only guard against callers
+// that pass a raw, not-yet-normalized ScoreResult directly.
 export const parseNS = (score?: ScoreResult): number | null => {
+    if (score?.unit === 'NS' && score.value) return parseNum(score.value);
     if (!score?.standard) return null;
-    const n = parseFloat(String(score.standard).replace(',', '.'));
-    return isFinite(n) ? n : null;
+    return parseNum(score.standard);
 };
 
 export const deltaClass = (delta: number | null): string => {
@@ -39,6 +44,10 @@ export const deltaClass = (delta: number | null): string => {
 /** Detect which metric was actually entered for a ScoreResult */
 export const detectMetric = (score?: ScoreResult): ScoreMetric => {
     if (!score) return 'NS';
+    if (score.unit === 'ET') return 'ET';
+    if (score.unit === 'NS') return 'NS';
+    if (score.unit === '%') return '%';
+    // Legacy fallback (pre-normalization data)
     if (score.entryMetric === 'z') return 'ET';
     if (score.entryMetric === 'standard') return 'NS';
     if (score.entryMetric === 'percentile') return '%';
@@ -58,6 +67,10 @@ export const detectMetric = (score?: ScoreResult): ScoreMetric => {
 export const extractMetricValue = (score?: ScoreResult, metric?: ScoreMetric): number | null => {
     if (!score) return null;
     const m = metric ?? detectMetric(score);
+    if (score.value !== undefined && score.unit && detectMetric(score) === m) {
+        return parseNum(score.value);
+    }
+    // Legacy fallback (pre-normalization data)
     if (m === 'ET') return typeof score.zScore === 'number' && isFinite(score.zScore) ? score.zScore : null;
     if (m === 'NS') return parseNS(score);
     if (!score.percentile) return null;
@@ -132,6 +145,10 @@ export const buildScoresSummaryText = (
             const value = extractMetricValue(r, metric);
             if (value !== null) {
                 lines.push(`${name}: ${value} ${metric}`);
+            } else if (r.unit === 'qualitative' && (r.qualitativeLabel || r.value)) {
+                lines.push(`${name}: ${r.qualitativeLabel || r.value}`);
+            } else if (r.unit === 'raw' && r.value) {
+                lines.push(`${name}: brut ${r.value}`);
             } else if (r.raw) {
                 lines.push(`${name}: brut ${r.raw}`);
             }

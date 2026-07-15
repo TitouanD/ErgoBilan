@@ -142,45 +142,72 @@ export interface Patient {
     emotionManagement?: string;
 }
 
+/**
+ * ScoreResult — minimal shape.
+ *
+ * A score is either: a single entered `value` + its `unit` (NS, ET, % for
+ * quantitative tests; 'qualitative' for category tests; 'raw' for tests with
+ * no standardized scale) — or it doesn't exist yet. Whichever metric the
+ * practitioner last typed into ("last wins") is what gets persisted; the
+ * other two (e.g. ET/% when NS was entered) are recomputed on the fly for
+ * display and are never stored.
+ *
+ * Legacy fields below (raw/standard/percentile/zScore/status/entryMetric/
+ * scoreSource/conversionMode/reviewState/...) are kept optional ONLY for
+ * backward-compatible reads of older bilans saved before this simplification.
+ * New code must not write them — use `utils/scoring.ts#normalizeScoreResult`
+ * to convert legacy data to the new shape on load.
+ */
 export interface ScoreResult {
-    raw: string;
-    standard: string;
-    percentile: string;
-    zScore?: number;
-    status: 'empty' | 'draft' | 'validated' | 'estimated' | 'certified';
+    /** The single entered value, as a string. */
+    value?: string;
+    /** Unit of `value`. */
+    unit?: 'NS' | 'ET' | '%' | 'qualitative' | 'raw';
     observation?: string;
-    validatedAt?: string;
-    /** ISO timestamp when the practitioner certified this score */
-    certifiedAt?: string;
-    /** How the score was obtained: auto (norms table), manual_ns (practitioner edited NS), manual_et (practitioner edited ET), manual_pct (practitioner edited percentile) */
-    scoreSource?: 'auto' | 'manual_ns' | 'manual_et' | 'manual_pct';
-    /** Input metric selected by practitioner for numeric entry */
-    entryMetric?: 'raw' | 'standard' | 'z' | 'percentile';
-    /** Score conversion mode in Step2 */
-    conversionMode?: 'auto' | 'manual';
-    /** UI-only practitioner review state (non legal trace) */
-    reviewState?: 'not_reviewed' | 'reviewed';
-    /** ISO timestamp of the review action */
-    reviewedAt?: string;
-    /** Qualitative coded value for categorical tests */
-    qualitativeCode?: string;
-    /** Human-readable qualitative label */
+    /** Human-readable qualitative label cached alongside `value` when `unit === 'qualitative'` */
     qualitativeLabel?: string;
-    /** Optional derived values from assisted/automatic calculations */
+    /** Custom label for 'custom_text' input model (bilan écologique / observation personnalisée) */
+    customLabel?: string;
+    /**
+     * Per-item raw values for 'computed_items' input model.
+     * Key = SubtestItem.id, Value = the numeric value entered by the practitioner.
+     */
+    rawItems?: Record<string, number>;
+
+    // ── Legacy fields — deprecated, optional, read-only (backward compatibility) ──
+    /** @deprecated use `value` + `unit: 'raw'` */
+    raw?: string;
+    /** @deprecated use `value` + `unit: 'NS'` */
+    standard?: string;
+    /** @deprecated use `value` + `unit: '%'` */
+    percentile?: string;
+    /** @deprecated use `value` + `unit: 'ET'` */
+    zScore?: number;
+    /** @deprecated no longer used */
+    status?: 'empty' | 'draft' | 'validated' | 'estimated' | 'certified';
+    /** @deprecated no longer used */
+    validatedAt?: string;
+    /** @deprecated no longer used */
+    certifiedAt?: string;
+    /** @deprecated use `unit` */
+    scoreSource?: 'auto' | 'manual_ns' | 'manual_et' | 'manual_pct' | 'manual_raw';
+    /** @deprecated use `unit` */
+    entryMetric?: 'raw' | 'standard' | 'z' | 'percentile';
+    /** @deprecated no longer used */
+    conversionMode?: 'auto' | 'manual';
+    /** @deprecated no longer used */
+    reviewState?: 'not_reviewed' | 'reviewed';
+    /** @deprecated no longer used */
+    reviewedAt?: string;
+    /** @deprecated use `value` + `unit: 'qualitative'` */
+    qualitativeCode?: string;
+    /** @deprecated no longer used */
     derived?: {
         standard?: string;
         percentile?: string;
         zScore?: number;
         source: 'auto' | 'assisted' | 'manual';
     };
-    /** Custom label for 'custom_text' input model (bilan écologique / observation personnalisée) */
-    customLabel?: string;
-    /**
-     * Per-item raw values for 'computed_items' input model.
-     * Key = SubtestItem.id, Value = the numeric value entered by the practitioner.
-     * Persisted alongside the aggregate `raw` score.
-     */
-    rawItems?: Record<string, number>;
 }
 
 export interface TestData {

@@ -6,8 +6,7 @@
 
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import type { DeltaEntry } from '../../../utils/reevaluationHelpers';
-import { deltaClass } from '../../../utils/reevaluationHelpers';
+import { deltaClass, type DeltaEntry } from '../../../utils/reevaluationHelpers';
 
 interface Props {
     entries: DeltaEntry[];

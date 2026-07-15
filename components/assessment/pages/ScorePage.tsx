@@ -4,18 +4,29 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import type { Observations, Patient, ScoreResult, TestData, UserProfile } from '../../../types';
 import { ICON_MAP, type ScoreType, type SubtestDef, type TestDef, type SubtestInputModel, type SubtestItem, type ItemsAggregation } from '../../../data/testCatalog';
+import {
+  parseNum,
+  isManualOnlyScoreType,
+  deriveDisplayScores,
+  getZFromScore,
+  scoreToneFromZ,
+  zToneClass,
+  hasScoreValue,
+  unitToMetric,
+  type DerivedScores,
+} from '../../../utils/scoring';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { useVoiceDictation } from '../../../hooks/useVoiceDictation';
 import { useFavoriteTests } from '../../../hooks/useFavoriteTests';
 import { useToast } from '../../../contexts/ToastContext';
 import { Logger } from '../../../utils/logger';
 import { CustomTestEditor as CustomTestEditorLazy } from '../shared/CustomTestEditor';
+import { getSubtestDisplayName, compareSubtestsForDisplay, getDisplayGroupKey, getDisplayGroupLabel, getScaleLabel, clamp } from '../../../utils/subtestOrdering';
+import { ScoreTypeReportModal } from '../shared/ScoreTypeReportModal';
 import {
   Activity,
   AlertCircle,
-  AlertTriangle,
   ArrowRight,
-  CheckCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -24,7 +35,6 @@ import {
   MessageSquare,
   Mic,
   MicOff,
-  PenTool,
   Plus,
   Search,
   Star,
@@ -47,205 +57,11 @@ interface Props {
 
 type Metric = 'raw' | 'standard' | 'z' | 'percentile';
 
-const parseNum = (value: string): number | null => {
-  const n = parseFloat(String(value || '').replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-};
-
-
-const isManualOnlyScoreType = (scoreType?: ScoreType | string): boolean => (
-  String(scoreType || '').toLowerCase() === 'none'
-);
-
-
-const SCALE_LABELS: Record<string, string> = {
-  scaled:    'NS (m=10, \u03c3=3)',
-  standard:  'QI (m=100, \u03c3=15)',
-  't-score': 'T (m=50, \u03c3=10)',
-  sten:      'Sten (m=5.5, \u03c3=2)',
-  stanine:   'Stanine (m=5, \u03c3=2)',
-};
-
-const getScaleLabel = (scoreType?: ScoreType): string | null => {
-  if (!scoreType) return null;
-  return SCALE_LABELS[scoreType] || null;
-};
-
-// ─── Parametric conversion engine ─────────────────────────────────────────
-const SCALE_PARAMS: Record<string, { mean: number; sd: number } | null> = {
-  scaled:     { mean: 10,  sd: 3  },
-  standard:   { mean: 100, sd: 15 },
-  't-score':  { mean: 50,  sd: 10 },
-  sten:       { mean: 5.5, sd: 2  },
-  stanine:    { mean: 5,   sd: 2  },
-  percentile: null,
-  none:       null,
-};
-
-// Standard normal CDF (Abramowitz & Stegun 26.2.17)
-const normalCDF = (z: number): number => {
-  const t = 1 / (1 + 0.2316419 * Math.abs(z));
-  const poly = t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
-  const p = 1 - (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z) * poly;
-  return z >= 0 ? p : 1 - p;
-};
-
-// Inverse normal CDF (rational approximation)
-const invNormalCDF = (p: number): number => {
-  if (p <= 0) return -Infinity;
-  if (p >= 1) return Infinity;
-  if (p < 0.5) return -invNormalCDF(1 - p);
-  const t = Math.sqrt(-2 * Math.log(1 - p));
-  return t - (2.515517 + 0.802853 * t + 0.010328 * t * t) /
-    (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
-};
-
-interface DerivedScores { standard?: string; zScore?: number; percentile?: string; }
-
-const deriveScores = (value: number, metric: 'standard' | 'z' | 'percentile', scoreType: string): DerivedScores => {
-  const params = SCALE_PARAMS[scoreType];
-  const result: DerivedScores = {};
-  let z: number | null = null;
-
-  if (metric === 'standard') {
-    if (params) {
-      z = (value - params.mean) / params.sd;
-    } else if (scoreType === 'percentile') {
-      result.percentile = String(value);
-      const pf = value / 100;
-      if (pf > 0 && pf < 1) z = invNormalCDF(pf);
-    }
-    result.standard = String(value);
-  } else if (metric === 'z') {
-    z = value;
-    if (params) result.standard = String(Math.round(z * params.sd + params.mean));
-  } else if (metric === 'percentile') {
-    const pf = value / 100;
-    if (pf > 0 && pf < 1) {
-      z = invNormalCDF(pf);
-      if (params) result.standard = String(Math.round(z * params.sd + params.mean));
-    }
-    result.percentile = String(value);
-  }
-
-  if (z !== null && Number.isFinite(z)) {
-    result.zScore = parseFloat(z.toFixed(3));
-    if (metric !== 'percentile') {
-      result.percentile = String(Math.round(normalCDF(z) * 100));
-    }
-  }
-  return result;
-};
-
-const zToneClass = (z: number | null): string => {
-  if (z === null || !Number.isFinite(z)) return 'text-[var(--text-secondary)]';
-  if (z <= -2) return 'text-rose-600 font-bold';
-  if (z <= -1) return 'text-amber-600 font-bold';
-  return 'text-emerald-600 font-bold';
-};
-
-const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-
-const getSubtestDisplayName = (subtest: Pick<SubtestDef, 'name' | 'displayName'>): string => (
-  subtest.displayName || subtest.name
-);
-
-const parseSubtestOrderFromName = (name: string): number | undefined => {
-  const value = String(name || '').trim();
-  if (!value) return undefined;
-
-  const labeledMatch = value.match(/(?:^|\b)(?:subtest|sous[-\s]?test)\s*(\d{1,3})\b/i);
-  if (labeledMatch) {
-    const n = Number(labeledMatch[1]);
-    if (Number.isFinite(n)) return n;
-  }
-
-  const leadingNumber = value.match(/^(\d{1,3})[).\-\s]/);
-  if (leadingNumber) {
-    const n = Number(leadingNumber[1]);
-    if (Number.isFinite(n)) return n;
-  }
-
-  return undefined;
-};
-
-const inferGroupLabelFromName = (name: string): string | undefined => {
-  const value = String(name || '').trim();
-  if (!value) return undefined;
-  const dashSplit = value.split('—').map((part) => part.trim()).filter(Boolean);
-  if (dashSplit.length >= 2) return dashSplit[0];
-  const colonSplit = value.split(':').map((part) => part.trim()).filter(Boolean);
-  if (colonSplit.length >= 2) return colonSplit[0];
-  return undefined;
-};
-
-const toGroupKey = (label: string): string => (
-  label
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'default'
-);
-
-const getDisplayGroupLabel = (subtest: SubtestDef): string | undefined => (
-  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(getSubtestDisplayName(subtest))
-);
-
-const getDisplayGroupKey = (subtest: SubtestDef): string | undefined => {
-  const configured = subtest.inputConfig?.groupKey;
-  if (configured && configured.trim()) return configured;
-  const inferredLabel = getDisplayGroupLabel(subtest);
-  return inferredLabel ? toGroupKey(inferredLabel) : undefined;
-};
-
-const getDisplayGroupOrder = (subtest: SubtestDef): number => {
-  if (Number.isFinite(subtest.displayGroupOrder)) return Number(subtest.displayGroupOrder);
-  const configured = subtest.inputConfig?.groupOrder;
-  if (Number.isFinite(configured)) return Number(configured);
-  return 900;
-};
-
-const getDisplayOrderIndex = (subtest: SubtestDef): number => {
-  if (Number.isFinite(subtest.displayOrder)) return Number(subtest.displayOrder);
-  const configured = subtest.inputConfig?.orderIndex;
-  if (Number.isFinite(configured)) return Number(configured);
-  const inferred = parseSubtestOrderFromName(getSubtestDisplayName(subtest));
-  return Number.isFinite(inferred) ? Number(inferred) : 999;
-};
-
-const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number => {
-  const goA = getDisplayGroupOrder(a);
-  const goB = getDisplayGroupOrder(b);
-  if (goA !== goB) return goA - goB;
-
-  const glA = getDisplayGroupLabel(a) ?? '\uffff';
-  const glB = getDisplayGroupLabel(b) ?? '\uffff';
-  const glCmp = glA.localeCompare(glB, 'fr', { sensitivity: 'base' });
-  if (glCmp !== 0) return glCmp;
-
-  const gkA = getDisplayGroupKey(a) ?? '\uffff';
-  const gkB = getDisplayGroupKey(b) ?? '\uffff';
-  if (gkA < gkB) return -1;
-  if (gkA > gkB) return 1;
-
-  const oiA = getDisplayOrderIndex(a);
-  const oiB = getDisplayOrderIndex(b);
-  if (oiA !== oiB) return oiA - oiB;
-
-  return getSubtestDisplayName(a).localeCompare(getSubtestDisplayName(b), 'fr', { sensitivity: 'base' });
-};
+// Parametric conversion engine, CDF helpers, deriveScores, zToneClass live in
+// utils/scoring.ts; subtest display/grouping/ordering helpers live in
+// utils/subtestOrdering.ts — both shared with the reevaluation TableView.
 
 const METRIC_LABEL: Record<string, string> = { standard: 'NS', z: 'ET', percentile: '%' };
-
-// Simple z-score coloring (no norms lookup, just statistical interpretation)
-const scoreToneFromZ = (z: number | null): 'bad' | 'warn' | 'good' | null => {
-  if (z === null || !Number.isFinite(z)) return null;
-  if (z <= -2) return 'bad';
-  if (z <= -1) return 'warn';
-  return 'good';
-};
 
 const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): string => {
   if (metric === 'standard') {
@@ -257,45 +73,17 @@ const getMetricDisplayLabel = (metric: Metric, scoreType?: ScoreType | string): 
 };
 
 
-const hasValue = (r?: Partial<ScoreResult>): boolean => {
-  if (!r) return false;
-  return Boolean(
-    (r.raw && r.raw.trim()) ||
-    (r.standard && r.standard.trim()) ||
-    (r.percentile && r.percentile.trim()) ||
-    (typeof r.zScore === 'number' && Number.isFinite(r.zScore)) ||
-    (r.qualitativeCode && r.qualitativeCode.trim()) ||
-    (r.qualitativeLabel && r.qualitativeLabel.trim()) ||
-    (r.observation && r.observation.trim()),
-  );
-};
+const hasValue = hasScoreValue;
+// Simplified: a score used to have a separate "reviewed" workflow (status/reviewState).
+// That distinction is removed — a score is either filled in or it isn't.
+const reviewed = hasScoreValue;
 
-const reviewed = (r?: Partial<ScoreResult>): boolean => {
-  if (!r) return false;
-  return r.reviewState === 'reviewed' || r.status === 'validated' || r.status === 'certified';
-};
+const emptyScore = (): ScoreResult => ({});
 
-const emptyScore = (): ScoreResult => ({
-  raw: '',
-  standard: '',
-  percentile: '',
-  status: 'empty',
-  entryMetric: 'standard',
-  conversionMode: 'auto',
-  reviewState: 'not_reviewed',
-});
+// Legacy call sites pass (current, patch) — the merge with `current` now happens
+// entirely in updateSubtest(), so this is just a passthrough for the patch itself.
+const mergePatch = (_current: ScoreResult, patch: Partial<ScoreResult>): Partial<ScoreResult> => patch;
 
-const mergePatch = (current: ScoreResult, patch: Partial<ScoreResult>): Partial<ScoreResult> => {
-  const merged = { ...emptyScore(), ...current, ...patch };
-  if (!hasValue(merged)) {
-    return { ...patch, status: 'empty', reviewState: 'not_reviewed', reviewedAt: undefined };
-  }
-  const scoreTouched = ['raw', 'standard', 'percentile', 'zScore', 'qualitativeCode', 'qualitativeLabel', 'derived', 'entryMetric'].some((k) => k in patch);
-  if (scoreTouched) {
-    return { ...patch, status: patch.status || 'estimated', reviewState: 'not_reviewed', reviewedAt: undefined };
-  }
-  return { ...patch, status: current.status === 'empty' ? 'draft' : current.status };
-};
 
 const VoiceObservation: React.FC<{
   value: string;
@@ -388,97 +176,6 @@ const RowHeader: React.FC<{
   </div>
 );
 
-// ─── ScoreTypeReportModal: practitioner flags a wrong score_type ─────────────
-const ScoreTypeReportModal: React.FC<{
-  subtest: SubtestDef | null;
-  enteredNS?: number | null;
-  enteredET?: number | null;
-  enteredPct?: number | null;
-  onClose: () => void;
-}> = ({ subtest, enteredNS, enteredET, enteredPct, onClose }) => {
-  const toast = useToast();
-  const [suggestedType, setSuggestedType] = useState('');
-  const [note, setNote] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  if (!subtest) return null;
-
-  const SCORE_TYPES = ['scaled', 'standard', 't-score', 'sten', 'stanine', 'percentile', 'none'];
-
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      const { AdminService } = await import('../../../services/admin');
-      await AdminService.submitScoreTypeReport({
-        subtest_id: subtest.id,
-        current_score_type: String(subtest.scoreType || 'standard'),
-        suggested_score_type: suggestedType || undefined,
-        entered_ns: enteredNS ?? null,
-        entered_et: enteredET ?? null,
-        entered_pct: enteredPct ?? null,
-        note: note.trim() || undefined,
-      });
-      toast.success('Signalement envoyé. Merci !');
-      onClose();
-    } catch (e) {
-      toast.error('Erreur lors de l\'envoi du signalement.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-sm rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] shadow-2xl p-5"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <AlertCircle size={18} className="text-amber-500 shrink-0" />
-          <h3 className="font-bold text-sm text-[var(--text-heading)]">Signaler un score type incorrect</h3>
-        </div>
-        <p className="text-xs text-[var(--text-secondary)] mb-4">
-          <span className="font-semibold text-[var(--text-main)]">{subtest.name}</span><br/>
-          Type actuel : <code className="text-[10px] bg-[var(--hover-bg)] px-1 rounded">{String(subtest.scoreType || 'standard')}</code>
-        </p>
-        <div className="mb-3">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Type suggéré (optionnel)</label>
-          <select
-            value={suggestedType}
-            onChange={e => setSuggestedType(e.target.value)}
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-heading)] outline-none focus:border-[var(--primary)]"
-          >
-            <option value="">— choisir —</option>
-            {SCORE_TYPES.filter(t => t !== String(subtest.scoreType || 'standard')).map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Note (optionnel)</label>
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            rows={2}
-            placeholder="Ex : le manuel donne une échelle en note T…"
-            className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--primary)] resize-none"
-          />
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-heading)]">Annuler</button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="px-4 py-2 text-sm font-bold rounded-xl bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
-          >
-            {loading ? 'Envoi…' : 'Signaler'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ─── NumericRow: NS-centric entry with auto-conversion ───────────────────────
 const NumericRow: React.FC<{
   subtest: SubtestDef;
@@ -510,20 +207,20 @@ const NumericRow: React.FC<{
     if (result.rawItems && Object.keys(result.rawItems).length > 0) {
       setLocalItemValues(result.rawItems as Record<string, number | undefined>);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeMetric: Metric = (() => {
-    const em = result.entryMetric as Metric | undefined;
-    if (em && em !== 'raw') return em;
+    const storedMetric = unitToMetric(result.unit);
+    if (storedMetric) return storedMetric;
     if (!hasValue(result) && preferredMetric && preferredMetric !== 'raw') return preferredMetric;
     return 'standard';
   })();
 
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
 
+  // Switching the metric selector before typing anything is a transient UI
+  // preference only — nothing is persisted until the practitioner enters a value.
   const handleSetMetric = (m: Metric) => {
-    setPatch({ entryMetric: m });
     onPreferredMetricChange?.(m);
   };
 
@@ -532,39 +229,33 @@ const NumericRow: React.FC<{
     const n = parseNum(text);
     const newVals = { ...localItemValues, [itemId]: n ?? undefined };
     setLocalItemValues(newVals);
-    const agg = computeAggregate(items, newVals, aggregation);
-    const rawStr = agg !== null ? String(Math.round(agg)) : result.raw || '';
-    setPatch({ rawItems: newVals, raw: rawStr, scoreSource: 'manual_raw' });
+    setPatch({ rawItems: newVals });
   };
 
+  // "Last wins": whichever metric the practitioner types into becomes the
+  // single stored value+unit, overwriting whatever was there before.
   const handleInput = (text: string) => {
     if (readOnly) return;
-    const n = parseNum(text);
-    const m = activeMetric === 'raw' ? 'standard' : activeMetric as 'standard' | 'z' | 'percentile';
-    const derived: DerivedScores = (n !== null && !conversionLocked) ? deriveScores(n, m, scoreType) : {};
-    if (m === 'standard') {
-      setPatch({ entryMetric: 'standard', standard: text, ...derived, scoreSource: 'manual_ns' });
-    } else if (m === 'z') {
-      setPatch({ entryMetric: 'z', zScore: n ?? undefined, ...derived, scoreSource: 'manual_et' });
-    } else {
-      setPatch({ entryMetric: 'percentile', percentile: text, ...derived, scoreSource: 'manual_pct' });
-    }
+    if (activeMetric === 'z') { setPatch({ value: text, unit: 'ET' }); return; }
+    if (activeMetric === 'percentile') { setPatch({ value: text, unit: '%' }); return; }
+    setPatch({ value: text, unit: 'NS' });
   };
 
   const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+    if (hasValue(result)) {
       setTimeout(() => onAdvance?.(), 200);
     }
   };
 
+  const displayDerived: DerivedScores = deriveDisplayScores(result, scoreType);
+
   const getInputValue = (): string => {
-    if (activeMetric === 'z') {
-      const z = result.zScore;
-      return typeof z === 'number' && Number.isFinite(z) ? String(z) : '';
-    }
-    if (activeMetric === 'percentile') return result.percentile || '';
-    return result.standard || '';
+    const storedMetric = unitToMetric(result.unit);
+    if (storedMetric === activeMetric) return result.value || '';
+    // Not the stored metric: show the computed conversion as an editable prefill.
+    if (activeMetric === 'z') return typeof displayDerived.zScore === 'number' ? String(displayDerived.zScore) : '';
+    if (activeMetric === 'percentile') return displayDerived.percentile || '';
+    return displayDerived.standard || '';
   };
 
   const filledCount = items.filter((it) => !it.isMaster && localItemValues[it.id] !== undefined).length;
@@ -582,22 +273,13 @@ const NumericRow: React.FC<{
     return m.toUpperCase();
   };
 
-  const hasZ = typeof result.zScore === 'number' && Number.isFinite(result.zScore);
-  // Recompute z/pct from current catalog params to avoid stale pre-fill values.
-  const recomputed = (() => {
-    const n = result.standard ? parseFloat(String(result.standard).replace(',', '.')) : NaN;
-    if (!isFinite(n)) return null;
-    const params = SCALE_PARAMS[String(subtest.scoreType || '')];
-    if (!params) return null;
-    const z = parseFloat(((n - params.mean) / params.sd).toFixed(2));
-    return { z, pct: Math.round(normalCDF(z) * 100) };
-  })();
-  const displayedZ = recomputed?.z ?? (hasZ ? result.zScore! : null);
-  const displayedPct = recomputed?.pct ?? (result.percentile ? parseInt(result.percentile) : null);
+  const hasZ = typeof displayDerived.zScore === 'number' && Number.isFinite(displayDerived.zScore);
+  const displayedZ = hasZ ? displayDerived.zScore! : null;
+  const displayedPct = displayDerived.percentile ? parseInt(displayDerived.percentile) : null;
   const nsLabel = subtest.scoreType === 'standard' ? 'QI' : 'NS';
   const derivedBadges: { label: string; value: string; z: number | null }[] = [];
-  if (!conversionLocked) {
-    if (activeMetric !== 'standard' && result.standard) derivedBadges.push({ label: nsLabel, value: result.standard, z: null });
+  if (!conversionLocked && result.value) {
+    if (activeMetric !== 'standard' && displayDerived.standard) derivedBadges.push({ label: nsLabel, value: displayDerived.standard, z: null });
     if (activeMetric !== 'z' && displayedZ !== null) derivedBadges.push({ label: 'ET', value: `${displayedZ > 0 ? '+' : ''}${displayedZ.toFixed(2)}`, z: displayedZ });
     if (activeMetric !== 'percentile' && displayedPct !== null) derivedBadges.push({ label: '%', value: `${displayedPct}\u202f%`, z: null });
   }
@@ -719,9 +401,9 @@ const NumericRow: React.FC<{
       {showReportModal && (
         <ScoreTypeReportModal
           subtest={subtest}
-          enteredNS={typeof result.standard === 'string' ? parseFloat(result.standard) : null}
-          enteredET={result.zScore ?? null}
-          enteredPct={typeof result.percentile === 'string' ? parseFloat(result.percentile) : null}
+          enteredNS={displayDerived.standard ? parseFloat(displayDerived.standard) : null}
+          enteredET={typeof displayDerived.zScore === 'number' ? displayDerived.zScore : null}
+          enteredPct={displayDerived.percentile ? parseFloat(displayDerived.percentile) : null}
           onClose={() => setShowReportModal(false)}
         />
       )}
@@ -741,8 +423,7 @@ const CustomTextRow: React.FC<{
 }> = ({ subtest, result, onChange, readOnly, onFocus, onToggleExpand, onAdvance }) => {
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
   const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+    if (hasValue(result)) {
       setTimeout(() => onAdvance?.(), 200);
     }
   };
@@ -788,15 +469,13 @@ const QualitativeRow: React.FC<{
   const setPatch = (patch: Partial<ScoreResult>) => onChange(mergePatch(result, patch));
   const options = [...(subtest.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
   const layout = subtest.inputConfig?.qualitativeLayout || 'toggle';
-  const selected = result.qualitativeCode || result.raw || '';
+  const selected = result.unit === 'qualitative' ? (result.value || '') : '';
 
   const selectOption = (code: string) => {
     if (readOnly) return;
     const opt = options.find((o) => o.code === code);
     onChange(mergePatch(result, {
-      raw: code, qualitativeCode: code,
-      qualitativeLabel: opt?.label || '', standard: '', percentile: '',
-      zScore: undefined, scoreSource: 'manual_ns',
+      value: code, unit: 'qualitative', qualitativeLabel: opt?.label || '',
     }));
     setTimeout(() => onAdvance?.(), 250);
   };
@@ -852,8 +531,7 @@ const RawOnlyRow: React.FC<{
   const showFraction = cfg.showRawFraction && cfg.maxRawScore != null;
 
   const handleBlur = () => {
-    if (hasValue(result) && !reviewed(result)) {
-      setPatch({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
+    if (hasValue(result)) {
       setTimeout(() => onAdvance?.(), 200);
     }
   };
@@ -865,12 +543,12 @@ const RawOnlyRow: React.FC<{
         <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">{rawLabel}</span>
         <div className="flex items-baseline gap-2">
           <input
-            value={result.raw || ''}
+            value={result.value || ''}
             disabled={readOnly}
             inputMode="decimal"
             onFocus={onFocus}
             onBlur={handleBlur}
-            onChange={(e) => setPatch({ raw: e.target.value, entryMetric: 'raw', scoreSource: 'manual_raw' })}
+            onChange={(e) => setPatch({ value: e.target.value, unit: 'raw' })}
             placeholder="—"
             className="w-32 text-center text-3xl font-bold bg-transparent border-b-2 border-[var(--primary)] outline-none py-2 text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors"
           />
@@ -882,9 +560,6 @@ const RawOnlyRow: React.FC<{
     </div>
   );
 };
-
-// CompositeItemsRow = NumericRow (handles computed_items via hasItems check)
-const CompositeItemsRow = NumericRow;
 
 const FlexibleSubtestRow = React.memo((props: {
   subtest: SubtestDef;
@@ -925,31 +600,19 @@ const CompactSubtestRow: React.FC<{
   onDelete?: () => void;
   onInlineChange?: (patch: Partial<ScoreResult>) => void;
 }> = ({ subtest, result, onClick, onDelete, onInlineChange }) => {
-  const isReviewed = reviewed(result);
   const hasData = hasValue(result);
-
-  // Recompute z/percentile from current catalog scoreType so stale stored values
-  // (e.g. historical bilan pre-fill with wrong scale params) show correctly.
-  const recomputedDerived = (() => {
-    const n = result.standard ? parseFloat(String(result.standard).replace(',', '.')) : NaN;
-    if (!isFinite(n)) return null;
-    const params = SCALE_PARAMS[String(subtest.scoreType || '')];
-    if (!params) return null;
-    const z = parseFloat(((n - params.mean) / params.sd).toFixed(2));
-    const pct = Math.round(normalCDF(z) * 100);
-    return { z, pct };
-  })();
-  const displayZ = recomputedDerived?.z ?? (typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore! : null);
-  const displayPct = recomputedDerived?.pct ?? (result.percentile ? parseInt(result.percentile) : null);
-  const hasZ = displayZ !== null;
+  const scoreType = String(subtest.scoreType || 'standard');
+  const derived = deriveDisplayScores(result, scoreType);
+  const displayZ = typeof derived.zScore === 'number' && Number.isFinite(derived.zScore) ? derived.zScore : null;
   const tone = scoreToneFromZ(displayZ);
 
   const parts: string[] = [];
   const standardLabel = subtest.scoreType === 'standard' ? 'QI' : 'NS';
-  if (result.standard) parts.push(`${standardLabel} ${result.standard}`);
-  if (hasZ) parts.push(`ET ${displayZ! > 0 ? '+' : ''}${displayZ!.toFixed(2)}`);
-  if (displayPct !== null) parts.push(`${displayPct}\u202F%`);
-  if (result.qualitativeLabel) parts.push(result.qualitativeLabel);
+  if (derived.standard) parts.push(`${standardLabel} ${derived.standard}`);
+  if (displayZ !== null) parts.push(`ET ${displayZ > 0 ? '+' : ''}${displayZ.toFixed(2)}`);
+  if (derived.percentile) parts.push(`${derived.percentile}\u202F%`);
+  if (result.unit === 'qualitative' && result.qualitativeLabel) parts.push(result.qualitativeLabel);
+  if (result.unit === 'raw' && result.value) parts.push(`Brut ${result.value}`);
 
   return (
     <div className="w-full flex items-center group">
@@ -970,7 +633,7 @@ const CompactSubtestRow: React.FC<{
             {parts.join(' \u00b7 ')}
           </span>
         )}
-        <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${isReviewed ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'
+        <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${hasData ? 'bg-emerald-400' : 'bg-[var(--border-color)]'
           }`} />
       </button>
       {onInlineChange && subtest.inputModel !== 'custom_text' && subtest.inputModel !== 'qualitative_category' && !isManualOnlyScoreType(subtest.scoreType) && (
@@ -978,16 +641,9 @@ const CompactSubtestRow: React.FC<{
           <input
             type="text"
             inputMode="decimal"
-            value={result.standard || ''}
+            value={result.unit === 'NS' ? (result.value || '') : ''}
             onChange={(e) => {
-              const n = parseNum(e.target.value);
-              const derived = n !== null ? deriveScores(n, 'standard', String(subtest.scoreType || 'standard')) : {};
-              onInlineChange(mergePatch(result, { standard: e.target.value, entryMetric: 'standard', scoreSource: 'manual_ns', ...derived }));
-            }}
-            onBlur={() => {
-              if (hasValue(result) && !reviewed(result)) {
-                onInlineChange({ reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-              }
+              onInlineChange(mergePatch(result, { value: e.target.value, unit: 'NS' }));
             }}
             onClick={(e) => e.stopPropagation()}
             placeholder="NS"
@@ -1010,6 +666,29 @@ const CompactSubtestRow: React.FC<{
 };
 
 /* â”€â”€â”€ Table View: spreadsheet-style quick entry â”€â”€â”€ */
+type DragListeners = ReturnType<typeof useSortable>['listeners'];
+
+/** Wraps a single subtest row so it can be reordered via drag-and-drop within its test
+ *  (shares the page-level DndContext with the test-level reordering). */
+const SortableSubtestRow: React.FC<{
+  id: string;
+  className?: string;
+  children: (dragListeners: DragListeners) => React.ReactNode;
+}> = ({ id, className, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+  };
+  return (
+    <tr ref={setNodeRef} style={style} {...attributes} className={className}>
+      {children(listeners)}
+    </tr>
+  );
+};
+
 const TableView: React.FC<{
   testId: string;
   subtests: SubtestDef[];
@@ -1021,43 +700,23 @@ const TableView: React.FC<{
 
   const getResult = (subId: string): ScoreResult => tests[testId]?.[subId] || emptyScore();
 
-  const handleInput = (subId: string, metric: Metric, text: string, subtest: SubtestDef) => {
+  const handleInput = (subId: string, metric: Metric, text: string, _subtest: SubtestDef) => {
     const current = getResult(subId);
-    const scoreType = String(subtest.scoreType || 'standard');
-    const conversionLocked = isManualOnlyScoreType(subtest.scoreType);
     const setPatch = (patch: Partial<ScoreResult>) => updateSubtest(testId, subId, mergePatch(current, patch));
 
     if (metric === 'z') {
       setLocalZ(prev => ({ ...prev, [subId]: text }));
-      const n = parseNum(text);
-      if (n === null) {
-        if (text === '' || text === '-' || text === '.' || text === '-.' || /^-?\d*\.?$/.test(text)) return;
-        setPatch({ entryMetric: 'z', zScore: undefined, scoreSource: 'manual_et' });
-        return;
-      }
-      const derived = !conversionLocked ? deriveScores(n, 'z', scoreType) : {};
-      setPatch({ entryMetric: 'z', zScore: n, ...(derived.standard !== undefined && { standard: derived.standard }), ...(derived.percentile !== undefined && { percentile: derived.percentile }), scoreSource: 'manual_et' });
+      setPatch({ value: text, unit: 'ET' });
       return;
     }
     setLocalZ(prev => { const next = { ...prev }; delete next[subId]; return next; });
-    const n = parseNum(text);
 
-    if (metric === 'standard') {
-      const derived = (n !== null && !conversionLocked) ? deriveScores(n, 'standard', scoreType) : {};
-      setPatch({ entryMetric: 'standard', standard: text, ...(derived.zScore !== undefined && { zScore: derived.zScore }), ...(derived.percentile !== undefined && { percentile: derived.percentile }), scoreSource: 'manual_ns' });
-      return;
-    }
-    if (metric === 'percentile') {
-      const derived = (n !== null && !conversionLocked) ? deriveScores(n, 'percentile', scoreType) : {};
-      setPatch({ entryMetric: 'percentile', percentile: text, ...(derived.zScore !== undefined && { zScore: derived.zScore }), ...(derived.standard !== undefined && { standard: derived.standard }), scoreSource: 'manual_pct' });
-    }
+    if (metric === 'standard') { setPatch({ value: text, unit: 'NS' }); return; }
+    if (metric === 'percentile') { setPatch({ value: text, unit: '%' }); }
   };
 
-  const handleBlurField = (subId: string) => {
-    const res = getResult(subId);
-    if (hasValue(res) && !reviewed(res)) {
-      updateSubtest(testId, subId, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' });
-    }
+  const handleBlurField = (_subId: string) => {
+    // No-op: no review workflow to update anymore. Kept for call-site compatibility.
   };
 
   const cellInput = 'w-full text-center text-xs font-semibold bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors tabular-nums';
@@ -1069,7 +728,8 @@ const TableView: React.FC<{
         {testId !== 'custom_observations' && (
         <thead>
           <tr className="border-b border-[var(--border-color)]">
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">Épreuve</th>
+            <th className="w-[3%]" />
+            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[26%]">Épreuve</th>
             <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">NS</th>
             <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[12%]">ET</th>
             <th className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-disabled)] w-[8%]">%</th>
@@ -1079,177 +739,211 @@ const TableView: React.FC<{
         </thead>
         )}
         <tbody>
+          <SortableContext items={subtests.map((s) => `sub:${testId}:${s.id}`)} strategy={verticalListSortingStrategy}>
           {subtests.map(st => {
             const res = getResult(st.id);
             const isQual = st.inputModel === 'qualitative_category';
             const isRawOnly = st.inputModel === 'raw_only';
             const isCustomText = st.inputModel === 'custom_text';
-            const isRev = reviewed(res);
             const hasData = hasValue(res);
-            const hasZ = typeof res.zScore === 'number' && Number.isFinite(res.zScore);
-            const tone = scoreToneFromZ(hasZ ? res.zScore! : null);
+            const scoreType = String(st.scoreType || 'standard');
+            const derived = deriveDisplayScores(res, scoreType);
+            const activeMetric = unitToMetric(res.unit);
+            const hasZ = typeof derived.zScore === 'number' && Number.isFinite(derived.zScore);
+            const tone = scoreToneFromZ(hasZ ? derived.zScore! : null);
+            const dragId = `sub:${testId}:${st.id}`;
+            const dragHandleCell = (dragListeners: DragListeners) => (
+              <td className="py-1 px-1 text-center align-top">
+                <button
+                  {...dragListeners}
+                  type="button"
+                  className="cursor-grab active:cursor-grabbing touch-none p-1 rounded text-[var(--text-disabled)] hover:text-[var(--text-secondary)]"
+                  title="Réordonner"
+                  aria-label="Réordonner"
+                >
+                  <GripVertical size={12} />
+                </button>
+              </td>
+            );
 
             if (isCustomText) {
               return (
-                <tr key={st.id} className="border-b border-[var(--border-color)]">
-                  <td colSpan={6} className="py-3 px-3">
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="text"
-                        value={res.customLabel || ''}
-                        onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { customLabel: e.target.value }))}
-                        onBlur={() => { if (hasValue(res) && !reviewed(res)) updateSubtest(testId, st.id, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' }); }}
-                        placeholder="Titre de l'observation (ex : Bilan écologique, Questionnaire...)"
-                        className="w-full text-sm font-semibold bg-transparent outline-none border-b border-transparent focus:border-[var(--primary)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors py-1"
-                      />
-                      <textarea
-                        value={res.observation || ''}
-                        onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
-                        onBlur={() => { if (hasValue(res) && !reviewed(res)) updateSubtest(testId, st.id, { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' }); }}
-                        placeholder="Notes libres..."
-                        rows={5}
-                        className="w-full text-xs bg-transparent outline-none border border-[var(--border-color)] rounded-lg px-3 py-2 focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none"
-                      />
-                    </div>
-                  </td>
-                </tr>
+                <SortableSubtestRow key={st.id} id={dragId} className="border-b border-[var(--border-color)]">
+                  {(dragListeners) => (
+                    <>
+                      {dragHandleCell(dragListeners)}
+                      <td colSpan={6} className="py-3 px-3">
+                        <div className="flex flex-col gap-2">
+                          <input
+                            type="text"
+                            value={res.customLabel || ''}
+                            onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { customLabel: e.target.value }))}
+                            placeholder="Titre de l'observation (ex : Bilan écologique, Questionnaire...)"
+                            className="w-full text-sm font-semibold bg-transparent outline-none border-b border-transparent focus:border-[var(--primary)] text-[var(--text-heading)] placeholder:text-[var(--text-disabled)] transition-colors py-1"
+                          />
+                          <textarea
+                            value={res.observation || ''}
+                            onChange={(e) => updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value }))}
+                            placeholder="Notes libres..."
+                            rows={5}
+                            className="w-full text-xs bg-transparent outline-none border border-[var(--border-color)] rounded-lg px-3 py-2 focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none"
+                          />
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </SortableSubtestRow>
               );
             }
 
             if (isQual) {
               const options = [...(st.inputConfig?.options || [])].sort((a, b) => a.order - b.order);
               return (
-                <tr key={st.id} className="border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors">
-                  <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{getSubtestDisplayName(st)}</td>
-                  <td colSpan={3} className="py-2 px-1">
-                    <select
-                      value={res.qualitativeCode || res.raw || ''}
-                      onChange={(e) => {
-                        const opt = options.find(o => o.code === e.target.value);
-                        updateSubtest(testId, st.id, mergePatch(res, {
-                          raw: e.target.value, qualitativeCode: e.target.value,
-                          qualitativeLabel: opt?.label || '', standard: '', percentile: '',
-                          zScore: undefined, derived: undefined, scoreSource: 'manual_ns',
-                        }));
-                      }}
-                      className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
-                    >
-                      <option value="">—</option>
-                      {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
-                    </select>
-                  </td>
-                  <td className="py-1 px-2">
-                    <textarea
-                      value={res.observation || ''}
-                      onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                      rows={1}
-                      className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
-                      placeholder="Note..."
-                    />
-                  </td>
-                  <td className="py-2 px-1 text-center">
-                    <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
-                  </td>
-                </tr>
+                <SortableSubtestRow key={st.id} id={dragId} className="border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors">
+                  {(dragListeners) => (
+                    <>
+                      {dragHandleCell(dragListeners)}
+                      <td className="py-2 px-3 font-medium text-[var(--text-heading)]">{getSubtestDisplayName(st)}</td>
+                      <td colSpan={3} className="py-2 px-1">
+                        <select
+                          value={res.unit === 'qualitative' ? (res.value || '') : ''}
+                          onChange={(e) => {
+                            const opt = options.find(o => o.code === e.target.value);
+                            updateSubtest(testId, st.id, mergePatch(res, {
+                              value: e.target.value, unit: 'qualitative', qualitativeLabel: opt?.label || '',
+                            }));
+                          }}
+                          className="w-full text-xs bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
+                        >
+                          <option value="">—</option>
+                          {options.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="py-1 px-2">
+                        <textarea
+                          value={res.observation || ''}
+                          onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                          rows={1}
+                          className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
+                          placeholder="Note..."
+                        />
+                      </td>
+                      <td className="py-2 px-1 text-center">
+                        <span className={`inline-block h-2 w-2 rounded-full ${hasData ? 'bg-emerald-400' : 'bg-[var(--border-color)]'}`} />
+                      </td>
+                    </>
+                  )}
+                </SortableSubtestRow>
               );
             }
 
             return (
-              <tr key={st.id} className={`group border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : tone === 'good' ? 'bg-emerald-50/20 dark:bg-emerald-900/5' : ''}`}>
-                <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
-                  <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
-                  {getScaleLabel(st.scoreType) && (
-                    <span className="text-[9px] font-medium text-[var(--text-secondary)]">{getScaleLabel(st.scoreType)}</span>
-                  )}
-                </td>
-                {/* NS */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={res.standard || ''}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'standard', e.target.value, st)}
-                      onBlur={() => handleBlurField(st.id)}
-                      className={`${cellInput} ${res.entryMetric === 'standard' ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
-                {/* ET — colored by z score */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={localZ[st.id] !== undefined ? localZ[st.id] : (hasZ ? String(res.zScore) : '')}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'z', e.target.value, st)}
-                      onBlur={() => {
-                        if (localZ[st.id] !== undefined) {
-                          setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
-                        }
-                        handleBlurField(st.id);
-                      }}
-                      className={`${cellInput} ${res.entryMetric === 'z' ? 'border-b-[var(--primary)]' : ''} ${hasZ ? zToneClass(res.zScore!) : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
-                {/* % — editable */}
-                <td className="py-1 px-1">
-                  {isRawOnly ? (
-                    <div className={cellDisplay}>—</div>
-                  ) : (
-                    <input
-                      value={res.percentile || ''}
-                      inputMode="decimal"
-                      onChange={(e) => handleInput(st.id, 'percentile', e.target.value, st)}
-                      onBlur={() => handleBlurField(st.id)}
-                      className={`${cellInput} ${res.entryMetric === 'percentile' ? 'border-b-[var(--primary)]' : ''}`}
-                      placeholder="—"
-                    />
-                  )}
-                </td>
-                {/* Observation */}
-                <td className="py-1 px-2">
-                  <textarea
-                    value={res.observation || ''}
-                    onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                    rows={1}
-                    className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
-                    placeholder="Note..."
-                  />
-                </td>
-                {/* Status dot + report */}
-                <td className="py-1 px-1 text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <span className={`inline-block h-2 w-2 rounded-full ${isRev ? 'bg-emerald-400' : hasData ? 'bg-amber-300' : 'bg-[var(--border-color)]'}`} />
-                    <button
-                      type="button"
-                      title="Signaler un score type incorrect"
-                      onClick={() => setReportingSubtest(st)}
-                      className="p-0.5 rounded text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                    >
-                      <AlertCircle size={11} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
+              <SortableSubtestRow
+                key={st.id}
+                id={dragId}
+                className={`group border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors ${tone === 'bad' ? 'bg-rose-50/30 dark:bg-rose-900/10' : tone === 'warn' ? 'bg-amber-50/30 dark:bg-amber-900/10' : tone === 'good' ? 'bg-emerald-50/20 dark:bg-emerald-900/5' : ''}`}
+              >
+                {(dragListeners) => (
+                  <>
+                    {dragHandleCell(dragListeners)}
+                    <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
+                      <span className="truncate block max-w-[180px]">{getSubtestDisplayName(st)}</span>
+                      {getScaleLabel(st.scoreType) && (
+                        <span className="text-[9px] font-medium text-[var(--text-secondary)]">{getScaleLabel(st.scoreType)}</span>
+                      )}
+                    </td>
+                    {/* NS */}
+                    <td className="py-1 px-1">
+                      {isRawOnly ? (
+                        <div className={cellDisplay}>—</div>
+                      ) : (
+                        <input
+                          value={activeMetric === 'standard' ? (res.value || '') : (derived.standard || '')}
+                          inputMode="decimal"
+                          onChange={(e) => handleInput(st.id, 'standard', e.target.value, st)}
+                          className={`${cellInput} ${activeMetric === 'standard' ? 'border-b-[var(--primary)]' : 'opacity-60'}`}
+                          placeholder="—"
+                        />
+                      )}
+                    </td>
+                    {/* ET — colored by z score */}
+                    <td className="py-1 px-1">
+                      {isRawOnly ? (
+                        <div className={cellDisplay}>—</div>
+                      ) : (
+                        <input
+                          value={localZ[st.id] !== undefined ? localZ[st.id] : (activeMetric === 'z' ? (res.value || '') : (hasZ ? String(derived.zScore) : ''))}
+                          inputMode="decimal"
+                          onChange={(e) => handleInput(st.id, 'z', e.target.value, st)}
+                          onBlur={() => {
+                            if (localZ[st.id] !== undefined) {
+                              setLocalZ(prev => { const next = { ...prev }; delete next[st.id]; return next; });
+                            }
+                          }}
+                          className={`${cellInput} ${activeMetric === 'z' ? 'border-b-[var(--primary)]' : 'opacity-60'} ${hasZ ? zToneClass(derived.zScore!) : ''}`}
+                          placeholder="—"
+                        />
+                      )}
+                    </td>
+                    {/* % — editable */}
+                    <td className="py-1 px-1">
+                      {isRawOnly ? (
+                        <div className={cellDisplay}>—</div>
+                      ) : (
+                        <input
+                          value={activeMetric === 'percentile' ? (res.value || '') : (derived.percentile || '')}
+                          inputMode="decimal"
+                          onChange={(e) => handleInput(st.id, 'percentile', e.target.value, st)}
+                          className={`${cellInput} ${activeMetric === 'percentile' ? 'border-b-[var(--primary)]' : 'opacity-60'}`}
+                          placeholder="—"
+                        />
+                      )}
+                    </td>
+                    {/* Observation */}
+                    <td className="py-1 px-2">
+                      <textarea
+                        value={res.observation || ''}
+                        onChange={(e) => { updateSubtest(testId, st.id, mergePatch(res, { observation: e.target.value })); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                        rows={1}
+                        className="w-full text-xs bg-transparent outline-none py-1.5 border-b border-transparent focus:border-[var(--primary)] text-[var(--text-main)] placeholder:text-[var(--text-disabled)] transition-colors resize-none leading-snug"
+                        placeholder="Note..."
+                      />
+                    </td>
+                    {/* Status dot + report */}
+                    <td className="py-1 px-1 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className={`inline-block h-2 w-2 rounded-full ${hasData ? 'bg-emerald-400' : 'bg-[var(--border-color)]'}`} />
+                        <button
+                          type="button"
+                          title="Signaler un score type incorrect"
+                          onClick={() => setReportingSubtest(st)}
+                          className="p-0.5 rounded text-amber-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                        >
+                          <AlertCircle size={11} />
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                )}
+              </SortableSubtestRow>
             );
           })}
+          </SortableContext>
         </tbody>
       </table>
-      {reportingSubtest && (
-        <ScoreTypeReportModal
-          subtest={reportingSubtest}
-          enteredNS={(() => { const r = tests[testId]?.[reportingSubtest.id]; return r?.standard ? parseFloat(r.standard) : null; })()}
-          enteredET={tests[testId]?.[reportingSubtest.id]?.zScore ?? null}
-          enteredPct={(() => { const r = tests[testId]?.[reportingSubtest.id]; return r?.percentile ? parseFloat(r.percentile) : null; })()}
-          onClose={() => setReportingSubtest(null)}
-        />
-      )}
+      {reportingSubtest && (() => {
+        const r = tests[testId]?.[reportingSubtest.id];
+        const rDerived = deriveDisplayScores(r, String(reportingSubtest.scoreType || 'standard'));
+        return (
+          <ScoreTypeReportModal
+            subtest={reportingSubtest}
+            enteredNS={rDerived.standard ? parseFloat(rDerived.standard) : null}
+            enteredET={typeof rDerived.zScore === 'number' ? rDerived.zScore : null}
+            enteredPct={rDerived.percentile ? parseFloat(rDerived.percentile) : null}
+            onClose={() => setReportingSubtest(null)}
+          />
+        );
+      })()}
     </div>
   );
 
@@ -1260,17 +954,21 @@ const SummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
 
   const testRows = useMemo(() => {
     const testNameMap: Record<string, string> = {};
+    const scoreTypeMap: Record<string, Record<string, string>> = {};
     catalog.forEach((cat) => {
       cat.tests.forEach((t) => {
         testNameMap[t.id] = t.name;
+        scoreTypeMap[t.id] = {};
+        t.subtests.forEach((st) => { scoreTypeMap[t.id][st.id] = String(st.scoreType || 'standard'); });
       });
     });
 
     const rows: { testId: string; name: string; avg: number | null; subtestCount: number; zCount: number }[] = [];
     Object.entries(tests).forEach(([testId, subtests]) => {
       const zScores: number[] = [];
-      Object.values(subtests).forEach((res) => {
-        if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) zScores.push(res.zScore);
+      Object.entries(subtests).forEach(([subId, res]) => {
+        const z = getZFromScore(res, scoreTypeMap[testId]?.[subId] || 'standard');
+        if (z !== null) zScores.push(z);
       });
       const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
 
@@ -1650,8 +1348,6 @@ export const TestCatalogModal: React.FC<{ isOpen: boolean; onClose: () => void; 
   );
 };
 
-type DragListeners = ReturnType<typeof useSortable>['listeners'];
-
 const SortableTestWrapper: React.FC<{
   id: string;
   children: (dragListeners: DragListeners) => React.ReactNode;
@@ -1672,16 +1368,14 @@ const SortableTestWrapper: React.FC<{
 };
 
 
-export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack }) => {
+export const ScorePage: React.FC<Props> = ({ patient, tests, updateTests, observations, updateObservations, onNext, onBack }) => {
   const { catalog, ensureCatalogLoaded } = useCatalog();
   const { pushRecent } = useFavoriteTests();
   const toast = useToast();
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogTargetTestId, setCatalogTargetTestId] = useState<string | null>(null);
   const [collapsedTests, setCollapsedTests] = useState<Record<string, boolean>>({});
-  const [editMode, setEditMode] = useState<Record<string, boolean>>({});
   const [subtestFilters, setSubtestFilters] = useState<Record<string, string>>({});
-  const [showWarning, setShowWarning] = useState(false);
   const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<Record<string, 'accordion' | 'table'>>({});
   const [testOrder, setTestOrder] = useState<string[]>(() => Object.keys(tests));
@@ -1708,14 +1402,42 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setTestOrder((prev) => {
-        const oldIndex = prev.indexOf(String(active.id));
-        const newIndex = prev.indexOf(String(over.id));
-        return arrayMove(prev, oldIndex, newIndex);
-      });
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Subtest-level reorder: ids are namespaced as `sub:${testId}:${subId}` so they
+    // never collide with test-level ids (plain testId strings).
+    if (activeId.startsWith('sub:') && overId.startsWith('sub:')) {
+      const [, activeTestId, activeSubId] = activeId.split(':');
+      const [, overTestId, overSubId] = overId.split(':');
+      if (activeTestId !== overTestId) return; // only allow reordering within the same test
+      const subIds = Object.keys(tests[activeTestId] || {});
+      const oldIndex = subIds.indexOf(activeSubId);
+      const newIndex = subIds.indexOf(overSubId);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reorderedIds = arrayMove(subIds, oldIndex, newIndex);
+      // Persist the new order as the insertion order of `tests[testId]`'s keys — this
+      // is read back (unsorted) by ScoresAndObservationsPanel and the PDF/report export.
+      const reorderedSubMap: Record<string, ScoreResult> = {};
+      reorderedIds.forEach((subId) => { reorderedSubMap[subId] = tests[activeTestId][subId]; });
+      updateTests({ ...tests, [activeTestId]: reorderedSubMap });
+      return;
     }
-  }, []);
+
+    // Test-level reorder — also persist the new order into `tests` itself (not just
+    // local UI state) so downstream consumers reading `Object.entries(tests)` see it.
+    setTestOrder((prev) => {
+      const oldIndex = prev.indexOf(activeId);
+      const newIndex = prev.indexOf(overId);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const reorderedOrder = arrayMove(prev, oldIndex, newIndex);
+      const reorderedTests: TestData = {};
+      reorderedOrder.forEach((id) => { reorderedTests[id] = tests[id]; });
+      updateTests(reorderedTests);
+      return reorderedOrder;
+    });
+  }, [tests, updateTests]);
 
   // Auto-collapse the previously active test when the user opens a subtest in a different test
   useEffect(() => {
@@ -1783,17 +1505,16 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
   const stat = useMemo(() => {
     let total = 0;
-    let rev = 0;
+    let filled = 0;
     Object.values(tests).forEach((subtests) => {
       Object.values(subtests).forEach((res) => {
-        if (!hasValue(res)) return;
         total += 1;
-        if (reviewed(res)) rev += 1;
+        if (hasValue(res)) filled += 1;
       });
     });
-    return { total, rev, pending: Math.max(0, total - rev) };
+    return { total, filled };
   }, [tests]);
-  const completion = stat.total > 0 ? Math.round((stat.rev / stat.total) * 100) : 0;
+  const completion = stat.total > 0 ? Math.round((stat.filled / stat.total) * 100) : 0;
 
   const grouped = useMemo(() => {
     const groups: Record<string, TestDef[]> = {};
@@ -1834,9 +1555,12 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       const entry = testDefMap[testId];
       if (!entry) return;
       const { def: test } = entry;
-      const selectedIds = Object.keys(tests[testId] || {});
-      const visible = test.subtests.filter((st) => selectedIds.includes(st.id));
-      [...visible].sort(compareSubtestsForDisplay).forEach((st) => keys.push(`${testId}__${st.id}`));
+      const subtestDefById = new Map(test.subtests.map((st) => [st.id, st] as const));
+      // Natural insertion order of `tests[testId]` reflects the drag-and-drop order
+      // defined by the user on this page (persisted directly on the ScoreResult map).
+      Object.keys(tests[testId] || {}).forEach((subId) => {
+        if (subtestDefById.has(subId)) keys.push(`${testId}__${subId}`);
+      });
     });
     return keys;
   }, [testOrder, testDefMap, tests]);
@@ -1864,29 +1588,9 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.pending === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-            {stat.rev}/{stat.total} revus
+          <div className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${stat.filled === stat.total ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+            {stat.filled}/{stat.total} saisis
           </div>
-          {stat.pending > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                const next = { ...tests };
-                Object.entries(next).forEach(([testId, subtests]) => {
-                  Object.entries(subtests).forEach(([subId, res]) => {
-                    if (hasValue(res) && !reviewed(res)) {
-                      next[testId][subId] = { ...res, reviewState: 'reviewed', reviewedAt: new Date().toISOString(), status: 'validated' };
-                    }
-                  });
-                });
-                updateTests(next);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-            >
-              <CheckCheck size={14} />
-              Tout revu
-            </button>
-          )}
           <button
             onClick={() => { setCatalogTargetTestId(null); setShowCatalog(true); }}
             className="flex items-center gap-2 bg-[var(--secondary)] text-white px-5 py-2.5 rounded-xl font-bold hover:brightness-90 transition-all text-sm"
@@ -1929,15 +1633,20 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                 const { cat, def: test } = entry;
                 const CatIcon = ICON_MAP[cat?.iconKey || 'Box'];
                 const collapsed = collapsedTests[test.id];
-                const editing = editMode[test.id];
                 const selectedIds = Object.keys(tests[test.id] || {});
-                const visibleSubtests = test.subtests.filter((st) => selectedIds.includes(st.id));
+                // Preserve the persisted (drag-and-drop) order: subtests follow the
+                // insertion order of `tests[testId]`'s keys rather than the catalog's
+                // static order, so a manual reorder here propagates everywhere else
+                // (Step3Diagnostic panel, PDF/report export) without extra plumbing.
+                const subtestDefById = new Map(test.subtests.map((st) => [st.id, st] as const));
+                const visibleSubtests = selectedIds
+                  .map((id) => subtestDefById.get(id))
+                  .filter((st): st is SubtestDef => Boolean(st));
                 const subtestQuery = (subtestFilters[test.id] || '').trim().toLowerCase();
                 const filteredSubtests = subtestQuery
                   ? visibleSubtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestQuery))
                   : visibleSubtests;
                 const testFilledCount = visibleSubtests.filter((st) => hasValue(tests[test.id]?.[st.id])).length;
-                const testReviewedCount = visibleSubtests.filter((st) => reviewed(tests[test.id]?.[st.id])).length;
                 return (
                   <SortableTestWrapper key={testId} id={testId}>
                     {(dragListeners) => (
@@ -1959,13 +1668,10 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
                                 </div>
                               )}
                               <h4 className="font-bold text-[var(--text-heading)] truncate">{test.name}</h4>
-                              <p className="text-[11px] text-[var(--text-secondary)]">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s) · {testReviewedCount} revue(s)</p>
+                              <p className="text-[11px] text-[var(--text-secondary)]">{visibleSubtests.length} épreuve(s) · {testFilledCount} saisie(s)</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <button onClick={() => setEditMode((p) => ({ ...p, [test.id]: !p[test.id] }))} className={`p-2 rounded-lg border ${editing ? 'bg-[var(--primary)] text-white border-[var(--primary)]' : 'text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40'}`}>
-                              <PenTool size={14} />
-                            </button>
                             <button onClick={() => removeTest(test.id)} className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200">
                               <Trash2 size={14} />
                             </button>
@@ -2002,7 +1708,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
 
       <StepNavFooter onBack={onBack}>
           <button
-            onClick={() => (stat.pending > 0 ? setShowWarning(true) : onNext())}
+            onClick={() => onNext()}
             className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white shadow-xl transition-all bg-[var(--secondary)] hover:bg-[var(--primary)]"
           >
             <span>Passer au diagnostic</span>
@@ -2011,19 +1717,7 @@ export const Step2Tests: React.FC<Props> = ({ patient, tests, updateTests, obser
       </StepNavFooter>
 
       <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={addTests} initialExpandedTestId={catalogTargetTestId} />
-
-      {showWarning && (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-[var(--secondary)]/75 backdrop-blur-sm">
-          <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-[var(--border-color)]">
-            <div className="flex items-center gap-3 mb-3 text-amber-700"><AlertTriangle size={20} /><h4 className="font-bold text-lg text-[var(--text-heading)]">Éléments non revus</h4></div>
-            <p className="text-sm text-[var(--text-main)]">{stat.pending} élément(s) saisi(s) ne sont pas encore marqués comme revus. Vous pouvez continuer ou revenir vérifier.</p>
-            <div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowWarning(false)} className="px-4 py-2 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Revenir</button><button onClick={() => { setShowWarning(false); onNext(); }} className="px-4 py-2 rounded-xl bg-[var(--secondary)] text-white font-bold text-xs uppercase tracking-wider">Continuer quand même</button></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
-
-export const SubtestRowCheck = FlexibleSubtestRow;
 

@@ -4,6 +4,7 @@ import { FileText, ClipboardList, Plus, Image as ImageIcon, LayoutTemplate, X, T
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { sanitizeReportText, decodeResidualEntities } from '../../../utils/textSanitizer';
+import { getZFromScore, deriveDisplayScores } from '../../../utils/scoring';
 
 import { TipTapEditor } from '../shared/TipTapEditor';
 
@@ -350,16 +351,19 @@ const ProfileRadarChart: React.FC<{ tests: TestData, branding?: BrandingConfig }
         Object.entries(tests).forEach(([testId, subtests]) => {
             // Trouver la catégorie du test
             const catDef = catalog.find(c => c.tests.some(t => t.id === testId));
+            const testDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
             // For tests not in catalog, group under "Autres" pseudo-category
             const categoryId = catDef?.id || '__uncategorized__';
             if (!stats[categoryId]) {
                 stats[categoryId] = { sum: 0, count: 0, name: catDef?.name || 'Autres' };
             }
 
-            Object.values(subtests).forEach(res => {
-                if (!hasValidZ(res)) return;
+            Object.entries(subtests).forEach(([subId, res]) => {
+                const scoreType = testDef?.subtests.find(s => s.id === subId)?.scoreType || 'standard';
+                const zRaw = getZFromScore(res, scoreType);
+                if (zRaw === null) return;
                 // On clamp les valeurs extremes pour le graphique (-3 a +3)
-                let z = res.zScore as number;
+                let z = zRaw;
                 if (z < -3) z = -3;
                 if (z > 3) z = 3;
 
@@ -427,16 +431,17 @@ const ProfilePercentileChart: React.FC<{ tests: TestData; branding?: BrandingCon
         const result: Array<{ label: string; pct: number; color: string }> = [];
         Object.entries(tests).forEach(([testId, subtests]) => {
             const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
-            Object.entries(subtests)
-                .filter(([, val]) => val.percentile !== undefined && val.percentile !== null && !isNaN(Number(val.percentile)))
-                .forEach(([subId, res]) => {
-                    const subDef = def?.subtests.find(s => s.id === subId);
-                    const pct = Number(res.percentile);
-                    let color = '#81B29A';
-                    if (pct < 2) color = '#E07A5F';
-                    else if (pct < 9) color = '#F2CC8F';
-                    result.push({ label: subDef?.displayName || subDef?.name || subId, pct, color });
-                });
+            Object.entries(subtests).forEach(([subId, res]) => {
+                const subDef = def?.subtests.find(s => s.id === subId);
+                const derived = deriveDisplayScores(res, String(subDef?.scoreType || 'standard'));
+                const pctStr = res.unit === '%' ? res.value : derived.percentile;
+                const pct = pctStr !== undefined ? Number(pctStr) : NaN;
+                if (!Number.isFinite(pct)) return;
+                let color = '#81B29A';
+                if (pct < 2) color = '#E07A5F';
+                else if (pct < 9) color = '#F2CC8F';
+                result.push({ label: subDef?.displayName || subDef?.name || subId, pct, color });
+            });
         });
         return result;
     }, [tests, catalog]);
@@ -738,7 +743,10 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
                 {chartType === 'radar' && <ProfileRadarChart tests={tests} branding={branding} />}
 
                 {/* ET Bar Chart */}
-                {chartType === 'bar' && Object.values(tests).some(subtests => Object.values(subtests).some(res => hasValidZ(res))) && (
+                {chartType === 'bar' && Object.entries(tests).some(([testId, subtests]) => {
+                    const testDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
+                    return Object.entries(subtests).some(([subId, res]) => getZFromScore(res, testDef?.subtests.find(s => s.id === subId)?.scoreType || 'standard') !== null);
+                }) && (
                 <>
                 {/* HORIZONTAL BAR CHART PROFILE */}
                 <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass}`}>
@@ -749,15 +757,19 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
                         {Object.entries(tests).flatMap(([testId, subtests]) => {
                             const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                             return Object.entries(subtests)
-                                .filter(([, val]) => hasValidZ(val))
                                 .map(([subId, result]) => {
                                     const subDef = def?.subtests.find(s => s.id === subId);
-                                    const z = result.zScore as number;
-                                    const clamped = Math.max(-3.5, Math.min(3.5, z));
+                                    const z = getZFromScore(result, subDef?.scoreType || 'standard');
+                                    return { subId, subDef, z };
+                                })
+                                .filter((item) => item.z !== null)
+                                .map(({ subId, subDef, z }) => {
+                                    const zVal = z as number;
+                                    const clamped = Math.max(-3.5, Math.min(3.5, zVal));
                                     const left = ((clamped + 3.5) / 7) * 100;
                                     let color = '#81B29A';
-                                    if (z <= -2) color = '#E07A5F';
-                                    else if (z <= -1) color = '#F2CC8F';
+                                    if (zVal <= -2) color = '#E07A5F';
+                                    else if (zVal <= -1) color = '#F2CC8F';
                                     return (
                                         <div key={`${testId}_${subId}`} className="flex items-center gap-3 text-xs">
                                             <span className="w-32 text-right text-stone-600 font-medium text-[10px] leading-tight break-words shrink-0" title={subDef?.displayName || subDef?.name}>{subDef?.displayName || subDef?.name || subId}</span>
@@ -768,7 +780,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
                                                 <div className="absolute top-0 bottom-0 w-px bg-stone-300 left-[50%]"></div>
                                                 <div className="absolute top-0.5 bottom-0.5 w-3 rounded-full shadow-sm transition-all" style={{ left: `calc(${left}% - 6px)`, backgroundColor: color }}></div>
                                             </div>
-                                            <span className="w-10 text-right font-bold shrink-0" style={{ color }}>{z > 0 ? '+' : ''}{z}</span>
+                                            <span className="w-10 text-right font-bold shrink-0" style={{ color }}>{zVal > 0 ? '+' : ''}{zVal}</span>
                                         </div>
                                     );
                                 });
@@ -811,7 +823,7 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
 
                         const enrichedSubtests = validSubtests.map(([subId, result]) => {
                             const subDef = def.subtests.find(s => s.id === subId);
-                            const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
+                            const isQualitative = subDef?.inputModel === 'qualitative_category' || result.unit === 'qualitative';
                             const isScoreable = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
                             return { subId, result, subDef, isQualitative, isScoreable };
                         });
@@ -870,15 +882,20 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
                                                 </thead>
                                                 <tbody className="text-stone-700">
                                                     {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => {
-                                                        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+                                                        const scoreType = String(subDef?.scoreType || 'standard');
+                                                        const derived = deriveDisplayScores(result, scoreType);
+                                                        const z = getZFromScore(result, scoreType);
                                                         const isPathological = z !== null && z <= -2;
                                                         const isFragile = z !== null && z <= -1 && z > -2;
                                                         const colorClass = isPathological ? "text-[var(--primary)] font-bold" : isFragile ? "text-[#F2CC8F] font-bold" : "text-[#81B29A]";
 
+                                                        const displayStandard = result.unit === 'NS' ? result.value : derived.standard;
+                                                        const displayPercentile = result.unit === '%' ? result.value : derived.percentile;
+
                                                         let displayScore: string | number = '-';
-                                        if (currentMode === 'NS') displayScore = isScoreable ? (result.standard || '-') : '-';
+                                        if (currentMode === 'NS') displayScore = isScoreable ? (displayStandard || '-') : '-';
                                         else if (currentMode === 'ET') displayScore = (isScoreable && z !== null) ? (z > 0 ? '+' : '') + z.toFixed(2) + ' ET' : '-';
-                                        else if (currentMode === '%') displayScore = (isScoreable && result.percentile !== undefined && result.percentile !== null) ? result.percentile + '%' : '-';
+                                        else if (currentMode === '%') displayScore = (isScoreable && displayPercentile) ? displayPercentile + '%' : '-';
 
                                         if (!isScoreable) displayScore = '-';
                                                         return (
@@ -909,12 +926,11 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
                                                 <tbody className="text-stone-700">
                                                     {qualitativeSubtests.map(({ subId, result, subDef }) => {
                                                         const selectedOption = subDef?.inputConfig?.options?.find(
-                                                            (opt) =>
-                                                                opt.code === result.qualitativeCode ||
-                                                                opt.code === result.raw ||
+                                                            (opt: { code: string; label: string; reportText?: string }) =>
+                                                                opt.code === result.value ||
                                                                 opt.label === result.qualitativeLabel,
                                                         );
-                                                        const displayCategory = result.qualitativeLabel || selectedOption?.label || result.qualitativeCode || result.raw || '-';
+                                                        const displayCategory = result.qualitativeLabel || selectedOption?.label || result.value || '-';
                                                         const displayInterpretation = selectedOption?.reportText || '-';
 
                                                         return (
@@ -1110,19 +1126,3 @@ export const ReportView: React.FC<Props> = ({ patient, sections, tests, reportTy
     );
 };
 
-const hasAnyScoreValue = (result?: any): boolean => {
-    if (!result) return false;
-    return Boolean(
-        (result.raw && String(result.raw).trim()) ||
-        (result.standard && String(result.standard).trim()) ||
-        (result.percentile && String(result.percentile).trim()) ||
-        (typeof result.zScore === 'number' && Number.isFinite(result.zScore)) ||
-        (result.qualitativeCode && String(result.qualitativeCode).trim()) ||
-        (result.qualitativeLabel && String(result.qualitativeLabel).trim())
-    );
-};
-
-const hasValidZ = (result?: any): boolean => typeof result?.zScore === 'number' && Number.isFinite(result.zScore);
-
-const isReviewedScore = (result?: any): boolean =>
-    result?.reviewState === 'reviewed' || result?.status === 'validated' || result?.status === 'certified';

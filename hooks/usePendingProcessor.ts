@@ -101,6 +101,15 @@ export const usePendingProcessor = ({
           await StorageService.saveDraft(initialDraft);
           loadData();
 
+          // SECURITY/PRIVACY GUARANTEE: this deletion is what isolates the family's
+          // submission from any later edits made by the practitioner. Once deleted,
+          // the `pending_questionnaires` row (and its `family_encrypted_data`) no longer
+          // exists, so the parent's link becomes invalid ("Dossier introuvable") and
+          // they can never see the local draft/changes the pro makes afterwards in
+          // Step1Admin (those are saved to IndexedDB only, never written back here).
+          // Do NOT change this to an update/soft-delete without re-checking that
+          // guarantee — see components/assessment/initial/Step1Admin.tsx for the other
+          // half of this isolation.
           await supabase.from('pending_questionnaires').delete().eq('id', q.id);
 
           assessment.resetAssessment();

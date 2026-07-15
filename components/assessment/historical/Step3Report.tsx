@@ -19,7 +19,7 @@ const DEFAULT_SECTIONS: { id: string; title: string }[] = [
     { id: 'mandat_ref',     title: 'Mandat de référencement en ergothérapie' },
     { id: 'mandat_eval',    title: 'Mandat d\'évaluation en ergothérapie' },
     { id: 'profil',         title: 'Profil occupationnel' },
-    { id: 'diagnostic',     title: 'Diagnostique en ergothérapie' },
+    { id: 'diagnostic',     title: 'Diagnostic en ergothérapie' },
     { id: 'objectifs',      title: 'Les objectifs généraux' },
     { id: 'project',        title: 'Projet d\'accompagnement' },
     { id: 'recommandations', title: 'Recommandations' },

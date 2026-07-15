@@ -26,6 +26,7 @@ import { Logger } from './utils/logger';
 import { decodeResidualEntities } from './utils/textSanitizer';
 import { ExportService } from './services/exportService';
 import { getDaysSinceBackup } from './utils/backupTracking';
+import { formatScoreCompact, normalizeFlatResults } from './utils/scoring';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
 
@@ -36,7 +37,7 @@ import { useLinkManager } from './hooks/useLinkManager';
 import { usePendingProcessor } from './hooks/usePendingProcessor';
 
 // --- LAZY IMPORTS — pages (shared across flows) ---
-const ScorePage = React.lazy(() => import('./components/assessment/pages/ScorePage').then(module => ({ default: module.Step2Tests })));
+const ScorePage = React.lazy(() => import('./components/assessment/pages/ScorePage').then(module => ({ default: module.ScorePage })));
 const ValidationPage = React.lazy(() => import('./components/assessment/pages/ValidationPage').then(module => ({ default: module.Step4Validation })));
 const ExportPage = React.lazy(() => import('./components/assessment/pages/ExportPage').then(module => ({ default: module.Step5Export })));
 
@@ -263,7 +264,6 @@ const AppRouter = () => {
         if (Object.keys(assessment.tests).length === 0) {
             assessment.updateTests(rebuilt);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasCatalogLoaded, subtestToTestMap, assessment.reportType, assessment.previousAssessment]);
 
 
@@ -1149,17 +1149,17 @@ const AppRouter = () => {
             {viewingReport && selectedFile && (() => {
                 // Group flat results by parent test for display
                 const groups: Map<string, { testName: string; rows: Array<{ id: string; name: string; score: import('./types').ScoreResult }> }> = new Map();
-                Object.entries(viewingReport.results || {}).forEach(([key, score]) => {
+                const normalizedResults = normalizeFlatResults(viewingReport.results);
+                Object.entries(normalizedResults).forEach(([key, score]) => {
                     const testInfo = subtestToTestMap.get(key);
                     const groupKey = testInfo?.testId ?? '_custom';
                     const groupName = testInfo?.testName ?? 'Tests personnalisés';
                     if (!groups.has(groupKey)) groups.set(groupKey, { testName: groupName, rows: [] });
-                    const name = (score as any).customLabel || subtestNameMap.get(key) || key.replace(/_[a-f0-9]{8}$/i, '').replace(/[_-]/g, ' ');
+                    const name = score.customLabel || subtestNameMap.get(key) || key.replace(/_[a-f0-9]{8}$/i, '').replace(/[_-]/g, ' ');
                     groups.get(groupKey)!.rows.push({ id: key, name, score });
                 });
                 const scoreGroups = Array.from(groups.values());
-                const fmtScore = (s: import('./types').ScoreResult) =>
-                    s.standard ? `NS ${s.standard}` : s.zScore != null ? `ET ${s.zScore}` : s.percentile ? `${s.percentile}%` : s.raw ? `Brut ${s.raw}` : '—';
+                const fmtScore = formatScoreCompact;
 
                 return (
                     <div className="fixed inset-0 z-[200] overflow-y-auto animate-in fade-in duration-200" style={{ backgroundColor: 'var(--card-bg, #fff)' }}>

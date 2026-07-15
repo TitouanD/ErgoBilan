@@ -13,7 +13,8 @@ import { Activity, ArrowRight, Lock, Trash2 } from 'lucide-react';
 import { StepNavFooter } from '../shared/StepNavFooter';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { detectMetric } from '../../../utils/reevaluationHelpers';
-import { TableView, compareSubtestsForDisplay, type Metric } from '../Step2Tests';
+import { compareSubtestsForDisplay } from '../../../utils/subtestOrdering';
+import { TableView, type Metric } from '../shared/ReevaluationTableView';
 
 interface Props {
     patient: Patient;

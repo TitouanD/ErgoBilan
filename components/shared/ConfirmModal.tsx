@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Info, X } from 'lucide-react';
+import { Modal } from './Modal';
 
 interface ConfirmModalProps {
     isOpen: boolean;
@@ -25,20 +26,17 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     variant = 'warning',
     secondaryAction,
 }) => {
-    if (!isOpen) return null;
-
     const accentColor = variant === 'danger' ? 'rose' : variant === 'info' ? 'blue' : 'amber';
     const Icon = variant === 'info' ? Info : AlertTriangle;
 
     return (
-        <div
-            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--modal-overlay,rgba(61,64,91,0.7))] backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={onCancel}
+        <Modal
+            isOpen={isOpen}
+            onClose={onCancel}
+            closeOnEscape={false}
+            overlayClassName="bg-[var(--modal-overlay,rgba(61,64,91,0.7))] backdrop-blur-sm"
+            overlayAnimationClassName="animate-in fade-in duration-200"
         >
-            <div
-                className="bg-[var(--card-bg)] max-w-md w-full rounded-[32px] p-8 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200"
-                onClick={(e) => e.stopPropagation()}
-            >
                 {/* Accent bar */}
                 <div className={`absolute top-0 left-0 w-full h-1.5 bg-${accentColor}-500`} />
 
@@ -90,7 +88,6 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                         {confirmLabel}
                     </button>
                 </div>
-            </div>
-        </div>
+        </Modal>
     );
 };

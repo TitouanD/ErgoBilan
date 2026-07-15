@@ -7,8 +7,7 @@ import { useState, useCallback, useRef } from 'react';
 import { AIService, type GenerationPayload, type GenerationResult } from '../services/ai';
 import { callAIProxyTask } from '../services/aiProxy';
 import { StorageService } from '../services/storage';
-import { AdminService } from '../services/admin';
-import { supabase, ensureFreshSession } from '../services/db';
+import { ensureFreshSession } from '../services/db';
 import { anonymizeData } from '../utils/anonymizer';
 import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
 import type {
@@ -49,61 +48,8 @@ export interface AssessmentHandle {
   updateSection: (id: string, update: Partial<ReportSection>) => void;
 }
 
-interface CatalogTest { id: string; name: string; subtests?: unknown[] }
+interface CatalogTest { id: string; name: string; subtests?: { id: string; scoreType?: string }[] }
 interface CatalogCategory { id: string; name: string; tests: CatalogTest[] }
-
-/**
- * Build anonymous profile tags from patient age + domain z-scores.
- * No PII, no raw values — only broad severity labels + age buckets.
- * Used to enrich crowd recommendations without storing health data.
- */
-const buildProfileTags = (
-  patientAge: string | undefined,
-  tests: Record<string, Record<string, { zScore?: number }>>,
-  catalogCategories: { name: string; tests: { id: string }[] }[],
-): string[] => {
-  const tags: string[] = [];
-
-  // Age bucket (never exact age)
-  const age = parseInt(patientAge || '0', 10);
-  if (age >= 3 && age < 8) tags.push('age_lt8');
-  else if (age >= 8 && age <= 12) tags.push('age_8_12');
-  else if (age > 12) tags.push('age_gt12');
-
-  // Build testId → category slug map
-  const testToSlug: Record<string, string> = {};
-  for (const cat of catalogCategories) {
-    const slug = cat.name
-      .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-      .slice(0, 20);
-    for (const t of cat.tests) testToSlug[t.id] = slug;
-  }
-
-  // Average z-score per domain
-  const domainZ: Record<string, number[]> = {};
-  for (const [testId, subtests] of Object.entries(tests)) {
-    const slug = testToSlug[testId];
-    if (!slug) continue;
-    if (!domainZ[slug]) domainZ[slug] = [];
-    for (const res of Object.values(subtests)) {
-      if (typeof res.zScore === 'number' && Number.isFinite(res.zScore)) {
-        domainZ[slug].push(res.zScore);
-      }
-    }
-  }
-
-  // Severity tags — no numeric value stored, only label
-  for (const [slug, zs] of Object.entries(domainZ)) {
-    if (!zs.length) continue;
-    const avg = zs.reduce((a, b) => a + b, 0) / zs.length;
-    if (avg <= -2) tags.push(`severe_${slug}`);
-    else if (avg <= -1) tags.push(`modere_${slug}`);
-  }
-
-  return tags;
-};
 
 interface UseAssessmentFlowParams {
   assessment: AssessmentHandle;
@@ -214,9 +160,6 @@ export const useAssessmentFlow = ({
     setIsGenerating(true);
 
     try {
-      // Fire-and-forget telemetry
-      AdminService.logAnonymousStats(assessment.tests, assessment.patient);
-
       const p = assessment.patient;
       const genderString = p.gender === 'F' ? 'une fille' : 'un garçon';
 
@@ -361,26 +304,17 @@ export const useAssessmentFlow = ({
 
       const scoresEvidence = Object.entries(assessment.tests).flatMap(([testId, subtests]) =>
         Object.entries(subtests).map(([subtestId, res]) => {
-          const qualitative = !!(res.qualitativeCode || res.qualitativeLabel);
-          const source = res.derived?.source || (res.scoreSource === 'auto' ? 'auto' : 'manual');
-          const normFound = qualitative ? null : source === 'auto';
+          const qualitative = res.unit === 'qualitative';
           return {
             testId,
             testName: testNameById.get(testId) || testId,
             subtestId,
             subtestName: subtestNameByTestAndId.get(`${testId}:${subtestId}`) || subtestId,
             type: qualitative ? 'qualitative' : 'quantitative',
-            raw: res.raw || null,
-            standard: res.standard || null,
-            percentile: res.percentile || null,
-            zScore: typeof res.zScore === 'number' && Number.isFinite(res.zScore) ? res.zScore : null,
-            qualitativeCode: res.qualitativeCode || null,
+            value: res.value || null,
+            unit: res.unit || null,
             qualitativeLabel: res.qualitativeLabel || null,
             observation: res.observation || null,
-            source,
-            norm_found: normFound,
-            review_state: res.reviewState || null,
-            reviewed_at: res.reviewedAt || null,
           };
         }),
       );
@@ -570,23 +504,6 @@ export const useAssessmentFlow = ({
         } catch {
           // Follow-up status is best effort and must not block finalization
         }
-      }
-      // ── Crowd-source anonymous recommendations ──
-      try {
-        const recoSection = assessment.sections.find(s => /préconisation|recommandation/i.test(s.id));
-        if (recoSection && !isDemoMode) {
-          const strippedHtml = recoSection.content.replace(/<[^>]+>/g, ' ');
-          const bullets = [...strippedHtml.matchAll(/[-•]\s*([^\n\r]+)/g)].map(m => m[1].trim()).filter(b => b.length > 5 && b.length < 200);
-          const diagLower = (assessment.synthesis.diagnosticInput || '').toLowerCase();
-          const diagKeywords = diagLower.split(/[\s,;.]+/).filter(w => w.length > 3).slice(0, 10);          const profileTags = buildProfileTags(assessment.patient.age, assessment.tests, catalog);
-          const allTags = [...new Set([...diagKeywords, ...profileTags])];          for (const bullet of bullets) {
-            supabase.rpc('upsert_recommendation', { p_text: bullet, p_tags: diagKeywords })
-              .then(({ error }) => { if (error) Logger.warn('DB', 'crowd upsert', error); })
-              .catch(() => {});
-          }
-        }
-      } catch {
-        // best effort
       }
 
       await StorageService.deleteDraft(patientId);

@@ -37,6 +37,7 @@ import {
 } from '../../../utils/pdfStyles';
 import { sanitizeReportText } from '../../../utils/textSanitizer';
 import { htmlToPdfNodes } from '../../../utils/pdfRenderer';
+import { getZFromScore, deriveDisplayScores, hasScoreValue } from '../../../utils/scoring';
 
 // ─── Props ───────────────────────────────────────────────────────────────
 interface PdfDocumentProps {
@@ -55,20 +56,7 @@ interface PdfDocumentProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-const hasValidZ = (r?: ScoreResult): boolean =>
-    typeof r?.zScore === 'number' && Number.isFinite(r.zScore);
-
-const hasAnyScoreValue = (result?: ScoreResult): boolean => {
-    if (!result) return false;
-    return Boolean(
-        (result.raw && String(result.raw).trim()) ||
-        (result.standard && String(result.standard).trim()) ||
-        (result.percentile && String(result.percentile).trim()) ||
-        (typeof result.zScore === 'number' && Number.isFinite(result.zScore)) ||
-        (result.qualitativeCode && String(result.qualitativeCode).trim()) ||
-        (result.qualitativeLabel && String(result.qualitativeLabel).trim())
-    );
-};
+const hasAnyScoreValue = hasScoreValue;
 
 /** Get branding-aware font family */
 const getFontFamily = (branding?: BrandingConfig): string => {
@@ -428,14 +416,17 @@ const PdfRadarChart: React.FC<{
 
     Object.entries(tests).forEach(([testId, subtests]) => {
         const catDef = catalog.find(c => c.tests.some(t => t.id === testId));
+        const testDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
         // For tests not in catalog, group them under an "Autres" pseudo-category
         const categoryId = catDef?.id || '__uncategorized__';
         if (!stats[categoryId]) {
             stats[categoryId] = { sum: 0, count: 0, name: catDef?.name || 'Autres' };
         }
-        Object.values(subtests).forEach(res => {
-            if (!hasValidZ(res)) return;
-            let z = res.zScore as number;
+        Object.entries(subtests).forEach(([subId, res]) => {
+            const scoreType = testDef?.subtests.find(s => s.id === subId)?.scoreType || 'standard';
+            const zRaw = getZFromScore(res, scoreType);
+            if (zRaw === null) return;
+            let z = zRaw;
             if (z < -3) z = -3;
             if (z > 3) z = 3;
             stats[categoryId].sum += z;
@@ -576,10 +567,10 @@ const PdfBarChart: React.FC<{
         const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
         // Include tests not in catalog — use subId as label fallback
         Object.entries(subtests)
-            .filter(([, val]) => hasValidZ(val))
             .forEach(([subId, result]) => {
                 const subDef = def?.subtests.find(s => s.id === subId);
-                const z = result.zScore as number;
+                const z = getZFromScore(result, subDef?.scoreType || 'standard');
+                if (z === null) return;
                 let color = COLORS.green;
                 if (z <= -2) color = COLORS.red;
                 else if (z <= -1) color = COLORS.orange;
@@ -701,10 +692,12 @@ const PdfPercentileChart: React.FC<{
     Object.entries(tests).forEach(([testId, subtests]) => {
         const def = catalog.flatMap(c => c.tests).find(t => t.id === testId);
         Object.entries(subtests)
-            .filter(([, val]) => val.percentile !== undefined && val.percentile !== null && !isNaN(Number(val.percentile)))
             .forEach(([subId, result]) => {
                 const subDef = def?.subtests.find(s => s.id === subId);
-                const pct = Number(result.percentile);
+                const derived = deriveDisplayScores(result, String(subDef?.scoreType || 'standard'));
+                const pctStr = result.unit === '%' ? result.value : derived.percentile;
+                const pct = pctStr !== undefined ? Number(pctStr) : NaN;
+                if (!Number.isFinite(pct)) return;
                 let color = COLORS.green;
                 if (pct < 2) color = COLORS.red;
                 else if (pct < 9) color = COLORS.orange;
@@ -824,7 +817,7 @@ const PdfScoreTable: React.FC<{
 
     const enrichedSubtests = validSubtests.map(([subId, result]: [string, ScoreResult]) => {
         const subDef = def.subtests.find(s => s.id === subId);
-        const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
+        const isQualitative = subDef?.inputModel === 'qualitative_category' || result.unit === 'qualitative';
         const isScoreable = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
         return { subId, result, subDef, isQualitative, isScoreable };
     });
@@ -834,20 +827,24 @@ const PdfScoreTable: React.FC<{
     const hasScoreableSubtests = quantitativeSubtests.some(s => s.isScoreable);
     const currentMode = hasScoreableSubtests ? scoreMode : 'Brut';
 
-    const getDisplayScore = (result: ScoreResult, isScoreable: boolean): string => {
+    const getDisplayScore = (result: ScoreResult, isScoreable: boolean, scoreType: string): string => {
         if (!isScoreable && currentMode !== 'Brut') return '-';
-        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+        const derived = deriveDisplayScores(result, scoreType);
+        const z = getZFromScore(result, scoreType);
 
-        if (currentMode === 'Brut') return result.raw || '-';
-        if (currentMode === 'NS') return isScoreable ? (result.standard || '-') : '-';
+        if (currentMode === 'Brut') return result.value || '-';
+        if (currentMode === 'NS') return isScoreable ? ((result.unit === 'NS' ? result.value : derived.standard) || '-') : '-';
         if (currentMode === 'ET') return (isScoreable && z !== null) ? `${z > 0 ? '+' : ''}${z.toFixed(2)} ET` : '-';
-        if (currentMode === '%') return (isScoreable && result.percentile !== undefined && result.percentile !== null) ? `${result.percentile}%` : '-';
+        if (currentMode === '%') {
+            const pct = result.unit === '%' ? result.value : derived.percentile;
+            return (isScoreable && pct) ? `${pct}%` : '-';
+        }
         return '-';
     };
 
-    const getScoreColor = (result: ScoreResult, isScoreable: boolean): string => {
+    const getScoreColor = (result: ScoreResult, isScoreable: boolean, scoreType: string): string => {
         if (!isScoreable || currentMode === 'Brut') return COLORS.stone500;
-        const z = typeof result.zScore === 'number' && Number.isFinite(result.zScore) ? result.zScore : null;
+        const z = getZFromScore(result, scoreType);
         if (z === null) return COLORS.stone500;
         if (z <= -2) return COLORS.red;
         if (z <= -1) return COLORS.orange;
@@ -900,17 +897,20 @@ const PdfScoreTable: React.FC<{
                         </View>
 
                         {/* Rows */}
-                        {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => (
+                        {quantitativeSubtests.map(({ subId, result, subDef, isScoreable }) => {
+                            const scoreType = String(subDef?.scoreType || 'standard');
+                            return (
                             <View key={subId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4, alignItems: 'flex-start' }}>
                                 <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {subDef?.displayName || subDef?.name}</Text>
-                                <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: getScoreColor(result, isScoreable) }}>
-                                    {getDisplayScore(result, isScoreable)}
+                                <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: getScoreColor(result, isScoreable, scoreType) }}>
+                                    {getDisplayScore(result, isScoreable, scoreType)}
                                 </Text>
                                 <Text style={{ width: '50%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 8 }}>
                                     {result.observation || '-'}
                                 </Text>
                             </View>
-                        ))}
+                            );
+                        })}
                     </View>
                 )}
 
@@ -930,12 +930,11 @@ const PdfScoreTable: React.FC<{
                         {/* Rows */}
                         {qualitativeSubtests.map(({ subId, result, subDef }: { subId: string; result: ScoreResult; subDef: any }) => {
                             const selectedOption = subDef?.inputConfig?.options?.find(
-                                (opt) =>
-                                    opt.code === result.qualitativeCode ||
-                                    opt.code === result.raw ||
+                                (opt: { code: string; label: string; reportText?: string }) =>
+                                    opt.code === result.value ||
                                     opt.label === result.qualitativeLabel,
                             );
-                            const displayCategory = result.qualitativeLabel || selectedOption?.label || result.qualitativeCode || result.raw || '-';
+                            const displayCategory = result.qualitativeLabel || selectedOption?.label || result.value || '-';
                             const displayInterpretation = selectedOption?.reportText || '-';
 
                             return (
@@ -991,7 +990,7 @@ const PdfAnnexes: React.FC<{
                 const catalogDef = catalog.flatMap(c => c.tests).find(t => t.id === testId);
                 const hasScoreableSubtests = Object.entries(subtests).some(([subId, result]) => {
                     const subDef = catalogDef?.subtests.find(s => s.id === subId);
-                    const isQualitative = subDef?.inputModel === 'qualitative_category' || !!result.qualitativeCode;
+                    const isQualitative = subDef?.inputModel === 'qualitative_category' || result.unit === 'qualitative';
                     // If test not in catalog, assume scoreable unless qualitative
                     const isScr = !isQualitative && (subDef?.scoreType || 'standard') !== 'none';
                     return isScr;

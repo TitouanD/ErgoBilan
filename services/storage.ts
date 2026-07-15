@@ -13,8 +13,7 @@
  * from AuthContext after PIN unlock.
  */
 
-import { getLocalDB, migrateLegacyDB } from './localDB';
-import type { LocalFollowupRow } from './localDB';
+import { getLocalDB, migrateLegacyDB, type LocalFollowupRow } from './localDB';
 
 // ─── Scoped DB accessor ────────────────────────────────────────────────────────
 // Initialised in setCurrentUser(). All PHI operations must go through _localDB.

@@ -243,9 +243,9 @@ const DIAG_RESPONSE_SCHEMA = {
   type: 'OBJECT' as const,
   properties: {
     synthese_diagnostic: { type: 'STRING' as const, description: 'Diagnostique clinique narratif par domaine fonctionnel. AUCUN score ni nom de test. FORMAT OBLIGATOIRE : domaines introduits par tiret integrant le titre ("- Sur le plan de... :\n[prose]"), JAMAIS de headers gras isoles. Intro = motif de referencement uniquement (pas les elements decouverts pendant bilan). Conclusion obligatoire. 200-500 mots. Markdown.' },
-    projet_accompagnement: { type: 'STRING' as const, description: 'Projet d\'accompagnement : phrase valorisante, modalite de suivi, 1-3 axes de travail en tirets, phrase de reevaluation (40-120 mots). Markdown.' },
+    projet_accompagnement: { type: 'STRING' as const, description: 'Projet d\'accompagnement : phrase valorisante, modalite de suivi, 1-4 axes de travail en tirets couvrant CHAQUE domaine fonctionnel deficitaire de la synthese diagnostique, phrase de reevaluation (40-140 mots). Markdown.' },
     recommandations: { type: 'STRING' as const, description: 'En-tete contextualise puis 3-4 tirets concrets et actionnables (50-120 mots). Markdown.' },
-    objectifs_generaux: { type: 'STRING' as const, description: 'Phrase valorisante, modalite de suivi, 1-3 objectifs en tirets, phrase de reevaluation (40-120 mots). Markdown.' },
+    objectifs_generaux: { type: 'STRING' as const, description: 'Phrase valorisante, modalite de suivi, 1-4 objectifs en tirets couvrant CHAQUE domaine fonctionnel deficitaire de la synthese diagnostique, phrase de reevaluation (40-140 mots). Markdown.' },
     reformulated_observations: {
       type: 'ARRAY' as const,
       description: 'Pour chaque epreuve ayant une observation non vide, retourne une reformulation clinique complete.',
@@ -289,11 +289,12 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '   STRUCTURE EN 3 TEMPS OBLIGATOIRE :',
     '   TEMPS 1 — PRESCRIPTEUR (phrase d\'ouverture) :',
     '   Si {{MEDECIN}} est present dans les donnees : le medecin doit etre LA PREMIERE PERSONNE NOMMEE dans la premiere phrase. La famille n\'est mentionnee qu\'ensuite.',
-    '   ATTENTION : {{MEDECIN}} peut DEJA contenir le titre "Dr". Ne rajoute JAMAIS "Dr" devant ce placeholder. Ecris directement "sur demande de {{MEDECIN}}" ou "a la demande de {{MEDECIN}}".',
+    '   ATTENTION : {{MEDECIN}} peut DEJA contenir le titre "Dr" ou "Docteur". Ne rajoute JAMAIS un second "Dr" devant ce placeholder.',
+    '   REGLE GRAMMATICALE OBLIGATOIRE : Utilise l\'article contracte "du" (et non "de") devant {{MEDECIN}} car il commence par un titre : ecris "a la demande du {{MEDECIN}}" ou "sur demande du {{MEDECIN}}". NE JAMAIS ecrire "a la demande de {{MEDECIN}}" (erreur grammaticale frequente a eviter absolument).',
     '   Si la specialite du medecin est disponible dans les donnees (ex: generaliste, pediatre, neurologue), mentionne-la apres le nom : "{{MEDECIN}}, medecin generaliste".',
     '   Si {{MEDECIN}} est absent des donnees, ouvre sur la famille.',
     '   EXEMPLES DE STYLE pour le temps 1 :',
-    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande de {{MEDECIN}}, medecin generaliste, afin de realiser un bilan d\'ergotherapie."',
+    '   - "{{PATIENT_PRENOM}} est recu(e) en consultation d\'ergotherapie a la demande du {{MEDECIN}}, medecin generaliste, afin de realiser un bilan d\'ergotherapie."',
     '   - "Cette demarche est egalement soutenue par les parents de {{PATIENT_PRENOM}}, suite a des observations de difficultes dans le domaine de [theme principal]."',
     '   TEMPS 2 — DIFFICULTES CONCRETES (1-2 phrases) :',
     '   Decris 1-2 difficultes REPRESENTATIVES et principales (pas une liste exhaustive). Attribue-les a leur source (parents, enseignant, enfant). Les details fins (confusions de lettres specifiques, comportements precis d\'ecriture) seront developpes dans le profil et le diagnostic — ne les anticipe pas ici.',
@@ -316,8 +317,8 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
     '',
     '3. "profil_occupationnel" (150-300 mots) :',
     '   Synthese du profil en PARAGRAPHES THEMATIQUES, un par theme. Ordre OBLIGATOIRE :',
-    '   a) SCOLARITE ACTUELLE : La PREMIERE PHRASE du profil doit inclure l\'age et le genre : "[PATIENT_PRENOM] est un/une jeune [garcon/fille/enfant] de X ans, il/elle est actuellement scolarise(e) en [niveau] au [type d\'etablissement] [nom] a [ville]." Format de lieu OBLIGATOIRE : "au [type] [nom] a [ville]" (ex : "au college Mescoat a Landerneau", "au lycee Louis le Grand a Paris") — JAMAIS "au sein de l\'etablissement [nom], [ville]". Si l\'age n\'est pas disponible, ouvre directement par la situation scolaire sans mention d\'age. Mentionne ensuite les amenagements en place avec leur CONTENU (pas juste "PAP" mais "PAP mentionnant un travail allege et du temps supplementaire").',
-    '   b) SUIVI THERAPEUTIQUE : prises en charge passees et en cours, avec dates si disponibles et motifs. CONCIS : 1-2 phrases par professionnel maximum. Ne liste pas toutes les dates si elles forment un catalogue.',
+    '   a) SCOLARITE ACTUELLE : La PREMIERE PHRASE du profil doit inclure l\'age et le genre : "[PATIENT_PRENOM] est un/une jeune [garcon/fille/enfant] de X ans, il/elle est actuellement scolarise(e) en [niveau] au [type d\'etablissement] [nom] a [ville]." Format de lieu OBLIGATOIRE : "au [type] [nom] a [ville]" (ex : "au college Mescoat a Landerneau", "au lycee Louis le Grand a Paris") — JAMAIS "au sein de l\'etablissement [nom], [ville]". Si l\'age n\'est pas disponible, ouvre directement par la situation scolaire sans mention d\'age. Mentionne ensuite les amenagements en place avec leur CONTENU (pas juste "PAP" mais "PAP mentionnant un travail allege et du temps supplementaire"). Si les donnees rapportent l\'etat actuel des apprentissages scolaires tel que note par l\'ecole/l\'enseignant (ex: lecture, graphisme, pre-graphisme se passent bien ou au contraire posent difficulte), integre cette information brievement dans CE MEME paragraphe scolaire (ex: "Les apprentissages de la lecture et du graphisme se passent bien.") — ne la deplace pas ailleurs et ne l\'omets pas.',
+    '   b) SUIVI THERAPEUTIQUE : prises en charge passees et en cours, avec dates si disponibles et motifs. CONCIS : 1-2 phrases par professionnel maximum. Ne liste pas toutes les dates si elles forment un catalogue. INTERDIT : n\'inclus JAMAIS le nom propre d\'un professionnel suivi (kinesitherapeute, neuropediatre, autre medecin ou reeducateur) autre que le medecin prescripteur {{MEDECIN}}. Mentionne uniquement la specialite et, si pertinent, l\'etablissement/le lieu (ex: "suivi hebdomadaire en kinesitherapie depuis aout 2022", "suivi annuel en neuropediatrie", "suivi au centre X a [ville]"), jamais le nom du praticien.',
     '   c) AUTONOMIE / VIE QUOTIDIENNE : autonomie dans les actes de la vie courante, difficultes spatiales ou autres mentionnees.',
     '   d) LOISIRS : activites extrascolaires, centres d\'interet, hobbies.',
     '   e) COMPORTEMENT EN CLASSE : Si des difficultes d\'attention, d\'investissement ou de comportement sont EXPLICITEMENT decrites dans les donnees, cree un paragraphe dedie avec les details (participation, motivation, preferences de matieres). Si au contraire l\'attention et le comportement sont fonctionnels (absence de difficulte notee), NE PAS creer un paragraphe dedie : integre une phrase breve a la FIN du profil, apres le profil social et emotionnel (ex: "[PATIENT_PRENOM] ne presente pas de difficulte d\'attention en classe." ou "[PATIENT_PRENOM] parvient a maintenir une attention suffisante pour suivre les enseignements."). Si l\'organisation est fonctionnelle, dis-le positivement. Ne reformule PAS negativement un constat positif.',
@@ -349,6 +350,18 @@ const buildBioTask = (payload: Record<string, unknown>): BuildResult => {
   };
 };
 
+// Free-text fields (diagnosticInput/projectInput/recommendationsInput) filled by the practitioner
+// sometimes contain explicit negations ("Aucune", "RAS", "Non", "N/A"...) that are longer than
+// the naive length threshold but carry NO substantive content. Treat those as empty so the
+// "no input provided" branch (which lets the model reason from scratch) is used instead of the
+// "integrate this verbatim" branch (which would otherwise be fed a contradictory instruction).
+const EMPTY_FREE_TEXT_PATTERN = /^(aucune?|rien|non|ras|n\/?a|neant|sans objet|pas de [a-z\u00e0-\u00ff]+)\.?$/i;
+const isSubstantiveInput = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (trimmed.length <= 5) return false;
+  return !EMPTY_FREE_TEXT_PATTERN.test(trimmed);
+};
+
 const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
   const profile = String(payload.profile || 'pediatric');
   const childContext = String(payload.childContext || '');
@@ -362,7 +375,7 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 
   // Directive diagnostique conditionnelle
   let diagnosticDirective: string;
-  if (diagnosticInput.length > 5) {
+  if (isSubstantiveInput(diagnosticInput)) {
     diagnosticDirective = [
       `Le praticien a pose le constat suivant : "${diagnosticInput}".`,
       'Justifie ce constat par les observations fonctionnelles fournies.',
@@ -371,6 +384,8 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
       '"presente des difficultes de coordination bimanuelle" et NON "le diagnostic de X s\'illustre de maniere flagrante".',
       'Si le constat mentionne plusieurs diagnostics, traite chacun dans le domaine fonctionnel correspondant.',
       'IMPORTANT : Integre TOUTES les observations specifiques mentionnees par le praticien, y compris les recommandations de bilans complementaires (orthoptique, neuropsychologique, etc.). Si le praticien mentionne une recommandation de bilan complementaire, elle DOIT apparaitre dans la synthese diagnostique.',
+      'COUVERTURE COMPLETE OBLIGATOIRE : chaque element distinct cite dans le constat du praticien (ex: regulation de la force, anticipation posturale, dissociation corporelle...) doit apparaitre dans le domaine correspondant. N\'en omets aucun pour le remplacer par un detail non fourni.',
+      'ANTI-INVENTION : n\'ajoute AUCUN detail clinique specifique (ex: orientation d\'un pied ou d\'un membre, alternance de mains, fatigue/agitation) qui ne decoule pas explicitement du constat du praticien ou des observations fournies, meme s\'il semble plausible pour ce type de profil.',
       'Utilise les memes termes fonctionnels que le praticien plutot que des synonymes plus techniques.',
     ].join(' ');
   } else {
@@ -387,24 +402,30 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
 
   // Directive projet d'accompagnement conditionnelle
   let projectDirective: string;
-  if (projectInput.length > 5) {
-    projectDirective = `Le praticien a defini le projet suivant : "${projectInput}". Developpe ce projet en tirets concrets (axes de travail, suivi propose, collaboration avec l'entourage).`;
+  if (isSubstantiveInput(projectInput)) {
+    projectDirective = [
+      `Le praticien a defini le projet suivant : "${projectInput}".`,
+      'Developpe ce projet en tirets concrets (axes de travail, suivi propose, collaboration avec l\'entourage).',
+      'COUVERTURE COMPLETE : ne te limite pas au seul theme mentionne par le praticien. Verifie la synthese diagnostique et assure-toi que le projet couvre CHAQUE domaine fonctionnel identifie comme deficitaire (motricite fine/graphisme, motricite globale/equilibre, AVQ/autonomie, visuo-spatial...), en ajoutant un axe pour un domaine deficitaire absent de la note du praticien si necessaire.',
+      'COLLABORATION EXTERNE : si un suivi paramedical externe (kinesitherapeute, autre reeducateur) est deja mentionne dans le profil occupationnel et qu\'un domaine moteur global/equilibre est deficitaire, formule un axe de collaboration avec ce professionnel plutot que de dupliquer entierement ce travail en ergotherapie.',
+    ].join(' ');
   } else {
     projectDirective = [
       'Formule un projet d\'accompagnement coherent avec le diagnostique.',
-      'Si un suivi est justifie, liste les axes d\'intervention (ex: reeducation graphique, motricite fine, strategies visuo-spatiales, autonomie, adaptations scolaires).',
+      'Si un suivi est justifie, liste les axes d\'intervention (ex: reeducation graphique, motricite fine, strategies visuo-spatiales, autonomie, motricite globale, adaptations scolaires) EN COUVRANT CHAQUE domaine deficitaire identifie dans la synthese diagnostique, pas uniquement le premier.',
       'Pour les axes graphiques/scriptaux, inclus TOUJOURS "qualite" aux cotes de "lisibilite" et "vitesse" (ex: "pour ameliorer la lisibilite, la qualite et la vitesse lors des ecrits").',
       'Si motricite fine/coordination ET reeducation graphique figurent tous deux dans les axes, formule la motricite fine comme prerequis a la reeducation graphique (ex: "Travail de la motricite fine et de la coordination bi-manuelle pour favoriser la reeducation graphique.").',
+      'COLLABORATION EXTERNE : si un suivi paramedical externe (kinesitherapeute, autre reeducateur) est deja mentionne dans le profil occupationnel et qu\'un domaine moteur global/equilibre est deficitaire, formule un axe de collaboration avec ce professionnel plutot que de dupliquer entierement ce travail.',
       'Si aucun suivi n\'est preconise, indique-le clairement.',
     ].join(' ');
   }
 
   // Directive recommandations conditionnelle
   let recommendationsDirective: string;
-  if (recommendationsInput.length > 5) {
-    recommendationsDirective = `Le praticien propose les preconisations suivantes : "${recommendationsInput}". Integre ces elements fidellement et complete si pertinent. Formule les recommandations de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses quand c'est utile.`;
+  if (isSubstantiveInput(recommendationsInput)) {
+    recommendationsDirective = `Le praticien propose les preconisations suivantes : "${recommendationsInput}". Integre ces elements fidellement et complete si pertinent. Formule les recommandations de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses quand c'est utile. ADAPTE le registre au niveau scolaire de l'enfant (voir regle de niveau scolaire ci-dessous).`;
   } else {
-    recommendationsDirective = 'Formule des preconisations concretes et proportionnees aux resultats. Chaque preconisation doit etre directement actionnable. Formule-les de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses (ex: "textes a trous, supports de cours photocpies..."). Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte de la classe.';
+    recommendationsDirective = 'Formule des preconisations concretes et proportionnees aux resultats. Chaque preconisation doit etre directement actionnable. Formule-les de maniere LARGE et PRAGMATIQUE, avec des exemples concrets entre parentheses (ex: "textes a trous, supports de cours photocpies..."). Ajoute "lorsque cela est possible" quand la recommandation necessite une adaptation au contexte de la classe. REGLE DE NIVEAU SCOLAIRE (obligatoire) : si l\'enfant est scolarise en maternelle (TPS/PS/MS/GS) et n\'a pas encore d\'activites d\'ecriture scolaire formelle rapportees, NE PROPOSE PAS d\'adaptations pedagogiques de type "limiter la copie", "modeles manuscrits" ou "plan incline en classe" (non pertinentes avant le CP) : privilegie des recommandations pour LA MAISON/LA FAMILLE (jeux moteurs, activites creatives, positionnement a la maison, guidance parentale) et adapte l\'en-tete en consequence (ex: "Adaptations recommandees a la maison :").';
   }
 
   const subjectLabel = profile === 'adult' ? 'la personne' : "l'enfant";
@@ -487,12 +508,14 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   - Si des performances sont fragiles, decris l\'impact fonctionnel concret.',
     '   - N\'utilise les domaines que s\'il y a des donnees correspondantes.',
     '   - Pas de metaphores. Ton clinique factuel mais accessible.',
+    '   - ANTI-INVENTION (s\'applique a TOUS les domaines, pas seulement au visuo-spatial ou a la posture) : n\'ajoute JAMAIS une observation, une fragilite, un detail comportemental ou une manifestation (ex: orientation d\'un pied ou d\'un membre, alternance des mains, fatigue, agitation) qui ne decoule pas explicitement des observations fournies ou du constat du praticien, meme si cela parait cliniquement plausible pour ce type de profil.',
+    '   - NE COMBLE JAMAIS l\'espace pour atteindre le nombre de mots minimum en inventant des details cliniques. Une synthese plus courte mais fidele aux donnees est TOUJOURS preferable a une synthese plus longue mais inexacte.',
     '',
-    '2. "projet_accompagnement" (40-120 mots) :',
+    '2. "projet_accompagnement" (40-140 mots) :',
     `   Si un suivi en ergotherapie est recommande :`,
     `   - Commence par une phrase valorisant ${subjectLabel} ("jeune fille consciencieuse et appliquee", "enfant volontaire et investi(e)").`,
     `   - Precise la MODALITE de suivi : "je propose la mise en place de seances regulieres" OU "je propose la mise en place de seances ponctuelles, en si besoin" (adapte au niveau de necessite du suivi selon le diagnostique).`,
-    `   - Liste 1-3 axes de travail en tirets simples et concis. REGLE ECRITURE : Pour les axes graphiques/scriptaux, inclus TOUJOURS "qualite" aux cotes de "lisibilite" et "vitesse" (ex: "pour ameliorer la lisibilite, la qualite et la vitesse lors des ecrits"). REGLE PREREQUIS : Si motricite fine/coordination ET reeducation graphique figurent tous deux, formule la motricite fine comme prerequis : "Travail de la motricite fine et de la coordination bi-manuelle pour favoriser la reeducation graphique."`,
+    `   - Liste 1-4 axes de travail en tirets simples et concis. REGLE DE COUVERTURE : un axe par domaine fonctionnel deficitaire identifie dans la synthese diagnostique (ex: graphisme/motricite fine, posture/prise du crayon, AVQ/autonomie, motricite globale/equilibre) — ne te limite pas au seul axe graphique si d'autres domaines sont deficitaires. REGLE ECRITURE : Pour les axes graphiques/scriptaux, inclus TOUJOURS "qualite" aux cotes de "lisibilite" et "vitesse" (ex: "pour ameliorer la lisibilite, la qualite et la vitesse lors des ecrits"). REGLE PREREQUIS : Si motricite fine/coordination ET reeducation graphique figurent tous deux, formule la motricite fine comme prerequis : "Travail de la motricite fine et de la coordination bi-manuelle pour favoriser la reeducation graphique."`,
     `   - LONGUEUR DES AXES : Chaque axe doit etre un label CONCIS (5-15 mots maximum). Evite les propositions subordonnees explicatives ("pour automatiser le geste", "afin de liberer la charge cognitive") sauf si le praticien les a explicitement formulees dans projectInput. Exemples CORRECTS : "- Amelioration de la vitesse de frappe au clavier" / "- Apprentissage de l'ordinateur afin de compenser les difficultes graphiques et d'orthographe". Exemple INTERDIT : "- Amelioration de la vitesse de frappe au clavier pour automatiser le geste et liberer la charge cognitive".`,
     `   - OBLIGATOIRE : Termine par une phrase de REEVALUATION : "Une reevaluation des competences est preconisee tous les 6 mois, afin d'ajuster les objectifs du suivi en ergotherapie et de s'adapter au plus pres de l'evolution de {{PATIENT_PRENOM}}."`,
     `   Si le suivi n'est PAS recommande :`,
@@ -512,11 +535,11 @@ const buildDiagnosticTask = (payload: Record<string, unknown>): BuildResult => {
     '   EXEMPLE DE STYLE :',
     '   "Adaptations pedagogiques recommandees :\\n- Utilisation preferentielle de l\'outil informatique pour l\'ensemble des productions ecrites, lorsque cela est possible.\\n- Limiter la charge de copie (fourniture de supports de cours photocpies, textes a trous...).\\n- Renforcement des reperes visuels sur les supports de travail (lignes de couleurs, aeration des documents).\\n- Poursuite du tiers-temps pour compenser la lenteur et la fatigue induite."',
     '',
-    `4. "objectifs_generaux" (40-120 mots) :`,
+    `4. "objectifs_generaux" (40-140 mots) :`,
     `   Si un suivi en ergotherapie est recommande :`,
     `   - Commence par une phrase valorisant ${subjectLabel} ("jeune fille consciencieuse et appliquee", "enfant volontaire et investi(e)").`,
     `   - Precise la MODALITE de suivi : "je propose la mise en place de seances regulieres" OU "je propose la mise en place de seances ponctuelles, en si besoin" (adapte au niveau de necessite du suivi selon le diagnostique).`,
-    `   - Liste 1-3 objectifs en tirets simples et concis. PAS de categories "court/moyen terme". PAS de timeline.`,
+    `   - Liste 1-4 objectifs en tirets simples et concis, un par domaine fonctionnel deficitaire identifie dans la synthese diagnostique. PAS de categories "court/moyen terme". PAS de timeline.`,
     `   - OBLIGATOIRE : Termine par une phrase de REEVALUATION : "Une reevaluation des competences est preconisee tous les 6 mois, afin d'ajuster les objectifs du suivi en ergotherapie et de s'adapter au plus pres de l'evolution de {{PATIENT_PRENOM}}."`,
     `   Si le suivi n'est PAS recommande :`,
     `   - Dis-le clairement : "Un accompagnement en ergotherapie n'est pas preconise pour {{PATIENT_PRENOM}}."`,

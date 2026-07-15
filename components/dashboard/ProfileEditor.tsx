@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { ExportService } from '../../services/exportService';
 import { getLastBackupDate, formatLastBackupLabel } from '../../utils/backupTracking';
+import { FormField } from '../shared/FormField';
 
 interface ProfileEditorProps {
     onClose: () => void;
@@ -50,7 +51,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
                 `Importer ce backup ?\n` +
                 `Date\u00a0: ${new Date(preview.exportedAt).toLocaleString()}\n` +
                 `${preview.patients} patient(s) \u2022 ${preview.assessments} bilan(s) \u2022 ${preview.drafts} brouillon(s)\n\n` +
-                `Les données existantes pour ces patients seront \u00e9crasées.`
+                `Les données existantes pour ces patients seront \u00e9crasées.`
             );
             if (!ok) return;
             const result = await ExportService.importFromFile(file, practitioner.id);
@@ -219,57 +220,18 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
 
                 <div className="p-8 space-y-5">
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Prénom</label>
-                            <input name="firstName" value={form.firstName} onChange={handleChange}
-                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                                placeholder="Prénom" />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Nom</label>
-                            <input name="lastName" value={form.lastName} onChange={handleChange}
-                                className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                                placeholder="Nom" />
-                        </div>
+                        <FormField label="Prénom" name="firstName" value={form.firstName} onChange={handleChange} placeholder="Prénom" />
+                        <FormField label="Nom" name="lastName" value={form.lastName} onChange={handleChange} placeholder="Nom" />
                     </div>
 
-                    <div>
-                        <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Sous-titre (profession)</label>
-                        <input name="brandSubtitle" value={form.brandSubtitle} onChange={handleChange}
-                            className="w-full mt-1 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                            placeholder="Ergothérapeute" />
-                    </div>
+                    <FormField label="Sous-titre (profession)" name="brandSubtitle" value={form.brandSubtitle} onChange={handleChange} placeholder="Ergothérapeute" />
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Téléphone Pro</label>
-                            <div className="relative mt-1">
-                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
-                                <input name="phone" value={form.phone} onChange={handleChange}
-                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                                    placeholder="06..." />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">SIRET</label>
-                            <div className="relative mt-1">
-                                <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
-                                <input name="siret" value={form.siret} onChange={handleChange}
-                                    className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                                    placeholder="123 456 789..." />
-                            </div>
-                        </div>
+                        <FormField label="Téléphone Pro" name="phone" value={form.phone} onChange={handleChange} placeholder="06..." icon={<Phone size={16} />} />
+                        <FormField label="SIRET" name="siret" value={form.siret} onChange={handleChange} placeholder="123 456 789..." icon={<Building size={16} />} />
                     </div>
 
-                    <div>
-                        <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase ml-1 tracking-wider">Adresse Cabinet</label>
-                        <div className="relative mt-1">
-                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-disabled)]" size={16} />
-                            <input name="address" value={form.address} onChange={handleChange}
-                                className="w-full pl-10 p-3 bg-[var(--input-bg)] rounded-xl border border-transparent focus:bg-[var(--card-bg)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-opacity-10)] outline-none font-bold text-[var(--text-main)]"
-                                placeholder="10 Rue de la Santé, 75000 Paris" />
-                        </div>
-                    </div>
+                    <FormField label="Adresse Cabinet" name="address" value={form.address} onChange={handleChange} placeholder="10 Rue de la Santé, 75000 Paris" icon={<MapPin size={16} />} />
 
                     <div className="bg-stone-50 dark:bg-stone-800/30 p-3 rounded-xl text-xs text-[var(--text-secondary)]">
                         <p>L'email (<strong>{userProfile.email}</strong>) ne peut pas être modifié ici.</p>

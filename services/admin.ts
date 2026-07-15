@@ -5,10 +5,7 @@ import type {
     AdminSubtestRecord,
     AdminUserRow,
     AdminUserUpdatePayload,
-    TestData,
-    Patient,
 } from '../types';
-import { Logger } from '../utils/logger';
 
 export const AdminService = {
 
@@ -114,45 +111,5 @@ export const AdminService = {
         const { data, error } = await supabase.rpc('admin_get_ai_health_stats');
         if (error) throw error;
         return data as { daily: Array<{ date: string; requests: number; errors: number }>; total_requests: number; total_errors: number; error_rate_pct: number; };
-    },
-
-    // ── Anonymous telemetry ────────────────────────────────────────────
-    logAnonymousStats: (tests: TestData, patient: Patient): void => {
-        const testIds = Object.keys(tests);
-        if (testIds.length === 0) return;
-
-        // Derive age bucket from DOB — no PII stored
-        let ageBucket = 'unknown';
-        if (patient.dob) {
-            const dob = new Date(patient.dob);
-            if (!isNaN(dob.getTime())) {
-                const ageYears = Math.floor(
-                    (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
-                );
-                ageBucket = ageYears < 6 ? '<6'
-                    : ageYears <= 8 ? '6-8'
-                    : ageYears <= 11 ? '9-11'
-                    : ageYears <= 14 ? '12-14'
-                    : ageYears <= 17 ? '15-17'
-                    : '18+';
-            }
-        }
-
-        const payload = {
-            test_ids: testIds,
-            age_bucket: ageBucket,
-            gender: patient.gender ?? null,
-        };
-
-        Logger.info('anonymous_stats', payload);
-
-        // Best-effort persist — errors are silently swallowed (fire-and-forget)
-        supabase
-            .from('recommendation_crowd')
-            .insert({ test_ids: testIds, age_bucket: ageBucket, gender: patient.gender ?? null })
-            .then(({ error }) => {
-                if (error) Logger.info('anonymous_stats_skip', { reason: error.message });
-            })
-            .catch(() => {});
     },
 };

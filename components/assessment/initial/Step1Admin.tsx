@@ -140,6 +140,13 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
     const isAdministrativeReady = isAdministrativeSectionReady(data);
   
   const handleDataChange = (partialData: Partial<Patient>) => {
+      // NOTE (privacy isolation): edits made here are persisted only to the local
+      // IndexedDB draft (via `updateData` → AssessmentContext auto-save), never back
+      // to the family's original submission. By the time this step is reachable, the
+      // corresponding `pending_questionnaires` row has already been deleted by
+      // usePendingProcessor.handleProcessPending, so there is no shared record left
+      // for a parent to re-open — any correction made here can never be seen by the
+      // family. Do not introduce a write-path from here back to `pending_questionnaires`.
       if (partialData.dob) {
           partialData.age = calculateAge(partialData.dob);
       }
