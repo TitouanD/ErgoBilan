@@ -191,7 +191,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (!patientId || token !== sessionTokenRef.current) return;
         await StorageService.saveDraft(draftFor({ ...snapshotPatient, id: patientId, age: getPatientAgeForIdentity(snapshotPatient) }));
       } catch (e) {
-        Logger.warn('DB', 'Autosave draft failed (silently)', e);
+        Logger.error('DB', 'Autosave draft failed', e, { patientId: snapshotPatient.id ?? null });
       } finally {
         endAutoSave();
       }

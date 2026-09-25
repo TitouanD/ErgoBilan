@@ -267,7 +267,7 @@ export const StorageService = {
     _localDB = getLocalDB(userId);
     Logger.info('DB', `StorageService context set — user: ${userId}`);
     // Fire-and-forget: migrate legacy global ErgoBilanDB rows for this user
-    migrateLegacyDB(userId, _localDB).catch(() => {/* already logged inside */});
+    migrateLegacyDB(userId, _localDB).catch((e) => Logger.error('DB', 'Legacy DB migration check failed', e));
   },
 
   /** Close the local database and forget the current user (logout / lock). */

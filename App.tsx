@@ -16,6 +16,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
 import { Logger } from './utils/logger';
+import { setAppTag, setAppUser } from './services/sentryService';
 import { getDaysSinceBackup } from './utils/backupTracking';
 import { useDataLoader } from './hooks/useDataLoader';
 import { useAssessmentFlow } from './hooks/useAssessmentFlow';
@@ -135,6 +136,30 @@ const AppRouter = () => {
     } else if (authState === 'error') toast.error('Problème de connexion.');
   }, [authState]);
 
+  // ─── Sentry: who (pseudonymous id) and where, attached to every event ─────
+  useEffect(() => {
+    setAppUser(isDemoMode ? null : userProfile?.id || null);
+    setAppTag('demo_mode', isDemoMode);
+  }, [userProfile?.id, isDemoMode]);
+
+  useEffect(() => {
+    setAppTag('auth_state', authState);
+    Logger.info('AUTH', `Auth state: ${authState}`);
+  }, [authState]);
+
+  useEffect(() => {
+    setAppTag('app_mode', mode);
+    Logger.info('UI', `Screen: ${mode}`);
+  }, [mode]);
+
+  const { reportType, step } = assessment;
+  useEffect(() => {
+    const inAssessment = mode === 'assessment';
+    setAppTag('report_type', inAssessment ? reportType : null);
+    setAppTag('assessment_step', inAssessment ? step : null);
+    if (inAssessment) Logger.info('UI', `Assessment ${reportType} — step ${step}`);
+  }, [mode, reportType, step]);
+
   // Backup reminder, once per browser session
   useEffect(() => {
     if (!practitioner?.id || isDemoMode || authState !== 'authenticated') return;
@@ -195,7 +220,8 @@ const AppRouter = () => {
       setSelectedFile({ ...baseFile, assessments: details.assessments, followup: details.followup, patient: details.patient });
       setDetailPaging({ hasMoreAssessments: details.hasMoreAssessments, nextAssessmentOffset: details.nextAssessmentOffset, isLoadingMore: false });
       setMode('detail');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Failed to open patient file', e);
       toast.error("Impossible d'ouvrir ce dossier.");
     }
   };

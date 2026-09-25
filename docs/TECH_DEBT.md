@@ -63,6 +63,15 @@ Statuts :
 - Edge `generate` déployée (v52) avec la CLI : `npx supabase functions deploy generate --project-ref hxlsjpkwrqunuqpaukmg --no-verify-jwt --use-api`.
 - Reste à faire à la main : activer la protection contre les mots de passe compromis (Auth) et supprimer l'edge `extract-norms` (Edge Functions > extract-norms > Settings > Delete function).
 
+## Observabilité Sentry (2026-09-25) — en attente de déploiement
+
+Instrumentation complète front et edge (voir [ARCHITECTURE.md](ARCHITECTURE.md), section Sentry). Actions restantes :
+
+- Vérifier que le secret `SENTRY_DSN_BACKEND` existe (`npx supabase secrets list --project-ref hxlsjpkwrqunuqpaukmg`) ; sinon le définir avec le DSN du projet `ergobilan-backend`.
+- Redéployer `generate` et `signup` (même commande que ci-dessus, avec `signup` pour la seconde).
+- Vercel : définir `SENTRY_AUTH_TOKEN` (jeton d'organisation Sentry, scope `project:releases`) pour l'envoi des source maps ; optionnellement `VITE_SENTRY_ENVIRONMENT` par environnement (sinon `VERCEL_ENV` est utilisé).
+- Tests en local : `VITE_SENTRY_DSN_FRONTEND` et `VITE_SENTRY_ENABLE_IN_DEV=true` dans `.env.local`.
+
 ## P0 — Confidentialité et sécurité
 
 ### P0-1 Données de santé en clair au repos — Ouvert

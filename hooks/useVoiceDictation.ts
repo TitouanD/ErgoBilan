@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { Logger } from '../utils/logger';
 
 // Extend Window for vendor-prefixed API
 interface SpeechRecognitionAlternative {
@@ -152,6 +153,7 @@ export const useVoiceDictation = (options: UseVoiceDictationOptions = {}): UseVo
         try {
             recognition.start();
         } catch (e) {
+            Logger.error('UI', 'Voice dictation start failed', e);
             setError('Impossible de démarrer la dictée.');
             setIsListening(false);
         }

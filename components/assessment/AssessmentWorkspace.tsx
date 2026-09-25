@@ -14,6 +14,7 @@ import { FileText, Loader2, ShieldCheck } from 'lucide-react';
 import { useAssessment } from '../../contexts/AssessmentContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { StorageService } from '../../services/storage';
+import { Logger } from '../../utils/logger';
 import type { useAssessmentFlow } from '../../hooks/useAssessmentFlow';
 import { AssessmentStepper } from './shared/AssessmentStepper';
 import { Step1Admin } from './initial/Step1Admin';
@@ -92,7 +93,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
     const patientId = assessment.patient.id;
     assessment.resetAssessment();
     if (patientId && !isDemoMode) {
-      await StorageService.deleteDraft(patientId).catch(() => undefined);
+      await StorageService.deleteDraft(patientId).catch((e) => Logger.error('DB', 'Draft discard failed', e, { patientId }));
       void loadData();
     }
     onExit();

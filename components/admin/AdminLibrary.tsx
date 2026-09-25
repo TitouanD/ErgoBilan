@@ -119,6 +119,7 @@ export const AdminLibrary: React.FC = () => {
       toast.success('Test sauvegardé.');
       await loadTests();
     } catch (e: any) {
+      Logger.error('ADMIN', 'Failed to save test detail', e, { testId: testRecord.id });
       toast.error('Erreur : ' + (e?.message ?? 'Sauvegarde impossible.'));
     } finally {
       setIsSaving(false);
@@ -134,6 +135,7 @@ export const AdminLibrary: React.FC = () => {
       toast.success('Test supprimé.');
       await loadTests();
     } catch (e: any) {
+      Logger.error('ADMIN', 'Failed to delete test', e, { testId: testRecord.id });
       toast.error('Erreur : ' + (e?.message ?? 'Suppression impossible.'));
     }
   };

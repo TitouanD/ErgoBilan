@@ -4,6 +4,7 @@ import {
   AlertTriangle, Archive, ArchiveRestore, ArrowLeft, CheckCircle2, Clock3, Calendar, BellOff, Edit3, FileText, GraduationCap, Mail, MapPin, Pencil, Phone, Save, Stethoscope, Trash2, User, Users, Zap
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
+import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 import { getPatientAgeForIdentity } from '../../utils/patient';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -160,7 +161,8 @@ export const PatientDetail: React.FC<Props> = ({
       setEditingSection(null);
       setEditDraft({});
       toast.success('Profil mis à jour.');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Patient identity update failed', e, { patientId: file.id });
       toast.error('Impossible de sauvegarder les modifications.');
     } finally {
       setIsSavingProfile(false);
@@ -181,7 +183,8 @@ export const PatientDetail: React.FC<Props> = ({
       });
       await refreshFollowup();
       toast.success('Rappel planifie.');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Followup scheduling failed', e, { patientId: file.id });
       toast.error('Impossible de planifier le rappel.');
     } finally {
       setIsFollowupBusy(false);
@@ -205,7 +208,8 @@ export const PatientDetail: React.FC<Props> = ({
       }
       await refreshFollowup();
       toast.success('Rappel reporte d un mois.');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Followup snooze failed', e, { patientId: file.id });
       toast.error('Impossible de reporter le rappel.');
     } finally {
       setIsFollowupBusy(false);
@@ -228,7 +232,8 @@ export const PatientDetail: React.FC<Props> = ({
       }
       await refreshFollowup();
       toast.success('Rappel marqué comme complété.');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Followup completion failed', e, { patientId: file.id });
       toast.error('Impossible de mettre à jour le rappel.');
     } finally {
       setIsFollowupBusy(false);
@@ -240,7 +245,8 @@ export const PatientDetail: React.FC<Props> = ({
     try {
       await StorageService.toggleArchive(file);
       onBack();
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Patient archive toggle failed', e, { patientId: file.id });
       toast.error('Erreur lors de la mise à jour.');
     } finally {
       setIsProcessing(false);
@@ -253,7 +259,8 @@ export const PatientDetail: React.FC<Props> = ({
       await StorageService.deleteFile(file.id);
       onDelete?.(file.id);
       onBack();
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Patient deletion failed', e, { patientId: file.id });
       toast.error('Erreur lors de la suppression.');
     } finally {
       setIsProcessing(false);

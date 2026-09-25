@@ -1,5 +1,6 @@
 import { createClient, type Session } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase';
+import { Logger } from '../utils/logger';
 
 // --- CONFIGURATION SUPABASE ---
 // Production requires explicit Vite env vars.
@@ -30,6 +31,7 @@ const safeStorage = {
 			try {
 				JSON.parse(value);
 			} catch {
+				Logger.warn('AUTH', 'Corrupt auth storage entry discarded', { key });
 				localStorage.removeItem(key);
 				return null;
 			}

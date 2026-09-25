@@ -1,7 +1,6 @@
 ﻿import React, { type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Logger } from '../../utils/logger';
-import { captureAppException } from '../../services/sentryService';
 
 interface Props {
   children?: ReactNode;
@@ -24,13 +23,9 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, error };
   }
 
+  // Sentry capture happens once, in the React root `onCaughtError` hook (index.tsx), with the component stack.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    Logger.error('SYSTEM', 'Uncaught Error in Component Tree', { error, componentStack: errorInfo.componentStack });
-    captureAppException(error, {
-      scope: 'SYSTEM',
-      source: 'GlobalErrorBoundary',
-      componentStack: errorInfo.componentStack,
-    });
+    Logger.warn('SYSTEM', 'Uncaught error in component tree (error screen shown)', { message: error.message, componentStack: errorInfo.componentStack });
   }
 
   private handleReload = () => {

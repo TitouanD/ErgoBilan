@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
-import { initSentry, withSentryProfiler } from './services/sentryService';
+import { initSentry, reactRootErrorHandler, withSentryProfiler } from './services/sentryService';
 
 // Local font assets for lower startup latency and fewer third-party requests.
 import '@fontsource/quicksand/latin-400.css';
@@ -20,7 +20,12 @@ if (!rootElement) {
 initSentry();
 const AppWithProfiler = withSentryProfiler(App);
 
-const root = ReactDOM.createRoot(rootElement);
+// React 19 root hooks: errors caught by GlobalErrorBoundary arrive through onCaughtError (with the component stack).
+const root = ReactDOM.createRoot(rootElement, {
+  onUncaughtError: reactRootErrorHandler('uncaught'),
+  onCaughtError: reactRootErrorHandler('caught'),
+  onRecoverableError: reactRootErrorHandler('recoverable'),
+});
 root.render(
   <React.StrictMode>
     <AppWithProfiler />

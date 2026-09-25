@@ -11,6 +11,7 @@ import { ExportService } from '../../services/exportService';
 import { getDaysSinceBackup } from '../../utils/backupTracking';
 import { useToast } from '../../contexts/ToastContext';
 import { ThemeToggle } from '../shared/ThemeToggle';
+import { Logger } from '../../utils/logger';
 
 const BACKUP_OVERDUE_DAYS = 30;
 
@@ -91,7 +92,8 @@ export const AppHeader: React.FC<Props> = ({
       await ExportService.exportAll(practitioner.id);
       setBackupOverdue(false);
       toast.success('Backup sauvegardé — gardez ce fichier en lieu sûr : il contient les dossiers patients en clair.');
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Backup export failed', e);
       toast.error("Erreur lors de l'export.");
     } finally {
       setIsExporting(false);
@@ -115,6 +117,7 @@ export const AppHeader: React.FC<Props> = ({
       toast.success(`Import réussi : ${result.patients} patients, ${result.assessments} bilans`);
       onImported();
     } catch (err) {
+      Logger.error('DB', 'Backup import failed', err);
       toast.error(err instanceof Error ? err.message : "Erreur lors de l'import");
     } finally {
       if (importRef.current) importRef.current.value = '';

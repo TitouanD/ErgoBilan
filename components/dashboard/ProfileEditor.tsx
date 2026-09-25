@@ -4,6 +4,7 @@ import { supabase } from '../../services/db';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { ExportService } from '../../services/exportService';
+import { Logger } from '../../utils/logger';
 import { getLastBackupDate, formatLastBackupLabel } from '../../utils/backupTracking';
 import { FormField } from '../shared/FormField';
 
@@ -30,7 +31,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             await ExportService.exportAll(practitioner.id);
             setLastBackup(new Date());
             toast.success('Backup sauvegardé — vos données restent sous votre seul contrôle.');
-        } catch {
+        } catch (e) {
+            Logger.error('DB', 'Backup export failed', e);
             toast.error('Erreur lors de l\'export');
         } finally {
             setIsExporting(false);
@@ -57,6 +59,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             const result = await ExportService.importFromFile(file, practitioner.id);
             toast.success(`Import réussi\u00a0: ${result.patients} patients, ${result.assessments} bilans`);
         } catch (err) {
+            Logger.error('DB', 'Backup import failed', err);
             toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'import');
         } finally {
             setIsImporting(false);
@@ -125,6 +128,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             toast.success('Profil mis à jour');
             onClose();
         } catch (err) {
+            Logger.error('DB', 'Practitioner profile save failed', err);
             toast.error('Erreur lors de la sauvegarde');
         } finally {
             setIsSaving(false);
@@ -144,7 +148,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             setEditablePrefsGlobal('');
             setEditablePrefsSections({});
             toast.success('Préférences réinitialisées');
-        } catch {
+        } catch (e) {
+            Logger.error('DB', 'AI style preferences reset failed', e);
             toast.error('Erreur lors de la réinitialisation');
         } finally {
             setIsResettingPrefs(false);
@@ -169,7 +174,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
             if (error) throw error;
             await refreshProfile();
             toast.success('Préférences enregistrées');
-        } catch {
+        } catch (e) {
+            Logger.error('DB', 'AI style preferences save failed', e);
             toast.error('Erreur lors de la sauvegarde des préférences');
         } finally {
             setIsSavingPrefs(false);

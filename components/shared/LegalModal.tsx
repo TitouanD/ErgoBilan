@@ -148,7 +148,10 @@ const PrivacyContent: React.FC = () => (
             </tr>
             <tr className="bg-[var(--card-bg-raised)]/50">
               <td className="border border-[var(--border-color)] p-2 font-medium">Logs techniques</td>
-              <td className="border border-[var(--border-color)] p-2">IP, user-agent, erreurs anonymisées (Sentry)</td>
+              <td className="border border-[var(--border-color)] p-2">
+                User-agent, identifiant technique du compte, erreurs et parcours technique, relecture de session en cas d'erreur avec textes et saisies
+                masqués (Sentry)
+              </td>
               <td className="border border-[var(--border-color)] p-2">Sécurité, débogage</td>
               <td className="border border-[var(--border-color)] p-2">90 jours</td>
             </tr>
@@ -207,7 +210,7 @@ const PrivacyContent: React.FC = () => (
             <tr>
               <td className="border border-[var(--border-color)] p-2 font-medium">Sentry (Functional Software)</td>
               <td className="border border-[var(--border-color)] p-2">UE (ingest.de.sentry.io)</td>
-              <td className="border border-[var(--border-color)] p-2">Logs d'erreurs anonymisés</td>
+              <td className="border border-[var(--border-color)] p-2">Journaux d'erreurs pseudonymisés, relecture de session masquée</td>
               <td className="border border-[var(--border-color)] p-2">DPA Sentry, RGPD</td>
             </tr>
           </tbody>

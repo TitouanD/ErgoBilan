@@ -5,7 +5,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { captureEdgeException } from "../_shared/sentry.ts";
+import { captureEdgeException, captureEdgeMessage } from "../_shared/sentry.ts";
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
   const parsed = Number(value);
@@ -151,6 +151,14 @@ Deno.serve(async (req: Request) => {
 
     if (!practitionerRow) {
       console.warn("Practitioner bootstrap/update failed", practitionerError);
+      await captureEdgeMessage(`PRACTITIONER_SETUP_FAILED: ${practitionerError?.code ?? ""} ${practitionerError?.message ?? "no row returned"}`, {
+        functionName: "signup",
+        level: "error",
+        userId: user.id,
+        request: req,
+        extra: { code: practitionerError?.code, message: practitionerError?.message, details: practitionerError?.details, hint: practitionerError?.hint, attempts: 5 },
+        fingerprint: ["signup", "PRACTITIONER_SETUP_FAILED"],
+      });
       return fail("PRACTITIONER_SETUP_FAILED", "Failed to setup practitioner profile.", 500);
     }
 
@@ -160,6 +168,14 @@ Deno.serve(async (req: Request) => {
     });
     if (bootstrapOrgError || !orgIdRaw) {
       console.warn("Org bootstrap failed", bootstrapOrgError);
+      await captureEdgeMessage(`ORG_SETUP_FAILED: ${bootstrapOrgError?.code ?? ""} ${bootstrapOrgError?.message ?? "no org id returned"}`, {
+        functionName: "signup",
+        level: "error",
+        userId: user.id,
+        request: req,
+        extra: { code: bootstrapOrgError?.code, message: bootstrapOrgError?.message, details: bootstrapOrgError?.details, hint: bootstrapOrgError?.hint },
+        fingerprint: ["signup", "ORG_SETUP_FAILED"],
+      });
       return fail("ORG_SETUP_FAILED", "Failed to setup organization.", 500);
     }
     const orgId = String(orgIdRaw);
@@ -175,7 +191,8 @@ Deno.serve(async (req: Request) => {
     });
   } catch (err) {
     await captureEdgeException(err, {
-      functionName: 'signup',
+      functionName: "signup",
+      request: req,
     });
     console.error("Signup onboarding edge error:", err);
     return fail("INTERNAL", "Internal server error.", 500);

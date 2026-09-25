@@ -1,5 +1,6 @@
 import { getVerifiedAccessToken, SUPABASE_ANON_KEY, SUPABASE_URL } from './db';
 import { Logger } from '../utils/logger';
+import { setAppContext } from './sentryService';
 
 const FUNCTION_NAME = 'generate';
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -141,6 +142,7 @@ export const callAIProxyTask = async (params: TaskParams): Promise<ProxyResponse
       }
     }
 
+    const startedAt = performance.now();
     let { data, error } = await invokeTask(accessToken, params);
 
     if (error && isInvalidJwtError(error)) {
@@ -159,6 +161,24 @@ export const callAIProxyTask = async (params: TaskParams): Promise<ProxyResponse
 
     const edgeBody = getEdgeBody(data, error);
     const edgeError: string | undefined = edgeBody?.error;
+
+    // Diagnostic trail for Sentry: correlate with the edge event through generation_id.
+    const callInfo = {
+      task: params.task,
+      attempt: attempt + 1,
+      maxAttempts: CLIENT_MAX_RETRIES + 1,
+      httpStatus: (error as { status?: number } | null)?.status ?? 200,
+      edgeError: edgeError ?? null,
+      edgeCode: typeof edgeBody?.code === 'string' ? edgeBody.code : null,
+      retryable: edgeBody?.retryable ?? null,
+      transportError: error && !(error as { status?: number }).status ? String(error.message) : null,
+      durationMs: Math.round(performance.now() - startedAt),
+      generationId: data?.generationId ?? params.generationId ?? null,
+      requestBytes: JSON.stringify(params.payload).length,
+    };
+    setAppContext('ai_last_call', callInfo);
+    if (error || edgeError) Logger.warn('AI', `Edge task ${params.task} failed (attempt ${attempt + 1})`, callInfo);
+    else Logger.info('AI', `Edge task ${params.task} succeeded`, callInfo);
 
     if (edgeError === 'CREDIT_INSUFFICIENT') throw new Error('CREDIT_INSUFFICIENT');
     if (edgeError === 'RATE_LIMITED') throw new Error('RATE_LIMITED');

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2, X, Loader2 } from 'lucide-react';
 import { AdminService } from '../../../services/admin';
 import { useToast } from '../../../contexts/ToastContext';
+import { Logger } from '../../../utils/logger';
 
 interface SubtestDraft {
   key: string;          // local unique key for React
@@ -77,7 +78,8 @@ export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
       toast.success(`Test « ${testName.trim()} » créé avec succès !`);
       onCreated?.();
       onClose();
-    } catch {
+    } catch (e) {
+      Logger.error('DB', 'Custom test creation failed', e, { subtestCount: subtests.length });
       toast.error('Impossible de créer le test. Vérifiez votre connexion et réessayez.');
     } finally {
       setLoading(false);

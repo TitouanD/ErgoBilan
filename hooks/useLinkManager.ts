@@ -158,7 +158,8 @@ export const useLinkManager = ({
         const keyString = await decryptData({ iv, content }, sessionKey);
         await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}&t=${q.accessToken}#key=${keyString}`);
         toast.success('Lien copié');
-      } catch {
+      } catch (e) {
+        Logger.error('CRYPTO', 'Questionnaire link copy failed', e, { questionnaireId: q.id });
         toast.error('Erreur déchiffrement lien');
       }
     },

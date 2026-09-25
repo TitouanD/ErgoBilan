@@ -546,7 +546,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userId = userProfile.id;
     if (brandingSaveTimerRef.current) clearTimeout(brandingSaveTimerRef.current);
     brandingSaveTimerRef.current = setTimeout(() => {
-      ProfileService.saveBranding(userId, branding).catch((e) => Logger.warn('DB', 'Branding save failed', e));
+      ProfileService.saveBranding(userId, branding).catch((e) => Logger.error('DB', 'Branding save failed', e));
     }, BRANDING_SAVE_DEBOUNCE_MS);
   };
 

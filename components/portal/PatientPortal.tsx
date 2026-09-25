@@ -18,6 +18,10 @@ const createPortalClient = (accessToken: string) => {
   });
 };
 
+/** Expected link problem (malformed, incomplete, expired): logged as a warning, not a Sentry issue. */
+const PORTAL_LINK_ERROR = 'PortalLinkError';
+const linkError = (message: string) => Object.assign(new Error(message), { name: PORTAL_LINK_ERROR });
+
 interface Props {
   onBack: () => void;
   initialUrl?: string; // Permet l'auto-login si l'URL est fournie
@@ -73,7 +77,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               try {
                   fullUrl = new URL(window.location.origin + '/' + urlStr);
               } catch {
-                  throw new Error("Format de lien invalide. Veuillez copier le lien complet.");
+                  throw linkError("Format de lien invalide. Veuillez copier le lien complet.");
               }
           }
 
@@ -83,7 +87,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           const keyString = fullUrl.hash.includes('key=') ? fullUrl.hash.split('key=')[1] : '';
 
           if (!qId || !keyString) {
-              throw new Error("Lien incomplet. Vérifiez que vous avez copié tout le lien.");
+              throw linkError("Lien incomplet. Vérifiez que vous avez copié tout le lien.");
           }
 
           Logger.debug('AUTH', 'Extracted ID & Key', { qId });
@@ -105,7 +109,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               .eq('id', qId)
               .single();
 
-          if (error) throw new Error("Dossier introuvable ou expiré.");
+          if (error) throw linkError("Dossier introuvable ou expiré.");
 
           if (data.status === 'completed') {
               setIsCompleted(true);
@@ -126,7 +130,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           setLoadingStep('ready');
 
       } catch (e: unknown) {
-          Logger.error('AUTH', "Portal Login Error", e);
+          if (e instanceof Error && e.name === PORTAL_LINK_ERROR) Logger.warn('AUTH', 'Portal login rejected', { reason: e.message });
+          else Logger.error('AUTH', "Portal Login Error", e);
           setLoadingStep('idle'); // Retour au formulaire
           setErrorMessage(e instanceof Error ? e.message : "Erreur de connexion.");
       }

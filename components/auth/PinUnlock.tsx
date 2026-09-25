@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, AlertTriangle, LogOut, Timer } from 'lucide-react';
 import { verifyPin, type PinVerifyResult } from '../../utils/crypto';
 import type { PractitionerProfile } from '../../types';
+import { Logger } from '../../utils/logger';
 
 // --- Brute-force protection ---
 const MAX_ATTEMPTS = 5;
@@ -113,6 +114,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                     newState = { ...lockout, attempts: newAttempts };
                 }
 
+                Logger.warn('AUTH', 'PIN verification failed', { attempts: newAttempts, locked: newState.lockedUntil !== null });
                 saveLockoutState(newState);
                 setLockout(newState);
                 setError(true);

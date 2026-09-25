@@ -6,6 +6,7 @@
 import React from 'react';
 import { Text, View } from '@react-pdf/renderer';
 import type { BrandingConfig } from '../types';
+import { Logger } from './logger';
 
 const DEFAULT_PRIMARY = '#3D405B';
 const STONE600 = '#57534E';
@@ -183,7 +184,8 @@ export function htmlToPdfNodes(
     try {
         const parser = new DOMParser();
         doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
-    } catch {
+    } catch (e) {
+        Logger.warn('SYSTEM', 'PDF HTML parsing failed, plain-text fallback', e);
         // Fallback: plain text
         return [<Text key="fallback" style={{ fontSize: 10, color: STONE600, fontFamily }}>{html.replace(/<[^>]+>/g, '')}</Text>];
     }

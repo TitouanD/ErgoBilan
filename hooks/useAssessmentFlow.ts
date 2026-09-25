@@ -25,6 +25,7 @@ import { Logger } from '../utils/logger';
 
 const FOLLOWUP_DELAY_MONTHS = 6;
 const DEMO_GENERATION_DELAY_MS = 2_500;
+const EXPECTED_GENERATION_ERRORS = new Set(['CREDIT_INSUFFICIENT', 'RATE_LIMITED', 'SESSION_EXPIRED']);
 
 interface Toast {
   success: (m: string) => void;
@@ -80,7 +81,10 @@ export const useAssessmentFlow = ({ assessment, sessionKey, isDemoMode, catalogI
       await generate();
       return true;
     } catch (e) {
-      Logger.error('AI', 'Generation error', e);
+      // Expected business outcomes are reported as warnings, everything else as errors.
+      const code = e instanceof Error ? e.message : '';
+      if (EXPECTED_GENERATION_ERRORS.has(code)) Logger.capture('AI', `Generation refused: ${code}`, e);
+      else Logger.error('AI', 'Generation error', e);
       setGenerationError(describeGenerationError(e));
       return false;
     } finally {

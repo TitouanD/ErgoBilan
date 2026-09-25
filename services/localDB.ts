@@ -18,6 +18,7 @@ import type {
   PatientDashboardPreviewMeta,
   PatientFollowupStatus,
 } from '../types';
+import { Logger } from '../utils/logger';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 // Note: no userId or organizationId — isolation is enforced by the per-user DB name.
@@ -191,9 +192,9 @@ export const migrateLegacyDB = async (userId: string, targetDB: ErgoBilanDB): Pr
       await legacyDB.followups.bulkDelete(followups.map((f) => f.id as string));
     });
 
-    console.info(`[DB] Migrated ${patients.length} patients from legacy ErgoBilanDB → ErgoBilanDB_${userId}`);
+    Logger.info('DB', 'Migrated patients from legacy ErgoBilanDB', { count: patients.length });
   } catch (e) {
-    console.warn('[DB] Legacy migration failed — legacy DB left intact for manual recovery', e);
+    Logger.error('DB', 'Legacy migration failed — legacy DB left intact for manual recovery', e);
   } finally {
     legacyDB.close();
   }
