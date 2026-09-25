@@ -260,32 +260,35 @@ Deno.serve(async (req: Request) => {
 
     // ── Generation session ──
     if (providedGenId && !looksLikeUuid(providedGenId)) return json(origin, 400, { error: 'INVALID_GENERATION_SESSION' });
+    let sessionId: string;
     if (task === 'report_diagnostic') {
       if (!providedGenId) return json(origin, 400, { error: 'MISSING_GENERATION_SESSION' });
       if (!(await isSessionReusable(admin, providedGenId, userId))) return json(origin, 400, { error: 'INVALID_GENERATION_SESSION' });
       if (!(await claimSession(admin, providedGenId, userId))) return json(origin, 409, { error: 'GENERATION_SESSION_BUSY' });
-      generationId = providedGenId;
+      sessionId = providedGenId;
     } else {
       if (providedGenId) return json(origin, 400, { error: 'INVALID_GENERATION_SESSION' });
-      generationId = await openGenerationSession(admin, userId);
-      if (!generationId) return json(origin, 402, { error: 'CREDIT_INSUFFICIENT', message: 'Crédits insuffisants.' });
+      const opened = await openGenerationSession(admin, userId);
+      if (!opened) return json(origin, 402, { error: 'CREDIT_INSUFFICIENT', message: 'Crédits insuffisants.' });
+      sessionId = opened;
     }
+    generationId = sessionId; // for the catch block
 
     const result = await callGemini(buildTask(task, payload));
 
     if (!result.ok) {
-      if (task === 'report_diagnostic') await releaseSession(admin, generationId, userId);
-      else await finalizeSession(admin, generationId, userId, false, result.errorCode);
+      if (task === 'report_diagnostic') await releaseSession(admin, sessionId, userId);
+      else await finalizeSession(admin, sessionId, userId, false, result.errorCode);
       settled = true;
       return json(origin, result.status, { error: 'AI generation failed', code: result.errorCode, retryable: result.retryable });
     }
 
     // report_bio stays pending: the diagnostic call finalizes the shared session.
     if (task !== 'report_bio') {
-      await finalizeSession(admin, generationId, userId, true);
+      await finalizeSession(admin, sessionId, userId, true);
       settled = true;
     }
-    return json(origin, 200, { text: result.text, generationId });
+    return json(origin, 200, { text: result.text, generationId: sessionId });
   } catch (err) {
     await captureEdgeException(err, { functionName: 'generate', tags: { task: task || 'unknown' }, extra: { userId, generationId } });
     if (admin && generationId && userId && !settled) {
