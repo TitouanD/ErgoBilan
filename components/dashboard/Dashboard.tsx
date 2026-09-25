@@ -21,6 +21,7 @@ import {
 import { ImportAnimation } from '../shared/ImportAnimation';
 import { CommandPalette } from './CommandPalette';
 import { NewPatientChoiceModal } from './NewPatientChoiceModal';
+import { getPatientAgeForIdentity } from '../../utils/patient';
 
 interface Props {
   userProfile: UserProfile;
@@ -79,20 +80,6 @@ const buildInProgressState = (
   const fallbackProgress = mapWorkflowToProgress(previewMeta.workflow);
   if (fallbackProgress === 40) return { progressPercent: 40, label: 'Tests en cours', tone: 'neutral' };
   return { progressPercent: 20, label: 'Bilan initial en cours', tone: 'warning' };
-};
-
-const workflowLabelMap: Record<PatientDashboardPreviewMeta['workflow']['progressLabel'], string> = {
-  created: 'Dossier créé',
-  infos_recues: 'Infos reçues',
-  tests_saisis: 'Tests saisis',
-  termine: 'Dossier terminé',
-};
-
-const nextActionLabelMap: Record<PatientDashboardPreviewMeta['workflow']['nextAction'], string> = {
-  complete_initial: 'Compléter bilan initial',
-  resume_draft: 'Brouillon',
-  open_patient: 'Suivi clinique',
-  reevaluation_candidate: 'Réévaluation à planifier',
 };
 
 const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTone']) => {
@@ -539,7 +526,7 @@ export const Dashboard: React.FC<Props> = ({
                       </div>
                       <div className="min-w-0">
                         <h3 className="truncate text-base font-bold text-[var(--text-heading)] transition-colors group-hover:text-[var(--primary)]">{`${file.patient.firstName} ${file.patient.lastName}`.trim() || 'Patient sans nom'}</h3>
-                        <p className="truncate text-[11px] text-[var(--text-secondary)]">{file.patient.age || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
+                        <p className="truncate text-[11px] text-[var(--text-secondary)]">{getPatientAgeForIdentity(file.patient) || '-'} • {file.patient.classLevel || 'Classe non renseignée'}</p>
                       </div>
                     </div>
 
@@ -583,7 +570,7 @@ export const Dashboard: React.FC<Props> = ({
 
                     {/* CTA */}
                     <div className="flex items-center justify-end gap-2">
-                      {hasDraft && !file.archived && !isInitialCompleted && onResumeDraft ? (
+                      {hasDraft && !file.archived && (!isInitialCompleted || draftMeta?.reportType === 'reevaluation') && onResumeDraft ? (
                         <button
                           onClick={(e) => { e.stopPropagation(); onResumeDraft(file.id); }}
                           className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700 transition-colors hover:bg-amber-100"

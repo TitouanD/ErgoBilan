@@ -1,4 +1,4 @@
-﻿import { supabase } from './db';
+import { supabase } from './db';
 import type {
     AdminTestSummary,
     AdminTestRecord,
@@ -27,10 +27,8 @@ export const AdminService = {
     loadTestDetail: async (testId: string): Promise<{ test: AdminTestRecord; subtests: AdminSubtestRecord[] }> => {
         const { data, error } = await supabase.rpc('admin_get_test_detail', { p_test_id: testId });
         if (error) throw error;
-        return {
-            test: data.test as AdminTestRecord,
-            subtests: (data.subtests || []) as AdminSubtestRecord[],
-        };
+        const detail = data as unknown as { test: AdminTestRecord; subtests?: AdminSubtestRecord[] };
+        return { test: detail.test, subtests: detail.subtests ?? [] };
     },
 
     // ── Catalogue — save (test metadata + subtests) ────────────────────
@@ -47,11 +45,12 @@ export const AdminService = {
                 test_id: s.test_id,
                 name: s.name,
                 unit: s.unit ?? null,
-                score_type: s.score_type ?? 'standard',
-                input_model: s.input_model ?? null,
-                input_config: s.input_config ?? null,
+                // Columns are NOT NULL: unknown scale / standard input model / empty config.
+                score_type: s.score_type ?? 'none',
+                input_model: s.input_model ?? 'numeric_4mode',
+                input_config: s.input_config ?? {},
                 display_order: s.display_order ?? idx + 1,
-                display_group_order: (s as any).display_group_order ?? null,
+                display_group_order: s.display_group_order ?? null,
                 organization_id: s.organization_id ?? null,
             })),
             p_deleted_subtest_ids: deletedSubtestIds,
@@ -89,13 +88,14 @@ export const AdminService = {
     updateUser: async (payload: AdminUserUpdatePayload): Promise<{ ok: boolean; user_id: string }> => {
         const { data, error } = await supabase.rpc('admin_update_user', {
             p_user_id: payload.userId,
-            p_is_admin: payload.isAdmin ?? null,
-            p_credits: payload.credits ?? null,
-            p_plan_id: payload.planId ?? null,
-            p_status: payload.status ?? null,
-            p_trial_ends_at: payload.trialEndsAt ?? null,
-            p_current_period_end: payload.currentPeriodEnd ?? null,
-            p_monthly_extraction_quota: payload.monthlyExtractionQuota ?? null,
+            // Omitted parameters default to NULL server-side = "keep the current value".
+            p_is_admin: payload.isAdmin,
+            p_credits: payload.credits,
+            p_plan_id: payload.planId,
+            p_status: payload.status,
+            p_trial_ends_at: payload.trialEndsAt ?? undefined,
+            p_current_period_end: payload.currentPeriodEnd ?? undefined,
+            p_monthly_extraction_quota: payload.monthlyExtractionQuota,
         });
         if (error) throw error;
         return data as { ok: boolean; user_id: string };

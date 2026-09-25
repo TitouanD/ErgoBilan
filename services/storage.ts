@@ -1,45 +1,39 @@
-﻿/**
- * StorageService — Local-first storage layer.
+/**
+ * StorageService — local-first persistence of all patient data (PHI).
  *
- * All PHI (patients, drafts, assessments, followups) is stored in IndexedDB via
- * Dexie (see services/localDB.ts). No patient data is sent to Supabase.
+ * Patients, drafts, assessments and follow-ups live in IndexedDB via Dexie,
+ * one database per practitioner (see services/localDB.ts). Nothing patient
+ * related is sent to Supabase. Data is stored in plaintext for now
+ * (docs/TECH_DEBT.md P0-1).
  *
- * Supabase is still used for:
- *   - Auth (practitioners, organizations, subscriptions)
- *   - Catalogue (official_tests, official_norms, etc.)
- *   - Portal questionnaires (pending_questionnaires — ephemeral E2EE transit)
- *
- * Before calling any PHI method, call StorageService.setCurrentUser(userId)
- * from AuthContext after PIN unlock.
+ * Call `setCurrentUser(userId)` after the PIN unlock and `reset()` on
+ * logout/lock before touching patient data again.
  */
 
-import { getLocalDB, migrateLegacyDB, type LocalFollowupRow } from './localDB';
+import { closeLocalDB, getLocalDB, migrateLegacyDB, type LocalAssessmentRow, type LocalFollowupRow } from './localDB';
+import type {
+  DashboardDraftMeta,
+  DraftPayload,
+  Patient,
+  PatientAssessment,
+  PatientDashboardPreviewMeta,
+  PatientFile,
+  PatientFollowup,
+  PatientFollowupStatus,
+  PatientPreviewPayload,
+  ReportSection,
+} from '../types';
+import { DEMO_PATIENTS } from '../data/demoData';
+import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils/patient';
+import { Logger } from '../utils/logger';
 
 // ─── Scoped DB accessor ────────────────────────────────────────────────────────
-// Initialised in setCurrentUser(). All PHI operations must go through _localDB.
 let _localDB: ReturnType<typeof getLocalDB> | null = null;
 
 const db = (): ReturnType<typeof getLocalDB> => {
   if (!_localDB) throw new Error('StorageService: setCurrentUser() must be called before any PHI operation');
   return _localDB;
 };
-import type {
-  DashboardDraftMeta,
-  DraftPayload,
-  Patient,
-  PatientAssessment,
-  PatientAssessmentKind,
-  PatientDashboardPreviewMeta,
-  PatientEncryptedPreviewV2,
-  PatientFile,
-  PatientFollowup,
-  PatientFollowupStatus,
-  ReportSection,
-  ScoreResult,
-} from '../types';
-import { DEMO_PATIENTS } from '../data/demoData';
-import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
-import { Logger } from '../utils/logger';
 
 // ─── Module-level state ───────────────────────────────────────────────────────
 
@@ -50,68 +44,6 @@ const PATIENT_PAGE_SIZE = 50;
 const ASSESSMENTS_PAGE_SIZE = 60;
 
 // ─── Patient identity helpers ─────────────────────────────────────────────────
-
-const createEmptyPatient = (): Patient => ({
-  firstName: '',
-  lastName: '',
-  dob: '',
-  age: '',
-  gender: '',
-  address: '',
-  parentNames: '',
-  parentPhone: '',
-  parentEmail: '',
-  guardArrangement: '',
-  siblings: [],
-  school: '',
-  classLevel: '',
-  teacher: '',
-  carePlan: '',
-  avs: '',
-  avsDetails: '',
-  prescribingDoctor: '',
-  medicalDiagnosis: '',
-  medicalTreatments: '',
-  medicalFollowup: '',
-  reason: '',
-  familyExpectations: '',
-  pregnancyBirth: '',
-  developmentMotor: '',
-  developmentLanguage: '',
-  sleep: '',
-  sensory: '',
-  sensoryNotes: '',
-  crawlingFourPattes: '',
-  crawlingRamper: '',
-  meals: '',
-  dressing: '',
-  dressingAutonomy: '',
-  dressingObservations: '',
-  continence: '',
-  hygieneTeeth: '',
-  hygieneHands: '',
-  hygieneBath: '',
-  hygieneFace: '',
-  hygieneHair: '',
-  hygieneContinenceStatus: '',
-  hygieneObservations: '',
-  timeSpace: '',
-  timeSpaceClockReading: '',
-  timeSpaceObservations: '',
-  schoolAttention: '',
-  writingIssues: '',
-  toolUsage: '',
-  schoolAccommodations: '',
-  emotionalGlobalTags: '',
-  emotionalReactionTags: '',
-  emotionalNotes: '',
-  prescribingDoctorProfession: '',
-  remarks: '',
-  priorities: '',
-});
-
-// Suppress unused warning — createEmptyPatient is kept for future use / demo fallbacks
-void createEmptyPatient;
 
 const normalizePatientIdentity = (patient: Patient): Patient => ({
   ...patient,
@@ -132,6 +64,32 @@ const addMonthsToIso = (value: string, months: number): string => {
   date.setMonth(date.getMonth() + months);
   return date.toISOString();
 };
+
+const rowToAssessment = (row: LocalAssessmentRow): PatientAssessment => ({
+  id: row.id,
+  date: row.date,
+  kind: row.kind,
+  hasFormalReport: row.hasFormalReport,
+  testName: row.testName,
+  previousAssessmentId: row.previousAssessmentId,
+  results: row.results,
+  tests: row.tests,
+  report: row.report,
+});
+
+const assessmentToRow = (patientId: string, a: PatientAssessment, createdAt: string): LocalAssessmentRow => ({
+  id: a.id || crypto.randomUUID(),
+  patientId,
+  kind: a.kind,
+  hasFormalReport: a.hasFormalReport,
+  date: a.date,
+  testName: a.testName,
+  previousAssessmentId: a.previousAssessmentId,
+  results: a.results,
+  tests: a.tests,
+  report: a.report,
+  createdAt,
+});
 
 // ─── Followup helpers ─────────────────────────────────────────────────────────
 
@@ -208,7 +166,7 @@ const buildWorkflowState = (
 const buildPreviewPayload = (
   patient: Patient,
   options: { archived?: boolean; assessments?: PatientAssessment[] },
-): PatientEncryptedPreviewV2 => {
+): PatientPreviewPayload => {
   const assessments = options.assessments || [];
   const formalAssessments = assessments.filter((item) => item.hasFormalReport);
   const hasInitialReport = formalAssessments.some((item) => item.kind === 'initial');
@@ -237,7 +195,7 @@ const buildPreviewPayload = (
   };
 };
 
-const toPreviewMeta = (payload: PatientEncryptedPreviewV2): PatientDashboardPreviewMeta => ({
+const toPreviewMeta = (payload: PatientPreviewPayload): PatientDashboardPreviewMeta => ({
   uiVersion: 2,
   workflow: payload.workflow,
   metrics: payload.metrics,
@@ -286,24 +244,18 @@ const buildFallbackFollowupFromAssessments = (
 };
 
 const buildDemoAssessments = (patientId: string): PatientAssessment[] => {
-  if (patientId === DEMO_PATIENTS.SARAH.id) {
-    const sarahDemo = DEMO_PATIENTS.SARAH as typeof DEMO_PATIENTS.SARAH & {
-      reports?: Array<{ id: string; date: string; type: 'initial' | 'reevaluation'; patientName: string; sections: unknown[] }>;
-    };
-    const reports = sarahDemo.reports || [];
-    return reports
-      .map((report) => ({
-        id: report.id,
-        date: report.date,
-        kind: report.type as PatientAssessmentKind,
-        hasFormalReport: true,
-        testName: report.type === 'initial' ? 'Bilan initial' : 'Réévaluation',
-        report: { status: 'completed' as const, patientName: report.patientName, sections: report.sections as ReportSection[] },
-      }))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }
-
-  return [];
+  if (patientId !== DEMO_PATIENTS.SARAH.id) return [];
+  return DEMO_PATIENTS.SARAH.reports
+    .map((report) => ({
+      id: report.id,
+      date: report.date,
+      kind: report.type === 'reevaluation' ? ('reevaluation' as const) : ('initial' as const),
+      hasFormalReport: true,
+      testName: report.type === 'initial' ? 'Bilan initial' : 'Réévaluation',
+      tests: report.tests,
+      report: { status: 'completed' as const, patientName: report.patientName, sections: report.sections as ReportSection[] },
+    }))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
 
 // ─── Public StorageService ────────────────────────────────────────────────────
@@ -316,6 +268,13 @@ export const StorageService = {
     Logger.info('DB', `StorageService context set — user: ${userId}`);
     // Fire-and-forget: migrate legacy global ErgoBilanDB rows for this user
     migrateLegacyDB(userId, _localDB).catch(() => {/* already logged inside */});
+  },
+
+  /** Close the local database and forget the current user (logout / lock). */
+  reset: () => {
+    if (_currentUserId) closeLocalDB(_currentUserId);
+    _localDB = null;
+    _currentUserId = '';
   },
 
   setDemoMode: (active: boolean) => {
@@ -370,17 +329,7 @@ export const StorageService = {
     // Using assessments:[] would incorrectly reset hasInitialReport=false for patients
     // who already have a finalized report.
     const assessmentRows = await db().assessments.where('patientId').equals(patientId).toArray();
-    const assessments: PatientAssessment[] = assessmentRows.map((r) => ({
-      id: r.id,
-      date: r.date,
-      kind: r.kind as PatientAssessmentKind,
-      hasFormalReport: r.hasFormalReport,
-      testName: r.testName,
-      previousAssessmentId: r.previousAssessmentId,
-      results: r.results,
-      tests: r.tests,
-      report: r.report,
-    }));
+    const assessments = assessmentRows.map(rowToAssessment);
 
     const previewMeta = toPreviewMeta(
       buildPreviewPayload(normalizedPatient, { archived: existing.archived, assessments }),
@@ -403,13 +352,15 @@ export const StorageService = {
     if (!patientId) return;
 
     const now = new Date().toISOString();
-    const existing = await db().drafts.where('patientId').equals(patientId).first();
-
-    if (existing?.id !== undefined) {
-      await db().drafts.update(existing.id, { draftData, updatedAt: now });
-    } else {
-      await db().drafts.add({ patientId, draftData, updatedAt: now });
-    }
+    // Read-then-write in one transaction: concurrent autosaves cannot create two drafts for a patient.
+    await db().transaction('rw', db().drafts, async () => {
+      const existing = await db().drafts.where('patientId').equals(patientId).first();
+      if (existing?.id !== undefined) {
+        await db().drafts.update(existing.id, { draftData, updatedAt: now });
+      } else {
+        await db().drafts.add({ patientId, draftData, updatedAt: now });
+      }
+    });
   },
 
   getDraftsMetadata: async (): Promise<Record<string, DashboardDraftMeta>> => {
@@ -460,12 +411,7 @@ export const StorageService = {
     const incomingIds = new Set(file.assessments.map((a) => a.id));
     const existingAssessments: PatientAssessment[] = existingRows
       .filter((r) => !incomingIds.has(r.id))
-      .map((r) => ({
-        id: r.id, date: r.date, kind: r.kind as PatientAssessmentKind,
-        hasFormalReport: r.hasFormalReport, testName: r.testName,
-        previousAssessmentId: r.previousAssessmentId,
-        results: r.results, tests: r.tests, report: r.report,
-      }));
+      .map(rowToAssessment);
     const mergedAssessments = [...file.assessments, ...existingAssessments];
 
     const previewMeta = toPreviewMeta(
@@ -482,21 +428,32 @@ export const StorageService = {
 
     if (file.assessments.length > 0) {
       const now = new Date().toISOString();
-      const assessmentRows = file.assessments.map((a) => ({
-        id: a.id || crypto.randomUUID(),
-        patientId: file.id!,
-        kind: a.kind,
-        hasFormalReport: a.hasFormalReport,
-        date: a.date,
-        testName: a.testName,
-        previousAssessmentId: a.previousAssessmentId,
-        results: a.results,
-        tests: a.tests,
-        report: a.report,
-        createdAt: now,
-      }));
+      const assessmentRows = file.assessments.map((a) => assessmentToRow(file.id, a, now));
       await db().assessments.bulkPut(assessmentRows);
     }
+  },
+
+  /**
+   * Persist a finalized assessment for a patient and refresh the patient's
+   * identity + dashboard preview, atomically. Used by every flow.
+   */
+  addAssessment: async (patient: Patient, assessment: PatientAssessment): Promise<void> => {
+    if (_isDemoMode) return;
+    const patientId = patient.id;
+    if (!patientId) throw new Error('addAssessment: missing patient ID');
+    const now = new Date().toISOString();
+    const normalizedPatient = normalizePatientIdentity(patient);
+
+    await db().transaction('rw', db().patients, db().assessments, async () => {
+      const existing = await db().patients.get(patientId);
+      await db().assessments.put(assessmentToRow(patientId, assessment, now));
+      const assessments = (await db().assessments.where('patientId').equals(patientId).toArray()).map(rowToAssessment);
+      const archived = existing?.archived ?? false;
+      const previewMeta = toPreviewMeta(buildPreviewPayload(normalizedPatient, { archived, assessments }));
+      const row = { patient: { ...normalizedPatient, id: patientId }, previewMeta, lastInteraction: now, updatedAt: now };
+      if (existing) await db().patients.update(patientId, row);
+      else await db().patients.add({ id: patientId, archived, createdAt: now, ...row });
+    });
   },
 
   // ── Patient list ──────────────────────────────────────────────────────────
@@ -569,12 +526,7 @@ export const StorageService = {
           );
           for (const patientId of patientsWithFormal) {
             const allRows = await db().assessments.where('patientId').equals(patientId).toArray();
-            const assessments: PatientAssessment[] = allRows.map((r) => ({
-              id: r.id, date: r.date, kind: r.kind as PatientAssessmentKind,
-              hasFormalReport: r.hasFormalReport, testName: r.testName,
-              previousAssessmentId: r.previousAssessmentId,
-              results: r.results, tests: r.tests, report: r.report,
-            }));
+            const assessments: PatientAssessment[] = allRows.map(rowToAssessment);
             const fileToRepair = files.find((f) => f.id === patientId);
             if (!fileToRepair) continue;
             const repairedMeta = toPreviewMeta(
@@ -634,17 +586,7 @@ export const StorageService = {
     const hasMoreAssessments = page.length > assessmentLimit;
     const pageRows = page.slice(0, assessmentLimit);
 
-    const assessments: PatientAssessment[] = pageRows.map((row) => ({
-      id: row.id,
-      date: row.date,
-      kind: row.kind,
-      hasFormalReport: row.hasFormalReport,
-      testName: row.testName,
-      previousAssessmentId: row.previousAssessmentId,
-      results: row.results,
-      tests: row.tests,
-      report: row.report,
-    }));
+    const assessments = pageRows.map(rowToAssessment);
 
     return { assessments, hasMoreAssessments, nextAssessmentOffset: assessmentOffset + assessmentLimit };
   },
@@ -662,11 +604,11 @@ export const StorageService = {
     nextAssessmentOffset: number;
   }> => {
     if (_isDemoMode) {
-      if (patientId === DEMO_PATIENTS.LEO.id || patientId === 'demo-patient-imported') {
+      if (patientId === DEMO_PATIENTS.ELYA.id) {
         const assessments = buildDemoAssessments(patientId);
         return {
           assessments,
-          patient: DEMO_PATIENTS.LEO.patient,
+          patient: { ...DEMO_PATIENTS.ELYA.patient, id: patientId },
           followup: buildFallbackFollowupFromAssessments(patientId, assessments),
           hasMoreAssessments: false,
           nextAssessmentOffset: 0,
@@ -675,7 +617,7 @@ export const StorageService = {
       const assessments = buildDemoAssessments(patientId);
       return {
         assessments,
-        patient: DEMO_PATIENTS.SARAH.patient,
+        patient: { ...DEMO_PATIENTS.SARAH.patient, id: patientId },
         followup: buildFallbackFollowupFromAssessments(patientId, assessments),
         hasMoreAssessments: false,
         nextAssessmentOffset: 0,
@@ -705,10 +647,12 @@ export const StorageService = {
 
   deleteFile: async (id: string): Promise<void> => {
     if (_isDemoMode) return;
-    await db().assessments.where('patientId').equals(id).delete();
-    await db().drafts.where('patientId').equals(id).delete();
-    await db().followups.where('patientId').equals(id).delete();
-    await db().patients.delete(id);
+    await db().transaction('rw', [db().assessments, db().drafts, db().followups, db().patients], async () => {
+      await db().assessments.where('patientId').equals(id).delete();
+      await db().drafts.where('patientId').equals(id).delete();
+      await db().followups.where('patientId').equals(id).delete();
+      await db().patients.delete(id);
+    });
   },
 
   toggleArchive: async (file: PatientFile): Promise<void> => {

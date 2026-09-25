@@ -1,147 +1,55 @@
+/**
+ * testCatalog.ts — types of the test catalogue (the data itself is loaded
+ * from Supabase by contexts/CatalogContext.tsx) and the category icon map.
+ */
 
-import React from 'react';
-import { Brain, PenTool, Eye, Hand, Focus, Home, Activity, Box, Sparkles, User } from 'lucide-react';
+import { Brain, PenTool, Eye, Hand, Focus, Home, Activity, Box, Sparkles, User, type LucideIcon } from 'lucide-react';
 
-// Mapping des icônes stockées en DB (string) vers composants Lucide
-export const ICON_MAP: Record<string, any> = {
-  'Brain': Brain,
-  'PenTool': PenTool,
-  'Pencil': PenTool, // Legacy fallback
-  'Eye': Eye,
-  'Hand': Hand,
-  'Focus': Focus,
-  'Home': Home,
-  'Activity': Activity,
-  'Box': Box,
-  'Sparkles': Sparkles,
-  'User': User
+/** Lucide icon for each `official_categories.icon_key`. */
+export const ICON_MAP: Record<string, LucideIcon> = {
+  Brain,
+  PenTool,
+  Pencil: PenTool,
+  Eye,
+  Hand,
+  Focus,
+  Home,
+  Activity,
+  Box,
+  Sparkles,
+  User,
 };
 
+/** Scale of a subtest's standardized score (`official_subtests.score_type`). 'none' = unknown scale. */
 export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
+
 /**
- * Input model for a subtest:
- * - numeric_4mode      : standard 4-field input (brut / NS / ET / %)
- * - qualitative_category : button-grid of labelled options
- * - raw_only           : single raw score field, no standardization
- * - custom_text        : free-text observation (bilan écologique)
- * - computed_items     : sub-items whose values are aggregated into a brut score
- *                        before hitting the standard scoring pipeline
+ * How a subtest is entered in the score table:
+ * - numeric_4mode        : standardized score typed as NS, ET or %
+ * - qualitative_category : one of the options of `input_config.options`
+ * - raw_only             : raw value only, no standardization
+ * - custom_text          : free observation with a title (bilan écologique)
  */
-export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text' | 'computed_items';
-
-/** How the sub-items of a computed_items subtest are combined into the raw score. */
-export type ItemsAggregation =
-  | 'sum'          // Σ of all items (e.g. FigRey: sum of 18 element scores)
-  | 'best_of'      // best trial wins — max if higher_better, min if lower_better
-  | 'mean'         // arithmetic mean
-  | 'custom';      // formula-based; brut editable manually
-
-/** Visual layout for the sub-items form. */
-export type ItemsDisplayGroup = 'column' | 'grid_2' | 'grid_3' | 'table';
-
-/** One sub-item inside a computed_items subtest. */
-export interface SubtestItem {
-  /** Stable identifier (e.g. "trial_1", "element_7", "correct"). */
-  id: string;
-  /** Label shown to the practitioner. */
-  label: string;
-  /** Optional unit shown after the input (pts, sec, cm…). */
-  unit?: string;
-  /** Input type — numeric field (default), integer counter, or yes/no toggle. */
-  type?: 'number' | 'count' | 'boolean';
-  /** Minimum accepted value (for validation). */
-  min?: number;
-  /** Maximum accepted value (for validation). */
-  max?: number;
-  /** Decimal places for display/step (e.g. 1 for chrono). */
-  decimals?: number;
-  /**
-   * When true, this item IS the brut score — no aggregation needed.
-   * Used when only one significant item exists but we still want the
-   * structured label+unit UI (e.g. BHK speed: a single derived value).
-   */
-  isMaster?: boolean;
-  /** Visual weight: wide fields span the full row width. */
-  wide?: boolean;
-}
+export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
 
 export interface SubtestInputOption {
   code: string;
   label: string;
   order: number;
+  /** Interpretation printed in the report next to the chosen category. */
   reportText?: string;
 }
 
-/**
- * One additive section within a raw score entry.
- * Used when a raw score is split across named sub-parts that sum to a total
- * (e.g. Purdue Pegboard: main droite, main gauche, deux mains, assemblage).
- */
-export interface RawSection {
-  /** Stable key (e.g. "right", "left", "bimanual"). */
-  key: string;
-  /** Label shown next to the input field. */
-  label: string;
-  /** Optional unit override (falls back to the subtest unit). */
-  unit?: string;
-  /** Maximum accepted value for this section. */
-  max?: number;
-}
-
 export interface SubtestInputConfig {
-  /** For qualitative_category: the list of selectable options. */
+  /** qualitative_category: selectable options. */
   options?: SubtestInputOption[];
-  /** For computed_items: the list of sub-items to present. */
-  items?: SubtestItem[];
-  /** For computed_items: how sub-items are combined into the raw score. */
-  itemsAggregation?: ItemsAggregation;
-  /** Visual layout for the sub-items grid. Default: 'column'. */
-  displayGroup?: ItemsDisplayGroup;
-  /**
-   * Maximum possible raw score — enables fraction display "XX / maxRawScore".
-   * E.g. 35 for Test des Cloches, 180 for EVIC caractères.
-   */
-  maxRawScore?: number;
-  /**
-   * Custom label replacing the default "BRUT" label in the raw score field.
-   * E.g. "ERREURS", "CHAR.", "SEC.", "CLOCHES".
-   */
-  rawValueLabel?: string;
-  /**
-   * When true, shows the score as a fraction: "[input] / maxRawScore".
-   * Requires maxRawScore to be set.
-   */
-  showRawFraction?: boolean;
-  /**
-   * Splits the raw entry into named additive sections that auto-sum to the total.
-   * E.g. Purdue Pegboard: [main D, main G, deux mains, assemblage].
-   */
-  rawSections?: RawSection[];
-  /**
-   * Visual layout for qualitative_category options.
-   * Default: 'radio' (vertical list). 'toggle' gives a pill-button grid.
-   */
-  qualitativeLayout?: 'radio' | 'select' | 'toggle';
-  /**
-   * Machine key shared by all sub-scores belonging to the same clinical test group.
-   * E.g. "nepsy2_copie_figures" groups all Copie de Figures sub-scores together.
-   * Used to inject a visual section header in Step2Tests when the key changes.
-   */
+  /** Subtests sharing a groupKey are shown under a common header. */
   groupKey?: string;
-  /**
-   * Human-readable label shown as the visual group header in Step2Tests.
-   * E.g. "Copie de Figures". Falls back to groupKey if omitted.
-   */
+  /** Header label of the group (falls back to groupKey). */
   groupHeaderLabel?: string;
-  /**
-   * Optional numeric group ordering for UI rendering.
-   * Lower value appears first.
-   */
+  /** Group ordering (lower first). */
   groupOrder?: number;
-  /**
-   * Optional numeric order inside a group for UI rendering.
-   * Lower value appears first.
-   */
+  /** Ordering inside the group (lower first). */
   orderIndex?: number;
 }
 
@@ -151,10 +59,7 @@ export interface SubtestDef {
   displayName?: string;
   displayGroupOrder?: number;
   displayOrder?: number;
-  isAmbiguous?: boolean;
-  isHiddenInvalidAmbiguous?: boolean;
   unit: string;
-  lowerIsBetter?: boolean;
   scoreType: ScoreType;
   inputModel: SubtestInputModel;
   inputConfig?: SubtestInputConfig;
@@ -168,14 +73,10 @@ export interface TestDef {
 
 export interface CategoryDef {
   id: string;
-  name: string; // Label affiché (ex: "Motricité Globale")
-  iconKey: string; // Clé pour ICON_MAP (ex: "Brain")
+  /** Display label (e.g. "Motricité Globale"). */
+  name: string;
+  /** Key of ICON_MAP. */
+  iconKey: string;
   sortOrder: number;
   tests: TestDef[];
 }
-
-/**
- * Legacy static catalog — kept as empty array for backward compatibility.
- * Real catalog is loaded from Supabase via CatalogContext.
- */
-export const TEST_CATALOG: CategoryDef[] = [];

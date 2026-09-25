@@ -1,4 +1,5 @@
 import { createClient, type Session } from '@supabase/supabase-js';
+import type { Database } from '../types/supabase';
 
 // --- CONFIGURATION SUPABASE ---
 // Production requires explicit Vite env vars.
@@ -53,7 +54,7 @@ const safeStorage = {
 	}
 };
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
 	auth: {
 		persistSession: true,
 		autoRefreshToken: true,

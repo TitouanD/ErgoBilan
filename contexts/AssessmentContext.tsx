@@ -1,54 +1,76 @@
+/**
+ * AssessmentContext — state of the assessment being edited (all three flows).
+ *
+ * - Creates the local patient record as soon as first name, last name and
+ *   date of birth are known (Effect A).
+ * - Autosaves a draft 3 s after the last change (Effect B), for every flow.
+ * - Keeps the dashboard preview of the patient identity in sync (Effect C).
+ *
+ * `resetAssessment` bumps a session token: an autosave that was already
+ * scheduled for the previous assessment is dropped instead of re-creating a
+ * draft after finalization.
+ */
+
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { Patient, TestData, Observations, ReportSection, ClinicalSynthesis, PatientAssessment } from '../types';
+import type { ClinicalSynthesis, DraftPayload, Observations, Patient, PatientAssessment, ReportSection, TestData } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from './AuthContext';
 import { Logger } from '../utils/logger';
-import { buildPatientIdentitySignature, getPatientAgeForIdentity, isPatientCreationReady } from '../utils';
+import { buildPatientIdentitySignature, getPatientAgeForIdentity, isPatientCreationReady } from '../utils/patient';
 import { normalizeTestData } from '../utils/scoring';
 
-interface AssessmentContextType {
+export type ReportType = 'initial' | 'reevaluation' | 'historique';
+
+const AUTOSAVE_DEBOUNCE_MS = 3_000;
+const IDENTITY_SYNC_DEBOUNCE_MS = 1_000;
+const DRAFT_VERSION = 3;
+
+export interface AssessmentContextType {
   patient: Patient;
   tests: TestData;
   observations: Observations;
   synthesis: ClinicalSynthesis;
   sections: ReportSection[];
-  reportType: 'initial' | 'reevaluation' | 'historique';
+  reportType: ReportType;
+  /** Date of the original assessment (historical flow only), ISO string. */
   historicalDate: string;
   step: number;
   isAutoSaving: boolean;
-
+  /** Reference assessment of a re-evaluation. */
   previousAssessment: PatientAssessment | null;
+
   setPreviousAssessment: (a: PatientAssessment | null) => void;
-
   setHistoricalDate: (d: string) => void;
-
   setPatient: (p: Patient) => void;
   updatePatient: (p: Partial<Patient>) => void;
-
-  setTests: (t: TestData) => void;
+  /** Replace all scores (the caller always passes the full object so deletions persist). */
   updateTests: (t: TestData) => void;
-
-  setObservations: (o: Observations) => void;
   updateObservations: (o: Partial<Observations>) => void;
-
-  setSynthesis: (s: ClinicalSynthesis) => void;
   updateSynthesis: (s: Partial<ClinicalSynthesis>) => void;
-
   setSections: (s: ReportSection[]) => void;
+  /** Patch a section (creates it when missing, e.g. the "Page École"). */
   updateSection: (id: string, update: Partial<ReportSection>) => void;
-  setReportType: (t: 'initial' | 'reevaluation' | 'historique') => void;
-
+  setReportType: (t: ReportType) => void;
   setStep: (s: number) => void;
   resetAssessment: () => void;
-  loadFromDraft: (draft: any) => void;
+  loadFromDraft: (draft: DraftPayload) => void;
+  /** Snapshot for a manual "save & quit". */
+  buildDraft: (patient: Patient) => DraftPayload;
+  /**
+   * Create the local patient record if needed and return its id (null when the
+   * identity is incomplete or the creation failed). Every caller shares the same
+   * in-flight promise, so a patient is never created twice.
+   */
+  ensurePatientId: (snapshot: Patient) => Promise<string | null>;
 }
 
 const AssessmentContext = createContext<AssessmentContextType | undefined>(undefined);
 
-// NOTE: L'ID doit etre undefined au depart. Pas de generation client.
+// The patient id stays undefined until the local record is created (Effect A).
 const initialPatient: Patient = {
   firstName: '', lastName: '', dob: '', age: '', gender: '', address: '',
-  parentNames: '', parentPhone: '', parentEmail: '', parent1Name: '', parent1Phone: '', parent1Email: '', parent2Name: '', parent2Phone: '', parent2Email: '', guardArrangement: '', siblings: [],
+  parentNames: '', parentPhone: '', parentEmail: '', parent1Name: '', parent1Phone: '', parent1Email: '', parent2Name: '', parent2Phone: '', parent2Email: '',
+  guardArrangement: '', siblings: [],
   school: '', classLevel: '', schoolType: '', schoolTrack: '', schoolRepeatYear: '', teacher: '', carePlan: '', avs: '', avsDetails: '',
   prescribingDoctor: '', medicalDiagnosis: '', medicalTreatments: '', medicalFollowup: '',
   reason: '', familyExpectations: '',
@@ -58,23 +80,15 @@ const initialPatient: Patient = {
   dressingAutonomy: '', dressingObservations: '',
   hygieneTeeth: '', hygieneHands: '', hygieneBath: '', hygieneFace: '', hygieneHair: '', hygieneContinenceStatus: '', hygieneObservations: '',
   timeSpaceClockReading: '', timeSpaceObservations: '',
-  schoolAttention: '', schoolFavoriteSubjects: '', schoolDislikedSubjects: '', classroomBehavior: '', schoolOrganization: '', schoolMemory: '', schoolParticipation: '', peerRelations: '', homeworkHabits: '', writingIssues: '', writingDifficultyTags: '', toolUsage: '', schoolAccommodations: '',
+  schoolAttention: '', schoolFavoriteSubjects: '', schoolDislikedSubjects: '', classroomBehavior: '', schoolOrganization: '', schoolMemory: '',
+  schoolParticipation: '', peerRelations: '', homeworkHabits: '', writingIssues: '', writingDifficultyTags: '', toolUsage: '', schoolAccommodations: '',
   emotionalGlobalTags: '', emotionalReactionTags: '', emotionalNotes: '',
   prescribingDoctorProfession: '',
-  remarks: '', priorities: ''
+  remarks: '', priorities: '',
 };
 
-const initialObs: Observations = {
-  anamnese: '', motricite: '', coordination: '', spatial: '', graphique: ''
-};
-
-const initialSynthesis: ClinicalSynthesis = {
-  diagnosticInput: '',
-  projectInput: '',
-  recommendationsInput: ''
-};
-
-const DRAFT_VERSION = 2;
+const initialObs: Observations = { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' };
+const initialSynthesis: ClinicalSynthesis = { diagnosticInput: '', projectInput: '', recommendationsInput: '' };
 
 export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { sessionKey, isDemoMode } = useAuth();
@@ -84,22 +98,25 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [observations, setObservations] = useState<Observations>(initialObs);
   const [synthesis, setSynthesis] = useState<ClinicalSynthesis>(initialSynthesis);
   const [sections, setSections] = useState<ReportSection[]>([]);
-  const [reportType, setReportType] = useState<'initial' | 'reevaluation' | 'historique'>('initial');
-  const [historicalDate, setHistoricalDate] = useState<string>('');
+  const [reportType, setReportType] = useState<ReportType>('initial');
+  const [historicalDate, setHistoricalDate] = useState('');
   const [step, setStep] = useState(1);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [previousAssessment, setPreviousAssessmentState] = useState<PatientAssessment | null>(null);
-  // Normalize legacy ScoreResult shapes in previousAssessment.tests on the way in
-  // (e.g. reevaluation comparisons against an older bilan saved before this simplification).
-  const setPreviousAssessment = useCallback((a: PatientAssessment | null) => {
-    setPreviousAssessmentState(a ? { ...a, tests: normalizeTestData(a.tests ?? {}) } : null);
-  }, []);
 
   const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const identitySyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createPromiseRef = useRef<Promise<string> | null>(null);
   const autoSaveCounterRef = useRef(0);
   const lastSyncedIdentityRef = useRef('');
+  /** Incremented by resetAssessment; async saves started for an older session are dropped. */
+  const sessionTokenRef = useRef(0);
+
+  const canPersist = Boolean(sessionKey) && !isDemoMode;
+
+  const setPreviousAssessment = useCallback((a: PatientAssessment | null) => {
+    setPreviousAssessmentState(a ? { ...a, tests: normalizeTestData(a.tests ?? {}) } : null);
+  }, []);
 
   const beginAutoSave = useCallback(() => {
     autoSaveCounterRef.current += 1;
@@ -108,168 +125,121 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const endAutoSave = useCallback(() => {
     autoSaveCounterRef.current = Math.max(0, autoSaveCounterRef.current - 1);
-    if (autoSaveCounterRef.current === 0) {
-      setIsAutoSaving(false);
-    }
+    if (autoSaveCounterRef.current === 0) setIsAutoSaving(false);
   }, []);
 
-  // Create patient ID when identity is ready
-  // Uses ref to prevent multiple simultaneous creation attempts
-  const ensurePatientId = useCallback(async (patientSnapshot: Patient): Promise<string | null> => {
-    if (patientSnapshot.id) return patientSnapshot.id;
-    if (isDemoMode) return null;
-    if (!isPatientCreationReady(patientSnapshot)) return null;
+  /** Create the local patient record once (concurrent callers share the same promise). */
+  const ensurePatientId = useCallback(
+    async (snapshot: Patient): Promise<string | null> => {
+      if (snapshot.id) return snapshot.id;
+      if (!isPatientCreationReady(snapshot)) return null; // demo: StorageService returns a fake id
+      if (!createPromiseRef.current) {
+        createPromiseRef.current = (async () => {
+          const toCreate = { ...snapshot, age: getPatientAgeForIdentity(snapshot) };
+          const newId = await StorageService.ensurePatientId(toCreate);
+          setPatient((prev) => (prev.id ? prev : { ...prev, id: newId, age: toCreate.age }));
+          return newId;
+        })().finally(() => {
+          createPromiseRef.current = null;
+        });
+      }
+      try {
+        return await createPromiseRef.current;
+      } catch (e) {
+        Logger.error('DB', 'Failed to create patient ID', e);
+        return null;
+      }
+    },
+    [],
+  );
 
-    if (!createPromiseRef.current) {
-      createPromiseRef.current = (async () => {
-        const toCreate = {
-          ...patientSnapshot,
-          age: getPatientAgeForIdentity(patientSnapshot),
-        };
-        const newId = await StorageService.ensurePatientId(toCreate);
-        setPatient((prev) => (prev.id ? prev : { ...prev, id: newId, age: toCreate.age }));
-        return newId;
-      })().finally(() => {
-        createPromiseRef.current = null;
-      });
-    }
+  const buildDraft = useCallback(
+    (forPatient: Patient): DraftPayload => ({
+      patient: forPatient,
+      tests,
+      observations,
+      synthesis,
+      sections,
+      reportType,
+      historicalDate: historicalDate || undefined,
+      previousAssessmentId: previousAssessment?.id,
+      step,
+      version: DRAFT_VERSION,
+      timestamp: new Date().toISOString(),
+    }),
+    [tests, observations, synthesis, sections, reportType, historicalDate, previousAssessment, step],
+  );
 
-    try {
-      return await createPromiseRef.current;
-    } catch (createError) {
-      Logger.error('DB', 'Failed to create patient ID', createError);
-      return null;
-    }
-  }, [isDemoMode]);
-
-  // Memoize patient identity fields to optimize Effect A & C dependencies
-  // Only changes when actual identity fields change, not entire patient object
-  const patientIdentity = useMemo(() => ({
-    id: patient.id,
-    firstName: patient.firstName,
-    lastName: patient.lastName,
-    dob: patient.dob,
-    age: patient.age,
-    classLevel: patient.classLevel,
-    gender: patient.gender,
-  }), [patient.id, patient.firstName, patient.lastName, patient.dob, patient.age, patient.classLevel, patient.gender]);
-
-  // Memoize all assessment data for Effect B (draft autosave)
-  // Consolidates all state changes into single dependency
-  const assessmentData = useMemo(() => ({
-    patient,
-    tests,
-    observations,
-    synthesis,
-    sections,
-    step,
-  }), [patient, tests, observations, synthesis, sections, step]);
-
-  // EFFECT A: Create patient ID when sufficient identity fields are present
-  // Runs once per unique identity + auth state change
-  // Does NOT run on every keystroke — only when identity actually changes
+  // EFFECT A: create the patient record as soon as the identity is complete
   useEffect(() => {
-    if (!sessionKey && !isDemoMode) return;
-    if (patientIdentity.id || !isPatientCreationReady(patient)) return;
+    if (!canPersist || patient.id || !isPatientCreationReady(patient)) return;
     void ensurePatientId(patient);
-  }, [patientIdentity, sessionKey, isDemoMode, patient, ensurePatientId]);
+  }, [canPersist, patient, ensurePatientId]);
 
-  // EFFECT B: Autosave draft with debounce (3s)
-  // Skip for 'historique' imports — they are one-shot and handled by handleFinalizeHistorical.
+  // EFFECT B: debounced draft autosave
   useEffect(() => {
-    if (!sessionKey && !isDemoMode) return;
-    if (!isPatientCreationReady(patient)) return;
-    if (reportType === 'historique') return; // ⚠️ Never auto-save historical imports
-
+    if (!canPersist || !isPatientCreationReady(patient)) return;
     if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
+    const token = sessionTokenRef.current;
+    const snapshotPatient = patient;
+    const draftFor = buildDraft;
 
     draftSaveTimeoutRef.current = setTimeout(async () => {
       beginAutoSave();
       try {
-        const currentPatientId = assessmentData.patient.id || await ensurePatientId(assessmentData.patient);
-        if (!currentPatientId) {
-          Logger.warn('DB', 'Autosave skipped: patient ID unavailable');
-          return;
-        }
-
-        const draftData = {
-          patient: { ...assessmentData.patient, id: currentPatientId, age: getPatientAgeForIdentity(assessmentData.patient) },
-          tests: assessmentData.tests,
-          observations: assessmentData.observations,
-          synthesis: assessmentData.synthesis,
-          sections: assessmentData.sections,
-          step: assessmentData.step,
-          reportType,
-          version: DRAFT_VERSION,
-          timestamp: new Date().toISOString(),
-        };
-
-        await StorageService.saveDraft(draftData);
+        const patientId = snapshotPatient.id || (await ensurePatientId(snapshotPatient));
+        if (!patientId || token !== sessionTokenRef.current) return;
+        await StorageService.saveDraft(draftFor({ ...snapshotPatient, id: patientId, age: getPatientAgeForIdentity(snapshotPatient) }));
       } catch (e) {
         Logger.warn('DB', 'Autosave draft failed (silently)', e);
       } finally {
         endAutoSave();
       }
-    }, 3000);
+    }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => {
       if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
     };
-  }, [assessmentData, reportType, sessionKey, isDemoMode, ensurePatientId, beginAutoSave, endAutoSave]);
+  }, [canPersist, patient, buildDraft, ensurePatientId, beginAutoSave, endAutoSave]);
 
-  // EFFECT C: Sync patient identity (encrypted preview) when identity changes
-  // Separate from draft autosave to isolate identity mutations
-  // Uses patientIdentity memo to avoid excessive syncs
+  // EFFECT C: keep the dashboard preview of the identity in sync
+  const identitySignature = useMemo(() => buildPatientIdentitySignature(patient), [patient]);
   useEffect(() => {
-    if (!patientIdentity.id || isDemoMode) return;
-
-    const identitySignature = buildPatientIdentitySignature(patient);
-    if (identitySignature === lastSyncedIdentityRef.current) return;
-
+    if (!patient.id || isDemoMode || identitySignature === lastSyncedIdentityRef.current) return;
     if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);
+    const patientId = patient.id;
+    const snapshot = { ...patient, age: getPatientAgeForIdentity(patient) };
     identitySyncTimeoutRef.current = setTimeout(async () => {
       beginAutoSave();
       try {
-        const patientToSync = { ...patient, age: getPatientAgeForIdentity(patient) };
-        await StorageService.syncPatientIdentityPreview(patientIdentity.id, patientToSync);
-        lastSyncedIdentityRef.current = buildPatientIdentitySignature(patientToSync);
+        await StorageService.syncPatientIdentityPreview(patientId, snapshot);
+        lastSyncedIdentityRef.current = identitySignature;
       } catch (e) {
         Logger.warn('DB', 'Identity preview sync failed (silently)', e);
       } finally {
         endAutoSave();
       }
-    }, 1000);
-
+    }, IDENTITY_SYNC_DEBOUNCE_MS);
     return () => {
       if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);
     };
-  }, [patientIdentity, patient, isDemoMode, beginAutoSave, endAutoSave]);
+  }, [identitySignature, patient, isDemoMode, beginAutoSave, endAutoSave]);
 
-  const updatePatient = (data: Partial<Patient>) => {
-    setPatient(prev => ({ ...prev, ...data }));
-  };
+  const updatePatient = useCallback((data: Partial<Patient>) => setPatient((prev) => ({ ...prev, ...data })), []);
+  const updateTests = useCallback((data: TestData) => setTests(normalizeTestData(data)), []);
+  const updateObservations = useCallback((data: Partial<Observations>) => setObservations((prev) => ({ ...prev, ...data })), []);
+  const updateSynthesis = useCallback((data: Partial<ClinicalSynthesis>) => setSynthesis((prev) => ({ ...prev, ...data })), []);
 
-  // Step 2 always sends the full tests object. Replace instead of merge so deletions persist.
-  // Two-level deep copy: prevents mutations from propagating back to previousAssessment.tests
-  // when the reevaluation pre-fills from it (shallow copy would share inner subtest references).
-  // Also normalizes legacy ScoreResult shapes (raw/standard/percentile/zScore/status/...)
-  // to the new minimal { value, unit } shape so older bilans keep working transparently.
-  const updateTests = (data: TestData) => {
-    setTests(normalizeTestData(data));
-  };
-  const updateObservations = (data: Partial<Observations>) => setObservations(prev => ({ ...prev, ...data }));
-  const updateSynthesis = (data: Partial<ClinicalSynthesis>) => setSynthesis(prev => ({ ...prev, ...data }));
+  const updateSection = useCallback((id: string, update: Partial<ReportSection>) => {
+    setSections((prev) =>
+      prev.some((s) => s.id === id)
+        ? prev.map((s) => (s.id === id ? { ...s, ...update } : s))
+        : [...prev, { id, title: update.title || id, content: update.content || '', status: 'draft' as const, ...update }],
+    );
+  }, []);
 
-  const updateSection = (id: string, update: Partial<ReportSection>) => {
-    setSections(prev => {
-      const exists = prev.some(s => s.id === id);
-      if (exists) return prev.map(s => s.id === id ? { ...s, ...update } : s);
-      // Create the section if it doesn't exist yet (e.g. Page École)
-      return [...prev, { id, title: update.title || id, content: update.content || '', status: 'draft' as const, ...update }];
-    });
-  };
-
-  const resetAssessment = () => {
+  const resetAssessment = useCallback(() => {
+    sessionTokenRef.current += 1;
     if (draftSaveTimeoutRef.current) clearTimeout(draftSaveTimeoutRef.current);
     if (identitySyncTimeoutRef.current) clearTimeout(identitySyncTimeoutRef.current);
     createPromiseRef.current = null;
@@ -284,39 +254,75 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setReportType('initial');
     setHistoricalDate('');
     setStep(1);
-    setPreviousAssessment(null);
-  };
+    setPreviousAssessmentState(null);
+  }, []);
 
-  const loadFromDraft = (draft: any) => {
-    Logger.debug('DB', 'Context: Loading Draft...', draft);
-    // Merge with initial defaults to handle schema evolution (B3)
+  const loadFromDraft = useCallback((draft: DraftPayload) => {
+    Logger.debug('DB', 'Context: loading draft');
+    // Merge with defaults so drafts saved by older versions still load
     if (draft.patient) setPatient({ ...initialPatient, ...draft.patient });
     if (draft.tests) setTests(normalizeTestData(draft.tests));
     if (draft.observations) setObservations({ ...initialObs, ...draft.observations });
     if (draft.synthesis) setSynthesis({ ...initialSynthesis, ...draft.synthesis });
     if (draft.sections) setSections([...draft.sections]);
-    if (draft.reportType === 'initial' || draft.reportType === 'reevaluation' || draft.reportType === 'historique') setReportType(draft.reportType);
+    if (draft.reportType) setReportType(draft.reportType);
     if (draft.historicalDate) setHistoricalDate(draft.historicalDate);
     if (draft.step) setStep(draft.step);
-  };
+  }, []);
 
-  return (
-    <AssessmentContext.Provider value={{
-      patient, setPatient, updatePatient,
-      tests, setTests, updateTests,
-      observations, setObservations, updateObservations,
-      synthesis, setSynthesis, updateSynthesis,
-      sections, setSections, updateSection,
-      reportType, setReportType,
-      historicalDate, setHistoricalDate,
-      step, setStep,
+  const value = useMemo<AssessmentContextType>(
+    () => ({
+      patient,
+      tests,
+      observations,
+      synthesis,
+      sections,
+      reportType,
+      historicalDate,
+      step,
       isAutoSaving,
-      previousAssessment, setPreviousAssessment,
-      resetAssessment, loadFromDraft
-    }}>
-      {children}
-    </AssessmentContext.Provider>
+      previousAssessment,
+      setPreviousAssessment,
+      setHistoricalDate,
+      setPatient,
+      updatePatient,
+      updateTests,
+      updateObservations,
+      updateSynthesis,
+      setSections,
+      updateSection,
+      setReportType,
+      setStep,
+      resetAssessment,
+      loadFromDraft,
+      buildDraft,
+      ensurePatientId,
+    }),
+    [
+      patient,
+      tests,
+      observations,
+      synthesis,
+      sections,
+      reportType,
+      historicalDate,
+      step,
+      isAutoSaving,
+      previousAssessment,
+      setPreviousAssessment,
+      updatePatient,
+      updateTests,
+      updateObservations,
+      updateSynthesis,
+      updateSection,
+      resetAssessment,
+      loadFromDraft,
+      buildDraft,
+      ensurePatientId,
+    ],
   );
+
+  return <AssessmentContext.Provider value={value}>{children}</AssessmentContext.Provider>;
 };
 
 export const useAssessment = () => {

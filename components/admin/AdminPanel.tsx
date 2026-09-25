@@ -12,7 +12,7 @@ interface Props {
   onClose: () => void;
 }
 
-export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
+export const AdminPanel: React.FC<Props> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<'catalogue' | 'users' | 'ops'>('catalogue');
   const [adminVerified, setAdminVerified] = useState<boolean | null>(null);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
@@ -115,13 +115,7 @@ export const AdminPanel: React.FC<Props> = ({ userProfile, onClose }) => {
 
         <main className="flex-1 overflow-y-auto p-0 bg-[#1A1C23]">
           {activeTab === 'catalogue' && (
-            <AdminLibrary
-              focusTestId={null}
-              focusSubtestId={null}
-              focusSuggestedScoreType={null}
-              focusValueFixes={[]}
-              focusNonce={0}
-            />
+            <AdminLibrary />
           )}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'ops' && <OpsMonitoring />}

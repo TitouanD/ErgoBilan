@@ -128,7 +128,7 @@ export const OpsMonitoring: React.FC = () => {
                                 <YAxis stroke="#666" tick={{ fill: '#666', fontSize: 10 }} allowDecimals={false} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#131419', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
-                                    formatter={(value: number, name: string) => [
+                                    formatter={(value?: number, name?: string) => [
                                         value,
                                         name === 'requests' ? 'Générations' : 'Erreurs'
                                     ]}
@@ -171,7 +171,7 @@ export const OpsMonitoring: React.FC = () => {
                                 <YAxis stroke="#666" tick={{ fill: '#666', fontSize: 10 }} allowDecimals={false} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#131419', border: '1px solid #333', borderRadius: '8px', color: '#fff' }}
-                                    formatter={(value: number) => [value, 'Erreurs']}
+                                    formatter={(value?: number) => [value ?? 0, 'Erreurs']}
                                 />
                                 <Bar dataKey="errors" fill="#ef4444" radius={[3, 3, 0, 0]} opacity={0.8} />
                             </BarChart>

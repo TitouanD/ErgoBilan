@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Mail, FileText, ArrowRight, Loader2, CheckCircle2, UserCheck, Stethoscope, GraduationCap } from 'lucide-react';
+import { Mail, CheckCircle2, UserCheck, Stethoscope, GraduationCap } from 'lucide-react';
 
 interface Props {
     isOpen: boolean;

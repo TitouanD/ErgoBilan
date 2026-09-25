@@ -7,6 +7,7 @@ import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
 import { generateQuestionnaireKey, encryptData, decryptData } from '../utils/crypto';
 import type { PendingQuestionnaire, PractitionerProfile } from '../types';
+import { Logger } from '../utils/logger';
 
 interface UseLinkManagerParams {
   sessionKey: CryptoKey | null;
@@ -54,20 +55,13 @@ export const useLinkManager = ({
 
     if (!practitioner || !sessionKey) return;
 
-    // Resolve organizationId via bootstrap RPC (idempotent — creates org if not exists).
-    // Avoids a direct dependency on organization_members which may not have a row yet.
-    const { data: orgData, error: orgError } = await supabase
-      .rpc('bootstrap_org_for_user', {
-        p_user_id: practitioner.id,
-        p_org_name: 'Mon Cabinet',
-      })
-      .maybeSingle();
-
-    const organizationId: string | null =
-      (orgData as { organization_id?: string } | null)?.organization_id ?? null;
-
-    if (!organizationId || orgError) {
-      toast.error('Erreur critique\u00a0: Organisation introuvable.');
+    // bootstrap_org_for_user is idempotent (creates the organization if missing) and returns its uuid.
+    const { data: organizationId, error: orgError } = await supabase.rpc('bootstrap_org_for_user', {
+      p_user_id: practitioner.id,
+      p_org_name: 'Mon Cabinet',
+    });
+    if (orgError || typeof organizationId !== 'string' || !organizationId) {
+      toast.error('Erreur critique : Organisation introuvable.');
       return;
     }
 
@@ -95,6 +89,7 @@ export const useLinkManager = ({
       .single();
 
     if (error) {
+      Logger.error('DB', 'Questionnaire link creation failed', error);
       toast.error('Impossible de créer le lien.');
       return;
     }
@@ -104,9 +99,9 @@ export const useLinkManager = ({
       setPendingQuestionnaires((prev) => [
         {
           id: data.id,
-          label: data.label,
+          label: data.label ?? label,
           status: 'pending',
-          createdAt: data.created_at,
+          createdAt: data.created_at ?? new Date().toISOString(),
           practitionerEncryptedKey: data.practitioner_encrypted_key,
           accessToken: data.access_token || accessToken,
         },

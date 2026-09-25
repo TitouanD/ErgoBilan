@@ -1,7 +1,7 @@
 /**
  * localDB — Dexie (IndexedDB) database for local-first PHI storage.
- * No data is sent to any server. Replaces Supabase for:
- *   patients, drafts, patient_assessments, patient_followups
+ * No data is sent to any server. Stores patients, drafts, assessments and
+ * follow-ups — in plaintext for now (docs/TECH_DEBT.md P0-1).
  *
  * Supabase is still used for: auth, subscriptions, catalogue, portal questionnaires.
  *
@@ -103,6 +103,14 @@ export function getLocalDB(userId: string): ErgoBilanDB {
   return db;
 }
 
+/** Close a user's database and drop it from the cache (logout / lock). */
+export function closeLocalDB(userId: string): void {
+  const db = _dbCache.get(userId);
+  if (!db) return;
+  db.close();
+  _dbCache.delete(userId);
+}
+
 // ─── Legacy migration ─────────────────────────────────────────────────────────
 
 /**
@@ -155,22 +163,22 @@ export const migrateLegacyDB = async (userId: string, targetDB: ErgoBilanDB): Pr
     await targetDB.transaction('rw', [targetDB.patients, targetDB.drafts, targetDB.assessments, targetDB.followups], async () => {
       if (patients.length) {
         await targetDB.patients.bulkPut(
-          patients.map(({ userId: _u, organizationId: _o, ...rest }) => rest as LocalPatientRow),
+          patients.map(({ userId: _u, organizationId: _o, ...rest }) => rest as unknown as LocalPatientRow),
         );
       }
       if (assessments.length) {
         await targetDB.assessments.bulkPut(
-          assessments.map(({ userId: _u, organizationId: _o, ...rest }) => rest as LocalAssessmentRow),
+          assessments.map(({ userId: _u, organizationId: _o, ...rest }) => rest as unknown as LocalAssessmentRow),
         );
       }
       if (followups.length) {
         await targetDB.followups.bulkPut(
-          followups.map(({ organizationId: _o, ...rest }) => rest as LocalFollowupRow),
+          followups.map(({ organizationId: _o, ...rest }) => rest as unknown as LocalFollowupRow),
         );
       }
       if (draftRows.length) {
         await targetDB.drafts.bulkAdd(
-          draftRows.map(({ id: _id, userId: _u, ...rest }) => rest as LocalDraftRow),
+          draftRows.map(({ id: _id, userId: _u, ...rest }) => rest as unknown as LocalDraftRow),
         );
       }
     });

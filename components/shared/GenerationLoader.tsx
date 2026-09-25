@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, ShieldCheck, Sparkles, Brain, FileText, Clock, XCircle, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Sparkles, Brain, FileText, Clock, XCircle } from 'lucide-react';
 
 interface Props {
     isVisible: boolean;

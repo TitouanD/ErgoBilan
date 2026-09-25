@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Check, Star, Clock, ArrowRight, Zap, ShieldCheck, FileText, Sparkles, Lock, Key, Copy, Share2, Database, Crown, Layout, LifeBuoy, Gift } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, Clock, ArrowRight, Zap, ShieldCheck, FileText, Sparkles, Lock, Key, Share2, Database, Gift } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext'; // Import du contexte Auth
 
 interface Props {

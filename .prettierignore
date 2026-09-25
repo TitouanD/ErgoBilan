@@ -1,4 +1,4 @@
 dist
 node_modules
-supabase
-*.md
+supabase/.temp
+package-lock.json

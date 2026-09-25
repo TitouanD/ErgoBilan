@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Check, Zap, Crown, Lock, ArrowRight, Sparkles, Coins, LifeBuoy, Info, Rocket, Palette } from 'lucide-react';
+import { X, Check, Zap, Crown, Lock, ArrowRight, Sparkles, Coins, Info, Rocket, Palette } from 'lucide-react';
 
 interface Props {
   onClose: () => void;

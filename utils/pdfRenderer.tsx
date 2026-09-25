@@ -11,9 +11,8 @@ const DEFAULT_PRIMARY = '#3D405B';
 const STONE600 = '#57534E';
 const STONE500 = '#78716C';
 
-function getFontSize(branding?: BrandingConfig) {
-    return 10; // base body font size for PDF
-}
+/** Base body font size of the PDF. */
+const BODY_FONT_SIZE = 10;
 
 function getPrimary(branding?: BrandingConfig) {
     return branding?.isEnabled ? branding.primaryColor : DEFAULT_PRIMARY;
@@ -31,7 +30,7 @@ function extractBgColor(styleAttr: string): string | undefined {
     return match ? match[1].trim() : undefined;
 }
 
-type PdfStyle = Record<string, unknown>;
+type PdfStyle = Exclude<React.ComponentProps<typeof Text>['style'], unknown[] | undefined>;
 
 /** Recursively render a DOM node into a react-pdf Text subtree (inline content) */
 function renderInline(node: Node, fontFamily: string, pathPrefix = ''): React.ReactNode[] {
@@ -89,7 +88,7 @@ function renderInline(node: Node, fontFamily: string, pathPrefix = ''): React.Re
 /** Render a block-level element to a react-pdf View/Text */
 function renderBlock(el: Element, branding: BrandingConfig | undefined, fontFamily: string, primary: string, blockIndex: number): React.ReactNode | null {
     const tag = el.tagName?.toLowerCase();
-    const fs = getFontSize(branding);
+    const fs = BODY_FONT_SIZE;
     const blockKey = `block-${blockIndex}-${tag}`;
 
     switch (tag) {

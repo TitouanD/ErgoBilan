@@ -1,11 +1,6 @@
 /**
- * subtestOrdering.ts — Shared subtest display & ordering helpers.
- *
- * Single source of truth for how subtests are labelled, grouped, and sorted
- * across the assessment flows (initial `pages/ScorePage.tsx` and the
- * reevaluation `shared/ReevaluationTableView.tsx`). Previously duplicated
- * verbatim in both files — kept here to guarantee both flows always display
- * subtests identically.
+ * subtestOrdering.ts — how subtests are labelled, grouped and sorted in every
+ * score table (initial, re-evaluation, historical) and in the test picker.
  */
 
 import type { ScoreType, SubtestDef } from '../data/testCatalog';
@@ -16,6 +11,8 @@ export const SCALE_LABELS: Record<string, string> = {
   't-score': 'T (m=50, \u03c3=10)',
   sten:      'Sten (m=5.5, \u03c3=2)',
   stanine:   'Stanine (m=5, \u03c3=2)',
+  percentile: 'Rang percentile',
+  none:      '\u00c9chelle non renseign\u00e9e',
 };
 
 export const getScaleLabel = (scoreType?: ScoreType): string | null => {

@@ -1,16 +1,16 @@
-﻿import React, { useState, useMemo } from 'react';
-import type { ClinicalSynthesis, TestData, Observations, Patient, ScoreResult } from '../../../types';
+import React, { useState, useMemo } from 'react';
+import type { ClinicalSynthesis, TestData, Patient, ScoreResult } from '../../../types';
 import { Sparkles, Brain, Target, Lightbulb, Activity, Quote } from 'lucide-react';
 import { VoiceTextarea } from '../../shared/VoiceTextarea';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { StepNavFooter } from '../shared/StepNavFooter';
-import { getZFromScore, hasScoreValue } from '../../../utils/scoring';
+import { ZONE_META, getZFromScore, hasScoreValue, zoneFromZ } from '../../../utils/scoring';
+import { getScaleType, getSubtestName, getTestName } from '../../../utils/catalogIndex';
 
 interface Props {
     synthesis: ClinicalSynthesis;
     updateSynthesis: (data: Partial<ClinicalSynthesis>) => void;
     tests: TestData;
-    observations?: Observations;
     patient?: Patient;
     onNext: () => void;
     onBack: () => void;
@@ -35,55 +35,32 @@ const getEnteredScoreLabel = (res: ScoreResult, z: number | null): string | null
 
 // --- SCORES & OBSERVATIONS PANEL (merged, expandable) ---
 const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
-    const { catalog } = useCatalog();
+    const { index } = useCatalog();
     const [notesExpanded, setNotesExpanded] = useState(false);
     const [panelExpanded, setPanelExpanded] = useState(false);
 
-    const { testInfoMap, subtestNameMap, scoreTypeMap } = useMemo(() => {
-        const testInfoMap: Record<string, { name: string; categoryName: string }> = {};
-        const subtestNameMap: Record<string, string> = {};
-        const scoreTypeMap: Record<string, Record<string, string>> = {};
-        catalog.forEach(cat => {
-            cat.tests.forEach(t => {
-                testInfoMap[t.id] = { name: t.name, categoryName: cat.name };
-                scoreTypeMap[t.id] = {};
-                t.subtests.forEach((st) => {
-                    subtestNameMap[st.id] = (st as any).displayName || st.name || st.id;
-                    scoreTypeMap[t.id][st.id] = st.scoreType || 'standard';
-                });
-            });
-        });
-        return { testInfoMap, subtestNameMap, scoreTypeMap };
-    }, [catalog]);
-
-    const groupedData = useMemo((): { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult; scoreType: string }[] }[] => {
-        const result: { testId: string; name: string; avg: number | null; subtests: { subId: string; name: string; res: ScoreResult; scoreType: string }[] }[] = [];
-        Object.entries(tests).forEach(([testId, subtestMap]) => {
-            const zScores: number[] = [];
-            const subtestList: { subId: string; name: string; res: ScoreResult; scoreType: string }[] = [];
-            Object.entries(subtestMap).forEach(([subId, res]) => {
-                const scoreType = scoreTypeMap[testId]?.[subId] || 'standard';
-                const z = getZFromScore(res, scoreType);
-                if (z !== null) zScores.push(z);
-                const hasData = hasScoreValue(res);
-                if (hasData) subtestList.push({ subId, name: subtestNameMap[subId] || subtestNameMap[subId.toLowerCase()] || subId, res, scoreType });
-            });
-            if (subtestList.length === 0) return;
-            // Subtests keep the natural insertion order of `tests[testId]`, which reflects
-            // the custom drag-and-drop order defined on the test entry page (ScorePage).
-            const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
-            const info = testInfoMap[testId];
-            const testName = info?.name || testId;
-            result.push({ testId, name: testName, avg, subtests: subtestList });
-        });
-        return result;
-    }, [tests, testInfoMap, subtestNameMap, scoreTypeMap]);
+    const groupedData = useMemo(
+        () =>
+            Object.entries(tests).flatMap(([testId, subtestMap]) => {
+                const zScores: number[] = [];
+                const subtests: { subId: string; name: string; res: ScoreResult; scoreType: string }[] = [];
+                // Subtests keep the insertion order of tests[testId] (drag-and-drop order of the score page).
+                for (const [subId, res] of Object.entries(subtestMap)) {
+                    const scoreType = getScaleType(index, testId, subId);
+                    const z = getZFromScore(res, scoreType);
+                    if (z !== null) zScores.push(z);
+                    if (hasScoreValue(res)) subtests.push({ subId, name: getSubtestName(index, testId, subId, res.customLabel), res, scoreType });
+                }
+                if (subtests.length === 0) return [];
+                const avg = zScores.length > 0 ? zScores.reduce((x, y) => x + y, 0) / zScores.length : null;
+                return [{ testId, name: getTestName(index, testId), avg, subtests }];
+            }),
+        [tests, index],
+    );
 
     const zColor = (z?: number | null): string => {
-        if (z == null || !Number.isFinite(z)) return '#94a3b8';
-        if (z <= -2) return '#E07A5F';
-        if (z <= -1) return '#F2CC8F';
-        return '#81B29A';
+        const zone = zoneFromZ(z);
+        return zone ? ZONE_META[zone].color : '#94a3b8';
     };
 
     const hasContent = groupedData.length > 0;
@@ -258,7 +235,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
     );
 };
 
-export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, observations, patient, onNext, onBack, isGenerating }) => {
+export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis, tests, patient, onNext, onBack, isGenerating }) => {
 
     const handleDiagChange = (val: string) => updateSynthesis({ diagnosticInput: val });
     const handleProjectChange = (val: string) => updateSynthesis({ projectInput: val });

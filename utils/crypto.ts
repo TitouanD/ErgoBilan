@@ -1,188 +1,110 @@
-﻿
-// Module de Cryptographie AvancÃ©e (Web Crypto API)
+/**
+ * crypto.ts — Web Crypto helpers.
+ *
+ * - PIN: PBKDF2-SHA256 → AES-GCM key (`sessionKey`). A validator (the constant
+ *   VALIDATION_TOKEN encrypted with that key) is stored in `practitioners` so the
+ *   PIN can be checked. The key wraps the portal questionnaire keys; it does NOT
+ *   encrypt local patient data yet (docs/TECH_DEBT.md P0-1).
+ * - Portal: one random AES-GCM key per questionnaire, carried in the URL fragment
+ *   (`#key=...`, never sent to a server).
+ *
+ * Serialized ciphertexts are `{ iv: hex, content: base64 }` (stored as "iv:content").
+ */
 
-const VALIDATION_TOKEN = "ERGOBILAN_VALID_TOKEN";
-const CURRENT_ITERATIONS = 600_000; // OWASP 2024 recommendation for PBKDF2-SHA256
-const LEGACY_ITERATIONS = 100_000; // Previous iteration count â€” used for migration only
+const VALIDATION_TOKEN = 'ERGOBILAN_VALID_TOKEN';
+/** OWASP 2023+ recommendation for PBKDF2-SHA256. */
+const CURRENT_ITERATIONS = 600_000;
+/** Iteration count of accounts created before the upgrade (still accepted, see verifyPin). */
+const LEGACY_ITERATIONS = 100_000;
 
-// 1. GÃ©nÃ©ration de la Master Key via PBKDF2
+const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+/** Derive the AES-GCM key of a PIN. */
 export const deriveMasterKey = async (password: string, salt: string, iterations = CURRENT_ITERATIONS): Promise<CryptoKey> => {
   const enc = new TextEncoder();
-  const keyMaterial = await window.crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-
+  const keyMaterial = await window.crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits', 'deriveKey']);
   return window.crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(salt),
-      iterations,
-      hash: "SHA-256",
-    },
+    { name: 'PBKDF2', salt: enc.encode(salt), iterations, hash: 'SHA-256' },
     keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    true, // IMPORTANT: true pour permettre l'export/wrap de clÃ©s avec cette clÃ©
-    ["encrypt", "decrypt", "wrapKey", "unwrapKey"]
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
   );
 };
 
-// 2. Chiffrement SymÃ©trique (AES-GCM) pour les DonnÃ©es
+/** AES-GCM encryption of any JSON-serializable value. */
 export const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: string; content: string }> => {
-  const enc = new TextEncoder();
-  const encoded = enc.encode(JSON.stringify(data));
-  const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Vecteur d'initialisation unique
-
-  const encryptedBuffer = await window.crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: iv },
-    key,
-    encoded
-  );
-
-  return {
-    iv:  Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
-    content: btoa(String.fromCharCode(...new Uint8Array(encryptedBuffer)))
-  };
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(data)));
+  return { iv: toHex(iv), content: btoa(String.fromCharCode(...new Uint8Array(encrypted))) };
 };
 
-// 3. DÃ©chiffrement
-export const decryptData = async (encryptedObj: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
-  const dec = new TextDecoder();
-  
-  // Conversion hex string -> Uint8Array pour l'IV
-  const ivMatch = encryptedObj.iv.match(/.{1,2}/g);
-  if (!ivMatch) throw new Error("Invalid IV");
-  const iv = new Uint8Array(ivMatch.map(byte => parseInt(byte, 16)));
-
-  // Conversion base64 -> Uint8Array pour le contenu
-  const encryptedContent = Uint8Array.from(atob(encryptedObj.content), c => c.charCodeAt(0));
-
-  const decryptedBuffer = await window.crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: iv },
-    key,
-    encryptedContent
-  );
-
-  return JSON.parse(dec.decode(decryptedBuffer));
+export const decryptData = async (encrypted: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
+  const ivBytes = encrypted.iv.match(/.{1,2}/g);
+  if (!ivBytes) throw new Error('Invalid IV');
+  const iv = new Uint8Array(ivBytes.map((byte) => parseInt(byte, 16)));
+  const content = Uint8Array.from(atob(encrypted.content), (c) => c.charCodeAt(0));
+  const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, content);
+  return JSON.parse(new TextDecoder().decode(decrypted));
 };
 
-// 4. --- PIN FLOW (Security Challenge) ---
+// ─── PIN ─────────────────────────────────────────────────────────────────────
 
-export const setupPin = async (pin: string): Promise<{ key: CryptoKey, salt: string, validator: string }> => {
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-    const salt = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    const key = await deriveMasterKey(pin, salt);
-    const validation = await encryptData(VALIDATION_TOKEN, key);
-    const validator = `${validation.iv}:${validation.content}`;
-    return { key, salt, validator };
+/** New PIN: random salt, derived key and the validator to store. */
+export const setupPin = async (pin: string): Promise<{ key: CryptoKey; salt: string; validator: string }> => {
+  const salt = toHex(window.crypto.getRandomValues(new Uint8Array(16)));
+  const key = await deriveMasterKey(pin, salt);
+  const validation = await encryptData(VALIDATION_TOKEN, key);
+  return { key, salt, validator: `${validation.iv}:${validation.content}` };
 };
 
-/** Result of PIN verification, includes migration info when upgrading from legacy PBKDF2 iterations */
 export interface PinVerifyResult {
-    key: CryptoKey;
-    /** If set, the caller should persist this new validator to replace the legacy one */
-    migratedValidator?: string;
+  /** Always the key derived with CURRENT_ITERATIONS (used to wrap portal keys). */
+  key: CryptoKey;
 }
 
+/**
+ * Check a PIN against the stored validator. Validators created with the legacy
+ * iteration count are still accepted (they cannot be rewritten: the DB forbids
+ * changing a set validator), and the current-iteration key is returned.
+ */
 export const verifyPin = async (pin: string, salt: string, validatorStr: string): Promise<PinVerifyResult | null> => {
-    const [iv, content] = validatorStr.split(':');
-    if (!iv || !content) return null;
+  const [iv, content] = validatorStr.split(':');
+  if (!iv || !content) return null;
 
-    // 1. Try current iterations (600k)
+  const matches = async (iterations: number): Promise<CryptoKey | null> => {
     try {
-        const key = await deriveMasterKey(pin, salt, CURRENT_ITERATIONS);
-        const decrypted = await decryptData({ iv, content }, key);
-        if (decrypted === VALIDATION_TOKEN) return { key };
+      const key = await deriveMasterKey(pin, salt, iterations);
+      return (await decryptData({ iv, content }, key)) === VALIDATION_TOKEN ? key : null;
     } catch {
-        // Decryption failed â€” may be using legacy iteration count
+      return null;
     }
+  };
 
-    // 2. Fallback to legacy iterations (100k) for accounts created before upgrade
-    try {
-        const legacyKey = await deriveMasterKey(pin, salt, LEGACY_ITERATIONS);
-        const decrypted = await decryptData({ iv, content }, legacyKey);
-        if (decrypted !== VALIDATION_TOKEN) return null;
-
-        // Legacy key worked â†’ re-derive with current iterations and produce a new validator
-        const newKey = await deriveMasterKey(pin, salt, CURRENT_ITERATIONS);
-        const newValidation = await encryptData(VALIDATION_TOKEN, newKey);
-        const migratedValidator = `${newValidation.iv}:${newValidation.content}`;
-
-        return { key: newKey, migratedValidator };
-    } catch {
-        return null;
-    }
+  const current = await matches(CURRENT_ITERATIONS);
+  if (current) return { key: current };
+  if (await matches(LEGACY_ITERATIONS)) return { key: await deriveMasterKey(pin, salt, CURRENT_ITERATIONS) };
+  return null;
 };
 
-// --- GESTION DES CLÃ‰S PARTAGÃ‰ES (URL LINK) ---
+// ─── Portal questionnaire keys ───────────────────────────────────────────────
 
-// GÃ©nÃ¨re une clÃ© AES alÃ©atoire pour un questionnaire spÃ©cifique
+/** Random AES-GCM key of a questionnaire and its URL-fragment encoding (base64 JWK). */
 export const generateQuestionnaireKey = async (): Promise<{ key: CryptoKey; keyString: string }> => {
-  const key = await window.crypto.subtle.generateKey(
-    { name: "AES-GCM", length: 256 },
-    true,
-    ["encrypt", "decrypt"]
-  );
-  
-  // Export en JWK pour pouvoir le passer dans l'URL (encodÃ© base64url)
-  const exported = await window.crypto.subtle.exportKey("jwk", key);
-  // Encodage simple en base64 pour l'URL (safe car hash fragment)
-  const keyString = btoa(JSON.stringify(exported));
-  
-  return { key, keyString };
+  const key = await window.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const exported = await window.crypto.subtle.exportKey('jwk', key);
+  return { key, keyString: btoa(JSON.stringify(exported)) };
 };
 
-// Reconstruit la clÃ© depuis le fragment d'URL
+/** Rebuild a questionnaire key from its URL-fragment encoding. */
 export const importQuestionnaireKey = async (keyString: string): Promise<CryptoKey> => {
   try {
-      const jwk = JSON.parse(atob(keyString));
-      return await window.crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        { name: "AES-GCM" },
-        true,
-        ["encrypt", "decrypt"]
-      );
+    return await window.crypto.subtle.importKey('jwk', JSON.parse(atob(keyString)), { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
   } catch {
-      throw new Error("ClÃ© de questionnaire invalide ou corrompue.");
+    throw new Error('Clé de questionnaire invalide ou corrompue.');
   }
 };
 
-// --- NOUVEAU : KEY WRAPPING (HIÃ‰RARCHIE DE CLÃ‰S) ---
-
-// 1. GÃ©nÃ©rer une nouvelle clÃ© AES-GCM exportable (ex: OrgKey ou FileKey)
-export const generateSymetricKey = async (): Promise<CryptoKey> => {
-    return window.crypto.subtle.generateKey(
-        { name: "AES-GCM", length: 256 },
-        true, // Exportable pour pouvoir Ãªtre chiffrÃ©e (wrapped)
-        ["encrypt", "decrypt"]
-    );
-};
-
-// 2. Wrap Key : Chiffre une clÃ© "enfant" avec une clÃ© "parent"
-// Ex: Chiffrer OrgKey avec MasterKey(PIN)
-export const wrapKey = async (keyToWrap: CryptoKey, wrappingKey: CryptoKey): Promise<{ iv: string, content: string }> => {
-    // On exporte d'abord la clÃ© Ã  chiffrer en format JWK (JSON)
-    const exportedKey = await window.crypto.subtle.exportKey("jwk", keyToWrap);
-    // On chiffre ce JSON comme une donnÃ©e normale
-    return encryptData(exportedKey, wrappingKey);
-};
-
-// 3. Unwrap Key : DÃ©chiffre une clÃ© "enfant" avec une clÃ© "parent"
-// Ex: DÃ©chiffrer OrgKey avec MasterKey(PIN)
-export const unwrapKey = async (encryptedKey: { iv: string, content: string }, unwrappingKey: CryptoKey): Promise<CryptoKey> => {
-    // On dÃ©chiffre pour rÃ©cupÃ©rer le JSON (JWK)
-    const decryptedJwk = await decryptData(encryptedKey, unwrappingKey);
-    // On rÃ©importe le JSON en objet CryptoKey utilisable
-    return window.crypto.subtle.importKey(
-        "jwk",
-        decryptedJwk,
-        { name: "AES-GCM" },
-        true,
-        ["encrypt", "decrypt"] // Droits de la clÃ© restaurÃ©e
-    );
-};
-
+/** Random AES-GCM key (demo mode session key). */
+export const generateSymetricKey = async (): Promise<CryptoKey> =>
+  window.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);

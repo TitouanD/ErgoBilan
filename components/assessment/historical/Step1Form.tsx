@@ -6,9 +6,9 @@
  * Does NOT ask for family, medical, development or autonomy data —
  * those are only needed for AI report generation.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import type { Patient } from '../../../types';
-import { isPatientCreationReady, getPatientAgeForIdentity } from '../../../utils';
+import { isPatientCreationReady, getPatientAgeForIdentity } from '../../../utils/patient';
 import { History, ArrowRight, Loader2 } from 'lucide-react';
 import { StorageService } from '../../../services/storage';
 import { Logger } from '../../../utils/logger';
@@ -30,7 +30,7 @@ export const HistoricalPatientForm: React.FC<Props> = ({
     onPatientCreated,
 }) => {
     const toast = useToast();
-    const { historicalDate, setHistoricalDate } = useAssessment();
+    const { historicalDate, setHistoricalDate, ensurePatientId } = useAssessment();
     const [isSaving, setIsSaving] = useState(false);
 
     const handleNext = async () => {
@@ -45,7 +45,8 @@ export const HistoricalPatientForm: React.FC<Props> = ({
 
         setIsSaving(true);
         try {
-            const patientId = await StorageService.ensurePatientId(data);
+            const patientId = await ensurePatientId(data);
+            if (!patientId) throw new Error('PATIENT_CREATION_FAILED');
             const patientSnapshot: Patient = {
                 ...data,
                 id: patientId,

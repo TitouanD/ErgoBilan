@@ -1,18 +1,18 @@
-﻿/**
+/**
  * HistoricalSectionsStep — Step 3 of the "historique" import flow.
  *
  * Lets the practitioner paste the content of an existing assessment report
  * (sections) so the system stores it as a formal PatientAssessment.
  * This activates the "Réévaluation 1-clic" button for this patient.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { Patient, ReportSection } from '../../../types';
 import { FileText, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { StepNavFooter } from '../shared/StepNavFooter';
-import { useToast } from '../../../contexts/ToastContext';
 
 // ─── Standard ErgoBilan sections (same IDs as AI generation uses) ─────────────
-// Order and IDs MUST match the sections emitted by AIService.generateFullReport.
+// IDs MUST match the sections emitted by AIService.generateInitialReport ('objectifs' is
+// hidden from reports, see HIDDEN_SECTION_IDS in utils/reportData.ts, so it is not asked here).
 // This ensures the reevaluation AI can correctly reference previous sections.
 
 const DEFAULT_SECTIONS: { id: string; title: string }[] = [
@@ -20,104 +20,66 @@ const DEFAULT_SECTIONS: { id: string; title: string }[] = [
     { id: 'mandat_eval',    title: 'Mandat d\'évaluation en ergothérapie' },
     { id: 'profil',         title: 'Profil occupationnel' },
     { id: 'diagnostic',     title: 'Diagnostic en ergothérapie' },
-    { id: 'objectifs',      title: 'Les objectifs généraux' },
     { id: 'project',        title: 'Projet d\'accompagnement' },
     { id: 'recommandations', title: 'Recommandations' },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface LocalSection {
-    id: string;      // stable ErgoBilan section ID
-    title: string;
-    content: string;
-    isOpen: boolean;
-}
-
 interface Props {
     patient: Patient;
     historicalDate: string;
+    /** Sections live in the assessment context so they survive navigation and are saved in the draft. */
+    sections: ReportSection[];
+    onChangeSection: (id: string, update: Partial<ReportSection>) => void;
     onBack: () => void;
-    onSave: (sections: ReportSection[]) => Promise<void>;
+    onSave: () => Promise<void>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (isoDate: string): string => {
     if (!isoDate) return '';
-    try {
-        return new Date(isoDate).toLocaleDateString('fr-FR', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-        });
-    } catch {
-        return isoDate;
-    }
+    const date = new Date(isoDate);
+    return Number.isNaN(date.getTime()) ? isoDate : date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export const HistoricalSectionsStep: React.FC<Props> = ({
-    patient,
-    historicalDate,
-    onBack,
-    onSave,
-}) => {
-    const toast = useToast();
+export const HistoricalSectionsStep: React.FC<Props> = ({ patient, historicalDate, sections: stored, onChangeSection, onBack, onSave }) => {
     const [isSaving, setIsSaving] = useState(false);
+    const [openIds, setOpenIds] = useState<Set<string>>(new Set());
 
-    const [sections, setSections] = useState<LocalSection[]>(() =>
-        DEFAULT_SECTIONS.map((s) => ({
-            id: s.id,
-            title: s.title,
-            content: '',
-            isOpen: false,
-        }))
-    );
-
-    const updateSection = useCallback((id: string, patch: Partial<LocalSection>) => {
-        setSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-    }, []);
-
-    const toggleSection = useCallback((id: string) => {
-        setSections((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, isOpen: !s.isOpen } : s))
-        );
-    }, []);
-
-    const allExpanded = sections.every((s) => s.isOpen);
-    const toggleAll = useCallback(() => {
-        setSections((prev) => prev.map((s) => ({ ...s, isOpen: !allExpanded })));
-    }, [allExpanded]);
+    const sections = DEFAULT_SECTIONS.map((def) => ({ ...def, content: stored.find((s) => s.id === def.id)?.content ?? '' }));
+    const updateSection = (id: string, content: string) => {
+        const def = DEFAULT_SECTIONS.find((d) => d.id === id)!;
+        onChangeSection(id, { title: def.title, content, contentFormat: 'plain', status: 'validated', isAiGenerated: false });
+    };
+    const toggleSection = (id: string) =>
+        setOpenIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    const allExpanded = openIds.size === sections.length;
+    const toggleAll = () => setOpenIds(allExpanded ? new Set() : new Set(sections.map((s) => s.id)));
 
     const handleSave = useCallback(async () => {
-        const filledSections = sections.filter((s) => s.content.trim().length > 0);
-        if (filledSections.length === 0) {
+        const hasText = stored.some((s) => s.content.trim().length > 0);
+        if (!hasText) {
             const confirm = window.confirm(
                 'Aucune section ne contient de texte. Voulez-vous quand même enregistrer le bilan (sans rapport) pour activer la réévaluation 1-clic ?'
             );
             if (!confirm) return;
         }
-
-        const reportSections: ReportSection[] = sections
-            .filter((s) => s.content.trim().length > 0)
-            .map((s) => ({
-                id: s.id,
-                title: s.title,
-                content: s.content,
-                contentFormat: 'plain' as const,
-                status: 'validated' as const,
-                isAiGenerated: false,
-            }));
-
         setIsSaving(true);
         try {
-            await onSave(reportSections);
+            await onSave();
         } finally {
             setIsSaving(false);
         }
-    }, [sections, onSave]);
+    }, [stored, onSave]);
 
     const patientName = `${patient.firstName} ${patient.lastName}`.trim() || 'Patient';
     const filledCount = sections.filter((s) => s.content.trim().length > 0).length;
@@ -187,18 +149,18 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
                                 type="button"
                                 onClick={() => toggleSection(section.id)}
                                 className="rounded-lg p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--hover-bg)]"
-                                aria-label={section.isOpen ? 'Réduire' : 'Développer'}
+                                aria-label={openIds.has(section.id) ? 'Réduire' : 'Développer'}
                             >
-                                {section.isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                                {openIds.has(section.id) ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                             </button>
                         </div>
 
                         {/* Section body */}
-                        {section.isOpen && (
+                        {openIds.has(section.id) && (
                             <div className="p-5">
                                 <textarea
                                     value={section.content}
-                                    onChange={(e) => updateSection(section.id, { content: e.target.value })}
+                                    onChange={(e) => updateSection(section.id, e.target.value)}
                                     placeholder="Collez ou tapez le contenu de cette section..."
                                     rows={8}
                                     className="w-full resize-y rounded-xl border border-[var(--border-color)] bg-[var(--app-bg)] px-4 py-3 text-sm text-[var(--text-main)] placeholder:text-[var(--text-disabled)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/30 transition-shadow"
@@ -210,7 +172,7 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
                         )}
 
                         {/* Collapsed summary */}
-                        {!section.isOpen && section.content.trim() && (
+                        {!openIds.has(section.id) && section.content.trim() && (
                             <button
                                 type="button"
                                 onClick={() => toggleSection(section.id)}
@@ -221,7 +183,7 @@ export const HistoricalSectionsStep: React.FC<Props> = ({
                         )}
 
                         {/* Collapsed empty */}
-                        {!section.isOpen && !section.content.trim() && (
+                        {!openIds.has(section.id) && !section.content.trim() && (
                             <button
                                 type="button"
                                 onClick={() => toggleSection(section.id)}

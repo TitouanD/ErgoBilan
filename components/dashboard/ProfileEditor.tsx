@@ -12,7 +12,7 @@ interface ProfileEditorProps {
 }
 
 export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
-    const { userProfile, practitioner, updateUserProfile, refreshProfile } = useAuth();
+    const { userProfile, practitioner, updateBranding, refreshProfile } = useAuth();
     const toast = useToast();
     const importInputRef = useRef<HTMLInputElement>(null);
     const [isExporting, setIsExporting] = useState(false);
@@ -111,16 +111,14 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
 
             // Update local branding to reflect new data
             const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
-            updateUserProfile({
-                branding: {
-                    ...userProfile.branding,
-                    practitionerName: fullName,
-                    cabinetName: fullName || userProfile.branding.cabinetName,
-                    brandSubtitle: form.brandSubtitle.trim() || 'Ergothérapeute',
-                    phone: form.phone.trim(),
-                    siret: form.siret.trim(),
-                    address: form.address.trim(),
-                }
+            updateBranding({
+                ...userProfile.branding,
+                practitionerName: fullName,
+                cabinetName: fullName || userProfile.branding.cabinetName,
+                brandSubtitle: form.brandSubtitle.trim() || 'Ergothérapeute',
+                phone: form.phone.trim(),
+                siret: form.siret.trim(),
+                address: form.address.trim(),
             });
 
             await refreshProfile();

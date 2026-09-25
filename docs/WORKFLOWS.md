@@ -1,0 +1,192 @@
+# Parcours fonctionnels (workflows)
+
+Document de référence pour les parcours de l'application : navigation entre les écrans, les trois types de bilan, les brouillons, la finalisation, le portail parents, l'export et le mode démo. Il décrit le code de la branche `refactor/assainissement` (septembre 2026). Les références désignent un fichier et une fonction ou un composant ; l'état des bugs connus est tenu dans [TECH_DEBT.md](./TECH_DEBT.md).
+
+Voir aussi : [ARCHITECTURE.md](./ARCHITECTURE.md) (routeur, auth), [AI_PIPELINE.md](./AI_PIPELINE.md) (génération IA), [SCORING_CATALOG.md](./SCORING_CATALOG.md) (scores et catalogue), [DATA_MODEL.md](./DATA_MODEL.md) (tables Dexie/Supabase).
+
+## 1. Carte des écrans
+
+Il n'y a pas de routeur d'URL : l'état `mode` de `AppRouter` (`App.tsx`) pilote l'affichage. L'état du bilan en cours vit dans `AssessmentProvider` (`contexts/AssessmentContext.tsx`). Le démarrage et la reprise d'un bilan passent par `hooks/useAssessmentLauncher.ts` ; la génération, la finalisation et « Sauver & quitter » par `hooks/useAssessmentFlow.ts`.
+
+| Condition / `mode`             | Composant                                       | Quand                                                                       |
+| ------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------- |
+| URL avec `?q_id=` et `#key=`   | `PatientPortal` seul (hors garde auth)          | Lien famille, détecté au premier rendu (`detectPortalUrl`)                  |
+| `isLoading` / `authenticating` | `AppLoader`                                     | Chargement de la session                                                    |
+| `network_error`                | `NetworkErrorScreen`                            | Timeout de chargement du praticien ou de sécurité                           |
+| `locked` (hors démo)           | `PinUnlock`                                     | Session ouverte, PIN à saisir                                               |
+| `landing`                      | `components/app/LandingPage.tsx`                | Non authentifié ; connexion, `AuthWizard`, « Espace Famille », démo         |
+| `admin`                        | `AdminPanel` (plein écran)                      | Après `verifyAdminAccess()` côté serveur                                    |
+| `dashboard`                    | `Dashboard`                                     | Par défaut une fois authentifié                                             |
+| `detail`                       | `PatientDetail`                                 | `openPatient` → `StorageService.loadPatientDetails`                         |
+| `portal`                       | `PatientPortal` seul                            | Saisie manuelle du lien depuis l'accueil                                    |
+| `profile`                      | `ProfileEditor`                                 | Menu compte ou lien depuis l'éditeur de design ; retour vers `previousMode` |
+| `assessment`                   | `components/assessment/AssessmentWorkspace.tsx` | Nouveau bilan, reprise de brouillon, import famille, réévaluation           |
+| overlay `viewingReport`        | `components/app/ReportViewerOverlay.tsx`        | Lecture seule d'un bilan archivé, depuis `PatientDetail`                    |
+
+Points d'entrée vers `assessment` :
+
+| Déclencheur                                             | `reportType`    | Code                                                                         |
+| ------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------- |
+| Dashboard / `NewPatientChoiceModal` « saisie manuelle » | `initial`       | `App.tsx` `startAssessment('initial')`                                       |
+| Dashboard « bilan antérieur »                           | `historique`    | `startAssessment('historique')`                                              |
+| `PatientDetail` « Commencer le bilan initial »          | `initial`       | `startAssessment('initial', file)` (patient sans bilan formel)               |
+| `PatientDetail` « Réévaluation 1 clic »                 | `reevaluation`  | `startAssessment('reevaluation', file)`, refusé sans bilan de référence (§3) |
+| Reprise de brouillon (dashboard, fiche, palette)        | selon brouillon | `useAssessmentLauncher` → `resumeDraft`                                      |
+| Import d'un questionnaire famille                       | `initial`       | `usePendingProcessor` → `handleProcessPending` (§7)                          |
+
+Composants du dashboard impliqués :
+
+| Composant                                        | Rôle dans les parcours                                                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `components/dashboard/Dashboard.tsx`             | Liste paginée des patients (`previewMeta`), questionnaires en attente + « Importer », bouton « Reprendre »                      |
+| `components/dashboard/NewPatientChoiceModal.tsx` | Choix lien famille / saisie manuelle / bilan antérieur                                                                          |
+| `components/dashboard/CommandPalette.tsx`        | Recherche patient, choix « nouveau patient », reprise de brouillon                                                              |
+| `components/dashboard/PatientDetail.tsx`         | Fiche patient : historique paginé, bannières de brouillon, actions de bilan, suivis, édition d'identité, archivage, suppression |
+
+**Navigation dans un bilan** (`AssessmentWorkspace`). Le stepper (`shared/AssessmentStepper.tsx`) ne permet de cliquer que sur les étapes passées. `handleStepperClick` demande confirmation quand on revient à l'étape qui produit les sections (ou avant) depuis une étape ultérieure et que des sections existent : étape 3 en initial, étape 2 en réévaluation, jamais en historique (`GENERATION_STEP`). « Quitter » propose de sauvegarder le brouillon ou de le jeter (`handleQuitSave`, `handleQuitDiscard`). `shared/StepNavFooter.tsx` n'est qu'un pied de page « Retour + CTA ».
+
+## 2. Parcours initial (5 étapes)
+
+| #   | Libellé stepper | Composant                 | État manipulé                                                           | Persistance                                |
+| --- | --------------- | ------------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | Dossier         | `initial/Step1Admin`      | `patient` (admin, anamnèse, notes d'entretien)                          | fiche patient Dexie + autosave             |
+| 2   | Tests & Obs.    | `pages/ScorePage`         | `tests` (scores + observations par subtest)                             | autosave                                   |
+| 3   | Diagnostic      | `initial/Step3Diagnostic` | `synthesis` (`diagnosticInput`, `projectInput`, `recommendationsInput`) | autosave ; génération IA (1 crédit)        |
+| 4   | Validation      | `pages/ValidationPage`    | `sections[].status/content/contentFormat`                               | autosave                                   |
+| 5   | Visualisation   | `pages/ExportPage`        | branding (profil), mise en page                                         | PDF ; « Terminer & Archiver » → `finalize` |
+
+**Étape 1.** Formulaire `SharedQuestionnaire` en mode `practitioner`, vue résumée si des données famille sont présentes, notes d'entretien dictables. « Suivant » exige la section administrative (`isAdministrativeSectionReady`), puis `ensurePatientPersisted` appelle `useAssessment().ensurePatientId` et `syncPatientIdentityPreview`. L'effet A du contexte crée aussi la fiche dès que prénom, nom et date de naissance sont saisis ; tous ces appels partagent la même promesse, la fiche n'est donc créée qu'une fois.
+
+**Étape 2.** `ScorePage` : choix des tests dans `pages/score/TestCatalogModal.tsx`, saisie dans un `ScoreTable` par test, réordonnancement par glisser-déposer (l'ordre des clés de `tests` est l'ordre du rapport), moyenne z par test dans `ScoreSummaryPanel`. Détails de saisie : [SCORING_CATALOG.md](./SCORING_CATALOG.md). `updateTests` remplace l'objet complet.
+
+**Étape 3.** Trois champs de synthèse ; le diagnostic est obligatoire. « Générer » vérifie crédits ou abonnement expert actif (sinon paywall), puis ouvre la modale de confirmation de `AssessmentWorkspace`, qui lance `flow.generateInitialReport`.
+
+**Génération** (`useAssessmentFlow` → `generateInitialReport`, détail dans [AI_PIPELINE.md](./AI_PIPELINE.md)) : la charge utile est construite par `buildInitialReportPayload` (`utils/aiPayload.ts`) puis pseudonymisée d'un bloc par `anonymizeDeep`, avec les préférences de style du praticien. `AIService.generateInitialReport` renvoie les sections et les observations reformulées, qui remplacent celles des subtests. Les crédits sont rechargés (`refreshProfile`) et le bilan passe à l'étape 4. Un double clic est ignoré. Erreur `CREDIT_INSUFFICIENT` → paywall ; autres erreurs → `CriticalErrorModal` avec « réessayer » (qui reprend au diagnostic si seul celui-ci a échoué). Le `GenerationLoader` peut être masqué sans annuler la génération.
+
+**Étape 4.** Relecture section par section dans TipTap, validation unitaire ou « Tout valider », avertissements si des sections sont en cours d'édition ou non validées. La section `objectifs` est générée mais masquée partout (`HIDDEN_SECTION_IDS`, `utils/reportData.ts`).
+
+**Étape 5.** Voir §8. « Terminer & Archiver » → `finalize` (§6).
+
+## 3. Parcours réévaluation (4 étapes)
+
+| #   | Libellé    | Composant                     | État manipulé                                                      | Persistance                         |
+| --- | ---------- | ----------------------------- | ------------------------------------------------------------------ | ----------------------------------- |
+| 1   | Tests      | `reevaluation/Step1Scores`    | `tests` (vides au départ), lecture de `previousAssessment`         | autosave                            |
+| 2   | Évolution  | `reevaluation/Step2Evolution` | `sections` (4 sections IA, ou conclusion + préconisations saisies) | autosave ; génération IA (1 crédit) |
+| 3   | Validation | `pages/ValidationPage`        | `sections[].status`                                                | autosave                            |
+| 4   | Export     | `pages/ExportPage`            | —                                                                  | `finalize`                          |
+
+**Démarrage** (`useAssessmentLauncher` → `startAssessment('reevaluation', patient, assessments)`) : le bilan de référence est le bilan formel le plus récent (`getLatestFormalAssessment`, `utils/assessment.ts`). Sans bilan de référence, la réévaluation est refusée avec un message. Sinon `applyReference` place la référence dans `previousAssessment` (tests reconstruits depuis `results` pour les anciens bilans, `getAssessmentTests`) et initialise `tests` avec les mêmes tests et subtests mais des scores vides (`buildEmptyTestsFrom`). L'âge du patient est recalculé.
+
+**Étape 1.** Pour chaque test de la référence : tableau gauche en lecture seule, tableau droit éditable, tous deux rendus par `ScoreTable` avec la métrique dominante des anciens scores. Un test peut être retiré ; on ne peut pas en ajouter (point ouvert, [TECH_DEBT.md](./TECH_DEBT.md) P1-15). Un subtest non repassé reste « non mesuré ».
+
+**Deltas.** `buildDeltaEntries` (`utils/reevaluationHelpers.ts`) compare ancien et nouveau score en unités z ; la tendance (amélioration / stable / régression) utilise un seuil de ±0,5 ET quelle que soit l'échelle. Sans z calculable, aucune tendance n'est affichée. `DeltaTable` les montre dans `Step2Evolution` ; les deltas ne sont pas enregistrés ni exportés dans le PDF, mais restent recalculables (scores et `previousAssessmentId` enregistrés).
+
+**Étape 2.** Deux possibilités :
+
+- « Générer avec l'IA » (`flow.generateReevaluation`) : charge utile `buildReevaluationPayload` (scores avant/après, deltas, extraits des sections `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` de la référence) pseudonymisée par `anonymizeDeep`. Les 4 sections renvoyées (rappel du bilan initial, évolution, conclusion, préconisations) remplacent `sections`, puis passage à l'étape 3. Même gestion d'erreur et même loader qu'en initial.
+- « Continuer » sans IA : les textes saisis pour `conclusion` et `recommandations_reev` remplacent la section correspondante seulement s'ils ont changé ; les autres sections sont conservées.
+
+Les deux zones de texte sont en état local : « Retour » sans « Continuer » perd les modifications non reportées.
+
+## 4. Parcours historique (3 étapes, sans IA)
+
+Sert à enregistrer un bilan réalisé hors application pour débloquer la réévaluation.
+
+| #   | Libellé | Composant                                           | État manipulé               | Persistance                          |
+| --- | ------- | --------------------------------------------------- | --------------------------- | ------------------------------------ |
+| 1   | Dossier | `historical/Step1Form` (`HistoricalPatientForm`)    | `patient`, `historicalDate` | fiche patient Dexie + autosave       |
+| 2   | Scores  | `pages/ScorePage`                                   | `tests`                     | autosave                             |
+| 3   | Rapport | `historical/Step3Report` (`HistoricalSectionsStep`) | `sections` (contexte)       | autosave ; `finalize` écrit le bilan |
+
+- Étape 1 : `SharedQuestionnaire` mode `historical` ; prénom, nom, date de naissance et date du bilan d'origine obligatoires ; création de la fiche et synchronisation de l'aperçu.
+- Étape 3 : 6 sections aux mêmes identifiants que la génération initiale (`objectifs`, masquée des rapports, n'est pas demandée), texte brut collé, statut `validated`, `isAiGenerated: false`. Les sections vivent dans le contexte : elles survivent à la navigation et sont dans le brouillon. Enregistrement possible sans aucun texte après confirmation.
+- « Enregistrer » appelle le même `finalize` que les autres parcours, avec `date = historicalDate` et `kind: 'initial'` (§6). Il n'y a pas d'étape d'export.
+
+## 5. Brouillons et autosave
+
+| Aspect               | Comportement                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Déclencheur          | Effet B de `AssessmentContext` : tout changement du contenu du brouillon (`patient`, `tests`, `observations`, `synthesis`, `sections`, `reportType`, `historicalDate`, `previousAssessment`, `step`), si session déverrouillée hors démo et identité complète |
+| Parcours             | Les trois (initial, réévaluation, historique)                                                                                                                                                                                                                 |
+| Debounce             | 3 s, timer réarmé à chaque changement                                                                                                                                                                                                                         |
+| Contenu              | `buildDraft` : `patient` (+ id, âge), `tests`, `observations`, `synthesis`, `sections`, `reportType`, `historicalDate`, `previousAssessmentId`, `step`, `version: 3`, `timestamp`                                                                             |
+| Sauvegardes périmées | `resetAssessment` incrémente un jeton de session : une autosave programmée pour le bilan précédent est abandonnée au lieu de recréer un brouillon                                                                                                             |
+| Stockage             | `StorageService.saveDraft` : table Dexie `drafts`, un brouillon par `patientId`, lecture et écriture dans une même transaction ; no-op en démo                                                                                                                |
+| Indicateur           | `isAutoSaving` → badge « Sauvegarde... » dans `AppHeader`                                                                                                                                                                                                     |
+| Sync identité        | Effet C, debounce 1 s, `syncPatientIdentityPreview` met à jour `patients.patient` et `previewMeta`                                                                                                                                                            |
+| Sauver & quitter     | `flow.saveAndQuit` : crée la fiche si besoin, puis `saveDraft(buildDraft(patient))` ; bouton de l'en-tête ou modale « Quitter »                                                                                                                               |
+| Index dashboard      | `getDraftsMetadata` → `{updatedAt, step, reportType}`, rechargé par `loadData` (`useDataLoader`)                                                                                                                                                              |
+| Reprise              | `resumeDraft` : `resetAssessment` + `loadFromDraft`. Pour une réévaluation, la référence est relue en base (`previousAssessmentId`, sinon le dernier bilan formel) ; si le brouillon n'a pas de scores, les tests vides sont reconstruits                     |
+| Brouillon périmé     | `isStaleDraft` : brouillon `initial`/`historique` d'un patient qui a déjà un bilan formel. À la reprise, il est supprimé et une réévaluation démarre ; il est masqué dans `PatientDetail`                                                                     |
+| Bannière / CTA       | `PatientDetail` : bannière « Réévaluation en cours » ou « Brouillon non terminé » et bouton d'action ; carte dashboard « Reprendre » si le bilan initial n'est pas fait **ou** si le brouillon est une réévaluation                                           |
+| Suppression          | `finalize` (après `resetAssessment`), « Quitter sans sauvegarder », conversion d'un brouillon périmé, suppression du patient (`deleteFile`)                                                                                                                   |
+
+## 6. Finalisation et stockage du bilan
+
+`useAssessmentFlow` → `finalize`, commun aux trois parcours :
+
+1. Démo : réinitialisation et toast, rien n'est enregistré. Sans `sessionKey`, abandon.
+2. `ensureFreshSession()`, puis `persistPatient` : crée la fiche si elle n'a pas encore d'id et recalcule l'âge.
+3. `buildAssessmentRecord` (`utils/assessment.ts`) : `id` UUID, `date` (maintenant, ou `historicalDate` en historique), `kind` (`reevaluation`, sinon `initial`), `hasFormalReport: true`, `testName`, `results` (scores à plat) et `tests` sans les scores vides, `previousAssessmentId` en réévaluation, `report: {status: 'completed', patientName, sections}` seulement si des sections ont du contenu.
+4. `StorageService.addAssessment` : dans une transaction, écrit le bilan, recalcule `previewMeta` à partir de tous les bilans du patient et met à jour (ou crée) la ligne patient.
+5. Suivi : `upsertPatientFollowup` en `upcoming` à la date du bilan + 6 mois, pour tous les parcours (sans bloquer en cas d'échec).
+6. Boucle de style, hors historique et sans crédit : les sections générées par l'IA puis modifiées (`originalContent` ≠ contenu) sont converties en texte, pseudonymisées et envoyées à la tâche `extract_style_feedback` ; `refreshProfile` recharge ensuite les préférences.
+7. `resetAssessment` (annule l'autosave en attente), `deleteDraft`, `loadData`, toast, retour au dashboard.
+
+**`previewMeta`** (`services/storage.ts`, `buildPreviewPayload`) : `metrics` (nombre de bilans, de bilans formels, dates), `flags.hasInitialReport` (bilan formel de `kind` `initial`, donc bilans historiques inclus), `hasReevaluationOpportunity`, et `workflow` (progression, ton, prochaine action). C'est ce qui permet au dashboard, dont la liste ne charge pas les bilans, de savoir si un brouillon est périmé. `loadPatientListPage` répare en tâche de fond les `previewMeta` incohérents.
+
+**Suivis dans l'UI** : le statut stocké est recalculé à la lecture (`mapLocalFollowupRow`) : `upcoming` avant l'échéance, `due` pendant 6 mois, puis `overdue` ; `snoozed` jusqu'à `snoozedUntil` ; `completed` et `scheduled` sont conservés. Sans suivi stocké, `PatientDetail` et `Dashboard` calculent un suivi virtuel (dernier bilan formel + 6 mois). Actions dans `PatientDetail` : planifier, reporter d'un mois, marquer comme fait.
+
+## 7. Portail parents de bout en bout
+
+1. **Praticien, création** (`useLinkManager` → `handleGenerateLink`) : la RPC `bootstrap_org_for_user` renvoie l'`organization_id` ; clé AES-GCM 256 aléatoire exportée en JWK base64 (`generateQuestionnaireKey`), chiffrée avec la `sessionKey` du praticien ; jeton d'accès aléatoire de 32 octets ; insertion dans `pending_questionnaires` : `label` générique `Dossier #N (date)`, `status: 'pending'`, `practitioner_encrypted_key = iv:content`, `access_token` en clair.
+2. **Lien** : `/?q_id=<id>&t=<access_token>#key=<clé>`, copié dans le presse-papiers si possible. La clé est dans le fragment (jamais envoyée au serveur) ; le jeton est en query string. « Copier » (`handleCopyLink`) redéchiffre la clé avec la `sessionKey`.
+3. **Famille, ouverture** : `App` détecte `q_id` + `key=` et affiche `PatientPortal` seul, sans auth ni en-tête praticien. `attemptLogin` accepte le lien complet ou collé, lit la clé uniquement dans le fragment, l'importe, crée un client Supabase anonyme avec l'en-tête `x-questionnaire-token` et lit `status, family_encrypted_data`. RLS : `family_read_by_token` (SELECT anon si `access_token` = en-tête) et `family_update_by_token` (UPDATE anon si `status = 'pending'`) ; la restriction par colonne est dans une migration non appliquée ([TECH_DEBT.md](./TECH_DEBT.md) P0-7). Des données existantes sont déchiffrées et pré-remplies ; si `completed`, écran « Dossier Transmis ».
+4. **Famille, saisie et envoi** : `SharedQuestionnaire` mode `family` ; section administrative obligatoire ; `{patient, timestamp}` chiffré avec la clé du lien, puis UPDATE `family_encrypted_data` + `status: 'completed'`.
+5. **Praticien, notification** : canal realtime `dashboard-pending` sur `pending_questionnaires` filtré par `practitioner_id`, qui relance `loadPending` après 1 s (`useDataLoader`). Le dashboard affiche la réponse avec « Importer ».
+6. **Praticien, import** (`usePendingProcessor` → `handleProcessPending`) : relit la ligne, déchiffre la clé avec la `sessionKey` puis le contenu, crée la fiche patient et un brouillon `initial` à l'étape 1, puis **supprime** la ligne Supabase. Si l'enregistrement du brouillon ou la suppression échoue, la fiche locale est supprimée et l'import signalé en erreur : un nouvel essai ne crée pas de doublon. Le brouillon est ensuite chargé et le bilan s'ouvre à l'étape 1. Les corrections faites ensuite ne remontent jamais vers la famille (commentaire dans `Step1Admin`).
+7. **Purge** : suppression manuelle possible (`handleDeletePending`, optimiste avec retour arrière en cas d'erreur). La purge automatique (`purge_pending_questionnaires` par pg_cron : 14 jours en `pending`, 30 jours en `completed`) est dans `20260924100200_scheduled_cleanups.sql`, **pas encore appliquée** : aujourd'hui aucun nettoyage automatique n'a lieu.
+
+| Donnée                       | Où                                            | Chiffrée ?                                       |
+| ---------------------------- | --------------------------------------------- | ------------------------------------------------ |
+| Réponses famille             | `family_encrypted_data`                       | Oui, AES-GCM, clé du lien                        |
+| Clé du lien                  | fragment d'URL ; `practitioner_encrypted_key` | Oui en base (`sessionKey`) ; en clair dans l'URL |
+| `access_token`               | query `t` ; colonne                           | Non (relu par le praticien pour « Copier »)      |
+| `label`, `status`, dates     | colonnes                                      | Non (pas de nom de patient)                      |
+| Dossier patient après import | Dexie local                                   | Non ([TECH_DEBT.md](./TECH_DEBT.md) P0-1)        |
+
+Statuts : `pending` (créé) → `completed` (envoyé par la famille) → ligne supprimée (importée).
+
+## 8. Export PDF, impression, sauvegarde `.ergobilan`
+
+| Action                  | Code                                                          | Comportement                                                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aperçu                  | `pages/ExportPage.tsx` → `ReportView`                         | Aperçu HTML éditable : texte des sections, titres, déplacement entre pages, page vierge, « Page École » ; type de graphique et unité des scores par test                   |
+| Mise en page            | `ExportPage` (`pages`), `utils/reportData.ts`                 | `buildDefaultPages` selon le type de rapport, `reconcilePages` quand les sections changent ; état de la page, non enregistré avec le bilan                                 |
+| Télécharger PDF         | `ExportPage` → `renderPdfBlob`                                | `@react-pdf/renderer` chargé à la demande, `PdfDocument` avec `pages` (chaque page de l'aperçu commence une page du PDF) ; fichier `Bilan_Nom_Prenom_date.pdf`             |
+| Imprimer                | `ExportPage` → `handlePrint`                                  | Même PDF ouvert dans un nouvel onglet (pas de `window.print`)                                                                                                              |
+| Design                  | `export/BrandingEditor.tsx`, `export/ReportToolbar.tsx`       | Réservé aux plans payants ; `updateBranding` enregistre le branding (y compris `chartType` et `scoreDisplayModes`) dans `practitioners.branding_config` (`ProfileService`) |
+| Sauvegarde `.ergobilan` | `services/exportService.ts` → `exportAll`                     | JSON **non chiffré** des 4 tables Dexie, marque la date de backup                                                                                                          |
+| Import `.ergobilan`     | `exportService.ts` → `importFromFile`, aperçu `peekBundle`    | Vérification de version (v1), `bulkPut` par UUID (écrase), brouillons remplacés par patient                                                                                |
+| Points d'entrée backup  | `components/app/AppHeader.tsx` (menu compte), `ProfileEditor` | Rappel toast si aucun backup ou > 180 jours (`App.tsx`), pastille dans le menu au-delà de 30 jours (`AppHeader`)                                                           |
+
+L'aperçu et le PDF lisent les mêmes données (`utils/reportData.ts` pour les graphiques, zones et tableaux ; `utils/reportContent.ts` pour le HTML des sections ; `utils/reportTheme.ts` pour le thème). Le PDF reprend la mise en page : chaque page de l'aperçu commence une nouvelle page du PDF, et une page trop longue continue sur la suivante.
+
+## 9. Mode démo
+
+- Entrée : « Explorer l'interface sans inscription » sur l'accueil → `startDemo`, qui passe `StorageService` en démo et crée un praticien fictif (plan « expert », 99 crédits). Bandeau permanent avec « S'inscrire gratuitement » (déconnexion).
+- Stockage : les écritures Dexie sont des no-op ; l'autosave est désactivée (le contexte ne persiste qu'hors démo) ; la liste renvoie la patiente `SARAH` avec deux bilans fictifs qui ont des scores (`data/demoData.ts`). La reprise de brouillon est refusée.
+- Catalogue : sans session, `CatalogContext` utilise `data/demoCatalog.ts`, aligné sur les vrais identifiants de tests.
+- Portail : lien fictif, deux questionnaires factices (`useDataLoader` → `loadPending`), import animé (`ImportAnimation`) qui charge `ELYA` avec tests et observations (`usePendingProcessor`).
+- Générations simulées sans appel réseau ni crédit : `DEMO_SECTIONS` et `DEMO_REEVALUATION_SECTIONS` (`data/demoReport.ts`) après 2,5 s. La réévaluation démo part des scores de `SARAH`.
+- Conversion : « Télécharger PDF » (après téléchargement) et « Terminer & Archiver » ouvrent `DemoConversionModal` ; « convertir » déconnecte. « Sauver & quitter » ne fait que réinitialiser. En historique, « Enregistrer » passe par la branche démo de `finalize` (rien n'est enregistré).
+
+## 10. Renvois
+
+| Sujet                                                     | Document                                   |
+| --------------------------------------------------------- | ------------------------------------------ |
+| Prompts, anonymisation, edge function `generate`, crédits | [AI_PIPELINE.md](./AI_PIPELINE.md)         |
+| Saisie des scores, unités, catalogue, zones, deltas       | [SCORING_CATALOG.md](./SCORING_CATALOG.md) |
+| Tables Dexie, `pending_questionnaires`, types             | [DATA_MODEL.md](./DATA_MODEL.md)           |
+| État des bugs et actions en attente sur la production     | [TECH_DEBT.md](./TECH_DEBT.md)             |

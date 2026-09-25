@@ -97,27 +97,27 @@ export const useDataLoader = ({
       ]);
       return;
     }
-    if (!(sessionKey && authState === 'authenticated')) return;
+    if (!(sessionKey && authState === 'authenticated') || !practitioner) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('pending_questionnaires')
       .select('id, label, status, created_at, practitioner_encrypted_key, access_token')
       .eq('practitioner_id', practitioner.id)
       .order('created_at', { ascending: false });
-
-    if (data) {
-      setPendingQuestionnaires(
-        data.map((p: Record<string, unknown>) => ({
-          ...p,
-          id: p.id as string,
-          label: p.label as string,
-          status: p.status as 'pending' | 'completed',
-          createdAt: p.created_at as string,
-          practitionerEncryptedKey: p.practitioner_encrypted_key as string,
-          accessToken: (p.access_token as string | null) || undefined,
-        })),
-      );
+    if (error) {
+      Logger.warn('DB', 'Failed to load pending questionnaires', error);
+      return;
     }
+    setPendingQuestionnaires(
+      (data ?? []).map((p) => ({
+        id: p.id,
+        label: p.label ?? 'Questionnaire',
+        status: p.status === 'completed' ? 'completed' : 'pending',
+        createdAt: p.created_at ?? new Date().toISOString(),
+        practitionerEncryptedKey: p.practitioner_encrypted_key,
+        accessToken: p.access_token || undefined,
+      })),
+    );
   }, [sessionKey, authState, practitioner, isDemoMode]);
 
   const loadData = useCallback(async () => {
@@ -132,6 +132,16 @@ export const useDataLoader = ({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Drop patient data from memory when the session is locked or closed.
+  useEffect(() => {
+    if (authState !== 'locked' && authState !== 'unauthenticated') return;
+    setPatientFiles([]);
+    setPendingQuestionnaires([]);
+    setDraftsIndex({});
+    setHasMorePatients(false);
+    patientOffsetRef.current = 0;
+  }, [authState]);
 
   // ------------------------------------------------------------------
   // Realtime subscription for pending questionnaires only

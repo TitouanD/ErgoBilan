@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, AlertTriangle, LogOut, Timer } from 'lucide-react';
 import { verifyPin, type PinVerifyResult } from '../../utils/crypto';
-import { supabase } from '../../services/db';
 import type { PractitionerProfile } from '../../types';
 
 // --- Brute-force protection ---
@@ -93,14 +92,9 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
             const result: PinVerifyResult | null = await verifyPin(pin, practitioner.encryptionSalt, practitioner.encryptionValidator);
             
             if (result) {
-                // If PBKDF2 iterations were upgraded, persist the new validator to Supabase
-                if (result.migratedValidator) {
-                    supabase.from('practitioners')
-                        .update({ encryption_validator: result.migratedValidator })
-                        .eq('id', practitioner.id)
-                        .then(() => { /* fire-and-forget: next login will re-migrate if this fails */ });
-                }
-
+                // Legacy 100k-iteration validators cannot be rewritten: the DB trigger
+                // protect_practitioner_sensitive_data forbids changing a set validator
+                // (docs/TECH_DEBT.md P1-19). verifyPin keeps accepting them.
                 clearLockoutState();
                 onUnlock(result.key);
             } else {
@@ -155,7 +149,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
                 </div>
 
                 <h2 className="text-2xl font-serif font-bold text-white mb-2">Bonjour {practitioner.firstName}</h2>
-                <p className="text-white/60 text-sm mb-10">Entrez votre code PIN pour déchiffrer vos dossiers.</p>
+                <p className="text-white/60 text-sm mb-10">Entrez votre code PIN pour déverrouiller vos dossiers.</p>
 
                 {/* PIN Input Visualizer */}
                 <div className="relative mb-8 flex justify-center gap-4">
@@ -209,7 +203,7 @@ export const PinUnlock: React.FC<Props> = ({ practitioner, onUnlock, onLogout })
             </div>
             
             <div className="absolute bottom-8 text-white/20 text-[10px] uppercase tracking-widest font-bold">
-                Chiffrement End-to-End Sécurisé • ErgoBilan 1.2
+                Session verrouillée • ErgoBilan
             </div>
         </div>
     );

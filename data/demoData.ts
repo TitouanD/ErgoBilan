@@ -2,8 +2,8 @@
 import type { Patient, TestData, Observations } from '../types';
 
 export const DEMO_PATIENTS = {
-  LEO: {
-    id: 'demo-leo',
+  ELYA: {
+    id: 'demo-elya',
     patient: {
       firstName: 'Elya',
       lastName: 'RAVEL',
@@ -76,17 +76,17 @@ export const DEMO_PATIENTS = {
     } as Patient,
     tests: {
       'test-cloches': {
-        'cloches-barrees': { raw: '28', standard: '9', percentile: '25', zScore: -0.7, status: 'validated', observation: 'Repere les distracteurs, mais rythme irregulier.' }
+        'test-cloches__cibles': { value: '25', unit: '%', observation: 'Repère les distracteurs, mais rythme irrégulier.' },
       },
       'mabc-2': {
-        'manual-dexterity': { raw: '7', standard: '6', percentile: '9', zScore: -1.4, status: 'validated', observation: 'Lenteur et manque de fluidite.' },
-        'ball-skills': { raw: '9', standard: '8', percentile: '25', zScore: -0.7, status: 'validated', observation: 'Bonne comprehension, execution prudente.' },
-        'balance': { raw: '6', standard: '5', percentile: '5', zScore: -1.6, status: 'validated', observation: 'Instabilite a la fatigue.' }
+        'mabc-2__manual-dexterity-total': { value: '6', unit: 'NS', observation: 'Lenteur et manque de fluidité.' },
+        'mabc-2__aiming-catching-total': { value: '8', unit: 'NS', observation: 'Bonne compréhension, exécution prudente.' },
+        'mabc-2__balance-composite': { value: '5', unit: 'NS', observation: 'Instabilité à la fatigue.' },
       },
-      'bhk': {
-        'vitesse': { raw: '95', standard: '', percentile: '10', zScore: -1.3, status: 'validated', observation: 'Lenteur avec pauses frequentes.' },
-        'qualite': { raw: '18', standard: '', percentile: '4', zScore: -1.8, status: 'validated', observation: 'Tension de la main, irregularites.' }
-      }
+      bhk: {
+        bhk__speed: { value: '10', unit: '%', observation: 'Lenteur avec pauses fréquentes.' },
+        bhk__quality: { value: '4', unit: '%', observation: 'Tension de la main, irrégularités.' },
+      },
     } as TestData,
     observations: {
       anamnese: "Enfant motivee, mais vite decouragee. Tension quand la tache dure.",
@@ -160,68 +160,6 @@ export const DEMO_PATIENTS = {
         screenTime: '30 min/jour',
         emotionalRegulation: 'Sensibilite aux echecs, besoin de valorisation'
     } as Patient,
-    tests: {
-        'bhk': {
-            'vitesse': { raw: '130', standard: '', percentile: '50', zScore: 0, status: 'validated' },
-            'qualite': { raw: '20', standard: '', percentile: '5', zScore: -1.6, status: 'validated', observation: 'Lettres mal formées, télescopages.' }
-        }
-    } as TestData,
-    observations: {
-        anamnese: "Joyeuse, dynamique. Se braque dès qu'on sort un crayon.",
-        motricite: "Excellente en sport.",
-        coordination: "Bonne.",
-        spatial: "RAS.",
-        graphique: "Prise en poignard parfois. Ne pose pas l'avant-bras."
-    } as Observations,
-    history: [
-      {
-        id: 'demo-session-sarah-1',
-        date: new Date(Date.now() - 86400000 * 60).toISOString(),
-        testId: 'multi',
-        testName: 'Bilan initial',
-        results: {
-          'vitesse': { raw: '11', standard: '7', percentile: '16', zScore: -1.0, status: 'validated' },
-          'qualite': { raw: '18', standard: '6', percentile: '9', zScore: -1.4, status: 'validated', observation: 'Tension a la prehension.' },
-          'manual-dexterity': { raw: '8', standard: '7', percentile: '16', zScore: -1.0, status: 'validated' }
-        }
-      },
-      {
-        id: 'demo-session-sarah-2',
-        date: new Date(Date.now() - 86400000 * 35).toISOString(),
-        testId: 'multi',
-        testName: 'Suivi 1',
-        results: {
-          'vitesse': { raw: '12', standard: '8', percentile: '25', zScore: -0.7, status: 'validated' },
-          'qualite': { raw: '17', standard: '7', percentile: '16', zScore: -1.0, status: 'validated', observation: 'Moins de crispation.' },
-          'manual-dexterity': { raw: '9', standard: '8', percentile: '25', zScore: -0.7, status: 'validated' },
-          'cloches-barrees': { raw: '26', standard: '9', percentile: '25', zScore: -0.7, status: 'validated' }
-        }
-      },
-      {
-        id: 'demo-session-sarah-3',
-        date: new Date(Date.now() - 86400000 * 14).toISOString(),
-        testId: 'multi',
-        testName: 'Suivi 2',
-        results: {
-          'vitesse': { raw: '13', standard: '9', percentile: '37', zScore: -0.3, status: 'validated' },
-          'qualite': { raw: '16', standard: '8', percentile: '25', zScore: -0.7, status: 'validated', observation: 'Lettre plus stable.' },
-          'manual-dexterity': { raw: '10', standard: '9', percentile: '37', zScore: -0.3, status: 'validated' },
-          'balance': { raw: '9', standard: '8', percentile: '25', zScore: -0.7, status: 'validated' }
-        }
-      },
-      {
-        id: 'demo-session-sarah-4',
-        date: new Date(Date.now() - 86400000 * 4).toISOString(),
-        testId: 'multi',
-        testName: 'Suivi 3',
-        results: {
-          'vitesse': { raw: '14', standard: '10', percentile: '50', zScore: 0, status: 'validated' },
-          'qualite': { raw: '15', standard: '9', percentile: '37', zScore: -0.3, status: 'validated', observation: 'Meilleure fluidite.' },
-          'manual-dexterity': { raw: '11', standard: '10', percentile: '50', zScore: 0, status: 'validated' },
-          'cloches-barrees': { raw: '28', standard: '10', percentile: '50', zScore: 0, status: 'validated' }
-        }
-      }
-    ],
     reports: [
       {
         id: 'demo-report-sarah-1',
@@ -229,6 +167,13 @@ export const DEMO_PATIENTS = {
         type: 'initial',
         status: 'completed',
         patientName: 'Sarah DUBOIS',
+        tests: {
+          bhk: {
+            bhk__speed: { value: '16', unit: '%' },
+            bhk__quality: { value: '9', unit: '%', observation: 'Tension à la préhension.' },
+          },
+          'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '7', unit: 'NS' } },
+        } as TestData,
         sections: [
           { id: 'demo-sarah-1', title: 'Motif', content: "Difficulte d'ecriture, lenteur et fatigue.", status: 'validated' },
           { id: 'demo-sarah-2', title: 'Synthese', content: 'Profil compatible avec une dysgraphie fonctionnelle avec retentissement scolaire.', status: 'validated' }
@@ -240,6 +185,13 @@ export const DEMO_PATIENTS = {
         type: 'reevaluation',
         status: 'completed',
         patientName: 'Sarah DUBOIS',
+        tests: {
+          bhk: {
+            bhk__speed: { value: '37', unit: '%' },
+            bhk__quality: { value: '25', unit: '%', observation: 'Lettres plus stables.' },
+          },
+          'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '9', unit: 'NS' } },
+        } as TestData,
         sections: [
           { id: 'demo-sarah-3', title: 'Evolution', content: 'Progression de la vitesse et baisse de la crispation.', status: 'validated' }
         ]

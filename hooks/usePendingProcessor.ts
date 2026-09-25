@@ -7,15 +7,15 @@ import { useState, useCallback, type Dispatch, type SetStateAction } from 'react
 import { supabase } from '../services/db';
 import { decryptData, importQuestionnaireKey } from '../utils/crypto';
 import { StorageService } from '../services/storage';
-import type { PendingQuestionnaire, PatientFile, Patient } from '../types';
+import type { DraftPayload, PendingQuestionnaire, PatientFile, Patient } from '../types';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { Logger } from '../utils/logger';
-import type { AssessmentHandle } from './useAssessmentFlow';
+import type { AssessmentContextType } from '../contexts/AssessmentContext';
 
 interface UsePendingProcessorParams {
   sessionKey: CryptoKey | null;
   isDemoMode: boolean;
-  assessment: AssessmentHandle;
+  assessment: AssessmentContextType;
   setPatientFiles: Dispatch<SetStateAction<PatientFile[]>>;
   setPendingQuestionnaires: Dispatch<SetStateAction<PendingQuestionnaire[]>>;
   loadData: () => Promise<void>;
@@ -40,10 +40,10 @@ export const usePendingProcessor = ({
         setProcessingQueueId(q.id);
         return new Promise((resolve) => {
           setTimeout(() => {
-            const newId = 'demo-leo';
-            const newPatient = { ...DEMO_PATIENTS.LEO.patient, id: newId };
-            const newTests = { ...DEMO_PATIENTS.LEO.tests };
-            const newObs = { ...DEMO_PATIENTS.LEO.observations };
+            const newId = DEMO_PATIENTS.ELYA.id;
+            const newPatient = { ...DEMO_PATIENTS.ELYA.patient, id: newId };
+            const newTests = { ...DEMO_PATIENTS.ELYA.tests };
+            const newObs = { ...DEMO_PATIENTS.ELYA.observations };
 
             setPatientFiles((prev) => [
               { id: newId, patient: newPatient, assessments: [], lastInteraction: new Date().toISOString() },
@@ -53,8 +53,8 @@ export const usePendingProcessor = ({
 
             assessment.resetAssessment();
             assessment.setPatient(newPatient);
-            assessment.setTests(newTests);
-            assessment.setObservations(newObs);
+            assessment.updateTests(newTests);
+            assessment.updateObservations(newObs);
 
             setProcessingQueueId(null);
             toast.success('Dossier importé et déchiffré');
@@ -74,7 +74,10 @@ export const usePendingProcessor = ({
           .eq('id', q.id)
           .single();
 
-        if (!data?.family_encrypted_data) return null;
+        if (!data?.family_encrypted_data) {
+          toast.error("Ce questionnaire n'a pas encore été rempli par la famille.");
+          return null;
+        }
 
         const [kIv, kContent] = data.practitioner_encrypted_key.split(':');
         const keyStr = await decryptData({ iv: kIv, content: kContent }, sessionKey) as string;
@@ -87,30 +90,22 @@ export const usePendingProcessor = ({
           const basePatient = { ...(payload.patient as Patient) };
           const newId = await StorageService.createPatient(basePatient);
           const newPatient = { ...basePatient, id: newId };
+          const initialDraft: DraftPayload = { patient: newPatient, reportType: 'initial', step: 1, timestamp: new Date().toISOString() };
 
-          const initialDraft = {
-            patient: newPatient,
-            tests: {},
-            observations: { anamnese: '', motricite: '', coordination: '', spatial: '', graphique: '' },
-            synthesis: { diagnosticInput: '', projectInput: '', recommendationsInput: '' },
-            sections: [],
-            reportType: 'initial' as const,
-            step: 1,
-            timestamp: new Date().toISOString(),
-          };
-          await StorageService.saveDraft(initialDraft);
-          loadData();
-
-          // SECURITY/PRIVACY GUARANTEE: this deletion is what isolates the family's
-          // submission from any later edits made by the practitioner. Once deleted,
-          // the `pending_questionnaires` row (and its `family_encrypted_data`) no longer
-          // exists, so the parent's link becomes invalid ("Dossier introuvable") and
-          // they can never see the local draft/changes the pro makes afterwards in
-          // Step1Admin (those are saved to IndexedDB only, never written back here).
-          // Do NOT change this to an update/soft-delete without re-checking that
-          // guarantee — see components/assessment/initial/Step1Admin.tsx for the other
-          // half of this isolation.
-          await supabase.from('pending_questionnaires').delete().eq('id', q.id);
+          // SECURITY/PRIVACY GUARANTEE: deleting the row isolates the family's submission
+          // from later edits (the link becomes invalid; local changes are never written
+          // back). If the draft or the deletion fails, the local import is rolled back so
+          // a retry cannot create a duplicate patient.
+          try {
+            await StorageService.saveDraft(initialDraft);
+            const { error: deleteError } = await supabase.from('pending_questionnaires').delete().eq('id', q.id);
+            if (deleteError) throw deleteError;
+          } catch (importError) {
+            await StorageService.deleteFile(newId).catch((rollbackError) => Logger.error('DB', 'Import rollback failed', rollbackError));
+            throw importError;
+          }
+          setPendingQuestionnaires((prev) => prev.filter((i) => i.id !== q.id));
+          void loadData();
 
           assessment.resetAssessment();
           assessment.loadFromDraft(initialDraft);

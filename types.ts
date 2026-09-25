@@ -1,4 +1,3 @@
-
 export interface ParamedicalTracking {
     id: string;
     type: string;
@@ -166,13 +165,8 @@ export interface ScoreResult {
     observation?: string;
     /** Human-readable qualitative label cached alongside `value` when `unit === 'qualitative'` */
     qualitativeLabel?: string;
-    /** Custom label for 'custom_text' input model (bilan écologique / observation personnalisée) */
+    /** Title of a free observation ('custom_text' input model / "Observation libre"). */
     customLabel?: string;
-    /**
-     * Per-item raw values for 'computed_items' input model.
-     * Key = SubtestItem.id, Value = the numeric value entered by the practitioner.
-     */
-    rawItems?: Record<string, number>;
 
     // ── Legacy fields — deprecated, optional, read-only (backward compatibility) ──
     /** @deprecated use `value` + `unit: 'raw'` */
@@ -236,45 +230,16 @@ export interface ClinicalSynthesis {
     recommendationsInput: string;
 }
 
-export interface ReportAttachment {
-    id: string;
-    type: 'image-full' | 'image-text';
-    url: string;
-    caption?: string;
-    positionIndex: number;
-}
-
 export interface ReportSection {
     id: string;
     title: string;
     content: string;
+    /** AI text as generated, always as HTML (reference for style learning, whatever `contentFormat` becomes). */
     originalContent?: string;
+    /** Missing / 'plain' = Markdown-ish AI text; 'html' = edited in TipTap. See utils/reportContent.ts. */
     contentFormat?: 'plain' | 'html';
     status: 'draft' | 'validated';
     isAiGenerated?: boolean;
-    attachments?: ReportAttachment[];
-}
-
-export interface InfoBlockExtraLine {
-    id: string;
-    text: string;
-    after: 'top' | 'name' | 'phone' | 'email' | 'siret' | 'address';
-}
-
-export interface InfoBlock {
-    position: 'left' | 'center' | 'right';
-    size: 'S' | 'M' | 'L';
-    bgColor: string;
-    borderColor: string;
-    extraLines: InfoBlockExtraLine[];
-}
-
-export interface ReportContentVisibility {
-    showScoreChart: boolean;
-    showScoreTables: boolean;
-    showScoreGuide: boolean;
-    showAssessmentDate: boolean;
-    showConsentBlock: boolean;
 }
 
 export interface BrandingConfig {
@@ -300,15 +265,10 @@ export interface BrandingConfig {
     footerText: string;
     showPageNumbers: boolean;
     logoUrl?: string;
-    infoBlock?: InfoBlock;
-    /** Independent background color for boxes/cards (patient block, chart headers, etc.). Defaults to primaryColor+15 if not set. */
-    boxBgColor?: string;
-    /** Persisted chart type preference (defaults to 'bar') */
+    /** Chart shown in the annexes (defaults to 'bar'). Persisted with the branding. */
     chartType?: 'radar' | 'bar' | 'percentile';
-    /** Persisted per-test score display mode */
+    /** Score column shown per test id in the annexes (defaults to 'ET'). Persisted with the branding. */
     scoreDisplayModes?: Record<string, 'NS' | 'ET' | '%'>;
-    /** Fine-grained visibility flags for report content blocks */
-    contentVisibility?: ReportContentVisibility;
 }
 
 export interface UserProfile {
@@ -384,7 +344,8 @@ export interface PatientDashboardPreviewMeta {
     };
 }
 
-export interface PatientEncryptedPreviewV2 {
+/** Dashboard preview computed from a patient file (nothing is encrypted: see docs/TECH_DEBT.md P0-1). */
+export interface PatientPreviewPayload {
     uiVersion: 2;
     identity: {
         firstName: string;
@@ -405,7 +366,6 @@ export interface PatientFile {
     followup?: PatientFollowup | null;
     lastInteraction: string;
     archived?: boolean;
-    encryptedFileKey?: string;
     previewMeta?: PatientDashboardPreviewMeta;
 }
 
@@ -434,15 +394,7 @@ export interface PendingQuestionnaire {
     accessToken?: string;
 }
 
-
-
-
-
-
-
-// --- Types ajoutés pour éliminer les `any` ---
-
-/** Shape of a saved/restored assessment draft */
+/** Shape of a saved/restored assessment draft (see AssessmentContext). */
 export interface DraftPayload {
     patient?: Patient;
     tests?: TestData;
@@ -450,8 +402,13 @@ export interface DraftPayload {
     synthesis?: ClinicalSynthesis;
     sections?: ReportSection[];
     reportType?: 'initial' | 'reevaluation' | 'historique';
+    /** Date of the original assessment (historical flow). */
     historicalDate?: string;
+    /** Reference assessment of a re-evaluation draft. */
+    previousAssessmentId?: string;
     step?: number;
+    version?: number;
+    timestamp?: string;
 }
 
 export interface DashboardDraftMeta {
@@ -486,7 +443,7 @@ export interface AdminSubtestRecord {
     name: string;
     unit?: string;
     score_type?: string;
-    input_model?: 'numeric_4mode' | 'qualitative_category' | 'raw_only';
+    input_model?: 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
     input_config?: {
         options?: Array<{ code: string; label: string; order: number; reportText?: string }>;
         score_type_detection_confidence?: number | string;
@@ -496,57 +453,6 @@ export interface AdminSubtestRecord {
     display_order?: number | null;
     display_group_order?: number | null;
 }
-
-/** @deprecated */
-export interface AdminNormRecord {
-    id?: string;
-    subtest_id: string;
-    organization_id?: string | null;
-    age_min_months?: number | null;
-    age_max_months?: number | null;
-    gender?: string | null;
-    raw_min?: number | null;
-    raw_max?: number | null;
-    mean?: number | null;
-    sd?: number | null;
-    standard_score?: number | null;
-    percentile?: number | null;
-}
-
-/** AI monitoring types */
-export interface AIUsageDay {
-    date: string;
-    tokens: number;
-    cost: number;
-    errors: number;
-}
-
-export interface AIFailure {
-    id: string;
-    date: string;
-    type: string;
-    context: string;
-    user: string;
-}
-
-export interface AIHealthStats {
-    daily: AIUsageDay[];
-    totalCost: number;
-    errorRate: number;
-}
-
-/** AI-generated report section (before hydration) */
-export interface GeneratedReportSection {
-    id: string;
-    title: string;
-    content: string;
-    originalContent?: string;
-    status: 'draft';
-    isAiGenerated: true;
-}
-
-
-
 
 /** Admin user row enriched with org + subscription state */
 export interface AdminUserRow {

@@ -1,9 +1,9 @@
 ﻿
 import React, { useState, useEffect } from 'react';
 import type { Patient, Sibling, ParamedicalTracking } from '../../types';
-import { calculateAge } from '../../utils';
+import { calculateAge } from '../../utils/patient';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
-import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Check, Plus, Trash2, Home, HelpingHand, Scissors, Ruler, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, Eye, MapPin, Mail, Phone, Monitor, Droplets, PenTool, Brain, Repeat } from 'lucide-react';
+import { User, Users, GraduationCap, Stethoscope, Baby, Coffee, MessageSquare, ChevronDown, ChevronUp, Plus, Trash2, Home, HelpingHand, Utensils, Shirt, Activity, Smile, ArrowRight, Book, Clock, HeartHandshake, MapPin, Mail, Phone, Droplets, PenTool, Brain, Repeat } from 'lucide-react';
 
 interface Props {
   data: Patient;
@@ -90,17 +90,15 @@ const ChipGroup = ({
     );
 };
 
-const SelectCard = ({ 
-    selected, 
-    value, 
-    label, 
-    icon: Icon, 
-    onClick 
-}: { 
-    selected: boolean; 
-    value: string; 
-    label: string; 
-    icon: any; 
+const SelectCard = ({
+    selected,
+    label,
+    icon: Icon,
+    onClick,
+}: {
+    selected: boolean;
+    label: string;
+    icon: React.ElementType;
     onClick: () => void;
 }) => (
     <div 
@@ -542,28 +540,24 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                         selected={data.guardMode === 'commune'} 
                                                         onClick={() => handleFieldChange('guardMode', 'commune')}
                                                         label="Garde Commune" 
-                                                        value="commune" 
                                                         icon={Users} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'alternate'} 
                                                         onClick={() => handleFieldChange('guardMode', 'alternate')}
                                                         label="Garde Alternée" 
-                                                        value="alternate" 
                                                         icon={Repeat} 
                                                     />
                                                     <SelectCard 
                                                         selected={(data.guardMode || '').startsWith('exclusive')} 
                                                         onClick={() => handleFieldChange('guardMode', data.guardMode?.startsWith('exclusive') ? data.guardMode : 'exclusive_mere')}
                                                         label="Garde Exclusive" 
-                                                        value="exclusive" 
                                                         icon={Home} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'third'} 
                                                         onClick={() => handleFieldChange('guardMode', 'third')}
                                                         label="Tiers / Foyer" 
-                                                        value="third" 
                                                         icon={HelpingHand} 
                                                     />
                                                 </div>

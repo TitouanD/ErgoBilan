@@ -1,8 +1,7 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Plus, Trash2, X, Loader2 } from 'lucide-react';
 import { AdminService } from '../../../services/admin';
 import { useToast } from '../../../contexts/ToastContext';
-import { useCatalog } from '../../../contexts/CatalogContext';
 
 interface SubtestDraft {
   key: string;          // local unique key for React
@@ -13,8 +12,14 @@ interface SubtestDraft {
 
 interface Props {
   onClose: () => void;
+  /** Called after creation — reload the catalogue so the new test is selectable right away. */
   onCreated?: () => void;
 }
+
+/** Custom tests are filed under the "Autre" category (official_categories.id). */
+const CUSTOM_TEST_CATEGORY_ID = 'autre';
+/** Unknown scale by default: a wrong parametric scale would produce wrong z-scores. */
+const DEFAULT_SCORE_TYPE = 'none';
 
 const SCORE_TYPES = [
   { value: 'none',       label: 'Sans score standardisé', tooltip: 'Score brut uniquement (temps, nombre, erreurs…). Choisir si incertain.' },
@@ -30,17 +35,16 @@ const makeKey = () => Math.random().toString(36).slice(2);
 
 export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
   const toast = useToast();
-  const { ensureCatalogLoaded } = useCatalog();
 
   const [testName, setTestName] = useState('');
   const [testAbbr, setTestAbbr] = useState('');
   const [subtests, setSubtests] = useState<SubtestDraft[]>([
-    { key: makeKey(), name: '', abbreviation: '', score_type: 'standard' },
+    { key: makeKey(), name: '', abbreviation: '', score_type: DEFAULT_SCORE_TYPE },
   ]);
   const [loading, setLoading] = useState(false);
 
   const addSubtest = () =>
-    setSubtests(prev => [...prev, { key: makeKey(), name: '', abbreviation: '', score_type: 'standard' }]);
+    setSubtests(prev => [...prev, { key: makeKey(), name: '', abbreviation: '', score_type: DEFAULT_SCORE_TYPE }]);
 
   const removeSubtest = (key: string) =>
     setSubtests(prev => prev.filter(s => s.key !== key));
@@ -61,7 +65,7 @@ export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
         test: {
           name: testName.trim(),
           abbreviation: testAbbr.trim() || undefined,
-          category_id: 'custom',
+          category_id: CUSTOM_TEST_CATEGORY_ID,
         },
         subtests: subtests.map((s, i) => ({
           name: s.name.trim(),
@@ -70,13 +74,11 @@ export const CustomTestEditor: React.FC<Props> = ({ onClose, onCreated }) => {
           order_index: i,
         })),
       });
-      // Refresh catalog so the new test appears immediately
-      ensureCatalogLoaded();
       toast.success(`Test « ${testName.trim()} » créé avec succès !`);
       onCreated?.();
       onClose();
-    } catch (e: any) {
-      toast.error(`Erreur : ${e?.message || 'Impossible de créer le test.'}`);
+    } catch {
+      toast.error('Impossible de créer le test. Vérifiez votre connexion et réessayez.');
     } finally {
       setLoading(false);
     }

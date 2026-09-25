@@ -5,14 +5,15 @@ import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, Al
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '../../types/supabase';
 import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
-import { isAdministrativeSectionReady } from '../../utils';
+import { isAdministrativeSectionReady } from '../../utils/patient';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Crée un client Supabase anonyme avec le header x-questionnaire-token pour les policies RLS. */
 const createPortalClient = (accessToken: string) => {
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  return createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { 'x-questionnaire-token': accessToken } },
   });
 };
@@ -78,13 +79,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
 
           const qId = fullUrl.searchParams.get('q_id');
           const accessToken = fullUrl.searchParams.get('t') || ''; // Token d'accès pour la policy RLS
-          // Extraction clé: peut être dans hash (#key=...) ou query (si mal copié)
-          let keyString = '';
-          if (fullUrl.hash.includes('key=')) {
-              keyString = fullUrl.hash.split('key=')[1];
-          } else if (fullUrl.searchParams.get('key')) {
-              keyString = fullUrl.searchParams.get('key') || '';
-          }
+          // The key only travels in the URL fragment (#key=...), never sent to any server.
+          const keyString = fullUrl.hash.includes('key=') ? fullUrl.hash.split('key=')[1] : '';
 
           if (!qId || !keyString) {
               throw new Error("Lien incomplet. Vérifiez que vous avez copié tout le lien.");

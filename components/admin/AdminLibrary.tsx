@@ -145,7 +145,8 @@ export const AdminLibrary: React.FC = () => {
       id: makeSubtestId(testRecord.id),
       test_id: testRecord.id,
       name: '',
-      score_type: 'standard',
+      score_type: 'none',
+      input_model: 'numeric_4mode',
       display_order: subtests.length + 1,
       display_group_order: null,
       organization_id: testRecord.organization_id ?? null,
@@ -357,7 +358,7 @@ export const AdminLibrary: React.FC = () => {
                         />
                         {/* Score type */}
                         <select
-                          value={sub.score_type ?? 'standard'}
+                          value={sub.score_type ?? 'none'}
                           onChange={e => updateSubtest(sub.id, { score_type: e.target.value })}
                           className="col-span-6 bg-[#1A1C23] border border-white/5 rounded-lg text-xs text-stone-300 px-2 py-1 outline-none focus:border-white/20"
                         >

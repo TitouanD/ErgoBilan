@@ -1,32 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Patient, PatientAssessment, PatientFile, PatientFollowup } from '../../types';
 import {
-  AlertTriangle,
-  Archive,
-  ArchiveRestore,
-  ArrowLeft,
-  CheckCircle2,
-  Clock3,
-  Calendar,
-  BellOff,
-  Edit3,
-  FileText,
-  GraduationCap,
-  History,
-  Mail,
-  MapPin,
-  Pencil,
-  Phone,
-  Save,
-  Stethoscope,
-  Trash2,
-  User,
-  Users,
-  Zap,
+  AlertTriangle, Archive, ArchiveRestore, ArrowLeft, CheckCircle2, Clock3, Calendar, BellOff, Edit3, FileText, GraduationCap, Mail, MapPin, Pencil, Phone, Save, Stethoscope, Trash2, User, Users, Zap
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { useToast } from '../../contexts/ToastContext';
-import { getPatientAgeForIdentity } from '../../utils';
+import { getPatientAgeForIdentity } from '../../utils/patient';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface Props {
@@ -311,6 +290,8 @@ export const PatientDetail: React.FC<Props> = ({
     </div>
   );
 
+  const displayAge = getPatientAgeForIdentity(localPatient);
+
   return (
     <div className="mx-auto max-w-7xl animate-in slide-in-from-right px-6 py-10 duration-500">
       {/* Back */}
@@ -351,7 +332,7 @@ export const PatientDetail: React.FC<Props> = ({
             {localPatient.firstName} {localPatient.lastName}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            {localPatient.age && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.age}</span>}
+            {displayAge && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{displayAge}</span>}
             {localPatient.gender && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.gender === 'M' ? 'Garçon' : 'Fille'}</span>}
             {localPatient.classLevel && <span className="rounded-full bg-[var(--hover-bg)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">{localPatient.classLevel}</span>}
             {followup && (
@@ -663,9 +644,13 @@ export const PatientDetail: React.FC<Props> = ({
                 <button onClick={onResumeDraft} className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-amber-600">
                   <Edit3 size={14} /> Reprendre le bilan
                 </button>
-              ) : (
+              ) : formalAssessments.length > 0 ? (
                 <button onClick={() => onNewBilan('reevaluation')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
                   <Zap size={14} className="text-[#F2CC8F]" /> Réévaluation 1 clic
+                </button>
+              ) : (
+                <button onClick={() => onNewBilan('initial')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--secondary)] py-3 text-xs font-bold uppercase tracking-wider text-white hover:brightness-90">
+                  <Edit3 size={14} /> Commencer le bilan initial
                 </button>
               )}
             </div>

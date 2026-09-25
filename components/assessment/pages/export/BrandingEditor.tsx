@@ -2,6 +2,8 @@ import React from 'react';
 import type { BrandingConfig } from '../../../../types';
 import { Palette, X, FileType, Layout, Home, Lock, User, Upload, Star, Sparkles, Type, MousePointerClick } from 'lucide-react';
 import { DebouncedColorInput } from './DebouncedColorInput';
+import { useToast } from '../../../../contexts/ToastContext';
+import { MAX_LOGO_BYTES } from '../../../../data/brandingDefaults';
 
 export const BrandingEditor: React.FC<{
     branding: BrandingConfig;
@@ -9,9 +11,15 @@ export const BrandingEditor: React.FC<{
     onClose: () => void;
     onOpenProfile?: () => void;
 }> = ({ branding, onUpdate, onClose, onOpenProfile }) => {
+    const toast = useToast();
 
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            if (e.target.files[0].size > MAX_LOGO_BYTES) {
+                toast.error(`Logo trop volumineux (maximum ${Math.round(MAX_LOGO_BYTES / 1024)} Ko).`);
+                e.target.value = '';
+                return;
+            }
             const reader = new FileReader();
             reader.onload = (ev) => {
                 if (ev.target?.result) {

@@ -1,6 +1,6 @@
 ﻿
 import React, { useState, useEffect } from 'react';
-import { User, Lock, Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Building, ArrowRight, Check, ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { setupPin } from '../../utils/crypto';
 import type { PractitionerProfile } from '../../types';
@@ -275,7 +275,7 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
             }
 
             // --- ÉTAPE 2 : GÉNÉRATION DES CLÉS (Client-Side) ---
-            setStatusMessage("Génération des clés de chiffrement...");
+            setStatusMessage("Configuration du code PIN...");
             const { key: masterKey, salt, validator } = await setupPin(formData.pin);
 
             // --- ÉTAPE 3 : ONBOARDING CÔTÉ EDGE (profil + org + subscription) ---
@@ -463,9 +463,9 @@ export const AuthWizard: React.FC<Props> = ({ onComplete, onCancel, isProfileCom
                                 <div className="w-16 h-16 bg-[var(--card-bg)] rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-[var(--border-color)]">
                                     <ShieldCheck size={32} className="text-[var(--primary)]" />
                                 </div>
-                                <h3 className="font-bold text-[var(--text-heading)] text-lg mb-2">Code PIN de Déchiffrement</h3>
+                                <h3 className="font-bold text-[var(--text-heading)] text-lg mb-2">Code PIN de verrouillage</h3>
                                 <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-4 max-w-xs mx-auto">
-                                    Définissez un code PIN à 6 chiffres. Ce code servira de clé unique pour lire vos dossiers.
+                                    Définissez un code PIN à 6 chiffres. Il déverrouille l'application sur ce poste et protège les liens envoyés aux familles.
                                 </p>
                             </div>
 

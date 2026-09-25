@@ -1,12 +1,13 @@
 ﻿
 import React, { useState, useCallback, useMemo } from 'react';
 import type { Patient } from '../../../types';
-import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../../utils';
+import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../../utils/patient';
 import { User, Lock, AlertTriangle, Mic, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../../shared/SharedQuestionnaire';
 import { StorageService } from '../../../services/storage';
 import { Logger } from '../../../utils/logger';
 import { useToast } from '../../../contexts/ToastContext';
+import { useAssessment } from '../../../contexts/AssessmentContext';
 import { VoiceTextarea } from '../../shared/VoiceTextarea';
 export { VoiceTextarea } from '../../shared/VoiceTextarea';
 
@@ -137,6 +138,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   };
     const [userSwitchedToReview, setUserSwitchedToReview] = useState(false);
   const toast = useToast();
+  const { ensurePatientId } = useAssessment();
     const isAdministrativeReady = isAdministrativeSectionReady(data);
   
   const handleDataChange = (partialData: Partial<Patient>) => {
@@ -190,7 +192,9 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'Fratrie', value: data.siblings?.length ? data.siblings.map(s => {
               const resStatus = s.residenceStatus || (s.livesPartially ? 'partial' : s.livesWithChild ? 'with' : 'away');
               const resLabel = resStatus === 'other' ? s.residenceOther : humanize(resStatus);
-              return `${s.firstName} (${s.relation}, ${s.age} ans, ${resLabel})`;
+              // Free-text field: families type either "10" or "10 ans".
+              const age = /^\d+$/.test(s.age.trim()) ? `${s.age.trim()} ans` : s.age;
+              return `${s.firstName} (${[s.relation, age, resLabel].filter(Boolean).join(', ')})`;
           }).join(' · ') : undefined },
       ]},
       { title: 'Suivi Médical', filled: !!(data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0), fields: [
@@ -268,7 +272,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   const ensurePatientPersisted = async (): Promise<void> => {
       if (!isPatientCreationReady(data)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
 
-      const patientId = await StorageService.ensurePatientId(data);
+      const patientId = await ensurePatientId(data);
+      if (!patientId) throw new Error('PATIENT_CREATION_FAILED');
       const patientSnapshot: Patient = {
           ...data,
           id: patientId,
@@ -341,7 +346,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
                   <h3 className="font-bold text-sm uppercase tracking-wider">Notes Cliniques d'Entretien</h3>
               </div>
               <div className="flex items-center gap-2 text-[10px] text-stone-400">
-                  <Lock size={10} /> Chiffré · Utilisé par l'IA pour la rédaction
+                  <Lock size={10} /> Privé · Pseudonymisé avant l'envoi à l'IA
               </div>
           </div>
           <VoiceTextarea
@@ -352,7 +357,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
               className="border-[#F2CC8F]/30 focus:ring-[#F2CC8F]"
           />
           <div className="mt-3 flex flex-wrap items-center gap-4 text-[10px] text-[var(--text-secondary)]">
-              <span className="flex items-center gap-1"><AlertTriangle size={10} /> Notes chiffrées, invisibles dans l'espace famille.</span>
+              <span className="flex items-center gap-1"><AlertTriangle size={10} /> Notes privées, invisibles dans l'espace famille.</span>
               <span className="flex items-center gap-1"><Mic size={10} /> Utilisez le micro pour dicter.</span>
           </div>
       </div>

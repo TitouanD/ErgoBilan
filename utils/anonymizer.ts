@@ -1,100 +1,138 @@
+/**
+ * anonymizer.ts — pseudonymization of patient identifiers before any text is
+ * sent to the AI, and re-hydration of the generated report afterwards.
+ *
+ * Every identifying value of the patient file (child, parents, siblings,
+ * school, doctors, followed-by professionals, contact details) is replaced by
+ * a placeholder such as `{{PATIENT_PRENOM}}` or `{{PARENT_1}}`. Numbered
+ * placeholders keep the mapping reversible. Matching is case-insensitive and
+ * bounded by word boundaries so a short first name ("Ali") never corrupts a
+ * longer word ("qualité").
+ *
+ * Use `anonymizeDeep` on the whole payload rather than anonymizing fields one
+ * by one: any new field added to the payload is then covered automatically.
+ */
 
 import type { Patient } from '../types';
+import { escapeHtml } from './reportContent';
 
-interface AnonymizationResult {
-    text: string;
-    // On n'a plus besoin de stocker une Map dynamique complexe car on utilise la structure du patient
-    // Mais on garde la signature pour compatibilité si besoin, ou on simplifie.
+interface Replacement {
+  value: string;
+  placeholder: string;
+  /** Proper-noun token (a part of a multi-word name): matched case-sensitively to avoid hitting common words. */
+  caseSensitive?: boolean;
 }
 
-// Liste des champs du patient à anonymiser explicitement
-// On mappe la clé du patient vers le Placeholder attendu par l'IA
-const MAPPING_CONFIG: { field: keyof Patient | 'parentNames', placeholder: string }[] = [
-    { field: 'firstName', placeholder: '{{PATIENT_PRENOM}}' },
-    { field: 'lastName', placeholder: '{{PATIENT_NOM}}' },
-    { field: 'parentNames', placeholder: '{{PARENTS}}' },
-    { field: 'address', placeholder: '{{ADRESSE}}' },
-    { field: 'parentPhone', placeholder: '{{TELEPHONE}}' },
-    { field: 'parentEmail', placeholder: '{{EMAIL}}' },
-    { field: 'school', placeholder: '{{ECOLE}}' },
-    { field: 'teacher', placeholder: '{{ENSEIGNANT}}' },
-    { field: 'prescribingDoctor', placeholder: '{{MEDECIN}}' },
-    { field: 'avsDetails', placeholder: '{{AVS_DETAILS}}' },
-    { field: 'dob', placeholder: '{{DATE_NAISSANCE}}' },
+/** Neutral wording used when the model returns a placeholder we cannot map back. */
+const RESIDUAL_FALLBACKS: Array<[RegExp, string]> = [
+  [/\{\{PATIENT_[A-Z_]+\}\}/g, "l'enfant"],
+  [/\{\{PARENTS?(?:_\d+)?\}\}/g, 'le parent'],
+  [/\{\{FRATRIE_\d+\}\}/g, 'un membre de la fratrie'],
+  [/\{\{PROFESSIONNEL_\d+\}\}/g, 'le professionnel'],
+  [/\{\{MEDECIN(?:_TRAITANT)?\}\}/g, 'le médecin'],
+  [/\{\{ECOLE\}\}/g, "l'établissement scolaire"],
+  [/\{\{ENSEIGNANT\}\}/g, "l'enseignant(e)"],
+  [/\{\{[A-Z0-9_]+\}\}/g, ''],
 ];
 
-/**
- * Anonymise le texte en remplaçant les valeurs du patient par des placeholders.
- * Algorithme "Search & Swap" trié par longueur de valeur décroissante.
- */
-export const anonymizeData = (text: string, patient: Patient): { text: string } => {
-    let safeText = text;
+const MIN_VALUE_LENGTH = 2;
+const MIN_TOKEN_LENGTH = 3;
+/** Titles and connectors found inside name fields: never treated as identifying tokens. */
+const STOP_TOKENS = new Set(['mme', 'mlle', 'madame', 'monsieur', 'mr', 'dr', 'docteur', 'pr', 'professeur', 'les', 'et', 'des', 'chez']);
 
-    // 1. Construction de la liste des remplacements
-    // On inclut aussi le Nom Complet concaténé manuellement pour être sûr
-    const replacements: { value: string, placeholder: string }[] = [];
+const clean = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
-    // Ajout explicite du nom complet (prioritaire car souvent le plus long)
-    const fullName = `${patient.firstName} ${patient.lastName}`.trim();
-    if (fullName.length > 2) {
-        replacements.push({ value: fullName, placeholder: '{{PATIENT_NOM_COMPLET}}' });
+/** Build the full replacement table for a patient (longest values first). */
+export const buildReplacements = (patient: Patient): Replacement[] => {
+  const list: Replacement[] = [];
+  const add = (value: unknown, placeholder: string, splitTokens = false) => {
+    const v = clean(value);
+    if (v.length < MIN_VALUE_LENGTH) return;
+    list.push({ value: v, placeholder });
+    if (splitTokens) {
+      for (const token of v.split(/[\s,;/&]+/)) {
+        const t = token.replace(/\.$/, '');
+        if (t.length >= MIN_TOKEN_LENGTH && t !== v && !STOP_TOKENS.has(t.toLowerCase())) list.push({ value: t, placeholder, caseSensitive: true });
+      }
     }
+  };
 
-    // Ajout des champs unitaires
-    MAPPING_CONFIG.forEach(config => {
-        const val = patient[config.field as keyof Patient];
-        if (typeof val === 'string' && val.trim().length > 1) { // On ignore les valeurs vides ou trop courtes (1 char)
-            replacements.push({ value: val.trim(), placeholder: config.placeholder });
-        }
+  add(`${clean(patient.firstName)} ${clean(patient.lastName)}`, '{{PATIENT_NOM_COMPLET}}');
+  add(patient.firstName, '{{PATIENT_PRENOM}}');
+  add(patient.lastName, '{{PATIENT_NOM}}');
+  add(patient.dob, '{{DATE_NAISSANCE}}');
+  add(patient.address, '{{ADRESSE}}');
+
+  add(patient.parent1Name, '{{PARENT_1}}', true);
+  add(patient.parent2Name, '{{PARENT_2}}', true);
+  add(patient.parentNames, '{{PARENTS}}', true);
+  [patient.parentPhone, patient.parent1Phone, patient.parent2Phone].forEach((v) => add(v, '{{TELEPHONE}}'));
+  [patient.parentEmail, patient.parent1Email, patient.parent2Email].forEach((v) => add(v, '{{EMAIL}}'));
+  [patient.parent1Address, patient.parent2Address].forEach((v) => add(v, '{{ADRESSE}}'));
+
+  (patient.siblings ?? []).forEach((s, i) => add(s.firstName, `{{FRATRIE_${i + 1}}}`));
+
+  add(patient.school, '{{ECOLE}}');
+  add(patient.teacher, '{{ENSEIGNANT}}', true);
+  add(patient.prescribingDoctor, '{{MEDECIN}}', true);
+  add(patient.treatingDoctor, '{{MEDECIN_TRAITANT}}', true);
+  (patient.medicalTracking ?? []).forEach((t, i) => {
+    add(t.name, `{{PROFESSIONNEL_${i + 1}}}`, true);
+    add(t.contact, `{{PROFESSIONNEL_${i + 1}}}`);
+  });
+
+  // Longest first so "Léa Martin" is replaced before "Léa"; dedupe on value.
+  const seen = new Set<string>();
+  return list
+    .sort((a, b) => b.value.length - a.value.length)
+    .filter((r) => {
+      const key = `${r.caseSensitive ? 'cs' : 'ci'}:${r.value.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
+};
 
-    // 2. Tri par longueur décroissante (CRITIQUE pour éviter les remplacements partiels)
-    replacements.sort((a, b) => b.value.length - a.value.length);
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    // 3. Exécution des remplacements (Case Insensitive pour sécurité)
-    replacements.forEach(({ value, placeholder }) => {
-        // Echappement des caractères spéciaux pour la regex
-        const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Regex globale et insensible à la casse
-        const regex = new RegExp(escapedValue, 'gi');
-        safeText = safeText.replace(regex, placeholder);
-    });
+/** Regex matching `value` as a whole word (Unicode letters/digits count as word characters). */
+const wordRegex = (value: string, caseSensitive: boolean) =>
+  new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(value)}(?![\\p{L}\\p{N}_])`, caseSensitive ? 'gu' : 'giu');
 
-    return { text: safeText };
+const applyReplacements = (text: string, replacements: Replacement[]): string =>
+  replacements.reduce((acc, r) => acc.replace(wordRegex(r.value, !!r.caseSensitive), r.placeholder), text);
+
+/** Pseudonymize one text. */
+export const anonymizeText = (text: string, patient: Patient): string => applyReplacements(text, buildReplacements(patient));
+
+
+/** Pseudonymize every string nested in `value` (objects, arrays). Keys are left untouched. */
+export const anonymizeDeep = <T>(value: T, patient: Patient): T => {
+  const replacements = buildReplacements(patient);
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return applyReplacements(v, replacements);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, child]) => [k, walk(child)]));
+    return v;
+  };
+  return walk(value) as T;
 };
 
 /**
- * Réhydrate le rapport en remettant les vraies valeurs.
- * Gère le nettoyage des placeholders résiduels.
+ * Replace placeholders in a generated text with the real values.
+ * `asHtml` escapes the injected values (they come from the patient file,
+ * partly typed by the family in the portal) when the output is HTML.
  */
-export const hydrateReport = (text: string, patient: Patient): string => {
-    let finalReport = text;
-
-    // 1. Reconstruction de la liste de réhydratation
-    const replacements: { value: string, placeholder: string }[] = [];
-    
-    // Nom complet
-    replacements.push({ value: `${patient.firstName} ${patient.lastName}`, placeholder: '{{PATIENT_NOM_COMPLET}}' });
-    
-    // Champs unitaires
-    MAPPING_CONFIG.forEach(config => {
-        const val = patient[config.field as keyof Patient];
-        if (typeof val === 'string') {
-             replacements.push({ value: val, placeholder: config.placeholder });
-        }
-    });
-
-    // 2. Remplacement inverse (Placeholder -> Valeur réelle)
-    replacements.forEach(({ value, placeholder }) => {
-        // On cherche le placeholder littéralement (avec les accolades)
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escapedPlaceholder, 'g');
-        finalReport = finalReport.replace(regex, value);
-    });
-
-    // 3. Nettoyage des placeholders résiduels (Erreur LLM ou hallucination)
-    // Regex pour trouver tout ce qui ressemble à {{...}}
-    finalReport = finalReport.replace(/\{\{[A-Z_]+\}\}/g, "l'enfant");
-
-    return finalReport;
+export const hydrateReport = (text: string, patient: Patient, options: { asHtml?: boolean } = {}): string => {
+  const byPlaceholder = new Map<string, string>();
+  for (const r of buildReplacements(patient)) {
+    if (!r.caseSensitive && !byPlaceholder.has(r.placeholder)) byPlaceholder.set(r.placeholder, r.value);
+  }
+  let result = text.replace(/\{\{[A-Z0-9_]+\}\}/g, (placeholder) => {
+    const value = byPlaceholder.get(placeholder);
+    if (value === undefined) return placeholder;
+    return options.asHtml ? escapeHtml(value) : value;
+  });
+  for (const [pattern, fallback] of RESIDUAL_FALLBACKS) result = result.replace(pattern, fallback);
+  return result;
 };

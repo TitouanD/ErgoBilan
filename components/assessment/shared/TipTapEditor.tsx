@@ -6,7 +6,6 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
-import Underline from '@tiptap/extension-underline';
 import {
     Bold, Italic, Underline as UnderlineIcon, List, Heading2, Heading3,
     AlignLeft, AlignCenter, AlignRight, AlignJustify, Highlighter, Palette, ListOrdered, Undo, Redo
@@ -59,12 +58,12 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
 }) => {
     const editor = useEditor({
         extensions: [
+            // StarterKit v3 already bundles Underline and Link.
             StarterKit.configure({ heading: { levels: [2, 3] } }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextStyle,
             Color,
             Highlight.configure({ multicolor: true }),
-            Underline,
         ],
         content: content || '',
         editable: !readOnly,

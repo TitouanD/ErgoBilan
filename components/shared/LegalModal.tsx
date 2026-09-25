@@ -60,7 +60,7 @@ const CGUContent: React.FC = () => (
 
     <section>
       <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">6. Intelligence artificielle</h2>
-      <p>ErgoBilan utilise l'API Gemini de Google pour la génération de texte. <strong>Aucune donnée nominative n'est transmise à l'IA.</strong> Avant tout envoi, les données sont anonymisées côté client : les noms, prénoms et informations d'identification sont remplacés par des marqueurs génériques (ex. «&nbsp;L'enfant&nbsp;», «&nbsp;Le patient&nbsp;»).</p>
+      <p>ErgoBilan utilise l'API Gemini de Google pour la génération de texte. <strong>Aucune donnée nominative n'est transmise à l'IA.</strong> Avant tout envoi, les données sont pseudonymisées côté client : les noms, prénoms et coordonnées du patient, de sa famille et des professionnels cités sont remplacés par des marqueurs (ex. «&nbsp;{'{{PATIENT_PRENOM}}'}&nbsp;»), puis réinsérés localement dans le texte reçu.</p>
       <p className="mt-2">Chaque génération consomme un crédit. Les crédits ne sont pas remboursables en cas d'erreur technique imputable à l'API tiers, sous réserve d'un remboursement gracieux apprécié au cas par cas.</p>
     </section>
 
@@ -167,7 +167,7 @@ const PrivacyContent: React.FC = () => (
         <li>Comptes-rendus et bilans générés</li>
         <li>Brouillons en cours de rédaction</li>
       </ul>
-      <p className="mt-2">Les données transmises à l'IA Gemini sont préalablement anonymisées côté client et ne contiennent aucune information nominative.</p>
+      <p className="mt-2">Les données transmises à l'IA Gemini sont préalablement pseudonymisées côté client et ne contiennent aucune information nominative.</p>
     </section>
 
     <section>
@@ -201,7 +201,7 @@ const PrivacyContent: React.FC = () => (
             <tr className="bg-[var(--card-bg-raised)]/50">
               <td className="border border-[var(--border-color)] p-2 font-medium">Google LLC (Gemini API)</td>
               <td className="border border-[var(--border-color)] p-2">USA (SCCs)</td>
-              <td className="border border-[var(--border-color)] p-2">Texte anonymisé uniquement</td>
+              <td className="border border-[var(--border-color)] p-2">Texte pseudonymisé uniquement</td>
               <td className="border border-[var(--border-color)] p-2">DPA Google, SCCs</td>
             </tr>
             <tr>
