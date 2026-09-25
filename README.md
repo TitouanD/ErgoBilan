@@ -74,7 +74,7 @@ utils/                        # Fonctions pures (testées dans utils/*.test.ts)
 data/                         # Types du catalogue, branding par défaut, données de démo
 supabase/
   functions/                  # Edge Functions (generate, signup)
-  migrations/                 # Migrations récentes (voir docs/TECH_DEBT.md pour celles à appliquer)
+  migrations/                 # Migrations versionnées depuis l'assainissement (2026-09-25)
 docs/                         # Documentation technique détaillée
 ```
 

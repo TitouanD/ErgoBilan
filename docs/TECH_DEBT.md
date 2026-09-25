@@ -1,6 +1,6 @@
 # Registre de dette technique
 
-Ce registre recense les bugs, risques et nettoyages connus. L'analyse initiale date du **2026-09-23** (code et base, via le MCP Supabase en lecture seule). Le **2026-09-24**, l'assainissement (branche `refactor/assainissement`, voir [PLAN_ASSAINISSEMENT.md](PLAN_ASSAINISSEMENT.md)) en a traité la plus grande partie. Ce document donne l'état de chaque point après ce travail.
+Ce registre recense les bugs, risques et nettoyages connus. L'analyse initiale date du **2026-09-23** (code et base, via le MCP Supabase en lecture seule). Le **2026-09-24**, l'assainissement (branche `refactor/assainissement`, voir [PLAN_ASSAINISSEMENT.md](PLAN_ASSAINISSEMENT.md)) en a traité la plus grande partie. Le **2026-09-25**, la branche a été fusionnée dans `main`, les 4 migrations appliquées et l'edge `generate` déployée (v52). Ce document donne l'état de chaque point après ce travail.
 
 Priorités :
 
@@ -11,7 +11,6 @@ Priorités :
 Statuts :
 
 - **Résolu** : corrigé dans le code et vérifié (`npm run check`, parcours démo dans le navigateur).
-- **À déployer** : corrigé dans le repo, mais il reste à appliquer une migration (`supabase/migrations/20260924*`) ou à déployer l'edge function `generate`. Ces actions touchent la production et demandent un accord explicite.
 - **Manuel** : réglage à faire dans le dashboard Supabase.
 - **Ouvert** : non traité.
 
@@ -25,22 +24,22 @@ Statuts :
 | P0-4  | Anonymisation incomplète avant Gemini                | Résolu                        |
 | P0-5  | La regex d'anonymisation corrompt des mots           | Résolu                        |
 | P0-6  | PIN cassable hors ligne                              | **Ouvert** (lié à P0-1)       |
-| P0-7  | Durcissement edge functions et portail               | Code résolu, **à déployer**   |
-| P0-8  | Hygiène de la base                                   | **À déployer** + manuel       |
-| P1-1  | Création de test personnalisé                        | Code résolu, **à déployer**   |
+| P0-7  | Durcissement edge functions et portail               | Résolu                        |
+| P0-8  | Hygiène de la base                                   | Résolu, sauf 1 point + manuel |
+| P1-1  | Création de test personnalisé                        | Résolu                        |
 | P1-2  | Signalement de type de score                         | Résolu (fonction retirée)     |
-| P1-3  | RPC mortes                                           | **À déployer**                |
-| P1-4  | Purge des questionnaires du portail                  | Code résolu, **à déployer**   |
+| P1-3  | RPC mortes                                           | Résolu                        |
+| P1-4  | Purge des questionnaires du portail                  | Résolu                        |
 | P1-5  | Style IA appris jamais utilisé                       | Résolu                        |
 | P1-6  | Plantage après téléchargement du PDF                 | Résolu                        |
 | P1-7  | Mise en page affichée ≠ exportée                     | Résolu                        |
-| P1-8  | Crédits et sessions de génération                    | Code résolu, **à déployer**   |
+| P1-8  | Crédits et sessions de génération                    | Résolu                        |
 | P1-9  | Échelles et interprétation des scores                | Résolu                        |
 | P1-10 | Saisie `raw_only` / `computed_items`                 | Résolu                        |
 | P1-11 | Réévaluation                                         | Résolu                        |
 | P1-12 | Brouillons                                           | Résolu                        |
 | P1-13 | Calcul de l'âge                                      | Résolu                        |
-| P1-14 | Admin : ajout de sous-test                           | Résolu (RPC : à déployer)     |
+| P1-14 | Admin : ajout de sous-test                           | Résolu                        |
 | P1-15 | Parcours, divers                                     | Résolu, sauf 2 points ouverts |
 | P1-16 | Création du lien famille                             | Résolu                        |
 | P1-17 | Personnalisation du rapport non sauvegardée          | Résolu                        |
@@ -54,24 +53,15 @@ Statuts :
 | P2-5  | Code mort                                            | Résolu (reste 2 colonnes DB)  |
 | P2-6  | Outillage                                            | Résolu (reste `.env` suivis)  |
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                        |
-| P2-8  | Base de données, divers                              | Partiel, **à déployer**       |
+| P2-8  | Base de données, divers                              | Partiel                       |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                        |
 | P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf 4 points ouverts |
 
-## Actions en attente sur la production
+## Mise en production du 2026-09-25
 
-Rien de ce qui suit n'a été appliqué. Chaque action demande l'accord du responsable du projet.
-
-1. **Migrations** (dans l'ordre) :
-   - `20260924100000_fix_client_rpc_grants.sql` : GRANT de `practitioner_save_custom_test` à `authenticated` (P1-1), REVOKE `anon` sur les RPC `admin_*`, `search_path` fixé, `admin_save_test_detail` avec les bons défauts (P1-14), DROP des RPC mortes (P1-3).
-   - `20260924100100_portal_family_column_grants.sql` : la famille ne peut plus lire ou écrire que ses colonnes (P0-7).
-   - `20260924100200_scheduled_cleanups.sql` : purges pg_cron des questionnaires (14 j `pending`, 30 j `completed`), remboursement des sessions de génération abandonnées (30 min) et purge d'`ai_request_log` (2 j) (P1-4, P1-8, P2-8).
-   - `20260924100300_rls_on_internal_logs.sql` : RLS activée sur les deux journaux internes (P0-8).
-   - Puis régénérer `types/supabase.ts`.
-2. **Edge function `generate`** : déployer `index.ts` et `prompts.ts` (P0-7, P1-8). La version en production (v51) est antérieure. Avant le déploiement, vérifier que le secret `AI_ALLOWED_ORIGINS` contient l'URL de l'application : sans lui, le filtrage des origines dépend de `APP_ENV` / `DENO_DEPLOYMENT_ID`, dont la présence sur le runtime Supabase n'a pas été vérifiée.
-3. **Réglages manuels** :
-   - activer la protection contre les mots de passe compromis (Auth) ;
-   - supprimer l'edge function `extract-norms`, déployée mais absente du repo et inutilisée (P2-1).
+- Migrations `supabase/migrations/20260924*` appliquées (droits des RPC, colonnes du portail, purges pg_cron, RLS des journaux).
+- Edge `generate` déployée (v52) avec la CLI : `npx supabase functions deploy generate --project-ref hxlsjpkwrqunuqpaukmg --no-verify-jwt --use-api`.
+- Reste à faire à la main : activer la protection contre les mots de passe compromis (Auth) et supprimer l'edge `extract-norms` (Edge Functions > extract-norms > Settings > Delete function).
 
 ## P0 — Confidentialité et sécurité
 
@@ -107,13 +97,13 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 - PIN de 6 chiffres ; sel et validateur PBKDF2 lisibles par l'utilisateur dans `practitioners` ; verrouillage après erreurs en `localStorage` ; sel modifiable par UPDATE (DB).
 - Ne devient critique qu'avec P0-1. À traiter ensemble : code plus long ou phrase de passe, validateur non renvoyé au client ou lié à un secret serveur.
 
-### P0-7 Durcissement des edge functions et du portail — Code résolu, à déployer
+### P0-7 Durcissement des edge functions et du portail — Résolu
 
-- `generate` : loopback autorisé seulement hors production, CORS qui renvoie l'origine autorisée (plus de `*`), plus de repli « fail-open » sur des RPC absentes. **Edge non déployée.**
+- `generate` : loopback autorisé seulement hors production, CORS qui renvoie l'origine autorisée (plus de `*`), plus de repli « fail-open » sur des RPC absentes.
 - Portail : la clé ne circule plus que dans le fragment `#key=` (repli `?key=` supprimé).
-- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260924100100_portal_family_column_grants.sql`. **Migration non appliquée.**
+- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260924100100_portal_family_column_grants.sql`.
 
-### P0-8 Hygiène de la base — À déployer + manuel
+### P0-8 Hygiène de la base — Résolu, sauf 1 point + manuel
 
 - RLS sur `ai_request_log` et `signup_rate_limit_log` : `20260924100300_rls_on_internal_logs.sql`.
 - REVOKE `anon` sur les RPC `admin_*` et `search_path` fixé : `20260924100000_fix_client_rpc_grants.sql`.
@@ -122,20 +112,20 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 
 ## P1 — Bugs fonctionnels
 
-### P1-1 Création de test personnalisé — Code résolu, à déployer
+### P1-1 Création de test personnalisé — Résolu
 
 - Côté client : catégorie `autre`, échelle par défaut `none`, `reloadCatalog()` forcé après création (`TestCatalogModal`).
-- Reste le GRANT EXECUTE à `authenticated` (migration `20260924100000`). Tant qu'elle n'est pas appliquée, la création échoue en production avec « permission denied ».
+- GRANT EXECUTE à `authenticated` (migration `20260924100000`, appliquée).
 
 ### P1-2 Signalement de type de score — Résolu
 
 La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le composant orphelin `ScoreTypeReportModal` a été supprimé.
 
-### P1-3 RPC mortes — À déployer
+### P1-3 RPC mortes — Résolu
 
-`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) sont supprimées par la migration `20260924100000`.
+`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) ont été supprimées (migration `20260924100000`).
 
-### P1-4 Purge du portail — Code résolu, à déployer
+### P1-4 Purge du portail — Résolu
 
 - `purge_pending_questionnaires` + pg_cron (14 j `pending`, 30 j `completed`) dans `20260924100200_scheduled_cleanups.sql`. L'edge `purge-pending`, jamais déployée, est supprimée du repo.
 - Import d'un questionnaire (`hooks/usePendingProcessor.ts`) : le patient est créé en local, puis la ligne distante est supprimée ; si la suppression échoue, la création locale est annulée. Plus de doublon possible.
@@ -156,12 +146,12 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 - **Ouvert** : la disposition des pages n'est pas enregistrée ; elle revient à la disposition par défaut si l'on quitte l'étape d'export.
 - La section `objectifs` est masquée partout (`HIDDEN_SECTION_IDS` dans `utils/reportData.ts`).
 
-### P1-8 Crédits et sessions de génération — Code résolu, à déployer
+### P1-8 Crédits et sessions de génération — Résolu
 
 - Un diagnostic en échec libère le verrou de session : le retry fonctionne sans nouveau crédit.
 - Une réponse vide ou un JSON invalide de Gemini compte comme un échec.
 - Les sessions `pending` abandonnées sont remboursées par `sweep_stale_generations` (pg_cron, 30 min).
-- **Edge et migration à déployer.** Les 2 lignes bloquées depuis le 22/02/2026 seront remboursées au premier passage du job.
+- Les 2 lignes bloquées depuis le 22/02/2026 sont remboursées par ce job.
 - **Ouvert** : le type de génération n'est toujours pas journalisé dans `generation_log`.
 
 ### P1-9 Échelles et interprétation — Résolu
@@ -256,7 +246,7 @@ Les composants de `ReportView` sont définis au niveau du module ; les mises à 
 
 ### P2-8 Base de données, divers — Partiel
 
-- Purge d'`ai_request_log` : migration `20260924100200` (à déployer).
+- Purge d'`ai_request_log` : fait (migration `20260924100200`).
 - Ouverts : 4 index inutilisés (`generation_log_user_created_at_idx`, `signup_rate_limit_created_at_idx`, `idx_pending_questionnaires_practitioner`, `idx_official_tests_category`), `admin_audit_log` jamais alimenté.
 
 ### P2-9 Bugs trouvés au test navigateur du 2026-09-24 — Résolu

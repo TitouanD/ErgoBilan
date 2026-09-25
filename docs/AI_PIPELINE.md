@@ -2,7 +2,7 @@
 
 > État du code au 25/09/2026 (branche `refactor/assainissement`). Les références citent un fichier et une fonction, pas de numéro de ligne.
 > Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/20260924*`. Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
-> **Déploiement** : l'edge function `generate` décrite ici n'est **pas encore déployée** (la production tourne en v51, antérieure), et la migration `20260924100200_scheduled_cleanups.sql` n'est **pas appliquée**. Voir [TECH_DEBT.md](TECH_DEBT.md), section « Actions en attente sur la production ».
+> **Déploiement** : l'edge function `generate` décrite ici est en production depuis le 2026-09-25 (v52), et la migration `20260924100200_scheduled_cleanups.sql` est appliquée.
 
 ## 1. Vue d'ensemble
 
@@ -156,7 +156,7 @@ stateDiagram-v2
 | `report_reevaluation` | finalize `completed`                   | finalize échec → remboursé         | finalize `INTERNAL_ERROR` → remboursé |
 
 - `finalize_generation_internal` ne fait rien si la ligne n'est plus `pending` (retourne `FALSE`). `finalizeSession` journalise ses erreurs dans la console sans les propager.
-- **Sessions abandonnées** : `sweep_stale_generations` (migration `20260924100200_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min. Migration **non appliquée** : d'ici là, un bio sans diagnostic garde le crédit consommé.
+- **Sessions abandonnées** : `sweep_stale_generations` (migration `20260924100200_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min.
 - Colonnes : `id, user_id, status, created_at, refunded_at, error_code` ; le type de tâche n'est pas journalisé (TECH_DEBT P1-8).
 - Données au 23/09/2026 : 24 `completed`, 7 `refunded` (`GEMINI_RETRYABLE_ERROR` ×3, `GEMINI_TIMEOUT` ×2, `STUCK_PENDING_ADMIN_FIX` ×2), 2 `pending` bloquées depuis le 22/02/2026 (remboursées au premier passage du sweep).
 
@@ -199,9 +199,9 @@ Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tenta
 
 ## 8. Problèmes connus
 
-L'état de chaque point (résolu, à déployer, ouvert) est tenu dans [TECH_DEBT.md](TECH_DEBT.md). Points qui concernent ce pipeline :
+L'état de chaque point (résolu, ouvert) est tenu dans [TECH_DEBT.md](TECH_DEBT.md). Points qui concernent ce pipeline :
 
-- **P1-8** (à déployer) : libération du verrou, validation du JSON, sweep des sessions abandonnées ; type de tâche toujours absent de `generation_log`.
-- **P0-7** (à déployer) : loopback hors production, CORS par origine, suppression des replis sur RPC absentes.
+- **P1-8** (résolu) : libération du verrou, validation du JSON, sweep des sessions abandonnées ; type de tâche toujours absent de `generation_log`.
+- **P0-7** (résolu) : loopback hors production, CORS par origine, suppression des replis sur RPC absentes.
 - **P0-4 / P0-5 / P1-5 / P1-11** : résolus (pseudonymisation complète, frontières Unicode, style appris, réévaluation).
 - Non suivis ailleurs : les échecs Gemini gérés ne remontent pas à Sentry ; les observations reformulées sont indexées par `subtestId` seul, ce qui suppose des identifiants uniques entre tests (c'est le cas du catalogue, préfixé par le test, et des observations libres).

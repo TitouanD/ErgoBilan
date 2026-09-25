@@ -11,14 +11,14 @@ La documentation vérifiée (en français) est dans [`docs/`](docs/). **Lire le 
 - [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) : types, schéma Dexie, `.ergobilan`, schéma Supabase (tables, RLS, RPC, triggers, cron, edge functions).
 - [`docs/AI_PIPELINE.md`](docs/AI_PIPELINE.md) : charge utile, anonymisation, edge `generate`, crédits, style appris.
 - [`docs/SCORING_CATALOG.md`](docs/SCORING_CATALOG.md) : catalogue, modèles de saisie, échelles, zones, deltas, tests personnalisés.
-- [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, à déployer, ouvert) et actions en attente sur la production.
+- [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, ouvert) et historique de mise en production.
 - [`docs/PLAN_ASSAINISSEMENT.md`](docs/PLAN_ASSAINISSEMENT.md) : plan d'assainissement, avancement et recette manuelle.
 
 Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKey → FileKey rencontrée ailleurs est **obsolète**.
 
 ## Règles
 
-- **Base Supabase en lecture seule** sauf demande explicite. Il n'y a qu'une base, celle de production. Toute modification passe par un fichier de `supabase/migrations/`, relu, puis appliqué avec accord. Des migrations écrites mais **pas encore appliquées** sont listées dans `docs/TECH_DEBT.md`.
+- **Base Supabase en lecture seule** sauf demande explicite. Il n'y a qu'une base, celle de production. Toute modification passe par un fichier de `supabase/migrations/`, relu, puis appliqué avec accord.
 - **Données de santé** : ne jamais affirmer dans l'interface qu'elles sont chiffrées, tant que P0-1 n'est pas fait. Tout ce qui part vers l'IA est construit dans `utils/aiPayload.ts` puis passe par `anonymizeDeep` (`utils/anonymizer.ts`).
 - **Parcours** : ne pas dupliquer un composant de `components/assessment/pages/` ou `shared/` pour un parcours. Étendre le composant partagé (ex. `ScoreTable`) sans retirer le comportement dont un autre parcours a besoin.
 - **Scores** : calculs et zones dans `utils/scoring.ts` ; noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`) ; ordre d'affichage dans `utils/subtestOrdering.ts` ; données des graphiques et des pages du rapport dans `utils/reportData.ts` (partagé par l'aperçu et le PDF).

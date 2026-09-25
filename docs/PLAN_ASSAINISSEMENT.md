@@ -39,7 +39,7 @@ L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, 
 | 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, qui reste une tâche dédiée. Le volet base de 2.5 attend sa migration                                                                     |
 | 3 — Scores            | Fait                                                                                                                                                                             |
 | 4 — Code propre       | Fait                                                                                                                                                                             |
-| 5 — Base et edge      | Migrations écrites pour 5.1 et 5.2 (non appliquées). 5.3, 5.4 et 5.5 restent à faire (décisions produit et réglages manuels)                                                     |
+| 5 — Base et edge      | 5.1 et 5.2 faits (migrations appliquées le 2026-09-25). 5.3, 5.4 et 5.5 restent à faire (décisions produit et réglages manuels)                                                  |
 | 6 — Documentation     | En-têtes de modules ajoutés sur les fichiers réécrits ; `docs/` mis à jour                                                                                                       |
 
 Écart à la règle 1 : tout a été fait sur une seule branche. Il est conseillé de découper en commits cohérents (outillage, correctifs, scores, refactoring, migrations, doc) avant la PR.
