@@ -133,6 +133,8 @@ export const initSentry = (): void => {
     dsn: FRONTEND_DSN,
     environment: SENTRY_ENV,
     release: SENTRY_RELEASE,
+    // Same-origin proxy (vercel.json rewrite) so ad blockers don't drop events. Not available under `npm run dev`.
+    tunnel: import.meta.env.PROD ? '/monitoring' : undefined,
     sendDefaultPii: false,
     integrations,
     sampleRate: 1.0,

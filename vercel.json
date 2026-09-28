@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/monitoring",
+      "destination": "https://o4511070797103104.ingest.de.sentry.io/api/4511070943445072/envelope/?sentry_version=7&sentry_key=661c0b452a8b3466bbd08fc9b5425fa8"
+    }
+  ]
+}
