@@ -13,7 +13,7 @@ La documentation vérifiée (en français) est dans [`docs/`](docs/). **Lire le 
 - [`docs/SCORING_CATALOG.md`](docs/SCORING_CATALOG.md) : catalogue, modèles de saisie, échelles, zones, deltas, tests personnalisés.
 - [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, ouvert) et historique de mise en production.
 - [`docs/PLAN_ASSAINISSEMENT.md`](docs/PLAN_ASSAINISSEMENT.md) : plan d'assainissement, avancement et recette manuelle.
-- [`docs/RETOURS.md`](docs/RETOURS.md) : retours des testeuses (fait, à appliquer, ouvert), liste de non-régression et façon de travailler (worktrees).
+- [`docs/RETOURS.md`](docs/RETOURS.md) : suivi des retours dans les issues GitHub (labels, milestones, non-régression) et façon de travailler (worktrees).
 
 Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKey → FileKey rencontrée ailleurs est **obsolète**.
 
@@ -35,3 +35,17 @@ npm run typecheck      # tsc --noEmit
 npm test               # Vitest (utils/**/*.test.ts)
 npm run format:check   # Prettier, *.md compris
 ```
+
+## Agent skills
+
+### Issue tracker
+
+Les issues vivent dans GitHub Issues (`TitouanD/ErgoBilan`, CLI `gh`). Voir `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Les cinq labels canoniques par défaut (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). Voir `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context : `CONTEXT.md` et `docs/adr/` à la racine. Voir `docs/agents/domain.md`.
