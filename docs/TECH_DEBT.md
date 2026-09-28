@@ -13,17 +13,18 @@ Statuts :
 - **Résolu** : corrigé dans le code et vérifié (`npm run check`, parcours démo dans le navigateur).
 - **Manuel** : réglage à faire dans le dashboard Supabase.
 - **Ouvert** : non traité.
+- **Reporté** / **Risque accepté** : décision de ne pas traiter pour l'instant.
 
 ## Tableau de bord
 
 | Point | Sujet                                                | Statut                        |
 | ----- | ---------------------------------------------------- | ----------------------------- |
-| P0-1  | Données de santé en clair dans IndexedDB et l'export | **Ouvert** (tâche dédiée)     |
+| P0-1  | Données de santé en clair dans IndexedDB et l'export | Reporté (décision 2026-09-25) |
 | P0-2  | La déconnexion laisse la base ouverte                | Résolu                        |
 | P0-3  | L'interface annonce « chiffré »                      | Résolu                        |
 | P0-4  | Anonymisation incomplète avant Gemini                | Résolu                        |
 | P0-5  | La regex d'anonymisation corrompt des mots           | Résolu                        |
-| P0-6  | PIN cassable hors ligne                              | **Ouvert** (lié à P0-1)       |
+| P0-6  | PIN cassable hors ligne                              | Risque accepté (2026-09-25)   |
 | P0-7  | Durcissement edge functions et portail               | Résolu                        |
 | P0-8  | Hygiène de la base                                   | Résolu, sauf 1 point + manuel |
 | P1-1  | Création de test personnalisé                        | Résolu                        |
@@ -74,7 +75,9 @@ Instrumentation complète front et edge (voir [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## P0 — Confidentialité et sécurité
 
-### P0-1 Données de santé en clair au repos — Ouvert
+### P0-1 Données de santé en clair au repos — Reporté
+
+**Décision du 2026-09-25** : le fonctionnement actuel est accepté. Le PIN est un verrou léger (il faut déjà un accès au poste) et le praticien est responsable de ses données. Au plus, une légère obfuscation du fichier `.ergobilan`, facultative. Le correctif ci-dessous reste la piste si le sujet revient.
 
 - **Où** : tables Dexie de `services/localDB.ts` (`patient`, `tests`, `results`, `report`, `draftData` stockés tels quels) ; export `.ergobilan` en JSON clair (`services/exportService.ts`).
 - **Impact** : toute personne ayant accès au navigateur ou au fichier d'export lit les dossiers. Le PIN n'est qu'un verrou d'écran ; la clé qui en dérive ne protège que les clés des questionnaires du portail.
@@ -101,7 +104,9 @@ Toute la charge utile est construite par `utils/aiPayload.ts` puis pseudonymisé
 
 Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, réhydratation échappée en HTML. Couvert par `utils/anonymizer.test.ts` (« Ali » / « qualité », « Eva » / « Evaluation »).
 
-### P0-6 Le PIN peut être cassé hors ligne — Ouvert
+### P0-6 Le PIN peut être cassé hors ligne — Risque accepté
+
+**Décision du 2026-09-25** : risque accepté avec P0-1 ; pas de clé de secours pour l'instant.
 
 - PIN de 6 chiffres ; sel et validateur PBKDF2 lisibles par l'utilisateur dans `practitioners` ; verrouillage après erreurs en `localStorage` ; sel modifiable par UPDATE (DB).
 - Ne devient critique qu'avec P0-1. À traiter ensemble : code plus long ou phrase de passe, validateur non renvoyé au client ou lié à un secret serveur.
