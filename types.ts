@@ -128,6 +128,9 @@ export interface Patient {
     emotionalReactionTags?: string;
     emotionalNotes?: string;
     prescribingDoctorProfession?: string;
+    /** Suivi par la PCO (plateforme de coordination et d'orientation) : 'oui' | 'non' | '' */
+    pcoFollowup?: string;
+    pcoFollowupDate?: string;
     organizationId?: string;
     siblingNotes?: string;
     timeSpaceClockDigital?: string;

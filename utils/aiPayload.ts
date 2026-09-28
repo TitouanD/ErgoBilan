@@ -62,6 +62,7 @@ export const buildQuestionnaireText = (p: Patient): string => {
     line('Profession prescripteur', p.prescribingDoctorProfession),
     line('Diagnostic médical', p.medicalDiagnosis),
     line('Traitements', p.medicalTreatments),
+    line('Suivi par la PCO', [p.pcoFollowup, p.pcoFollowupDate].filter(Boolean).join(', date : ')),
     line('Suivi médical', p.medicalFollowup),
     `Suivi paramédical:\n${tracking}`,
     '',

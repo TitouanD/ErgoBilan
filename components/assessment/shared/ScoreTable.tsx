@@ -11,7 +11,7 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, X } from 'lucide-react';
 import type { ScoreResult } from '../../../types';
 import type { SubtestDef } from '../../../data/testCatalog';
 import {
@@ -41,6 +41,8 @@ interface ScoreTableProps {
   metrics?: ScoreMetric[];
   /** Rows can be reordered with drag-and-drop (requires a DndContext ancestor). Ids: `sub:${testId}:${subtestId}`. */
   sortable?: boolean;
+  /** Shows a remove button on each row (editable tables only). */
+  onRemoveSubtest?: (subtestId: string) => void;
 }
 
 const cellInput =
@@ -93,7 +95,15 @@ const NoteCell: React.FC<{ value: string; readOnly: boolean; onChange: (v: strin
     />
   );
 
-export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores, onChange, metrics = ALL_METRICS, sortable = false }) => {
+export const ScoreTable: React.FC<ScoreTableProps> = ({
+  testId,
+  subtests,
+  scores,
+  onChange,
+  metrics = ALL_METRICS,
+  sortable = false,
+  onRemoveSubtest,
+}) => {
   const readOnly = !onChange;
   const Row = sortable ? SortableRow : StaticRow;
   const colCount = metrics.length + 2 + (sortable ? 1 : 0) + (readOnly ? 0 : 1);
@@ -115,16 +125,29 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores
       </td>
     ) : null;
 
-  const statusCell = (filled: boolean) =>
+  const statusCell = (filled: boolean, subtestId: string) =>
     readOnly ? null : (
       <td className="py-2 px-1 text-center">
-        <span className={`inline-block h-2 w-2 rounded-full ${filled ? 'bg-emerald-400' : 'bg-[var(--border-color)]'}`} />
+        <div className="flex items-center justify-center gap-1">
+          <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${filled ? 'bg-emerald-400' : 'bg-[var(--border-color)]'}`} />
+          {onRemoveSubtest && (
+            <button
+              type="button"
+              onClick={() => onRemoveSubtest(subtestId)}
+              className="p-0.5 rounded text-[var(--text-disabled)] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+              title="Retirer cette épreuve"
+              aria-label="Retirer cette épreuve"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
       </td>
     );
 
   const nameCell = (st: SubtestDef) => (
     <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
-      <span className="truncate block max-w-[200px]">{getSubtestDisplayName(st)}</span>
+      <span className="block break-words">{getSubtestDisplayName(st)}</span>
       {st.inputModel === 'numeric_4mode' && getScaleLabel(st.scoreType) && (
         <span className="text-[9px] font-medium text-[var(--text-secondary)]">{getScaleLabel(st.scoreType)}</span>
       )}
@@ -149,7 +172,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores
               </th>
             ))}
             <th className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Observation</th>
-            {!readOnly && <th className="w-[3%]" />}
+            {!readOnly && <th className={onRemoveSubtest ? 'w-[5%]' : 'w-[3%]'} />}
           </tr>
         </thead>
         <tbody>
@@ -228,7 +251,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores
                       <td className="py-1 px-2">
                         <NoteCell value={res.observation || ''} readOnly={readOnly} onChange={(v) => update(st.id, { observation: v })} />
                       </td>
-                      {statusCell(filled)}
+                      {statusCell(filled, st.id)}
                     </>
                   )}
                 </Row>
@@ -262,7 +285,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores
                       <td className="py-1 px-2">
                         <NoteCell value={res.observation || ''} readOnly={readOnly} onChange={(v) => update(st.id, { observation: v })} />
                       </td>
-                      {statusCell(filled)}
+                      {statusCell(filled, st.id)}
                     </>
                   )}
                 </Row>
@@ -304,7 +327,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({ testId, subtests, scores
                     <td className="py-1 px-2">
                       <NoteCell value={res.observation || ''} readOnly={readOnly} onChange={(v) => update(st.id, { observation: v })} />
                     </td>
-                    {statusCell(filled)}
+                    {statusCell(filled, st.id)}
                   </>
                 )}
               </Row>

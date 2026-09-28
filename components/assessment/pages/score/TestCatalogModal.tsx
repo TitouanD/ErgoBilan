@@ -308,8 +308,12 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
                                   onChange={() => toggleSubtest(test.id, st.id)}
                                   className="accent-[var(--primary)]"
                                 />
-                                <span className="truncate">{getSubtestDisplayName(st)}</span>
-                                {already && <span className="ml-auto text-[10px] uppercase font-bold">ajouté</span>}
+                                <span className="min-w-0 break-words">{getSubtestDisplayName(st)}</span>
+                                {already && (
+                                  <span className="ml-auto shrink-0 text-[10px] uppercase font-bold" title="Pour le retirer, utilisez la croix dans le tableau des scores">
+                                    ajouté
+                                  </span>
+                                )}
                               </label>
                             );
                           });

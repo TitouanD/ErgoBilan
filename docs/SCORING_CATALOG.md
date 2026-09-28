@@ -55,7 +55,7 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 | `raw_only`             | Champ « Brut » saisissable sur toute la largeur des colonnes de métrique, suivi de l'unité du sous-test                    | aucun                                                                       | `value` + `unit='raw'`, `observation`                  |
 | `custom_text`          | Titre + zone de texte ; utilisé pour les observations libres (`custom_observations`)                                       | aucun                                                                       | `customLabel`, `observation`                           |
 
-`computed_items` a été retiré du modèle client (P1-10). Le tableau accepte le glisser-déposer des lignes (`sortable`, identifiants `sub:<testId>:<subtestId>`).
+`computed_items` a été retiré du modèle client (P1-10). Le tableau accepte le glisser-déposer des lignes (`sortable`, identifiants `sub:<testId>:<subtestId>`). Avec `onRemoveSubtest` (passé par `ScorePage`, pas par la réévaluation dont les deux tableaux doivent rester alignés), chaque ligne a une croix pour retirer l'épreuve. Les noms longs reviennent à la ligne.
 
 **`score_type='none'`** : les colonnes NS / ET / % restent saisissables. Une NS tapée ne peut pas être convertie (pas d'échelle) : les autres colonnes restent vides et le rapport affiche la valeur saisie avec son unité (`formatScoreForMode`). Une saisie en ET ou en % reste convertible dans l'autre métrique, car la conversion ET ↔ % ne dépend pas de l'échelle.
 

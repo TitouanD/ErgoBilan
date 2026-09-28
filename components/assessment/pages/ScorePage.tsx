@@ -112,6 +112,14 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
     [tests, updateTests],
   );
 
+  const removeSubtest = useCallback(
+    (testId: string, subId: string) => {
+      const { [subId]: _removed, ...rest } = tests[testId] ?? {};
+      updateTests({ ...tests, [testId]: rest });
+    },
+    [tests, updateTests],
+  );
+
   const updateSubtest = useCallback(
     (testId: string, subId: string, patch: Partial<ScoreResult>) => {
       updateTests({ ...tests, [testId]: { ...tests[testId], [subId]: { ...(tests[testId]?.[subId] ?? {}), ...patch } } });
@@ -244,6 +252,7 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                                   subtests={subtests}
                                   scores={tests[testId]}
                                   onChange={(subId, patch) => updateSubtest(testId, subId, patch)}
+                                  onRemoveSubtest={(subId) => removeSubtest(testId, subId)}
                                   sortable
                                 />
                               </SortableContext>

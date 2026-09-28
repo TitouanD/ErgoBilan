@@ -46,7 +46,13 @@ const LANGUAGE_LINE_2 = [
     {value: 'begaiement', label: 'Bégaiement'},
     {value: 'manque_du_mot', label: 'Manque du mot'},
     {value: 'vocabulaire_limite', label: 'Vocabulaire limité'},
+    {value: 'vocabulaire_riche', label: 'Vocabulaire riche'},
     {value: 'mutisme_selectif', label: 'Mutisme sélectif'},
+];
+
+const YES_NO_OPTIONS = [
+    {value: 'oui', label: 'Oui'},
+    {value: 'non', label: 'Non'},
 ];
 
 // --- UX COMPONENTS ---
@@ -202,6 +208,18 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
               [id]: true
           };
       });
+      if (forceState === undefined && !openSections[id]) scrollToSectionIfHidden(id);
+  };
+
+  // Opening a section collapses the previous one, which can push the new
+  // section's header above the viewport: bring it back into view.
+  const scrollToSectionIfHidden = (id: SectionKey) => {
+      setTimeout(() => {
+          const el = document.getElementById(`section-${id}`);
+          if (!el) return;
+          const top = el.getBoundingClientRect().top;
+          if (top < 80) window.scrollTo({ top: top + window.scrollY - 80, behavior: 'smooth' });
+      }, 50);
   };
 
   const openNextSection = (currentId: SectionKey) => {
@@ -235,6 +253,18 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       onChange({ [e.target.name]: e.target.value });
+  };
+
+  const toggleGuardMode = (value: string) => handleFieldChange('guardMode', data.guardMode === value ? '' : value);
+
+  // A second click on an already-checked radio clears it (browsers never fire
+  // onChange in that case). Radios are named after the Patient field they set;
+  // `exclusiveParent` is excluded because it refines guardMode.
+  const handleRadioReclick = (e: React.MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== 'radio' || target.name === 'exclusiveParent') return;
+      const field = target.name as keyof Patient;
+      if (field && data[field] === target.value) onChange({ [field]: '' });
   };
 
   // --- LOGIQUE LISTES ---
@@ -360,7 +390,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   // ─── Historical mode: minimal flat form (display fields only) ───────────────
   if (mode === 'historical') {
     return (
-      <div className="space-y-5">
+      <div className="space-y-5" onClick={handleRadioReclick}>
         {/* Identité */}
         <div className="rounded-[20px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5 text-[var(--text-secondary)]">
@@ -457,7 +487,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   }
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20" onClick={handleRadioReclick}>
         {mode === 'family' && (
             <div className="sticky top-20 z-30 bg-[var(--app-bg)] pt-4 pb-4 border-b border-[var(--border-color)] mb-6">
                 <div className="flex justify-between text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2">
@@ -538,25 +568,25 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                     <SelectCard 
                                                         selected={data.guardMode === 'commune'} 
-                                                        onClick={() => handleFieldChange('guardMode', 'commune')}
+                                                        onClick={() => toggleGuardMode('commune')}
                                                         label="Garde Commune" 
                                                         icon={Users} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'alternate'} 
-                                                        onClick={() => handleFieldChange('guardMode', 'alternate')}
+                                                        onClick={() => toggleGuardMode('alternate')}
                                                         label="Garde Alternée" 
                                                         icon={Repeat} 
                                                     />
                                                     <SelectCard 
                                                         selected={(data.guardMode || '').startsWith('exclusive')} 
-                                                        onClick={() => handleFieldChange('guardMode', data.guardMode?.startsWith('exclusive') ? data.guardMode : 'exclusive_mere')}
+                                                        onClick={() => handleFieldChange('guardMode', data.guardMode?.startsWith('exclusive') ? '' : 'exclusive_mere')}
                                                         label="Garde Exclusive" 
                                                         icon={Home} 
                                                     />
                                                     <SelectCard 
                                                         selected={data.guardMode === 'third'} 
-                                                        onClick={() => handleFieldChange('guardMode', 'third')}
+                                                        onClick={() => toggleGuardMode('third')}
                                                         label="Tiers / Foyer" 
                                                         icon={HelpingHand} 
                                                     />
@@ -929,12 +959,19 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                         </div>
                                         <div><label className={labelClass}>Diagnostics médicaux</label><DebouncedInput name="medicalDiagnosis" value={data.medicalDiagnosis || ''} onChange={(v) => handleFieldChange('medicalDiagnosis', v)} className={inputClass} placeholder="Si connu (ex: TDAH, Dys...)" /></div>
                                         <div><label className={labelClass}>Traitements en cours</label><DebouncedInput name="medicalTreatments" value={data.medicalTreatments || ''} onChange={(v) => handleFieldChange('medicalTreatments', v)} className={inputClass} placeholder="Médicaments, lunettes..." /></div>
+                                        <div>
+                                            <label className={labelClass}>Suivi par la PCO</label>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <ChipGroup options={YES_NO_OPTIONS} value={data.pcoFollowup} onChange={(v) => handleFieldChange('pcoFollowup', v)} />
+                                                <input type="date" aria-label="Date du suivi PCO (optionnelle)" title="Date (optionnelle)" value={data.pcoFollowupDate || ''} onChange={(e) => handleFieldChange('pcoFollowupDate', e.target.value)} className={`${inputClass} md:max-w-[200px]`} />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* TABLEAU SUIVI PARAMÉDICAL */}
                                     <div className="bg-[#f0fdf4] dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/20 p-4 rounded-2xl">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-2"><Activity size={14}/> Suivi Extérieur</h4>
+                                            <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-2"><Activity size={14}/> Bilans et suivis extérieurs</h4>
                                         </div>
                                         <div className="space-y-3">
                                             {(data.medicalTracking || []).map((track, idx) => (

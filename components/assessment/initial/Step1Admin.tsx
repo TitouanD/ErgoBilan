@@ -32,6 +32,9 @@ const LABEL_MAP: Record<string, string> = {
     // Language
     standard: 'Apparition standard', retard: 'Retard simple', suivi_ortho: 'Suivi ortho',
     inintelligible: 'Difficile à comprendre', begaiement: 'Bégaiement',
+    apparition_precoce: 'Apparition précoce', apparition_standard: 'Apparition standard', apparition_tardive: 'Apparition tardive',
+    absence_langage: 'Absence de langage', zezaiement: 'Zézaiement', echolalie: 'Écholalie', manque_du_mot: 'Manque du mot',
+    vocabulaire_limite: 'Vocabulaire limité', vocabulaire_riche: 'Vocabulaire riche', mutisme_selectif: 'Mutisme sélectif',
     // Sleep
     ok: 'Paisible', endormissement: 'Endormissement long', reveils: 'Réveils multiples',
     agite: 'Agité / Cauchemars', fatigue_diurne: 'Fatigue en journée',
@@ -202,6 +205,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'Profession médecin prescripteur', value: data.prescribingDoctorProfession },
           { label: 'Diagnostic', value: data.medicalDiagnosis },
           { label: 'Traitements', value: data.medicalTreatments },
+          { label: 'Suivi par la PCO', value: [humanize(data.pcoFollowup), data.pcoFollowupDate].filter(Boolean).join(' — ') },
           { label: 'Suivis', value: data.medicalTracking?.length ? data.medicalTracking.map(t => `${t.name || '-'}${t.profession ? ` (${t.profession})` : ''}${t.assessmentDate ? ` — bilan: ${t.assessmentDate}` : ''}${t.reason ? `, motif: ${t.reason}` : ''}${t.since ? `, début: ${t.since}` : ''}${t.endDate ? `, fin: ${t.endDate}` : ''}${t.frequency ? `, périodicité: ${t.frequency}` : ''}${t.sessionCount ? `, ${t.sessionCount} séances` : ''}`).join(' · ') : undefined },
       ]},
       { title: 'Scolarité', filled: !!(data.school && data.classLevel), fields: [
@@ -267,7 +271,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   const totalSections = sectionDefs.length;
     const isFullyCompleted = totalSections > 0 && filledSections === totalSections;
     const shouldAutoUseCondensed = hasParentData || isFullyCompleted;
-    const isCondensedMode = viewMode === 'review' && (shouldAutoUseCondensed || userSwitchedToReview);
+    // Decided once, when the page opens: typing into an empty file must not
+    // switch the form to the condensed view mid-entry.
+    const [autoCondensedOnOpen] = useState(shouldAutoUseCondensed);
+    const isCondensedMode = viewMode === 'review' && (autoCondensedOnOpen || userSwitchedToReview);
 
   const ensurePatientPersisted = async (): Promise<void> => {
       if (!isPatientCreationReady(data)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
