@@ -1,0 +1,62 @@
+// @vitest-environment jsdom
+import React, { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { TestData } from '../../../types';
+import { Step1Scores } from './Step1Scores';
+import { buildCatalogIndex } from '../../../utils/catalogIndex';
+import { DEMO_CATALOG } from '../../../data/demoCatalog';
+
+const index = buildCatalogIndex(DEMO_CATALOG);
+vi.mock('../../../contexts/CatalogContext', () => ({ useCatalog: () => ({ index }) }));
+
+const previousTests: TestData = { bhk: { bhk__quality: { value: '-1.2', unit: 'ET' }, bhk__speed: {} } };
+
+const Harness: React.FC<{ onUpdate: (t: TestData) => void }> = ({ onUpdate }) => {
+  const [tests, setTests] = useState<TestData>({ bhk: { bhk__quality: {}, bhk__speed: {} } });
+  return (
+    <Step1Scores
+      tests={tests}
+      previousTests={previousTests}
+      updateTests={(t) => {
+        onUpdate(t);
+        setTests(t);
+      }}
+      onNext={() => {}}
+      onBack={() => {}}
+    />
+  );
+};
+
+const rowNames = (table: HTMLElement) =>
+  within(table)
+    .getAllByRole('row')
+    .slice(1)
+    .map((r) => r.textContent ?? '');
+
+describe('Step1Scores : retrait d’un sous-test en réévaluation (#48)', () => {
+  it('la croix n’apparaît que sur le sous-test sans score précédent', () => {
+    render(<Harness onUpdate={() => {}} />);
+    const buttons = screen.getAllByRole('button', { name: 'Retirer cette épreuve' });
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].closest('tr')?.textContent).toContain('Vitesse');
+  });
+
+  it('le retrait enlève la ligne des deux tableaux, qui restent alignés', async () => {
+    const onUpdate = vi.fn();
+    render(<Harness onUpdate={onUpdate} />);
+    const [prevTable] = screen.getAllByRole('table');
+    expect(rowNames(prevTable)).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retirer cette épreuve' }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ bhk: { bhk__quality: {} } });
+    const [prevAfter, newAfter] = screen.getAllByRole('table');
+    expect(rowNames(prevAfter)).toHaveLength(1);
+    expect(rowNames(newAfter)).toHaveLength(1);
+    expect(rowNames(prevAfter)[0]).toContain('Qualité');
+    expect(rowNames(newAfter)[0]).toContain('Qualité');
+    expect(screen.queryByRole('button', { name: 'Retirer cette épreuve' })).toBeNull();
+  });
+});

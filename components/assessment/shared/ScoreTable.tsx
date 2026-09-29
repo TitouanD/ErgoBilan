@@ -37,6 +37,8 @@ interface ScoreTableProps {
   sortable?: boolean;
   /** Shows a remove button on each row (editable tables only). */
   onRemoveSubtest?: (subtestId: string) => void;
+  /** With `onRemoveSubtest`: rows that get the remove button (all by default). */
+  canRemoveSubtest?: (subtestId: string) => boolean;
 }
 
 const cellInput =
@@ -97,6 +99,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
   metrics = ALL_METRICS,
   sortable = false,
   onRemoveSubtest,
+  canRemoveSubtest = () => true,
 }) => {
   const readOnly = !onChange;
   const { index } = useCatalog();
@@ -125,7 +128,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
       <td className="py-2 px-1 text-center">
         <div className="flex items-center justify-center gap-1">
           <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${filled ? 'bg-emerald-400' : 'bg-[var(--border-color)]'}`} />
-          {onRemoveSubtest && (
+          {onRemoveSubtest && canRemoveSubtest(subtestId) && (
             <button
               type="button"
               onClick={() => onRemoveSubtest(subtestId)}

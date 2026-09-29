@@ -29,3 +29,19 @@ describe('ScoreTable : retrait d’un sous-test (#41)', () => {
     expect(screen.queryByRole('button', { name: 'Retirer cette épreuve' })).toBeNull();
   });
 });
+
+describe('ScoreTable : retrait conditionnel par ligne (#48)', () => {
+  it('canRemoveSubtest limite la croix aux lignes autorisées', () => {
+    render(
+      <ScoreTable
+        testId="bhk"
+        subtests={bhk.subtests}
+        scores={{}}
+        onChange={() => {}}
+        onRemoveSubtest={() => {}}
+        canRemoveSubtest={(id) => id === bhk.subtests[1].id}
+      />,
+    );
+    expect(screen.getAllByRole('button', { name: 'Retirer cette épreuve' })).toHaveLength(1);
+  });
+});

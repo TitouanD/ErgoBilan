@@ -5,6 +5,8 @@
  * in the metric the previous assessment used so both sides compare directly.
  * The new scores start empty (see `buildEmptyTestsFrom`): a subtest that is not
  * re-measured stays "non mesuré" instead of producing a fake 0 delta.
+ * A subtest without previous score was added by mistake and can be removed:
+ * it then leaves both sides (see `reevaluationSubtestIds`, #48).
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -14,6 +16,7 @@ import { useCatalog } from '../../../contexts/CatalogContext';
 import { resolveTestDef } from '../../../utils/catalogIndex';
 import { type ScoreMetric, unitToMetric } from '../../../utils/scoring';
 import { compareSubtestsForDisplay } from '../../../utils/subtestOrdering';
+import { canRemoveReevaluationSubtest, reevaluationSubtestIds, removeReevaluationSubtest } from '../../../utils/reevaluationHelpers';
 import { ScoreTable } from '../shared/ScoreTable';
 import { StepNavFooter } from '../shared/StepNavFooter';
 
@@ -55,6 +58,11 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
     [tests, updateTests],
   );
 
+  const handleRemoveSubtest = useCallback(
+    (testId: string, subId: string) => updateTests(removeReevaluationSubtest(tests, previousTests, testId, subId)),
+    [tests, previousTests, updateTests],
+  );
+
   const handleUpdateSubtest = useCallback(
     (testId: string, subId: string, patch: Partial<ScoreResult>) => {
       updateTests({ ...tests, [testId]: { ...tests[testId], [subId]: { ...(tests[testId]?.[subId] ?? {}), ...patch } } });
@@ -71,8 +79,8 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
         </h2>
         {formattedDate && (
           <p className="text-[var(--text-secondary)] font-medium mt-2">
-            Comparaison avec le bilan du <strong>{formattedDate}</strong>. Saisissez les nouveaux scores à droite ; une épreuve non repassée reste « non
-            mesurée ».
+            Comparaison avec le bilan du <strong>{formattedDate}</strong>. Saisissez les nouveaux scores à droite ; une épreuve non repassée
+            reste « non mesurée ».
           </p>
         )}
       </div>
@@ -88,7 +96,8 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
         {testIds.map((testId) => {
           const prevScores = previousTests[testId] ?? {};
           const test = resolveTestDef(index, testId, Object.keys(prevScores));
-          const subtests = test.subtests.filter((st) => st.id in prevScores).sort(compareSubtestsForDisplay);
+          const shownIds = new Set(reevaluationSubtestIds(prevScores, tests[testId]));
+          const subtests = test.subtests.filter((st) => shownIds.has(st.id)).sort(compareSubtestsForDisplay);
           if (subtests.length === 0) return null;
           const metrics = [dominantMetric(prevScores)];
 
@@ -131,6 +140,8 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
                     scores={tests[testId]}
                     metrics={metrics}
                     onChange={(subId, patch) => handleUpdateSubtest(testId, subId, patch)}
+                    onRemoveSubtest={(subId) => handleRemoveSubtest(testId, subId)}
+                    canRemoveSubtest={(subId) => canRemoveReevaluationSubtest(prevScores, subId)}
                   />
                 </div>
               </div>

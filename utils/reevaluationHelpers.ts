@@ -8,9 +8,10 @@
  * When a z-score cannot be computed (unknown scale), no trend is shown.
  */
 
-import type { TestData } from '../types';
+import type { ScoreResult, TestData } from '../types';
 import type { CatalogIndex } from './catalogIndex';
 import { type Metric, describeScore, formatMetricValue, resolveScores } from './resolvedScore';
+import { hasScoreValue } from './scoring';
 
 /** Metric shown in the delta table — the one typed in the previous assessment. */
 export type DeltaMetric = Metric;
@@ -46,6 +47,31 @@ export const trendFromZDelta = (zDelta: number | null): Trend | null => {
 };
 
 export const TREND_LABEL: Record<Trend, string> = { improved: 'amélioration', stable: 'stable', declined: 'régression' };
+
+/**
+ * A re-evaluation subtest can be removed only when the previous assessment has
+ * no score for it: it was added by mistake. A subtest with a previous score
+ * stays, so that it shows as "non mesuré" instead of vanishing (#48).
+ */
+export const canRemoveReevaluationSubtest = (prevScores: Record<string, ScoreResult> | undefined, subtestId: string): boolean =>
+  !hasScoreValue(prevScores?.[subtestId]);
+
+/**
+ * Subtests of the previous assessment shown on both sides of the re-evaluation
+ * (same list left and right, so the rows stay aligned): every subtest with a
+ * previous score, plus those without one that were not removed from the new scores.
+ */
+export const reevaluationSubtestIds = (
+  prevScores: Record<string, ScoreResult> | undefined,
+  newScores: Record<string, ScoreResult> | undefined,
+): string[] => Object.keys(prevScores ?? {}).filter((id) => !canRemoveReevaluationSubtest(prevScores, id) || id in (newScores ?? {}));
+
+/** New scores without `subtestId`; unchanged when the subtest has a previous score (see `canRemoveReevaluationSubtest`). */
+export const removeReevaluationSubtest = (tests: TestData, previousTests: TestData, testId: string, subtestId: string): TestData => {
+  if (!canRemoveReevaluationSubtest(previousTests[testId], subtestId) || !tests[testId]) return tests;
+  const { [subtestId]: _removed, ...rest } = tests[testId];
+  return { ...tests, [testId]: rest };
+};
 
 export const buildDeltaEntries = (previousTests: TestData, newTests: TestData, index: CatalogIndex): DeltaEntry[] => {
   const entries: DeltaEntry[] = [];
