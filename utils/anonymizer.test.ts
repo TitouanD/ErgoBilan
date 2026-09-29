@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Patient } from '../types';
-import { anonymizeDeep, anonymizeText, hydrateReport } from './anonymizer';
+import { anonymizeDeep, anonymizeText, createAnonymization, hydrateReport } from './anonymizer';
 
 const patient = {
   firstName: 'Ali',
@@ -61,5 +61,36 @@ describe('hydrateReport', () => {
   it('round-trips', () => {
     const text = 'Ali et Sophie Martin sont venus.';
     expect(hydrateReport(anonymizeText(text, patient), patient)).toBe(text);
+  });
+});
+
+describe('createAnonymization', () => {
+  const now = new Date(2026, 8, 29);
+
+  it('masks precise dates with their distance, keeps years and scores', () => {
+    const deep = (text: string) => createAnonymization(patient, now).deep(text);
+    expect(deep('Suivi le 12/01/2025, le 2026-02-10, en 03/2026, le 1er mars 2024, en août 2022, en 2021, score 12/15.')).toBe(
+      'Suivi le {{DATE_1}} (il y a 1 an et 8 mois), le {{DATE_2}} (il y a 7 mois), en {{DATE_3}} (il y a 6 mois), le {{DATE_4}} (il y a 2 ans et 6 mois), en {{DATE_5}} (il y a 4 ans et 1 mois), en 2021, score 12/15.',
+    );
+    expect(deep('Prochain bilan en 11/2026, ce mois : 09/2026. Pas une date : 13/2026.')).toBe(
+      'Prochain bilan en {{DATE_1}} (dans 2 mois), ce mois : {{DATE_2}} (ce mois-ci). Pas une date : 13/2026.',
+    );
+  });
+
+  it('numbers the same date once and re-hydrates it, with or without the distance', () => {
+    const a = createAnonymization(patient, now);
+    expect(a.deep({ x: 'Le 12/01/2025.', y: ['Depuis le 12/01/2025'] })).toEqual({
+      x: 'Le {{DATE_1}} (il y a 1 an et 8 mois).',
+      y: ['Depuis le {{DATE_1}} (il y a 1 an et 8 mois)'],
+    });
+    expect(a.hydrate('{{PATIENT_PRENOM}} : {{DATE_1}} (il y a 1 an et 8 mois), puis {{DATE_1}}. {{DATE_9}}')).toBe(
+      'Ali : 12/01/2025, puis 12/01/2025. ',
+    );
+  });
+
+  it('masks the words chosen by the practitioner', () => {
+    const a = createAnonymization({ ...patient, aiMaskedTerms: ['Titi'] } as Patient, now);
+    expect(a.deep('titi et Titi')).toBe('{{PERSONNE_1}} et {{PERSONNE_1}}');
+    expect(a.hydrate('{{PERSONNE_1}} et {{PERSONNE_2}}')).toBe('Titi et cette personne');
   });
 });

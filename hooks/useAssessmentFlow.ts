@@ -1,28 +1,23 @@
 /**
  * useAssessmentFlow — AI generation, finalization and "save & quit" for the
  * assessment in progress (initial, re-evaluation and historical flows): the
- * lifecycle itself is in utils/assessmentInProgress.ts; this hook
- * adds the AI calls, the auth checks, the toasts and the list refresh.
+ * lifecycle itself is in utils/assessmentInProgress.ts and the AI calls in
+ * utils/reportGenerator.ts (payload, anonymization, re-hydration); this hook
+ * adds the suspect-word choices, the auth checks, the toasts and the list refresh.
  *
- * Everything sent to the AI goes through `anonymizeDeep` as a whole payload.
- * In demo mode nothing leaves the browser: generations are simulated.
+ * In demo mode nothing leaves the browser: the demo generator simulates the answers.
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { AIService, describeGenerationError } from '../services/ai';
-import { callAIProxyTask } from '../services/aiProxy';
+import { describeGenerationError, getReportGenerator } from '../services/ai';
 import { ensureFreshSession } from '../services/db';
 import type { AssessmentContextType } from '../contexts/AssessmentContext';
-import type { Patient, PractitionerProfile, ReportSection } from '../types';
-import { anonymizeDeep } from '../utils/anonymizer';
-import { buildInitialReportPayload, buildReevaluationPayload } from '../utils/aiPayload';
+import type { Patient, PractitionerProfile } from '../types';
 import type { CatalogIndex } from '../utils/catalogIndex';
-import { buildDeltaEntries } from '../utils/reevaluationHelpers';
-import { htmlToPlainText, sectionToPlainText } from '../utils/reportContent';
-import { DEMO_REEVALUATION_SECTIONS, DEMO_SECTIONS } from '../data/demoReport';
+import { findInitialSuspectTerms, findReevaluationSuspectTerms } from '../utils/reportGenerator';
+import { type SuspectTermDecisions, applySuspectTermDecisions } from '../utils/suspectTerms';
 import { Logger } from '../utils/logger';
 
-const DEMO_GENERATION_DELAY_MS = 2_500;
 const EXPECTED_GENERATION_ERRORS = new Set(['CREDIT_INSUFFICIENT', 'RATE_LIMITED', 'SESSION_EXPIRED']);
 
 interface Toast {
@@ -48,20 +43,6 @@ const IDENTITY_ERRORS = {
 } as const;
 const FINALIZE_ERRORS = { ...IDENTITY_ERRORS, 'save-failed': "Erreur lors de l'enregistrement du bilan." } as const;
 const SAVE_ERRORS = { ...IDENTITY_ERRORS, error: 'Impossible de sauvegarder le brouillon.' } as const;
-
-/**
- * Section ids known by the style-feedback schema (edge `extract_style_feedback`).
- * Re-evaluation recommendations share the rules of the initial ones; the other
- * re-evaluation sections have no dedicated slot and only feed the global rules.
- */
-const STYLE_SECTION_ALIASES: Record<string, string> = { recommandations_reev: 'recommandations' };
-
-const buildStyleDiffs = (sections: ReportSection[], patient: Patient) =>
-  sections
-    .filter((s) => s.isAiGenerated && s.originalContent)
-    .map((s) => ({ s, original: htmlToPlainText(s.originalContent!), corrected: sectionToPlainText(s) }))
-    .filter(({ original, corrected }) => original !== corrected)
-    .map(({ s, original, corrected }) => anonymizeDeep({ sectionId: STYLE_SECTION_ALIASES[s.id] ?? s.id, original, corrected }, patient));
 
 export const useAssessmentFlow = ({
   assessment,
@@ -99,54 +80,78 @@ export const useAssessmentFlow = ({
     }
   }, []);
 
-  const simulate = () => new Promise((resolve) => setTimeout(resolve, DEMO_GENERATION_DELAY_MS));
+  const generator = getReportGenerator(isDemoMode);
+
+  /** The patient with the practitioner's choices on the suspect words, kept on the patient file. */
+  const withDecisions = useCallback(
+    (decisions?: SuspectTermDecisions): Patient => {
+      const { patient } = assessment;
+      if (!decisions || (decisions.masked.length === 0 && decisions.allowed.length === 0)) return patient;
+      const terms = applySuspectTermDecisions(patient, decisions);
+      assessment.updatePatient(terms);
+      return { ...patient, ...terms };
+    },
+    [assessment],
+  );
+
+  /** Words of the free text that may still identify someone, to confirm before the generation. */
+  const findSuspectTerms = useCallback((): string[] => {
+    const { patient, observations, tests, synthesis, previousAssessment, reportType } = assessment;
+    return reportType === 'reevaluation'
+      ? findReevaluationSuspectTerms({ patient, previousAssessment, tests, index: catalogIndex })
+      : findInitialSuspectTerms({ patient, observations, tests, synthesis, index: catalogIndex });
+  }, [assessment, catalogIndex]);
 
   /** Initial report: sections + AI-reformulated subtest observations. Moves to the validation step. */
-  const generateInitialReport = useCallback(async () => {
-    let applied = false;
-    const ok = await runGeneration(async () => {
-      const ticket = assessment.beginGeneration();
-      if (isDemoMode) {
-        await simulate();
-        applied = assessment.applyGeneratedReport(ticket, { sections: DEMO_SECTIONS });
-        return;
+  const generateInitialReport = useCallback(
+    async (decisions?: SuspectTermDecisions) => {
+      let applied = false;
+      const ok = await runGeneration(async () => {
+        const patient = withDecisions(decisions);
+        const ticket = assessment.beginGeneration();
+        const { observations, tests, synthesis } = assessment;
+        const report = await generator.generateInitial({
+          patient,
+          observations,
+          tests,
+          synthesis,
+          index: catalogIndex,
+          stylePreferences: practitioner?.aiStylePreferences,
+        });
+        applied = assessment.applyGeneratedReport(ticket, report);
+        if (!isDemoMode) void refreshProfile();
+      });
+      if (ok && applied) {
+        assessment.setStep(4);
+        toast.success(isDemoMode ? 'Rapport généré (simulation)' : 'Rapport généré avec succès');
       }
-      const { patient, observations, tests, synthesis } = assessment;
-      const payload = anonymizeDeep(buildInitialReportPayload({ patient, observations, tests, synthesis, index: catalogIndex }), patient);
-      const report = await AIService.generateInitialReport(payload, patient, practitioner?.aiStylePreferences);
-      applied = assessment.applyGeneratedReport(ticket, report);
-      void refreshProfile();
-    });
-    if (ok && applied) {
-      assessment.setStep(4);
-      toast.success(isDemoMode ? 'Rapport généré (simulation)' : 'Rapport généré avec succès');
-    }
-  }, [assessment, catalogIndex, isDemoMode, practitioner, refreshProfile, runGeneration, toast]);
+    },
+    [assessment, catalogIndex, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
+  );
 
   /** Re-evaluation: 4 HTML sections (reminder, evolution, conclusion, recommendations). */
-  const generateReevaluation = useCallback(async (): Promise<boolean> => {
-    let applied = false;
-    const ok = await runGeneration(async () => {
-      const ticket = assessment.beginGeneration();
-      if (isDemoMode) {
-        await simulate();
-        applied = assessment.applyGeneratedReport(ticket, { sections: DEMO_REEVALUATION_SECTIONS });
-        return;
-      }
-      const { patient, previousAssessment, tests } = assessment;
-      const previousTests = previousAssessment?.tests ?? {};
-      const deltas = buildDeltaEntries(previousTests, tests, catalogIndex);
-      const payload = anonymizeDeep(
-        buildReevaluationPayload({ patient, previousAssessment, previousTests, newTests: tests, deltas, index: catalogIndex }),
-        patient,
-      );
-      const sections = await AIService.generateReevaluation(payload, patient, practitioner?.aiStylePreferences);
-      applied = assessment.applyGeneratedReport(ticket, { sections });
-      void refreshProfile();
-    });
-    if (ok && applied) toast.success(isDemoMode ? 'Synthèse générée (simulation)' : 'Synthèse générée — relisez et ajustez si besoin.');
-    return ok && applied;
-  }, [assessment, catalogIndex, isDemoMode, practitioner, refreshProfile, runGeneration, toast]);
+  const generateReevaluation = useCallback(
+    async (decisions?: SuspectTermDecisions): Promise<boolean> => {
+      let applied = false;
+      const ok = await runGeneration(async () => {
+        const patient = withDecisions(decisions);
+        const ticket = assessment.beginGeneration();
+        const { previousAssessment, tests } = assessment;
+        const sections = await generator.generateReevaluation({
+          patient,
+          previousAssessment,
+          tests,
+          index: catalogIndex,
+          stylePreferences: practitioner?.aiStylePreferences,
+        });
+        applied = assessment.applyGeneratedReport(ticket, { sections });
+        if (!isDemoMode) void refreshProfile();
+      });
+      if (ok && applied) toast.success(isDemoMode ? 'Synthèse générée (simulation)' : 'Synthèse générée — relisez et ajustez si besoin.');
+      return ok && applied;
+    },
+    [assessment, catalogIndex, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
+  );
 
   /** Writes need the app unlocked and a fresh Supabase session (demo: nothing is written). */
   const prepareWrite = useCallback(async (): Promise<boolean> => {
@@ -179,10 +184,15 @@ export const useAssessmentFlow = ({
       const isHistorical = result.reportType === 'historique';
 
       // Style feedback loop: learn from the practitioner's corrections (fire-and-forget, no credit).
-      const diffs = isHistorical ? [] : buildStyleDiffs(result.sections, result.patient);
-      if (diffs.length > 0) {
-        callAIProxyTask({ task: 'extract_style_feedback', payload: { diffs, existingPreferences: practitioner?.aiStylePreferences || '' } })
-          .then(() => refreshProfile())
+      if (!isHistorical) {
+        generator
+          .learnStyle({
+            patient: result.patient,
+            sections: result.sections,
+            index: catalogIndex,
+            existingPreferences: practitioner?.aiStylePreferences,
+          })
+          .then((sent) => (sent ? refreshProfile() : undefined))
           .catch((err) => Logger.warn('AI', 'Style feedback extraction failed (non-blocking)', err));
       }
 
@@ -194,7 +204,7 @@ export const useAssessmentFlow = ({
       toast.error("Erreur lors de l'enregistrement du bilan.");
       return false;
     }
-  }, [assessment, catalogIndex, loadData, prepareWrite, practitioner, refreshProfile, toast]);
+  }, [assessment, catalogIndex, generator, loadData, prepareWrite, practitioner, refreshProfile, toast]);
 
   /** Save a draft and leave. Returns true when the caller can go back to the dashboard. */
   const saveAndQuit = useCallback(async (): Promise<boolean> => {
@@ -218,6 +228,7 @@ export const useAssessmentFlow = ({
     isGenerating,
     generationError,
     clearGenerationError: () => setGenerationError(null),
+    findSuspectTerms,
     generateInitialReport,
     generateReevaluation,
     finalize,

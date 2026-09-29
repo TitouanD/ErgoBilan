@@ -19,6 +19,7 @@ import { Step1Admin } from './initial/Step1Admin';
 import { GenerationLoader } from '../shared/GenerationLoader';
 import { CriticalErrorModal } from '../shared/CriticalErrorModal';
 import { ConfirmModal } from '../shared/ConfirmModal';
+import { SuspectTermsReview, useSuspectTermChoices } from '../shared/SuspectTermsReview';
 
 const ScorePage = React.lazy(() => import('./pages/ScorePage').then((m) => ({ default: m.ScorePage })));
 const ValidationPage = React.lazy(() => import('./pages/ValidationPage').then((m) => ({ default: m.ValidationPage })));
@@ -52,7 +53,9 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
   const { userProfile, isDemoMode, updateBranding } = useAuth();
   const [stepperTarget, setStepperTarget] = useState<number | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-  const [showGenerationConfirm, setShowGenerationConfirm] = useState(false);
+  /** Suspect words of the confirmation before the initial report; null while it is closed. */
+  const [generationConfirmTerms, setGenerationConfirmTerms] = useState<string[] | null>(null);
+  const termChoices = useSuspectTermChoices(generationConfirmTerms ?? []);
   const [loaderDismissed, setLoaderDismissed] = useState(false);
 
   const { reportType, step, setStep } = assessment;
@@ -155,7 +158,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
                 updateSynthesis={assessment.updateSynthesis}
                 tests={assessment.tests}
                 patient={assessment.patient}
-                onNext={() => (hasCredits ? setShowGenerationConfirm(true) : onShowPricing('paywall'))}
+                onNext={() => (hasCredits ? setGenerationConfirmTerms(flow.findSuspectTerms()) : onShowPricing('paywall'))}
                 onBack={() => setStep(2)}
                 isGenerating={flow.isGenerating}
               />
@@ -191,6 +194,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
                 sections={assessment.sections}
                 onSetSections={assessment.setSections}
                 onGenerate={flow.generateReevaluation}
+                findSuspectTerms={flow.findSuspectTerms}
                 isGenerating={flow.isGenerating}
                 hasCredits={hasCredits}
                 isDemoMode={isDemoMode}
@@ -284,7 +288,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
         onCancel={() => setShowQuitConfirm(false)}
       />
 
-      {showGenerationConfirm && (
+      {generationConfirmTerms && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--card-bg)] p-8 rounded-[32px] max-w-md text-center shadow-2xl border border-[var(--border-color)]">
             <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]">
@@ -294,6 +298,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             <p className="text-[var(--text-secondary)] text-sm mb-4 font-medium leading-relaxed">
               La qualité du rapport dépend de la précision de vos observations et du diagnostic posé. Avez-vous tout relu ?
             </p>
+            <SuspectTermsReview terms={generationConfirmTerms} isMasked={termChoices.isMasked} onToggle={termChoices.toggle} />
             <div className="bg-[var(--card-bg-raised)] p-3 rounded-xl mb-8 border border-[var(--border-color)] flex gap-2 text-left">
               <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
               <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
@@ -302,7 +307,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             </div>
             <div className="flex gap-4">
               <button
-                onClick={() => setShowGenerationConfirm(false)}
+                onClick={() => setGenerationConfirmTerms(null)}
                 className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-xs uppercase tracking-wider"
               >
                 Retourner ajouter des détails
@@ -310,8 +315,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
               <button
                 id="demo-btn-generate"
                 onClick={() => {
-                  setShowGenerationConfirm(false);
-                  void flow.generateInitialReport();
+                  setGenerationConfirmTerms(null);
+                  void flow.generateInitialReport(termChoices.decisions);
                 }}
                 className="flex-1 py-3 bg-[#E07A5F] text-white rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-[#d0694e] hover:-translate-y-1 transition-all"
               >
