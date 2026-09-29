@@ -13,8 +13,6 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { FileText, Loader2, ShieldCheck } from 'lucide-react';
 import { useAssessment } from '../../contexts/AssessmentContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { StorageService } from '../../services/storage';
-import { Logger } from '../../utils/logger';
 import type { useAssessmentFlow } from '../../hooks/useAssessmentFlow';
 import { AssessmentStepper } from './shared/AssessmentStepper';
 import { Step1Admin } from './initial/Step1Admin';
@@ -84,18 +82,13 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
   const handleQuit = () => {
     const hasData = Boolean(assessment.patient.firstName || assessment.patient.lastName || assessment.patient.dob);
     if (hasData) return setShowQuitConfirm(true);
-    assessment.resetAssessment();
+    void assessment.discard();
     onExit();
   };
 
   const handleQuitDiscard = async () => {
     setShowQuitConfirm(false);
-    const patientId = assessment.patient.id;
-    assessment.resetAssessment();
-    if (patientId && !isDemoMode) {
-      await StorageService.deleteDraft(patientId).catch((e) => Logger.error('DB', 'Draft discard failed', e, { patientId }));
-      void loadData();
-    }
+    if (await assessment.discard()) void loadData();
     onExit();
   };
 

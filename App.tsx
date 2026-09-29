@@ -20,7 +20,8 @@ import { setAppTag, setAppUser } from './services/sentryService';
 import { getDaysSinceBackup } from './utils/backupTracking';
 import { useDataLoader } from './hooks/useDataLoader';
 import { useAssessmentFlow } from './hooks/useAssessmentFlow';
-import { isStaleDraft, useAssessmentLauncher } from './hooks/useAssessmentLauncher';
+import { useAssessmentLauncher } from './hooks/useAssessmentLauncher';
+import { isStaleDraft } from './utils/assessmentSession';
 import { useLinkManager } from './hooks/useLinkManager';
 import { usePendingProcessor } from './hooks/usePendingProcessor';
 import { Dashboard } from './components/dashboard/Dashboard';
@@ -106,7 +107,7 @@ const AppRouter = () => {
   } = useDataLoader({ sessionKey, authState, practitioner, isDemoMode });
 
   const flow = useAssessmentFlow({ assessment, sessionKey, isDemoMode, catalogIndex, practitioner, refreshProfile, loadData, toast });
-  const launcher = useAssessmentLauncher({ assessment, isDemoMode, ensureCatalogLoaded, patientFiles, draftsIndex, toast });
+  const launcher = useAssessmentLauncher({ assessment, patientFiles, draftsIndex, toast });
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
     practitioner,

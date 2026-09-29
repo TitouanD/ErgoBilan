@@ -8,9 +8,8 @@
  */
 import React, { useState } from 'react';
 import type { Patient } from '../../../types';
-import { isPatientCreationReady, getPatientAgeForIdentity } from '../../../utils/patient';
+import { isPatientCreationReady } from '../../../utils/patient';
 import { History, ArrowRight, Loader2 } from 'lucide-react';
-import { StorageService } from '../../../services/storage';
 import { Logger } from '../../../utils/logger';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAssessment } from '../../../contexts/AssessmentContext';
@@ -30,7 +29,7 @@ export const HistoricalPatientForm: React.FC<Props> = ({
     onPatientCreated,
 }) => {
     const toast = useToast();
-    const { historicalDate, setHistoricalDate, ensurePatientId } = useAssessment();
+    const { historicalDate, setHistoricalDate, ensurePatient } = useAssessment();
     const [isSaving, setIsSaving] = useState(false);
 
     const handleNext = async () => {
@@ -45,17 +44,8 @@ export const HistoricalPatientForm: React.FC<Props> = ({
 
         setIsSaving(true);
         try {
-            const patientId = await ensurePatientId(data);
-            if (!patientId) throw new Error('PATIENT_CREATION_FAILED');
-            const patientSnapshot: Patient = {
-                ...data,
-                id: patientId,
-                age: getPatientAgeForIdentity(data),
-            };
-            if (data.id !== patientId || data.age !== patientSnapshot.age) {
-                updateData({ id: patientId, age: patientSnapshot.age });
-            }
-            await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot);
+            const result = await ensurePatient({ syncPreview: true });
+            if (!result.ok) throw new Error(result.reason);
             onPatientCreated();
             onNext();
         } catch (e) {

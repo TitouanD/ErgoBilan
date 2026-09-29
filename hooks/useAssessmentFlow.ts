@@ -1,6 +1,8 @@
 /**
  * useAssessmentFlow — AI generation, finalization and "save & quit" for the
- * assessment in progress (initial, re-evaluation and historical flows).
+ * assessment in progress (initial, re-evaluation and historical flows): the
+ * lifecycle itself is in the session (utils/assessmentSession.ts); this hook
+ * adds the AI calls, the auth checks, the toasts and the list refresh.
  *
  * Everything sent to the AI goes through `anonymizeDeep` as a whole payload.
  * In demo mode nothing leaves the browser: generations are simulated.
@@ -9,21 +11,17 @@
 import { useCallback, useRef, useState } from 'react';
 import { AIService, describeGenerationError } from '../services/ai';
 import { callAIProxyTask } from '../services/aiProxy';
-import { StorageService } from '../services/storage';
 import { ensureFreshSession } from '../services/db';
 import type { AssessmentContextType } from '../contexts/AssessmentContext';
-import type { Patient, PractitionerProfile, ReportSection, TestData } from '../types';
+import type { Patient, PractitionerProfile, ReportSection } from '../types';
 import { anonymizeDeep } from '../utils/anonymizer';
 import { buildInitialReportPayload, buildReevaluationPayload } from '../utils/aiPayload';
-import { buildAssessmentRecord } from '../utils/assessment';
 import type { CatalogIndex } from '../utils/catalogIndex';
-import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils/patient';
 import { buildDeltaEntries } from '../utils/reevaluationHelpers';
 import { htmlToPlainText, sectionToPlainText } from '../utils/reportContent';
 import { DEMO_REEVALUATION_SECTIONS, DEMO_SECTIONS } from '../data/demoReport';
 import { Logger } from '../utils/logger';
 
-const FOLLOWUP_DELAY_MONTHS = 6;
 const DEMO_GENERATION_DELAY_MS = 2_500;
 const EXPECTED_GENERATION_ERRORS = new Set(['CREDIT_INSUFFICIENT', 'RATE_LIMITED', 'SESSION_EXPIRED']);
 
@@ -44,13 +42,13 @@ interface Params {
   toast: Toast;
 }
 
-const addMonths = (iso: string, months: number): string => {
-  const d = new Date(iso);
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString();
-};
+const IDENTITY_ERRORS = {
+  'identity-incomplete': 'Nom, prénom et date de naissance requis.',
+  'creation-failed': 'Impossible de créer le dossier patient.',
+} as const;
+const FINALIZE_ERRORS = { ...IDENTITY_ERRORS, 'save-failed': "Erreur lors de l'enregistrement du bilan." } as const;
+const SAVE_ERRORS = { ...IDENTITY_ERRORS, error: 'Impossible de sauvegarder le brouillon.' } as const;
 
-/** Sections the practitioner edited after generation (anonymized), for the style feedback loop. */
 /**
  * Section ids known by the style-feedback schema (edge `extract_style_feedback`).
  * Re-evaluation recommendations share the rules of the initial ones; the other
@@ -65,9 +63,17 @@ const buildStyleDiffs = (sections: ReportSection[], patient: Patient) =>
     .filter(({ original, corrected }) => original !== corrected)
     .map(({ s, original, corrected }) => anonymizeDeep({ sectionId: STYLE_SECTION_ALIASES[s.id] ?? s.id, original, corrected }, patient));
 
-export const useAssessmentFlow = ({ assessment, sessionKey, isDemoMode, catalogIndex, practitioner, refreshProfile, loadData, toast }: Params) => {
+export const useAssessmentFlow = ({
+  assessment,
+  sessionKey,
+  isDemoMode,
+  catalogIndex,
+  practitioner,
+  refreshProfile,
+  loadData,
+  toast,
+}: Params) => {
   const [isGenerating, setIsGenerating] = useState(false);
-  const finalizingRef = useRef(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const busyRef = useRef(false);
 
@@ -97,34 +103,21 @@ export const useAssessmentFlow = ({ assessment, sessionKey, isDemoMode, catalogI
 
   /** Initial report: sections + AI-reformulated subtest observations. Moves to the validation step. */
   const generateInitialReport = useCallback(async () => {
+    let applied = false;
     const ok = await runGeneration(async () => {
+      const ticket = assessment.beginGeneration();
       if (isDemoMode) {
         await simulate();
-        assessment.setSections(DEMO_SECTIONS);
+        applied = assessment.applyGeneratedReport(ticket, { sections: DEMO_SECTIONS });
         return;
       }
       const { patient, observations, tests, synthesis } = assessment;
       const payload = anonymizeDeep(buildInitialReportPayload({ patient, observations, tests, synthesis, index: catalogIndex }), patient);
-      const { sections, reformulatedObservations } = await AIService.generateInitialReport(payload, patient, practitioner?.aiStylePreferences);
-
-      if (Object.keys(reformulatedObservations).length > 0) {
-        const updated: TestData = Object.fromEntries(
-          Object.entries(tests).map(([testId, subtests]) => [
-            testId,
-            Object.fromEntries(
-              Object.entries(subtests).map(([subId, score]) => [
-                subId,
-                reformulatedObservations[subId] ? { ...score, observation: reformulatedObservations[subId] } : score,
-              ]),
-            ),
-          ]),
-        );
-        assessment.updateTests(updated);
-      }
-      assessment.setSections(sections);
+      const report = await AIService.generateInitialReport(payload, patient, practitioner?.aiStylePreferences);
+      applied = assessment.applyGeneratedReport(ticket, report);
       void refreshProfile();
     });
-    if (ok) {
+    if (ok && applied) {
       assessment.setStep(4);
       toast.success(isDemoMode ? 'Rapport généré (simulation)' : 'Rapport généré avec succès');
     }
@@ -132,10 +125,12 @@ export const useAssessmentFlow = ({ assessment, sessionKey, isDemoMode, catalogI
 
   /** Re-evaluation: 4 HTML sections (reminder, evolution, conclusion, recommendations). */
   const generateReevaluation = useCallback(async (): Promise<boolean> => {
+    let applied = false;
     const ok = await runGeneration(async () => {
+      const ticket = assessment.beginGeneration();
       if (isDemoMode) {
         await simulate();
-        assessment.setSections(DEMO_REEVALUATION_SECTIONS);
+        applied = assessment.applyGeneratedReport(ticket, { sections: DEMO_REEVALUATION_SECTIONS });
         return;
       }
       const { patient, previousAssessment, tests } = assessment;
@@ -145,128 +140,76 @@ export const useAssessmentFlow = ({ assessment, sessionKey, isDemoMode, catalogI
         buildReevaluationPayload({ patient, previousAssessment, previousTests, newTests: tests, deltas, index: catalogIndex }),
         patient,
       );
-      assessment.setSections(await AIService.generateReevaluation(payload, patient, practitioner?.aiStylePreferences));
+      const sections = await AIService.generateReevaluation(payload, patient, practitioner?.aiStylePreferences);
+      applied = assessment.applyGeneratedReport(ticket, { sections });
       void refreshProfile();
     });
-    if (ok) toast.success(isDemoMode ? 'Synthèse générée (simulation)' : 'Synthèse générée — relisez et ajustez si besoin.');
-    return ok;
+    if (ok && applied) toast.success(isDemoMode ? 'Synthèse générée (simulation)' : 'Synthèse générée — relisez et ajustez si besoin.');
+    return ok && applied;
   }, [assessment, catalogIndex, isDemoMode, practitioner, refreshProfile, runGeneration, toast]);
 
-  /** Create the local patient record if needed and return an up-to-date snapshot. */
-  const persistPatient = useCallback(async (): Promise<Patient | null> => {
-    const patient: Patient = { ...assessment.patient, age: getPatientAgeForIdentity(assessment.patient) };
-    if (!patient.id) {
-      if (!isPatientCreationReady(patient)) {
-        toast.error('Nom, prénom et date de naissance requis.');
-        return null;
-      }
-      const id = await assessment.ensurePatientId(patient);
-      if (!id) {
-        toast.error('Impossible de créer le dossier patient.');
-        return null;
-      }
-      patient.id = id;
-      assessment.updatePatient({ id, age: patient.age });
-    }
-    return patient;
-  }, [assessment, toast]);
-
   /**
-   * Save the assessment as a formal record, schedule the next follow-up, send
-   * the style feedback (edited AI sections) and clean the draft.
-   * Returns true when the caller can go back to the dashboard.
+   * Save the assessment as a formal record, then send the style feedback
+   * (edited AI sections) and refresh the lists. Returns true when the caller
+   * can go back to the dashboard.
    */
   const finalize = useCallback(async (): Promise<boolean> => {
-    if (isDemoMode) {
-      assessment.resetAssessment();
-      toast.success('Bilan validé (démo, rien n’est enregistré).');
-      return true;
-    }
-    if (!sessionKey) {
+    if (!isDemoMode && !sessionKey) {
       toast.error("L'application est verrouillée : déverrouillez-la puis réessayez.");
       return false;
     }
-    if (finalizingRef.current) return false; // double click
-    finalizingRef.current = true;
     try {
-      await ensureFreshSession();
-      const patient = await persistPatient();
-      if (!patient?.id) return false;
-      const { reportType, historicalDate, tests, sections, previousAssessment } = assessment;
-      const isHistorical = reportType === 'historique';
-      const date = isHistorical && historicalDate ? historicalDate : new Date().toISOString();
-
-      const record = buildAssessmentRecord({
-        // A historical import is the initial assessment done outside the app.
-        kind: reportType === 'reevaluation' ? 'reevaluation' : 'initial',
-        date,
-        tests,
-        sections,
-        patientName: `${patient.firstName} ${patient.lastName}`.trim(),
-        previousAssessmentId: reportType === 'reevaluation' ? previousAssessment?.id : undefined,
-        index: catalogIndex,
-      });
-      await StorageService.addAssessment(patient, record);
-
-      // Next re-evaluation reminder, 6 months after this assessment (best effort).
-      try {
-        await StorageService.upsertPatientFollowup({
-          patientId: patient.id,
-          status: 'upcoming',
-          dueAt: addMonths(date, FOLLOWUP_DELAY_MONTHS),
-          note: reportType === 'reevaluation' ? 'Rappel généré après réévaluation' : 'Rappel généré après bilan initial',
-        });
-      } catch (e) {
-        Logger.warn('DB', 'Follow-up update failed (non-blocking)', e);
+      if (!isDemoMode) await ensureFreshSession();
+      const result = await assessment.finalize(catalogIndex);
+      if (!result.ok) {
+        if (result.reason !== 'busy') toast.error(FINALIZE_ERRORS[result.reason]);
+        return false;
       }
+      if (result.demo) {
+        toast.success('Bilan validé (démo, rien n’est enregistré).');
+        return true;
+      }
+      const isHistorical = result.reportType === 'historique';
 
       // Style feedback loop: learn from the practitioner's corrections (fire-and-forget, no credit).
-      const diffs = isHistorical ? [] : buildStyleDiffs(sections, patient);
+      const diffs = isHistorical ? [] : buildStyleDiffs(result.sections, result.patient);
       if (diffs.length > 0) {
         callAIProxyTask({ task: 'extract_style_feedback', payload: { diffs, existingPreferences: practitioner?.aiStylePreferences || '' } })
           .then(() => refreshProfile())
           .catch((err) => Logger.warn('AI', 'Style feedback extraction failed (non-blocking)', err));
       }
 
-      // Reset first: cancels any pending autosave so the draft is not re-created after deletion.
-      assessment.resetAssessment();
-      await StorageService.deleteDraft(patient.id);
-      await loadData();
+      await loadData().catch((e) => Logger.warn('DB', 'List refresh after finalization failed', e));
       toast.success(isHistorical ? 'Bilan de référence enregistré. La réévaluation est maintenant disponible.' : 'Bilan sauvegardé.');
       return true;
     } catch (e) {
       Logger.error('DB', 'Finalization failed', e);
       toast.error("Erreur lors de l'enregistrement du bilan.");
       return false;
-    } finally {
-      finalizingRef.current = false;
     }
-  }, [assessment, catalogIndex, isDemoMode, loadData, persistPatient, practitioner, refreshProfile, sessionKey, toast]);
+  }, [assessment, catalogIndex, isDemoMode, loadData, practitioner, refreshProfile, sessionKey, toast]);
 
   /** Save a draft and leave. Returns true when the caller can go back to the dashboard. */
   const saveAndQuit = useCallback(async (): Promise<boolean> => {
-    if (isDemoMode) {
-      assessment.resetAssessment();
-      return true;
-    }
-    if (!sessionKey) {
+    if (!isDemoMode && !sessionKey) {
       toast.error("L'application est verrouillée : déverrouillez-la puis réessayez.");
       return false;
     }
     try {
-      await ensureFreshSession();
-      const patient = await persistPatient();
-      if (!patient) return false;
-      await StorageService.saveDraft(assessment.buildDraft(patient));
-      assessment.resetAssessment();
-      toast.success('Brouillon sauvegardé');
+      if (!isDemoMode) await ensureFreshSession();
+      const result = await assessment.saveAndClose();
+      if (!result.ok) {
+        toast.error(SAVE_ERRORS[result.reason]);
+        return false;
+      }
+      if (!isDemoMode) toast.success('Brouillon sauvegardé');
       return true;
     } catch (e) {
       Logger.error('DB', 'Save error', e);
       toast.error('Impossible de sauvegarder le brouillon.');
       return false;
     }
-  }, [assessment, isDemoMode, persistPatient, sessionKey, toast]);
+  }, [assessment, isDemoMode, sessionKey, toast]);
 
   return {
     isGenerating,

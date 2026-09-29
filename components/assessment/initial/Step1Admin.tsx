@@ -1,10 +1,9 @@
 ﻿
 import React, { useState, useCallback, useMemo } from 'react';
 import type { Patient } from '../../../types';
-import { calculateAge, getPatientAgeForIdentity, isAdministrativeSectionReady, isPatientCreationReady } from '../../../utils/patient';
+import { calculateAge, isAdministrativeSectionReady, isPatientCreationReady } from '../../../utils/patient';
 import { User, Lock, AlertTriangle, Mic, Edit3, Check, FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { SharedQuestionnaire } from '../../shared/SharedQuestionnaire';
-import { StorageService } from '../../../services/storage';
 import { Logger } from '../../../utils/logger';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAssessment } from '../../../contexts/AssessmentContext';
@@ -141,7 +140,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   };
     const [userSwitchedToReview, setUserSwitchedToReview] = useState(false);
   const toast = useToast();
-  const { ensurePatientId } = useAssessment();
+  const { ensurePatient } = useAssessment();
     const isAdministrativeReady = isAdministrativeSectionReady(data);
   
   const handleDataChange = (partialData: Partial<Patient>) => {
@@ -279,19 +278,8 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
   const ensurePatientPersisted = async (): Promise<void> => {
       if (!isPatientCreationReady(data)) throw new Error('PATIENT_REQUIRED_FIELDS_MISSING');
 
-      const patientId = await ensurePatientId(data);
-      if (!patientId) throw new Error('PATIENT_CREATION_FAILED');
-      const patientSnapshot: Patient = {
-          ...data,
-          id: patientId,
-          age: getPatientAgeForIdentity(data),
-      };
-
-      if (data.id !== patientId || data.age !== patientSnapshot.age) {
-          updateData({ id: patientId, age: patientSnapshot.age });
-      }
-
-      await StorageService.syncPatientIdentityPreview(patientId, patientSnapshot);
+      const result = await ensurePatient({ syncPreview: true });
+      if (!result.ok) throw new Error(result.reason);
       onPatientCreated();
   };
 

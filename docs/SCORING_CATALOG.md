@@ -34,7 +34,7 @@ Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogCont
 
 `contexts/CatalogContext.tsx` expose `catalog`, `index`, `loading`, `hasLoaded`, `ensureCatalogLoaded`, `reloadCatalog` et `searchTests`.
 
-- **Déclenchement** : préchargement 1,2 s après l'entrée dans l'app (`App.tsx`, utilisateur authentifié, modes `dashboard`, `detail` ou `assessment`), puis `ensureCatalogLoaded()` à l'ouverture de `ScorePage`, `TestCatalogModal`, `ReportView`, `ExportPage` et au lancement d'un parcours (`hooks/useAssessmentLauncher.ts`).
+- **Déclenchement** : préchargement 1,2 s après l'entrée dans l'app (`App.tsx`, utilisateur authentifié, modes `dashboard`, `detail` ou `assessment`), puis `ensureCatalogLoaded()` à l'ouverture de `ScorePage`, `TestCatalogModal`, `ReportView`, `ExportPage` et au lancement d'un parcours avec bilan de référence (`loadCatalog` de la session).
 - **`ensureCatalogLoaded`** ne charge qu'une fois et renvoie l'index à jour (utilisable juste après un `await`). **`reloadCatalog`** force un rechargement. Les appels simultanés sont dédoublonnés (`inFlightRef`).
 - **Sans session** (mode démo) : `DEMO_CATALOG` (`data/demoCatalog.ts`) est chargé à la place. Il reprend les vrais identifiants et échelles de la base pour `bhk`, `mabc-2` et `test-cloches`, les tests utilisés par `data/demoData.ts`. Le catalogue est vidé à la déconnexion (`SIGNED_OUT`) et à la connexion d'un vrai utilisateur s'il s'agissait du catalogue démo.
 - **Requêtes** (en parallèle) : `view_unified_catalog` (triée par `sort_order`, celui de la catégorie : l'ordre des tests dans une catégorie n'est pas garanti) et `view_unified_subtests`. En cas d'erreur, elle est journalisée et le catalogue reste en l'état ; le prochain `ensureCatalogLoaded` réessaiera.
@@ -99,7 +99,7 @@ Flux d'une valeur, de la saisie au rendu :
 ```text
 saisie NS "8" (sous-test scaled)
   → ScoreTable onChange → { value: "8", unit: "NS" }
-  → updateTests → normalizeTestData                 contexts/AssessmentContext.tsx
+  → updateTests → normalizeTestData                 utils/assessmentSession.ts
   → brouillon / bilan (JSON)                        tel quel, sans champ dérivé
      (buildAssessmentRecord retire les scores vides via pruneEmptyScores)
 affichage
@@ -108,7 +108,7 @@ affichage
       zone normal (couleur verte) ; display() = "8 NS", display('ET') = "-0.67 ET"
 ```
 
-**Compatibilité** : 14 champs legacy `@deprecated` restent déclarés dans `ScoreResult` (`raw`, `standard`, `percentile`, `zScore`, `status`, `validatedAt`, `certifiedAt`, `scoreSource`, `entryMetric`, `conversionMode`, `reviewState`, `reviewedAt`, `qualitativeCode`, `derived`) pour lire les anciens bilans ; le code n'en écrit aucun. `normalizeScoreResult` est idempotente : si `value` et `unit` sont présents, elle ne garde que les champs actuels. Sinon, la priorité est : `qualitativeCode` → `entryMetric` ou `scoreSource` (z, pct, raw) → `standard`, puis repli dans l'ordre zScore, percentile, raw. Le brut d'un score legacy qui a aussi une NS est perdu. Un brut retenu (ancien champ `raw`, ou `unit: 'raw'` enregistré avant #49) n'est plus un score : il devient le début de l'observation (`Brut : 12`). `normalizeTestData` et `normalizeFlatResults` l'appliquent à un `TestData` ou à un `results` plat. Points d'appel : `AssessmentContext` (`updateTests`, bilan précédent, reprise d'un brouillon) et `getAssessmentTests` (`utils/assessment.ts`), qui reconstruit aussi les `tests` des anciens bilans à partir de `results` (`rebuildTestsFromResults`, via `testIdBySubtestId`).
+**Compatibilité** : 14 champs legacy `@deprecated` restent déclarés dans `ScoreResult` (`raw`, `standard`, `percentile`, `zScore`, `status`, `validatedAt`, `certifiedAt`, `scoreSource`, `entryMetric`, `conversionMode`, `reviewState`, `reviewedAt`, `qualitativeCode`, `derived`) pour lire les anciens bilans ; le code n'en écrit aucun. `normalizeScoreResult` est idempotente : si `value` et `unit` sont présents, elle ne garde que les champs actuels. Sinon, la priorité est : `qualitativeCode` → `entryMetric` ou `scoreSource` (z, pct, raw) → `standard`, puis repli dans l'ordre zScore, percentile, raw. Le brut d'un score legacy qui a aussi une NS est perdu. Un brut retenu (ancien champ `raw`, ou `unit: 'raw'` enregistré avant #49) n'est plus un score : il devient le début de l'observation (`Brut : 12`). `normalizeTestData` et `normalizeFlatResults` l'appliquent à un `TestData` ou à un `results` plat. Points d'appel : la session du bilan en cours (`updateTests`, bilan de référence, reprise d'un brouillon) et `getAssessmentTests` (`utils/assessment.ts`), qui reconstruit aussi les `tests` des anciens bilans à partir de `results` (`rebuildTestsFromResults`, via `testIdBySubtestId`).
 
 ## 6. Zones d'interprétation et graphiques
 
@@ -153,7 +153,7 @@ Le type de graphique (`chartType`, défaut `bar`) et le mode d'affichage par tes
 
 Fonctions de `utils/reevaluationHelpers.ts`, affichage par `components/assessment/shared/DeltaTable.tsx`.
 
-- **Scores de départ** : la réévaluation démarre avec les tests et sous-tests du bilan de référence, **sans valeur** (`buildEmptyTestsFrom`, `utils/assessment.ts`, appelé par `useAssessmentLauncher`). Le bilan de référence est le dernier bilan formel (`getLatestFormalAssessment`). Le praticien peut retirer un test, pas en ajouter.
+- **Scores de départ** : la réévaluation démarre avec les tests et sous-tests du bilan de référence, **sans valeur** (`buildEmptyTestsFrom`, `utils/assessment.ts`, appelé par la session, `start`). Le bilan de référence est le dernier bilan formel (`getLatestFormalAssessment`). Le praticien peut retirer un test, pas en ajouter.
 - **Métrique affichée** : `Step1Scores` n'affiche, pour chaque test, qu'une colonne : la métrique la plus utilisée dans le bilan précédent (`dominantMetric`, ET en cas d'égalité).
 - **`buildDeltaEntries`** : pour chaque sous-test, la métrique est celle du score précédent (sinon celle du nouveau). `prevValue` et `newValue` sont exprimés dans cette métrique (`valueIn` du score résolu) : un score saisi dans une autre métrique est converti avec l'échelle du sous-test, ou vaut `null` si l'échelle est inconnue. `delta` est leur différence. Les scores qualitatifs ne sont pas comparés.
 - **Tendance en unités z** : `zDelta` = z(nouveau) − z(précédent), calculé avec l'échelle du sous-test. `trendFromZDelta` classe en amélioration au-delà de +0,5, régression en deçà de −0,5, stable entre les deux (`STABILITY_THRESHOLD_Z` = 0,5 ET, soit 1,5 point en NS scaled et 7,5 points en QI). Sans z calculable (échelle `none` saisie en NS), aucune tendance n'est affichée.
