@@ -19,7 +19,7 @@ const catalog: CategoryDef[] = [
         name: 'MABC-2',
         subtests: [
           { id: 'dext', name: 'Dextérité', unit: 'pts', scoreType: 'scaled', inputModel: 'numeric_4mode' },
-          { id: 'free', name: 'Brut', unit: 'pts', scoreType: 'none', inputModel: 'raw_only' },
+          { id: 'grip', name: 'Préhension', unit: '', scoreType: 'none', inputModel: 'qualitative_category', inputConfig: { options: [{ code: 'mature', label: 'Mature', order: 1, reportText: 'Prise tripode.' }] } },
         ],
       },
     ],
@@ -104,7 +104,7 @@ describe('resolveTestDef', () => {
   it('keeps stored scores of subtests or tests missing from the catalogue', () => {
     const known = resolveTestDef(index, 'mabc', ['dext', 'old_subtest']);
     expect(known.name).toBe('MABC-2');
-    expect(known.subtests.map((s) => s.id)).toEqual(['dext', 'free', 'old_subtest']);
+    expect(known.subtests.map((s) => s.id)).toEqual(['dext', 'grip', 'old_subtest']);
     expect(known.subtests[2]).toMatchObject({ scoreType: 'none', inputModel: 'numeric_4mode' });
 
     const deleted = resolveTestDef(index, 'deleted-test', ['custom_1a2b3c4d']);
@@ -155,15 +155,17 @@ describe('re-evaluation deltas', () => {
 describe('report data', () => {
   it('shows the typed value when the requested metric cannot be derived', () => {
     const [block] = buildTestScoreBlocks({ bells: { omis: { value: '8', unit: 'NS' } } }, index, { bells: 'ET' });
-    expect(block.rows[0].display).toBe('NS 8');
+    expect(block.rows[0].display).toBe('8 NS');
   });
 
-  it('formats rows per mode and colors them by zone', () => {
-    const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '4', unit: 'NS' }, free: { value: '12', unit: 'raw' } } }, index, {
-      mabc: 'ET',
-    });
-    expect(block.rows[0]).toMatchObject({ display: '-2.00 ET', zone: 'deficit' });
-    expect(block.rows[1]).toMatchObject({ display: 'Brut 12', zone: null });
+  it('formats rows per mode, colors them by zone and puts categories in their own table', () => {
+    const [block] = buildTestScoreBlocks(
+      { mabc: { dext: { value: '4', unit: 'NS' }, grip: { value: 'mature', unit: 'qualitative', qualitativeLabel: 'Mature' } } },
+      index,
+      { mabc: 'ET' },
+    );
+    expect(block.rows).toEqual([expect.objectContaining({ display: '-2 ET', zone: 'deficit' })]);
+    expect(block.qualitativeRows).toEqual([expect.objectContaining({ category: 'Mature', interpretation: 'Prise tripode.' })]);
   });
 
   it('needs three categories for a radar', () => {

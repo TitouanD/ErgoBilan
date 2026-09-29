@@ -30,7 +30,7 @@ interface CatalogContextType {
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 
-const INPUT_MODELS: ReadonlyArray<SubtestInputModel> = ['numeric_4mode', 'qualitative_category', 'raw_only', 'custom_text'];
+const INPUT_MODELS: ReadonlyArray<SubtestInputModel> = ['numeric_4mode', 'qualitative_category', 'custom_text'];
 
 const toInputModel = (value: string | null): SubtestInputModel =>
   INPUT_MODELS.includes(value as SubtestInputModel) ? (value as SubtestInputModel) : 'numeric_4mode';
@@ -75,8 +75,8 @@ const toSubtestDef = (s: SubtestRow): SubtestDef | null => {
   const inputConfig = toInputConfig(s.input_config);
   let inputModel = toInputModel(s.input_model);
   if (inputModel === 'qualitative_category' && !inputConfig?.options?.length) {
-    Logger.warn('DB', 'qualitative_category without options, fallback to raw_only', { subtestId: s.id });
-    inputModel = 'raw_only';
+    Logger.warn('DB', 'qualitative_category without options, fallback to custom_text', { subtestId: s.id });
+    inputModel = 'custom_text';
   }
   return {
     id: s.id,

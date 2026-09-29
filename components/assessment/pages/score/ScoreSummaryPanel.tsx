@@ -6,29 +6,24 @@ import React, { useMemo } from 'react';
 import { Activity } from 'lucide-react';
 import type { TestData } from '../../../../types';
 import { useCatalog } from '../../../../contexts/CatalogContext';
-import { getScaleType, getTestName } from '../../../../utils/catalogIndex';
-import { formatZ, getZFromScore, zoneFromZ } from '../../../../utils/scoring';
+import { formatMetricValue, resolveScores } from '../../../../utils/resolvedScore';
+import { zoneFromZ } from '../../../../utils/scoring';
 import { Z_AXIS, zToFraction } from '../../../../utils/reportData';
+import { zoneGradient, zoneTextClass } from '../../shared/zoneStyles';
 
-const ZONE_TEXT = { deficit: 'text-rose-600', fragile: 'text-amber-600', normal: 'text-emerald-600' } as const;
-
-// Background bands matching the interpretation zones (≤ -2, -2..-1, > -1) on the Z_AXIS range.
-const deficitEnd = zToFraction(-2) * 100;
-const fragileEnd = zToFraction(-1) * 100;
-const ZONE_GRADIENT = `linear-gradient(to right, #f87171 0%, #f87171 ${deficitEnd}%, #fbbf24 ${deficitEnd}%, #fbbf24 ${fragileEnd}%, #34d399 ${fragileEnd}%, #34d399 100%)`;
+const ZONE_GRADIENT = zoneGradient();
 
 export const ScoreSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
   const { index } = useCatalog();
 
   const rows = useMemo(
     () =>
-      Object.entries(tests).map(([testId, subtests]) => {
-        const zScores = Object.entries(subtests)
-          .map(([subId, score]) => getZFromScore(score, getScaleType(index, testId, subId)))
-          .filter((z): z is number => z !== null);
-        const avg = zScores.length > 0 ? zScores.reduce((a, b) => a + b, 0) / zScores.length : null;
-        return { testId, name: getTestName(index, testId), avg, subtestCount: Object.keys(subtests).length };
-      }),
+      resolveScores(tests, index).map((test) => ({
+        testId: test.testId,
+        name: test.testName,
+        avg: test.meanZ,
+        subtestCount: Object.keys(tests[test.testId] ?? {}).length,
+      })),
     [tests, index],
   );
 
@@ -46,7 +41,7 @@ export const ScoreSummaryPanel: React.FC<{ tests: TestData }> = ({ tests }) => {
               <div className="mb-1 flex items-center justify-between text-[10px]">
                 <span className="truncate font-medium text-[var(--text-secondary)] max-w-[160px]">{name}</span>
                 {avg !== null && zone ? (
-                  <span className={`font-bold ${ZONE_TEXT[zone]}`}>{formatZ(avg)} ET</span>
+                  <span className={zoneTextClass(zone)}>{formatMetricValue(avg, 'ET')}</span>
                 ) : (
                   <span className="font-bold text-[var(--text-disabled)]">--</span>
                 )}

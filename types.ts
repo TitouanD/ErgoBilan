@@ -148,8 +148,8 @@ export interface Patient {
  * ScoreResult — minimal shape.
  *
  * A score is either: a single entered `value` + its `unit` (NS, ET, % for
- * quantitative tests; 'qualitative' for category tests; 'raw' for tests with
- * no standardized scale) — or it doesn't exist yet. Whichever metric the
+ * quantitative tests; 'qualitative' for category tests) — or it doesn't
+ * exist yet. Whichever metric the
  * practitioner last typed into ("last wins") is what gets persisted; the
  * other two (e.g. ET/% when NS was entered) are recomputed on the fly for
  * display and are never stored.
@@ -164,7 +164,7 @@ export interface ScoreResult {
     /** The single entered value, as a string. */
     value?: string;
     /** Unit of `value`. */
-    unit?: 'NS' | 'ET' | '%' | 'qualitative' | 'raw';
+    unit?: 'NS' | 'ET' | '%' | 'qualitative';
     observation?: string;
     /** Human-readable qualitative label cached alongside `value` when `unit === 'qualitative'` */
     qualitativeLabel?: string;
@@ -172,7 +172,7 @@ export interface ScoreResult {
     customLabel?: string;
 
     // ── Legacy fields — deprecated, optional, read-only (backward compatibility) ──
-    /** @deprecated use `value` + `unit: 'raw'` */
+    /** @deprecated raw values are no longer entered; read into `observation` by `normalizeScoreResult` */
     raw?: string;
     /** @deprecated use `value` + `unit: 'NS'` */
     standard?: string;
@@ -446,7 +446,7 @@ export interface AdminSubtestRecord {
     name: string;
     unit?: string;
     score_type?: string;
-    input_model?: 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
+    input_model?: 'numeric_4mode' | 'qualitative_category' | 'custom_text';
     input_config?: {
         options?: Array<{ code: string; label: string; order: number; reportText?: string }>;
         score_type_detection_confidence?: number | string;

@@ -8,12 +8,12 @@
  * When a z-score cannot be computed (unknown scale), no trend is shown.
  */
 
-import type { ScoreResult, TestData } from '../types';
-import { type CatalogIndex, getScaleType, getSubtestName, getTestName } from './catalogIndex';
-import { deriveDisplayScores, formatZ, getZFromScore, parseNum } from './scoring';
+import type { TestData } from '../types';
+import type { CatalogIndex } from './catalogIndex';
+import { type Metric, describeScore, formatMetricValue, resolveScores } from './resolvedScore';
 
 /** Metric shown in the delta table — the one typed in the previous assessment. */
-export type DeltaMetric = 'NS' | 'ET' | '%';
+export type DeltaMetric = Metric;
 export type Trend = 'improved' | 'stable' | 'declined';
 
 /** |Δz| below this value is considered stable. */
@@ -47,26 +47,6 @@ export const trendFromZDelta = (zDelta: number | null): Trend | null => {
 
 export const TREND_LABEL: Record<Trend, string> = { improved: 'amélioration', stable: 'stable', declined: 'régression' };
 
-/** Standardized metric of a (normalized) score, or null for raw/qualitative/empty scores. */
-export const detectMetric = (score?: ScoreResult): DeltaMetric | null => {
-  if (score?.unit === 'NS' || score?.unit === 'ET' || score?.unit === '%') return score.unit;
-  return null;
-};
-
-/**
- * Numeric value of `score` expressed in `metric`. Only the typed metric is
- * stored: a score typed in another metric is converted with the subtest scale
- * (null when the scale is unknown and the metrics differ).
- */
-export const extractMetricValue = (score: ScoreResult | undefined, metric: DeltaMetric, scaleType: string): number | null => {
-  const typed = detectMetric(score);
-  if (!typed) return null;
-  if (typed === metric) return parseNum(score?.value);
-  const derived = deriveDisplayScores(score, scaleType);
-  if (metric === 'ET') return typeof derived.zScore === 'number' && Number.isFinite(derived.zScore) ? parseFloat(derived.zScore.toFixed(2)) : null;
-  return parseNum(metric === 'NS' ? derived.standard : derived.percentile);
-};
-
 export const buildDeltaEntries = (previousTests: TestData, newTests: TestData, index: CatalogIndex): DeltaEntry[] => {
   const entries: DeltaEntry[] = [];
   const testIds = new Set([...Object.keys(previousTests), ...Object.keys(newTests)]);
@@ -75,27 +55,24 @@ export const buildDeltaEntries = (previousTests: TestData, newTests: TestData, i
     const prevSubtests = previousTests[testId] ?? {};
     const newSubtests = newTests[testId] ?? {};
     for (const subtestId of new Set([...Object.keys(prevSubtests), ...Object.keys(newSubtests)])) {
-      const prevScore = prevSubtests[subtestId];
-      const newScore = newSubtests[subtestId];
-      const metric = detectMetric(prevScore) ?? detectMetric(newScore);
-      if (!metric) continue; // qualitative / raw / empty on both sides: nothing to compare
+      const prev = describeScore(index, testId, subtestId, prevSubtests[subtestId]);
+      const next = describeScore(index, testId, subtestId, newSubtests[subtestId]);
+      const metric = prev.metric ?? next.metric;
+      if (!metric) continue; // qualitative / empty on both sides: nothing to compare
 
-      const scaleType = getScaleType(index, testId, subtestId);
-      const prevValue = extractMetricValue(prevScore, metric, scaleType);
-      const newValue = extractMetricValue(newScore, metric, scaleType);
-      const prevZ = getZFromScore(prevScore, scaleType);
-      const newZ = getZFromScore(newScore, scaleType);
-      const zDelta = prevZ !== null && newZ !== null ? parseFloat((newZ - prevZ).toFixed(2)) : null;
+      const prevValue = prev.valueIn(metric);
+      const newValue = next.valueIn(metric);
+      const zDelta = prev.z !== null && next.z !== null ? parseFloat((next.z - prev.z).toFixed(2)) : null;
 
       entries.push({
         testId,
         subtestId,
-        subtestName: getSubtestName(index, testId, subtestId, prevScore?.customLabel ?? newScore?.customLabel),
-        testName: getTestName(index, testId),
+        subtestName: prev.score.customLabel ? prev.label : next.label,
+        testName: prev.testName,
         metric,
         prevValue,
         newValue,
-        measured: detectMetric(newScore) !== null && parseNum(newScore?.value) !== null,
+        measured: next.metric !== null,
         delta: prevValue !== null && newValue !== null ? parseFloat((newValue - prevValue).toFixed(2)) : null,
         zDelta,
         trend: trendFromZDelta(zDelta),
@@ -115,16 +92,9 @@ export const buildDeltaStats = (entries: DeltaEntry[]) => ({
 
 /** Plain-text scores summary for the AI (one line per scored subtest). */
 export const buildScoresSummaryText = (tests: TestData, index: CatalogIndex, date?: string): string => {
-  const lines: string[] = [];
-  for (const [testId, subtests] of Object.entries(tests)) {
-    for (const [subtestId, score] of Object.entries(subtests)) {
-      const name = `${getSubtestName(index, testId, subtestId, score.customLabel)} (${getTestName(index, testId)})`;
-      const metric = detectMetric(score);
-      if (metric && score.value) lines.push(`${name}: ${score.value} ${metric}`);
-      else if (score.unit === 'qualitative' && (score.qualitativeLabel || score.value)) lines.push(`${name}: ${score.qualitativeLabel || score.value}`);
-      else if (score.unit === 'raw' && score.value) lines.push(`${name}: brut ${score.value}`);
-    }
-  }
+  const lines = resolveScores(tests, index).flatMap((test) =>
+    test.subtests.filter((r) => r.metric !== null || r.isQualitative).map((r) => `${r.label} (${r.testName}): ${r.display()}`),
+  );
   const header = date ? `[${date}]\n` : '';
   return (header + (lines.join('\n') || 'Aucun score enregistré.')).trim();
 };
@@ -135,7 +105,7 @@ export const buildEvolutionSummaryText = (deltas: DeltaEntry[]): string =>
     .filter((d) => d.delta !== null)
     .map((d) => {
       const trend = d.trend ? TREND_LABEL[d.trend] : 'tendance non calculable';
-      const zPart = d.zDelta !== null ? `, soit ${formatZ(d.zDelta, 2)} ET` : '';
-      return `${d.subtestName} (${d.testName}): ${formatZ(d.delta!, 1)} ${d.metric}${zPart} (${trend})`;
+      const zPart = d.zDelta !== null ? `, soit ${formatMetricValue(d.zDelta, 'ET')}` : '';
+      return `${d.subtestName} (${d.testName}): ${formatMetricValue(d.delta!, d.metric, true)}${zPart} (${trend})`;
     })
     .join('\n') || 'Pas assez de données pour calculer des deltas.';

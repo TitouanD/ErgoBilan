@@ -4,7 +4,7 @@
  *
  * Only the metric the practitioner types is stored (`{ value, unit }`); the
  * other columns show values derived from it (dimmed) — see utils/scoring.ts.
- * Rows adapt to the subtest's input model: standardized (NS/ET/%), raw value,
+ * Rows adapt to the subtest's input model: standardized (NS/ET/%),
  * qualitative category or free observation.
  */
 
@@ -14,20 +14,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, X } from 'lucide-react';
 import type { ScoreResult } from '../../../types';
 import type { SubtestDef } from '../../../data/testCatalog';
-import {
-  type ScoreMetric,
-  deriveDisplayScores,
-  hasScoreValue,
-  metricToUnit,
-  unitToMetric,
-  zToneClass,
-  zoneFromZ,
-  zoneRowClass,
-} from '../../../utils/scoring';
+import { useCatalog } from '../../../contexts/CatalogContext';
+import { type Metric, describeScore } from '../../../utils/resolvedScore';
+import { type ScoreMetric, hasScoreValue, metricToUnit, unitToMetric } from '../../../utils/scoring';
+import { zoneRowClass, zoneTextClass } from './zoneStyles';
 import { getScaleLabel, getSubtestDisplayName } from '../../../utils/subtestOrdering';
 
 export const ALL_METRICS: ScoreMetric[] = ['standard', 'z', 'percentile'];
-const METRIC_HEADER: Record<ScoreMetric, string> = { standard: 'NS', z: 'ET', percentile: '%' };
+const METRIC_HEADER: Record<ScoreMetric, Metric> = { standard: 'NS', z: 'ET', percentile: '%' };
 
 type DragListeners = ReturnType<typeof useSortable>['listeners'];
 
@@ -105,6 +99,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
   onRemoveSubtest,
 }) => {
   const readOnly = !onChange;
+  const { index } = useCatalog();
   const Row = sortable ? SortableRow : StaticRow;
   const colCount = metrics.length + 2 + (sortable ? 1 : 0) + (readOnly ? 0 : 1);
   const getScore = (id: string): ScoreResult => scores?.[id] ?? {};
@@ -258,53 +253,18 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
               );
             }
 
-            if (st.inputModel === 'raw_only') {
-              return (
-                <Row key={st.id} id={rowKey} className={baseRow}>
-                  {(listeners) => (
-                    <>
-                      {dragCell(listeners)}
-                      {nameCell(st)}
-                      <td colSpan={metrics.length} className="py-1 px-1">
-                        {readOnly ? (
-                          <div className={cellDisplay}>{res.value ? `${res.value} ${st.unit}` : '—'}</div>
-                        ) : (
-                          <div className="flex items-center gap-2 px-2">
-                            <span className="text-[10px] font-bold uppercase text-[var(--text-secondary)]">Brut</span>
-                            <input
-                              value={res.unit === 'raw' ? res.value || '' : ''}
-                              inputMode="decimal"
-                              onChange={(e) => update(st.id, { value: e.target.value, unit: 'raw' })}
-                              className={cellInput}
-                              placeholder="—"
-                            />
-                            <span className="text-[10px] text-[var(--text-secondary)]">{st.unit}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-1 px-2">
-                        <NoteCell value={res.observation || ''} readOnly={readOnly} onChange={(v) => update(st.id, { observation: v })} />
-                      </td>
-                      {statusCell(filled, st.id)}
-                    </>
-                  )}
-                </Row>
-              );
-            }
-
             // Standardized score (NS / ET / %)
-            const derived = deriveDisplayScores(res, st.scoreType);
+            const resolved = describeScore(index, testId, st.id, res);
             const activeMetric = unitToMetric(res.unit);
-            const z = typeof derived.zScore === 'number' ? derived.zScore : null;
             const shownValue = (m: ScoreMetric): string => {
               if (activeMetric === m) return res.value || '';
-              if (m === 'standard') return derived.standard ?? '';
-              if (m === 'z') return z !== null ? String(z) : '';
-              return derived.percentile ?? '';
+              const value = resolved.valueIn(METRIC_HEADER[m]);
+              return value !== null ? String(value) : '';
             };
+            const zTone = zoneTextClass(resolved.zone);
 
             return (
-              <Row key={st.id} id={rowKey} className={`group ${baseRow} ${zoneRowClass(zoneFromZ(z))}`}>
+              <Row key={st.id} id={rowKey} className={`group ${baseRow} ${zoneRowClass(resolved.zone)}`}>
                 {(listeners) => (
                   <>
                     {dragCell(listeners)}
@@ -312,13 +272,13 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                     {metrics.map((m) => (
                       <td key={m} className="py-1 px-1">
                         {readOnly ? (
-                          <div className={`${cellDisplay} ${m === 'z' ? zToneClass(z) : ''}`}>{shownValue(m) || '—'}</div>
+                          <div className={`${cellDisplay} ${m === 'z' ? zTone : ''}`}>{shownValue(m) || '—'}</div>
                         ) : (
                           <input
                             value={shownValue(m)}
                             inputMode="decimal"
                             onChange={(e) => update(st.id, { value: e.target.value, unit: metricToUnit(m) })}
-                            className={`${cellInput} ${activeMetric === m ? 'border-b-[var(--primary)]' : 'opacity-60'} ${m === 'z' ? zToneClass(z) : ''}`}
+                            className={`${cellInput} ${activeMetric === m ? 'border-b-[var(--primary)]' : 'opacity-60'} ${m === 'z' ? zTone : ''}`}
                             placeholder="—"
                           />
                         )}

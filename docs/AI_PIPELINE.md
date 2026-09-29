@@ -43,7 +43,7 @@ Toute la charge utile est construite dans `utils/aiPayload.ts`, qui ne fait que 
 | ---------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `questionnaire`  | `buildQuestionnaireText` | Lignes `Label: valeur` par rubrique (motif, scolarité, médical, développement, vie quotidienne, écriture, comportement, contexte familial, notes libres). `line()` omet les valeurs vides, `?`, `-`. Suivi paramédical avec nom du professionnel ; fratrie résumée à un nombre d'enfants. |
 | `observations`   | `buildObservationsText`  | Notes d'entretien + observations legacy (`anamnese`, `motricite`, `graphique`) + observations par épreuve préfixées `[Sous-test — Test]` (noms issus de l'index du catalogue) ; `RAS` si vide.                                                                                            |
-| `scoresEvidence` | `buildScoresEvidence`    | Sous-tests ayant une valeur (`hasScoreValue`) : `{testId, testName, subtestId, subtestName, type, scale, value, unit, zScore, percentile, qualitativeLabel, observation}`. `scale` vient du catalogue (`getScaleType`), z et percentile de `utils/scoring.ts`.                            |
+| `scoresEvidence` | `buildScoresEvidence`    | Sous-tests ayant une valeur (`hasScoreValue`) : `{testId, testName, subtestId, subtestName, type, scale, value, unit, zScore, percentile, qualitativeLabel, observation}`. `scale`, z et percentile viennent du score résolu (`resolveScores`, `utils/resolvedScore.ts`).                 |
 | `childContext`   | `buildChildContext`      | `L'enfant est une fille / un garçon / un enfant de <âge>.`                                                                                                                                                                                                                                |
 | `synthesis`      | —                        | `ClinicalSynthesis` saisie par le praticien (`diagnosticInput`, `projectInput`, `recommendationsInput`).                                                                                                                                                                                  |
 
@@ -58,7 +58,7 @@ Côté edge, `scoresEvidence` est sérialisé tel quel (`JSON.stringify(..., nul
 ### Réévaluation (`buildReevaluationPayload`)
 
 - `childContext` = `buildChildContext` + classe + dates du bilan initial et de la réévaluation (mois/année), séparés par `|`.
-- `previousScoresSummary` / `newScoresSummary` = `buildScoresSummaryText` (`utils/reevaluationHelpers.ts`) : une ligne `Sous-test (Test): valeur métrique` (ou libellé qualitatif, ou `brut`).
+- `previousScoresSummary` / `newScoresSummary` = `buildScoresSummaryText` (`utils/reevaluationHelpers.ts`) : une ligne `Sous-test (Test): 85 NS` (format du score résolu), ou le libellé qualitatif.
 - `evolutionSummary` = `buildEvolutionSummaryText` : delta signé, delta en ET si calculable, tendance (seuil `STABILITY_THRESHOLD_Z` = ±0,5 ET).
 - `previousReportContext` = sections `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` du bilan précédent, en texte brut, **pseudonymisées** comme le reste.
 

@@ -27,10 +27,9 @@ export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten
  * How a subtest is entered in the score table:
  * - numeric_4mode        : standardized score typed as NS, ET or %
  * - qualitative_category : one of the options of `input_config.options`
- * - raw_only             : raw value only, no standardization
  * - custom_text          : free observation with a title (bilan écologique)
  */
-export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'raw_only' | 'custom_text';
+export type SubtestInputModel = 'numeric_4mode' | 'qualitative_category' | 'custom_text';
 
 export interface SubtestInputOption {
   code: string;

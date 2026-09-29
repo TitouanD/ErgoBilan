@@ -7,10 +7,10 @@
 
 import type { ClinicalSynthesis, Observations, Patient, PatientAssessment, TestData } from '../types';
 import type { InitialReportPayload, ReevaluationPayload } from '../services/ai';
-import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getScaleType, getSubtestName, getTestName } from './catalogIndex';
+import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
 import { type DeltaEntry, buildEvolutionSummaryText, buildScoresSummaryText } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml } from './reportContent';
-import { getPercentileFromScore, getZFromScore, hasScoreValue } from './scoring';
+import { resolveScores } from './resolvedScore';
 
 /** `Label: value`, or '' when the value is empty / a placeholder. */
 const line = (label: string, value: string | undefined | null): string => {
@@ -144,27 +144,21 @@ export const buildObservationsText = (patient: Patient, observations: Observatio
 
 /** Structured scores for the diagnostic prompt, including the scale and derived z / percentile. */
 export const buildScoresEvidence = (tests: TestData, index: CatalogIndex) =>
-  Object.entries(tests).flatMap(([testId, subtests]) =>
-    Object.entries(subtests)
-      .filter(([, res]) => hasScoreValue(res))
-      .map(([subtestId, res]) => {
-        const scale = getScaleType(index, testId, subtestId);
-        const z = getZFromScore(res, scale);
-        return {
-          testId,
-          testName: getTestName(index, testId),
-          subtestId,
-          subtestName: getSubtestName(index, testId, subtestId, res.customLabel),
-          type: res.unit === 'qualitative' ? 'qualitative' : 'quantitative',
-          scale,
-          value: res.value || null,
-          unit: res.unit || null,
-          zScore: z !== null ? parseFloat(z.toFixed(2)) : null,
-          percentile: getPercentileFromScore(res, scale),
-          qualitativeLabel: res.qualitativeLabel || null,
-          observation: res.observation || null,
-        };
-      }),
+  resolveScores(tests, index).flatMap((test) =>
+    test.subtests.map((r) => ({
+      testId: r.testId,
+      testName: r.testName,
+      subtestId: r.subtestId,
+      subtestName: r.label,
+      type: r.score.unit === 'qualitative' ? 'qualitative' : 'quantitative',
+      scale: r.scale,
+      value: r.score.value || null,
+      unit: r.score.unit || null,
+      zScore: r.z !== null ? parseFloat(r.z.toFixed(2)) : null,
+      percentile: r.pct,
+      qualitativeLabel: r.score.qualitativeLabel || null,
+      observation: r.score.observation || null,
+    })),
   );
 
 export const buildChildContext = (patient: Patient): string => {

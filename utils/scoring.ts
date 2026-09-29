@@ -221,39 +221,10 @@ export const ZONE_META: Record<ScoreZone, { label: string; color: string; band: 
   },
 };
 
-/** Tailwind text class for a z-score cell in the score tables. */
-export const zToneClass = (z: number | null): string => {
-  const zone = zoneFromZ(z);
-  if (zone === 'deficit') return 'text-rose-600 font-bold';
-  if (zone === 'fragile') return 'text-amber-600 font-bold';
-  if (zone === 'normal') return 'text-emerald-600 font-bold';
-  return 'text-[var(--text-secondary)]';
-};
-
-/** Tailwind row background for a score table row. */
-export const zoneRowClass = (zone: ScoreZone | null): string => {
-  if (zone === 'deficit') return 'bg-rose-50/30 dark:bg-rose-900/10';
-  if (zone === 'fragile') return 'bg-amber-50/30 dark:bg-amber-900/10';
-  if (zone === 'normal') return 'bg-emerald-50/20 dark:bg-emerald-900/5';
-  return '';
-};
-
 // ─── Formatting ─────────────────────────────────────────────────────────────
 
+/** Signed z for chart labels. Scores are formatted by `resolvedScore.ts`. */
 export const formatZ = (z: number, digits = 2): string => `${z > 0 ? '+' : ''}${z.toFixed(digits)}`;
-
-/** Human-readable "NS 85" / "ET +1.2" / "42 %" / label for compact display. */
-export const formatScoreCompact = (r?: Partial<ScoreResult>): string => {
-  if (!r?.value) return '—';
-  if (r.unit === 'qualitative') return r.qualitativeLabel || r.value;
-  if (r.unit === 'ET') {
-    const n = parseNum(r.value);
-    return n !== null ? `ET ${formatZ(n, 2).replace(/\.?0+$/, '')}` : `ET ${r.value}`;
-  }
-  if (r.unit === '%') return `${r.value} %`;
-  if (r.unit === 'raw') return `Brut ${r.value}`;
-  return `NS ${r.value}`;
-};
 
 // ─── Persisted shape & backward compatibility ───────────────────────────────
 
@@ -269,8 +240,16 @@ export const normalizeScoreResult = (s: ScoreResult | undefined | null): ScoreRe
     qualitativeLabel: s.qualitativeLabel,
     customLabel: s.customLabel,
   };
+  // Raw values are no longer entered: keep them readable as the start of the observation.
+  const keepRawAsObservation = (raw: string): ScoreResult => ({
+    ...passthrough,
+    observation: [`Brut : ${raw}`, s.observation?.trim()].filter(Boolean).join('\n'),
+  });
 
-  if (s.value !== undefined && s.unit !== undefined) return { value: s.value, unit: s.unit, ...passthrough };
+  if (s.value !== undefined && s.unit !== undefined) {
+    if ((s.unit as string) === 'raw') return keepRawAsObservation(s.value);
+    return { value: s.value, unit: s.unit, ...passthrough };
+  }
 
   let value: string | undefined;
   let unit: ScoreUnit | undefined;
@@ -283,11 +262,11 @@ export const normalizeScoreResult = (s: ScoreResult | undefined | null): ScoreRe
   if (s.qualitativeCode) set(s.qualitativeCode, 'qualitative');
   else if ((s.entryMetric === 'z' || s.scoreSource === 'manual_et') && hasZ) set(s.zScore!, 'ET');
   else if ((s.entryMetric === 'percentile' || s.scoreSource === 'manual_pct') && s.percentile) set(s.percentile, '%');
-  else if ((s.entryMetric === 'raw' || s.scoreSource === 'manual_raw') && s.raw) set(s.raw, 'raw');
+  else if ((s.entryMetric === 'raw' || s.scoreSource === 'manual_raw') && s.raw) return keepRawAsObservation(s.raw);
   else if (s.standard) set(s.standard, 'NS');
   else if (hasZ) set(s.zScore!, 'ET');
   else if (s.percentile) set(s.percentile, '%');
-  else if (s.raw) set(s.raw, 'raw');
+  else if (s.raw) return keepRawAsObservation(s.raw);
 
   return { ...(value !== undefined ? { value, unit } : {}), ...passthrough };
 };

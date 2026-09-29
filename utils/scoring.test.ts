@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveDisplayScores,
-  formatScoreCompact,
   getPercentileFromScore,
   getZFromScore,
   normalizeScoreResult,
@@ -82,17 +81,20 @@ describe('normalizeScoreResult', () => {
   it('converts legacy shapes using the entered metric', () => {
     expect(normalizeScoreResult({ zScore: -1.2, entryMetric: 'z', standard: '85' })).toMatchObject({ value: '-1.2', unit: 'ET' });
     expect(normalizeScoreResult({ standard: '85' })).toMatchObject({ value: '85', unit: 'NS' });
-    expect(normalizeScoreResult({ raw: '42' })).toMatchObject({ value: '42', unit: 'raw' });
+  });
+
+  it('keeps raw values, no longer entered, as the start of the observation', () => {
+    expect(normalizeScoreResult({ raw: '42', observation: 'lent' })).toEqual({
+      observation: 'Brut : 42\nlent',
+      qualitativeLabel: undefined,
+      customLabel: undefined,
+    });
+    expect(normalizeScoreResult({ value: '12', unit: 'raw' } as never)).toMatchObject({ observation: 'Brut : 12' });
+    expect(normalizeScoreResult({ value: '12', unit: 'raw' } as never)).not.toHaveProperty('value');
   });
 });
 
 describe('helpers', () => {
-  it('formats compact scores', () => {
-    expect(formatScoreCompact({ value: '1.50', unit: 'ET' })).toBe('ET +1.5');
-    expect(formatScoreCompact({ value: '12', unit: 'raw' })).toBe('Brut 12');
-    expect(formatScoreCompact({})).toBe('—');
-  });
-
   it('prunes empty scores and empty tests', () => {
     expect(pruneEmptyScores({ a: { x: {}, y: { value: '3', unit: 'NS' } }, b: { z: {} } })).toEqual({
       a: { y: { value: '3', unit: 'NS' } },

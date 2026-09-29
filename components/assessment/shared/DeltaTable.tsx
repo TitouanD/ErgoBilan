@@ -6,7 +6,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { STABILITY_THRESHOLD_Z, type DeltaEntry, type Trend } from '../../../utils/reevaluationHelpers';
-import { formatZ } from '../../../utils/scoring';
+import { formatMetricValue } from '../../../utils/resolvedScore';
 
 const TREND_STYLE: Record<Trend, { className: string; icon: React.ReactNode }> = {
   improved: { className: 'text-emerald-600 font-bold', icon: <TrendingUp size={12} className="text-emerald-500" /> },
@@ -14,12 +14,8 @@ const TREND_STYLE: Record<Trend, { className: string; icon: React.ReactNode }> =
   declined: { className: 'text-rose-600 font-bold', icon: <TrendingDown size={12} className="text-rose-500" /> },
 };
 
-const formatValue = (value: number | null, metric: DeltaEntry['metric']): string => {
-  if (value === null) return '—';
-  if (metric === 'ET') return `${formatZ(value)} ET`;
-  if (metric === '%') return `${value} %`;
-  return `${value} NS`;
-};
+const formatValue = (value: number | null, metric: DeltaEntry['metric']): string =>
+  value === null ? '—' : formatMetricValue(value, metric);
 
 const DeltaCell: React.FC<{ entry: DeltaEntry; textSize: string }> = ({ entry, textSize }) => {
   if (!entry.measured) return <span className={`${textSize} italic text-[var(--text-disabled)]`}>non mesuré</span>;
@@ -34,10 +30,10 @@ const DeltaCell: React.FC<{ entry: DeltaEntry; textSize: string }> = ({ entry, t
   return (
     <span
       className={`${textSize} font-mono flex items-center justify-center gap-1 ${style.className}`}
-      title={entry.zDelta !== null ? `${formatZ(entry.zDelta)} ET` : 'Échelle inconnue : tendance non calculable'}
+      title={entry.zDelta !== null ? formatMetricValue(entry.zDelta, 'ET') : 'Échelle inconnue : tendance non calculable'}
     >
       {style.icon}
-      {formatZ(entry.delta, 1)} {entry.metric}
+      {formatMetricValue(entry.delta, entry.metric, true)}
     </span>
   );
 };

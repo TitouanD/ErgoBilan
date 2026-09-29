@@ -22,7 +22,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 - **Base Supabase en lecture seule** sauf demande explicite. Il n'y a qu'une base, celle de production. Toute modification passe par un fichier de `supabase/migrations/`, relu, puis appliqué avec accord.
 - **Données de santé** : ne jamais affirmer dans l'interface qu'elles sont chiffrées, tant que P0-1 n'est pas fait. Tout ce qui part vers l'IA est construit dans `utils/aiPayload.ts` puis passe par `anonymizeDeep` (`utils/anonymizer.ts`).
 - **Parcours** : ne pas dupliquer un composant de `components/assessment/pages/` ou `shared/` pour un parcours. Étendre le composant partagé (ex. `ScoreTable`) sans retirer le comportement dont un autre parcours a besoin.
-- **Scores** : calculs et zones dans `utils/scoring.ts` ; noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`) ; ordre d'affichage dans `utils/subtestOrdering.ts` ; données des graphiques et des pages du rapport dans `utils/reportData.ts` (partagé par l'aperçu et le PDF).
+- **Scores** : lire un score par le score résolu (`utils/resolvedScore.ts` : `resolveScores`, `describeScore`, `formatMetricValue`), jamais en recomposant échelle, z, zone et nom à la main ; calculs et zones dans `utils/scoring.ts` ; noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`) ; ordre d'affichage dans `utils/subtestOrdering.ts` ; données des graphiques et des pages du rapport dans `utils/reportData.ts` (partagé par l'aperçu et le PDF).
 - **Mode démo** : aucun effet de bord côté Supabase ni IA. Il utilise `data/demoData.ts`, `data/demoCatalog.ts` et `data/demoReport.ts`.
 - **Toasts** : `const toast = useToast()` (le hook renvoie directement l'objet).
 

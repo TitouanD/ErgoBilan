@@ -6,22 +6,13 @@
  * now only *render* what these functions return.
  */
 
-import type { PatientAssessmentKind, ReportSection, ScoreResult, TestData } from '../types';
-import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getScaleType, getSubtestDef, getSubtestName, getTestName } from './catalogIndex';
-import {
-  type ScoreZone,
-  deriveDisplayScores,
-  formatScoreCompact,
-  formatZ,
-  getPercentileFromScore,
-  getZFromScore,
-  hasScoreValue,
-  zoneFromPercentile,
-  zoneFromZ,
-} from './scoring';
+import type { PatientAssessmentKind, ReportSection, TestData } from '../types';
+import type { CatalogIndex } from './catalogIndex';
+import { type Metric, type ResolvedScore, resolveScores } from './resolvedScore';
+import type { ScoreZone } from './scoring';
 
 export type ChartType = 'radar' | 'bar' | 'percentile';
-export type ScoreDisplayMode = 'NS' | 'ET' | '%';
+export type ScoreDisplayMode = Metric;
 export type ReportKind = PatientAssessmentKind | 'historique';
 
 export const DEFAULT_CHART_TYPE: ChartType = 'bar';
@@ -40,12 +31,7 @@ export const zToFraction = (z: number): number => (clamp(z, Z_AXIS.min, Z_AXIS.m
 /** Horizontal position (0..1) of a percentile rank. */
 export const pctToFraction = (pct: number): number => clamp(pct, 0, 100) / 100;
 
-const scoredEntries = (tests: TestData) =>
-  Object.entries(tests).flatMap(([testId, subtests]) =>
-    Object.entries(subtests)
-      .filter(([, score]) => hasScoreValue(score))
-      .map(([subtestId, score]) => ({ testId, subtestId, score })),
-  );
+const resolvedEntries = (tests: TestData, index: CatalogIndex): ResolvedScore[] => resolveScores(tests, index).flatMap((t) => t.subtests);
 
 // ─── Charts ─────────────────────────────────────────────────────────────────
 
@@ -57,11 +43,7 @@ export interface ZChartItem {
 }
 
 export const computeZChartItems = (tests: TestData, index: CatalogIndex): ZChartItem[] =>
-  scoredEntries(tests).flatMap(({ testId, subtestId, score }) => {
-    const z = getZFromScore(score, getScaleType(index, testId, subtestId));
-    if (z === null) return [];
-    return [{ key: `${testId}:${subtestId}`, label: getSubtestName(index, testId, subtestId, score.customLabel), z, zone: zoneFromZ(z)! }];
-  });
+  resolvedEntries(tests, index).flatMap((r) => (r.z !== null && r.zone ? [{ key: r.key, label: r.label, z: r.z, zone: r.zone }] : []));
 
 export interface PercentileChartItem {
   key: string;
@@ -71,18 +53,9 @@ export interface PercentileChartItem {
 }
 
 export const computePercentileChartItems = (tests: TestData, index: CatalogIndex): PercentileChartItem[] =>
-  scoredEntries(tests).flatMap(({ testId, subtestId, score }) => {
-    const pct = getPercentileFromScore(score, getScaleType(index, testId, subtestId));
-    if (pct === null) return [];
-    return [
-      {
-        key: `${testId}:${subtestId}`,
-        label: getSubtestName(index, testId, subtestId, score.customLabel),
-        pct,
-        zone: zoneFromPercentile(pct)!,
-      },
-    ];
-  });
+  resolvedEntries(tests, index).flatMap((r) =>
+    r.pct !== null && r.zone ? [{ key: r.key, label: r.label, pct: r.pct, zone: r.zone }] : [],
+  );
 
 export interface RadarPoint {
   label: string;
@@ -93,15 +66,15 @@ export interface RadarPoint {
 /** Mean z-score per catalogue category. Returns [] when fewer than 3 categories (a radar needs 3 axes). */
 export const computeRadarData = (tests: TestData, index: CatalogIndex): RadarPoint[] => {
   const stats = new Map<string, { label: string; sum: number; count: number }>();
-  for (const { testId, subtestId, score } of scoredEntries(tests)) {
-    const z = getZFromScore(score, getScaleType(index, testId, subtestId));
-    if (z === null) continue;
-    const category = index.categoryByTestId.get(testId);
-    const key = category?.id ?? '__other__';
-    const entry = stats.get(key) ?? { label: category?.name ?? 'Autres', sum: 0, count: 0 };
-    entry.sum += clamp(z, RADAR_RANGE.min, RADAR_RANGE.max);
-    entry.count += 1;
-    stats.set(key, entry);
+  for (const test of resolveScores(tests, index)) {
+    const key = test.category?.id ?? '__other__';
+    for (const { z } of test.subtests) {
+      if (z === null) continue;
+      const entry = stats.get(key) ?? { label: test.category?.name ?? 'Autres', sum: 0, count: 0 };
+      entry.sum += clamp(z, RADAR_RANGE.min, RADAR_RANGE.max);
+      entry.count += 1;
+      stats.set(key, entry);
+    }
   }
   const points = [...stats.values()].map((s) => ({ label: s.label, value: parseFloat((s.sum / s.count).toFixed(2)) }));
   return points.length >= 3 ? points : [];
@@ -138,75 +111,40 @@ export interface TestScoreBlock {
   notes: Array<{ label: string; observation: string }>;
 }
 
-const isStandardized = (score: ScoreResult) => score.unit === 'NS' || score.unit === 'ET' || score.unit === '%';
-
-/**
- * Text shown in the score column for the chosen mode. When the requested
- * metric cannot be derived (unknown scale), the value typed by the
- * practitioner is shown with its unit instead of an empty dash.
- */
-export const formatScoreForMode = (score: ScoreResult, mode: ScoreDisplayMode, scaleType: string): string => {
-  if (!score.value) return '-';
-  if (!isStandardized(score)) return formatScoreCompact(score);
-  const derived = deriveDisplayScores(score, scaleType);
-  if (mode === 'ET') {
-    const z = getZFromScore(score, scaleType);
-    return z !== null ? `${formatZ(z)} ET` : formatScoreCompact(score);
-  }
-  if (mode === 'NS') {
-    const ns = score.unit === 'NS' ? score.value : derived.standard;
-    return ns ?? formatScoreCompact(score);
-  }
-  const pct = score.unit === '%' ? score.value : derived.percentile;
-  return pct !== undefined ? `${pct} %` : formatScoreCompact(score);
-};
-
 export const buildTestScoreBlocks = (
   tests: TestData,
   index: CatalogIndex,
   modes: Record<string, ScoreDisplayMode> = {},
 ): TestScoreBlock[] =>
-  Object.entries(tests).flatMap(([testId, subtests]) => {
-    const scored = Object.entries(subtests).filter(([, s]) => hasScoreValue(s));
-    if (scored.length === 0) return [];
-    const mode = modes[testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
+  resolveScores(tests, index).flatMap((test) => {
+    if (test.subtests.length === 0) return [];
+    const mode = modes[test.testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
     const block: TestScoreBlock = {
-      testId,
-      testName: getTestName(index, testId),
-      isFreeObservations: testId === CUSTOM_OBSERVATIONS_TEST_ID,
-      hasStandardizedScores: scored.some(([, s]) => isStandardized(s)),
+      testId: test.testId,
+      testName: test.testName,
+      isFreeObservations: test.isFreeObservations,
+      hasStandardizedScores: test.subtests.some((r) => r.metric !== null),
       mode,
       rows: [],
       qualitativeRows: [],
       notes: [],
     };
 
-    for (const [subtestId, score] of scored) {
-      const def = getSubtestDef(index, testId, subtestId);
-      const label = getSubtestName(index, testId, subtestId, score.customLabel);
-      const observation = score.observation?.trim() || '';
-
-      if (block.isFreeObservations || def?.inputModel === 'custom_text') {
-        block.notes.push({ label, observation });
-      } else if (def?.inputModel === 'qualitative_category' || score.unit === 'qualitative') {
-        const option = def?.inputConfig?.options?.find((o) => o.code === score.value || o.label === score.qualitativeLabel);
+    for (const r of test.subtests) {
+      const observation = r.score.observation?.trim() || '';
+      if (r.isFreeText) {
+        block.notes.push({ label: r.label, observation });
+      } else if (r.isQualitative) {
+        const option = r.def?.inputConfig?.options?.find((o) => o.code === r.score.value || o.label === r.score.qualitativeLabel);
         block.qualitativeRows.push({
-          subtestId,
-          label,
-          category: score.qualitativeLabel || option?.label || score.value || '-',
+          subtestId: r.subtestId,
+          label: r.label,
+          category: r.score.qualitativeLabel || option?.label || r.score.value || '-',
           interpretation: option?.reportText || '-',
           observation,
         });
       } else {
-        const scaleType = getScaleType(index, testId, subtestId);
-        const z = getZFromScore(score, scaleType);
-        block.rows.push({
-          subtestId,
-          label,
-          display: formatScoreForMode(score, mode, scaleType),
-          zone: isStandardized(score) ? (zoneFromZ(z) ?? zoneFromPercentile(getPercentileFromScore(score, scaleType))) : null,
-          observation,
-        });
+        block.rows.push({ subtestId: r.subtestId, label: r.label, display: r.display(mode), zone: r.zone, observation });
       }
     }
     return [block];

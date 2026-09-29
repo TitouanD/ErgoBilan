@@ -12,7 +12,6 @@ import { Activity, ArrowRight, Lock, Trash2 } from 'lucide-react';
 import type { ScoreResult, TestData } from '../../../types';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { resolveTestDef } from '../../../utils/catalogIndex';
-import { detectMetric } from '../../../utils/reevaluationHelpers';
 import { type ScoreMetric, unitToMetric } from '../../../utils/scoring';
 import { compareSubtestsForDisplay } from '../../../utils/subtestOrdering';
 import { ScoreTable } from '../shared/ScoreTable';
@@ -31,7 +30,7 @@ interface Props {
 const dominantMetric = (scores: Record<string, ScoreResult>): ScoreMetric => {
   const counts: Record<ScoreMetric, number> = { standard: 0, z: 0, percentile: 0 };
   for (const score of Object.values(scores)) {
-    const metric = unitToMetric(detectMetric(score) ?? undefined);
+    const metric = unitToMetric(score.unit);
     if (metric) counts[metric]++;
   }
   if (counts.z >= counts.standard && counts.z >= counts.percentile) return 'z';

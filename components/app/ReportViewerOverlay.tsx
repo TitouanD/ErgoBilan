@@ -12,10 +12,9 @@ import { X } from 'lucide-react';
 import type { PatientAssessment } from '../../types';
 import { useCatalog } from '../../contexts/CatalogContext';
 import { getAssessmentTests } from '../../utils/assessment';
-import { getSubtestName, getTestName } from '../../utils/catalogIndex';
 import { sectionToHtml } from '../../utils/reportContent';
 import { isReportSectionVisible } from '../../utils/reportData';
-import { formatScoreCompact, hasScoreValue } from '../../utils/scoring';
+import { resolveScores } from '../../utils/resolvedScore';
 import { TipTapEditor } from '../assessment/shared/TipTapEditor';
 
 interface Props {
@@ -27,18 +26,10 @@ interface Props {
 export const ReportViewerOverlay: React.FC<Props> = ({ assessment, patientName, onClose }) => {
   const { index } = useCatalog();
 
-  const scoreGroups = useMemo(() => {
-    const tests = getAssessmentTests(assessment, index);
-    return Object.entries(tests)
-      .map(([testId, subtests]) => ({
-        testId,
-        testName: getTestName(index, testId),
-        rows: Object.entries(subtests)
-          .filter(([, score]) => hasScoreValue(score))
-          .map(([subId, score]) => ({ id: subId, name: getSubtestName(index, testId, subId, score.customLabel), score })),
-      }))
-      .filter((group) => group.rows.length > 0);
-  }, [assessment, index]);
+  const scoreGroups = useMemo(
+    () => resolveScores(getAssessmentTests(assessment, index), index).filter((test) => test.subtests.length > 0),
+    [assessment, index],
+  );
 
   const sections = (assessment.report?.sections ?? []).filter(isReportSectionVisible);
 
@@ -72,11 +63,11 @@ export const ReportViewerOverlay: React.FC<Props> = ({ assessment, patientName, 
                   <div className="px-5 py-3 bg-[var(--hover-bg)]">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)]">{group.testName}</p>
                   </div>
-                  {group.rows.map((row) => (
-                    <div key={row.id} className="flex items-center justify-between px-5 py-2.5 even:bg-[var(--hover-bg)]/40">
-                      <span className="text-sm text-[var(--text-main)]">{row.name}</span>
+                  {group.subtests.map((row) => (
+                    <div key={row.key} className="flex items-center justify-between px-5 py-2.5 even:bg-[var(--hover-bg)]/40">
+                      <span className="text-sm text-[var(--text-main)]">{row.label}</span>
                       <span className="font-mono text-xs font-bold text-[var(--text-secondary)] bg-[var(--hover-bg)] px-2 py-0.5 rounded-md">
-                        {formatScoreCompact(row.score)}
+                        {row.display()}
                       </span>
                     </div>
                   ))}

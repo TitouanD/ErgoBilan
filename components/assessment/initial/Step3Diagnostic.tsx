@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import type { ClinicalSynthesis, TestData, Patient, ScoreResult } from '../../../types';
+import type { ClinicalSynthesis, TestData, Patient } from '../../../types';
 import { Sparkles, Brain, Target, Lightbulb, Activity, Quote } from 'lucide-react';
 import { VoiceTextarea } from '../../shared/VoiceTextarea';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { StepNavFooter } from '../shared/StepNavFooter';
-import { ZONE_META, getZFromScore, hasScoreValue, zoneFromZ } from '../../../utils/scoring';
-import { getScaleType, getSubtestName, getTestName } from '../../../utils/catalogIndex';
+import { zoneFromZ } from '../../../utils/scoring';
+import { type ResolvedScore, resolveScores } from '../../../utils/resolvedScore';
+import { zoneColor } from '../shared/zoneStyles';
 
 interface Props {
     synthesis: ClinicalSynthesis;
@@ -17,21 +18,8 @@ interface Props {
     isGenerating: boolean;
 }
 
-/** Score label matching the unit actually entered by the practitioner (NS/ET/%),
- *  instead of always converting to a derived z-score. A z-score is only used as a
- *  last-resort fallback for legacy/edge-case data that carries no unit information
- *  (e.g. raw scores with no norms). */
-const getEnteredScoreLabel = (res: ScoreResult, z: number | null): string | null => {
-    if (res.unit === 'NS' && res.value?.trim()) return `NS ${res.value}`;
-    if (res.unit === '%' && res.value?.trim()) return `${res.value}%`;
-    if (res.unit === 'ET' && res.value?.trim()) {
-        const v = parseFloat(res.value);
-        return `${Number.isFinite(v) && v > 0 ? '+' : ''}${res.value} ET`;
-    }
-    if (res.qualitativeLabel) return res.qualitativeLabel;
-    if (typeof z === 'number' && Number.isFinite(z)) return `${z > 0 ? '+' : ''}${z.toFixed(1)} ET`;
-    return null;
-};
+/** Score as typed by the practitioner (NS/ET/% or category); null for an observation without score. */
+const enteredScoreLabel = (r: ResolvedScore): string | null => (r.score.value?.trim() ? r.display() : null);
 
 // --- SCORES & OBSERVATIONS PANEL (merged, expandable) ---
 const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: string }> = ({ tests, interviewNotes }) => {
@@ -39,29 +27,14 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
     const [notesExpanded, setNotesExpanded] = useState(false);
     const [panelExpanded, setPanelExpanded] = useState(false);
 
+    // Subtests keep the insertion order of tests[testId] (drag-and-drop order of the score page).
     const groupedData = useMemo(
         () =>
-            Object.entries(tests).flatMap(([testId, subtestMap]) => {
-                const zScores: number[] = [];
-                const subtests: { subId: string; name: string; res: ScoreResult; scoreType: string }[] = [];
-                // Subtests keep the insertion order of tests[testId] (drag-and-drop order of the score page).
-                for (const [subId, res] of Object.entries(subtestMap)) {
-                    const scoreType = getScaleType(index, testId, subId);
-                    const z = getZFromScore(res, scoreType);
-                    if (z !== null) zScores.push(z);
-                    if (hasScoreValue(res)) subtests.push({ subId, name: getSubtestName(index, testId, subId, res.customLabel), res, scoreType });
-                }
-                if (subtests.length === 0) return [];
-                const avg = zScores.length > 0 ? zScores.reduce((x, y) => x + y, 0) / zScores.length : null;
-                return [{ testId, name: getTestName(index, testId), avg, subtests }];
-            }),
+            resolveScores(tests, index)
+                .filter((test) => test.subtests.length > 0)
+                .map((test) => ({ testId: test.testId, name: test.testName, avg: test.meanZ, subtests: test.subtests })),
         [tests, index],
     );
-
-    const zColor = (z?: number | null): string => {
-        const zone = zoneFromZ(z);
-        return zone ? ZONE_META[zone].color : '#94a3b8';
-    };
 
     const hasContent = groupedData.length > 0;
     if (!hasContent && !interviewNotes) return null;
@@ -91,7 +64,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                             <p className="text-center text-xs text-[var(--text-secondary)] py-8">Aucun score enregistré.</p>
                         )}
                         {groupedData.map(({ testId, name: testName, avg, subtests }, testIdx) => {
-                            const testColor = zColor(avg);
+                            const testColor = zoneColor(zoneFromZ(avg));
                             return (
                                 <div key={testId} className={`p-4 ${testIdx % 2 === 1 ? 'bg-stone-50/80 dark:bg-stone-900/30' : ''}`}>
                                     <h5 className="text-xs font-bold text-[var(--text-heading)] mb-2 leading-tight flex items-center gap-1.5">
@@ -99,10 +72,10 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                                         {testName}
                                     </h5>
                                     <div className="space-y-1.5 pl-3">
-                                        {subtests.map(({ subId, name: subName, res, scoreType }) => {
-                                            const z = getZFromScore(res, scoreType);
-                                            const col = (z !== null && Number.isFinite(z)) ? zColor(z) : '#94a3b8';
-                                            const scoreStr = getEnteredScoreLabel(res, z);
+                                        {subtests.map((r) => {
+                                            const { subtestId: subId, label: subName, score: res } = r;
+                                            const col = zoneColor(r.zone);
+                                            const scoreStr = enteredScoreLabel(r);
                                             const hasObs = !!res.observation?.trim();
                                             return (
                                                 <div key={subId} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs py-0.5">
@@ -168,7 +141,7 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
             <table className="w-full border-collapse text-left">
                 <tbody>
                     {groupedData.map(({ testId, name, avg, subtests }) => {
-                        const color = zColor(avg);
+                        const color = zoneColor(zoneFromZ(avg));
                         return (
                             <React.Fragment key={testId}>
                                 {/* Test row */}
@@ -180,13 +153,13 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
                                 </tr>
 
                                 {/* Subtest rows */}
-                                {subtests.map(({ subId, name: subName, res, scoreType }) => {
-                                    const z = getZFromScore(res, scoreType);
-                                    const col = zColor(z);
+                                {subtests.map((r) => {
+                                    const { subtestId: subId, label: subName, score: res, z } = r;
+                                    const col = zoneColor(r.zone);
                                     const hasObs = !!res.observation?.trim();
                                     const hasZ = typeof z === 'number' && Number.isFinite(z);
                                     const barW = hasZ ? Math.min(100, Math.max(2, ((z! + 3.5) / 7) * 100)) : null;
-                                    const scoreLabel = getEnteredScoreLabel(res, z);
+                                    const scoreLabel = enteredScoreLabel(r);
 
                                     return (
                                         <tr

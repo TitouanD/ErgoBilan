@@ -2,7 +2,7 @@
 
 Référence technique du catalogue (catégories, tests, sous-tests), de la saisie des scores, des conversions d'échelle, de l'interprétation (écran et PDF) et des deltas de réévaluation. Les références renvoient à des fichiers et des fonctions ; l'état de la base a été relevé le 2026-09-23. L'état des bugs est tenu dans [TECH_DEBT.md](TECH_DEBT.md).
 
-Règle générale : calculs et zones dans `utils/scoring.ts`, noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`), ordre d'affichage dans `utils/subtestOrdering.ts`, données des graphiques et des tableaux du rapport dans `utils/reportData.ts`.
+Règle générale : un score se lit par le **score résolu** (`utils/resolvedScore.ts`, §6 bis), qui s'appuie sur les calculs et les zones de `utils/scoring.ts` et sur les noms et échelles de l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`). Ordre d'affichage dans `utils/subtestOrdering.ts`, données des graphiques et des tableaux du rapport dans `utils/reportData.ts`.
 
 ## 1. Modèle du catalogue
 
@@ -12,20 +12,21 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 - Les vues `view_unified_catalog` et `view_unified_subtests` filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
 - Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests.
 - Répartition `score_type` : scaled 147, none 139, standard 24, t-score 17, percentile 2. Répartition `input_model` : numeric_4mode 324, raw_only 5. **Aucun** sous-test n'utilise `qualitative_category`, `custom_text` ou `computed_items` en base.
+- Migration `20260929100000_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé (la catégorie `lateralite` reste, vide), et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
-| Colonne (vue)                                   | Type / contrainte                                                                                  | Mappé vers                                                                               |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| catalog.`id`, `label`                           | text                                                                                               | `TestDef.id`, `TestDef.name`                                                             |
-| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                           | `CategoryDef.id`, `.name`                                                                |
-| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                              | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)                           |
-| catalog.`subtests_count`                        | calculé                                                                                            | lu mais non utilisé                                                                      |
-| subtests.`unit`                                 | text                                                                                               | `unit` (défaut `'pts'`)                                                                  |
-| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none             | `scoreType`, via `resolveScaleType` (inconnu → `none`)                                   |
-| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, raw_only, custom_text, computed_items | `inputModel` (`toInputModel` : valeur inconnue, dont `computed_items` → `numeric_4mode`) |
-| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                      | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées)                      |
-| subtests.`display_group_order`, `display_order` | integer                                                                                            | `displayGroupOrder`, `displayOrder`                                                      |
+| Colonne (vue)                                   | Type / contrainte                                                                      | Mappé vers                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| catalog.`id`, `label`                           | text                                                                                   | `TestDef.id`, `TestDef.name`                                        |
+| catalog.`category_id`, `category_label`         | FK `official_categories`                                                               | `CategoryDef.id`, `.name`                                           |
+| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                  | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
+| catalog.`subtests_count`                        | calculé                                                                                | lu mais non utilisé                                                 |
+| subtests.`unit`                                 | text                                                                                   | `unit` (défaut `'pts'`)                                             |
+| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
+| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text               | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
+| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                          | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
+| subtests.`display_group_order`, `display_order` | integer                                                                                | `displayGroupOrder`, `displayOrder`                                 |
 
 `SubtestDef.displayName` existe dans le type mais n'est renseigné nulle part (les fonctions d'affichage retombent sur `name`).
 
@@ -38,7 +39,7 @@ Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogCont
 - **Sans session** (mode démo) : `DEMO_CATALOG` (`data/demoCatalog.ts`) est chargé à la place. Il reprend les vrais identifiants et échelles de la base pour `bhk`, `mabc-2` et `test-cloches`, les tests utilisés par `data/demoData.ts`. Le catalogue est vidé à la déconnexion (`SIGNED_OUT`) et à la connexion d'un vrai utilisateur s'il s'agissait du catalogue démo.
 - **Requêtes** (en parallèle) : `view_unified_catalog` (triée par `sort_order`, celui de la catégorie : l'ordre des tests dans une catégorie n'est pas garanti) et `view_unified_subtests`. En cas d'erreur, elle est journalisée et le catalogue reste en l'état ; le prochain `ensureCatalogLoaded` réessaiera.
 - **Pas de pagination** : on dépend de la limite `max-rows` de PostgREST (1000 par défaut). 329 sous-tests aujourd'hui.
-- **Normalisations** : un `qualitative_category` sans options est rétrogradé en `raw_only`. Un test sans sous-test visible est ignoré. Les catégories sont triées par `sortOrder`.
+- **Normalisations** : un `qualitative_category` sans options est rétrogradé en `custom_text`. Un test sans sous-test visible est ignoré. Les catégories sont triées par `sortOrder`.
 - **`searchTests`** : score 4 si préfixe, 3 si début de mot, 2 si sous-chaîne ou nom normalisé (`utils/catalogNames.ts`) ; une correspondance sur un sous-test vaut −0,5.
 - Pas de cache persistant : l'état est en mémoire et perdu au rechargement de la page.
 
@@ -52,12 +53,11 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `numeric_4mode`        | Colonnes NS / ET / % (toutes, ou seulement celles passées dans `metrics`) + observation ; libellé de l'échelle sous le nom | `groupKey`, `groupHeaderLabel`, `groupOrder`, `orderIndex` (ordonnancement) | `value` + `unit` NS, ET ou %, `observation`            |
 | `qualitative_category` | `<select>` des options triées par `order`                                                                                  | `options[] {code,label,order,reportText?}`                                  | `value=code`, `unit='qualitative'`, `qualitativeLabel` |
-| `raw_only`             | Champ « Brut » saisissable sur toute la largeur des colonnes de métrique, suivi de l'unité du sous-test                    | aucun                                                                       | `value` + `unit='raw'`, `observation`                  |
 | `custom_text`          | Titre + zone de texte ; utilisé pour les observations libres (`custom_observations`)                                       | aucun                                                                       | `customLabel`, `observation`                           |
 
-`computed_items` a été retiré du modèle client (P1-10). Le tableau accepte le glisser-déposer des lignes (`sortable`, identifiants `sub:<testId>:<subtestId>`). Avec `onRemoveSubtest` (passé par `ScorePage`, pas par la réévaluation dont les deux tableaux doivent rester alignés), chaque ligne a une croix pour retirer l'épreuve. Les noms longs reviennent à la ligne.
+`computed_items` a été retiré du modèle client (P1-10), puis `raw_only` et la saisie brute (#49). Le tableau accepte le glisser-déposer des lignes (`sortable`, identifiants `sub:<testId>:<subtestId>`). Avec `onRemoveSubtest` (passé par `ScorePage`, pas par la réévaluation dont les deux tableaux doivent rester alignés), chaque ligne a une croix pour retirer l'épreuve. Les noms longs reviennent à la ligne.
 
-**`score_type='none'`** : les colonnes NS / ET / % restent saisissables. Une NS tapée ne peut pas être convertie (pas d'échelle) : les autres colonnes restent vides et le rapport affiche la valeur saisie avec son unité (`formatScoreForMode`). Une saisie en ET ou en % reste convertible dans l'autre métrique, car la conversion ET ↔ % ne dépend pas de l'échelle.
+**`score_type='none'`** : les colonnes NS / ET / % restent saisissables. Une NS tapée ne peut pas être convertie (pas d'échelle) : les autres colonnes restent vides et le rapport affiche la valeur saisie avec son unité (`display(mode)` du score résolu). Une saisie en ET ou en % reste convertible dans l'autre métrique, car la conversion ET ↔ % ne dépend pas de l'échelle.
 
 **Ordonnancement** : `compareSubtestsForDisplay` (`utils/subtestOrdering.ts`) trie par ordre de groupe (colonne, puis `inputConfig.groupOrder`, sinon 900), libellé de groupe (config ou inféré du nom), clé de groupe, ordre (colonne, puis `orderIndex`, puis numéro extrait du nom, sinon 999) et enfin par nom (locale `fr`). Favoris et tests récents : `hooks/useFavoriteTests.ts` (localStorage `ergo_favorite_tests` limité à 20 entrées, `ergo_recent_tests` à 5).
 
@@ -87,13 +87,12 @@ Aucune borne n'est validée à la saisie. Fonctions de `utils/scoring.ts` :
 | `deriveDisplayScores`                            | valeurs dérivées d'un `{ value, unit }` pour l'affichage (jamais persistées)                                               |
 | `getZFromScore` / `getPercentileFromScore`       | z et rang percentile d'un score stocké (`null` si incalculable)                                                            |
 | `zoneFromZ` / `zoneFromPercentile` / `ZONE_META` | zones d'interprétation (§6)                                                                                                |
-| `zToneClass` / `zoneRowClass`                    | classes Tailwind des cellules et lignes du tableau de saisie                                                               |
-| `formatZ` / `formatScoreCompact`                 | « +1.20 » ; « NS 85 », « ET +1.2 », « 42 % », « Brut 12 », libellé qualitatif                                              |
+| `formatZ`                                        | « +1.20 », pour les libellés des graphiques ; les scores sont formatés par le score résolu (§6 bis)                        |
 | `hasScoreValue` / `pruneEmptyScores`             | un score a-t-il une valeur, une observation ou un titre ; retrait des sous-tests vides avant enregistrement                |
 
 ## 5. Stockage d'un score
 
-`ScoreResult` (`types.ts`) : `value` (string), `unit` (`'NS'`, `'ET'`, `'%'`, `'qualitative'` ou `'raw'`), `observation`, `qualitativeLabel`, `customLabel`. La règle est « dernière métrique saisie gagne » : chaque saisie dans `ScoreTable` envoie `{ value, unit }` pour la colonne tapée. Les autres colonnes sont recalculées à l'affichage par `deriveDisplayScores` et ne sont jamais persistées. Structure `TestData[testId][subtestId]`.
+`ScoreResult` (`types.ts`) : `value` (string), `unit` (`'NS'`, `'ET'`, `'%'` ou `'qualitative'`), `observation`, `qualitativeLabel`, `customLabel`. La règle est « dernière métrique saisie gagne » : chaque saisie dans `ScoreTable` envoie `{ value, unit }` pour la colonne tapée. Les autres colonnes sont recalculées à l'affichage par `deriveDisplayScores` et ne sont jamais persistées. Structure `TestData[testId][subtestId]`.
 
 Flux d'une valeur, de la saisie au rendu :
 
@@ -104,12 +103,12 @@ saisie NS "8" (sous-test scaled)
   → brouillon / bilan (JSON)                        tel quel, sans champ dérivé
      (buildAssessmentRecord retire les scores vides via pruneEmptyScores)
 affichage
-  → deriveDisplayScores(res, "scaled")              utils/scoring.ts
-      z = (8 − 10) / 3 = −0,667 ; % = round(Φ(z)·100) = 25
-  → zoneFromZ(−0,667) = normal                      couleur verte
+  → describeScore(index, testId, subtestId, res)    utils/resolvedScore.ts
+      z = (8 − 10) / 3 = −0,667 ; % = round(Φ(z)·100) = 25   (utils/scoring.ts)
+      zone normal (couleur verte) ; display() = "8 NS", display('ET') = "-0.67 ET"
 ```
 
-**Compatibilité** : 14 champs legacy `@deprecated` restent déclarés dans `ScoreResult` (`raw`, `standard`, `percentile`, `zScore`, `status`, `validatedAt`, `certifiedAt`, `scoreSource`, `entryMetric`, `conversionMode`, `reviewState`, `reviewedAt`, `qualitativeCode`, `derived`) pour lire les anciens bilans ; le code n'en écrit aucun. `normalizeScoreResult` est idempotente : si `value` et `unit` sont présents, elle ne garde que les champs actuels. Sinon, la priorité est : `qualitativeCode` → `entryMetric` ou `scoreSource` (z, pct, raw) → `standard`, puis repli dans l'ordre zScore, percentile, raw. Le brut d'un score legacy qui a aussi une NS est perdu. `normalizeTestData` et `normalizeFlatResults` l'appliquent à un `TestData` ou à un `results` plat. Points d'appel : `AssessmentContext` (`updateTests`, bilan précédent, reprise d'un brouillon) et `getAssessmentTests` (`utils/assessment.ts`), qui reconstruit aussi les `tests` des anciens bilans à partir de `results` (`rebuildTestsFromResults`, via `testIdBySubtestId`).
+**Compatibilité** : 14 champs legacy `@deprecated` restent déclarés dans `ScoreResult` (`raw`, `standard`, `percentile`, `zScore`, `status`, `validatedAt`, `certifiedAt`, `scoreSource`, `entryMetric`, `conversionMode`, `reviewState`, `reviewedAt`, `qualitativeCode`, `derived`) pour lire les anciens bilans ; le code n'en écrit aucun. `normalizeScoreResult` est idempotente : si `value` et `unit` sont présents, elle ne garde que les champs actuels. Sinon, la priorité est : `qualitativeCode` → `entryMetric` ou `scoreSource` (z, pct, raw) → `standard`, puis repli dans l'ordre zScore, percentile, raw. Le brut d'un score legacy qui a aussi une NS est perdu. Un brut retenu (ancien champ `raw`, ou `unit: 'raw'` enregistré avant #49) n'est plus un score : il devient le début de l'observation (`Brut : 12`). `normalizeTestData` et `normalizeFlatResults` l'appliquent à un `TestData` ou à un `results` plat. Points d'appel : `AssessmentContext` (`updateTests`, bilan précédent, reprise d'un brouillon) et `getAssessmentTests` (`utils/assessment.ts`), qui reconstruit aussi les `tests` des anciens bilans à partir de `results` (`rebuildTestsFromResults`, via `testIdBySubtestId`).
 
 ## 6. Zones d'interprétation et graphiques
 
@@ -121,32 +120,46 @@ affichage
 | `fragile` | −2 < z ≤ −1                   | p ≤ Φ(−1) ≈ 15,9                                        | Zone de fragilité     |
 | `normal`  | z > −1                        | au-delà                                                 | Dans la moyenne       |
 
-`ZONE_META` porte aussi les couleurs (hex, communes à Recharts, au HTML et à `@react-pdf`) et les légendes. Les légendes percentile donnent les seuils réels (« inférieur ou égal à 2,3 », « entre 2,3 et 15,9 »).
+`ZONE_META` porte aussi les couleurs (hex, communes à Recharts, au HTML et à `@react-pdf`) et les légendes. Les légendes percentile donnent les seuils réels (« inférieur ou égal à 2,3 », « entre 2,3 et 15,9 »). Les écrans prennent leurs classes Tailwind et leur dégradé de zone dans `components/assessment/shared/zoneStyles.ts` (`zoneColor`, `zoneTextClass`, `zoneRowClass`, `zoneGradient`).
+
+**Règle de zone** : un score standardisé prend la zone de son z ; si le z n'est pas calculable (percentile 0 ou 100 saisi), celle de son percentile. Un score qualitatif, une observation ou un score vide n'a pas de zone. Au seuil, le z l'emporte : z = −1 est `fragile` même si son percentile arrondi (16) serait `normal`.
 
 Les données des annexes sont calculées dans `utils/reportData.ts` ; l'aperçu et le PDF ne font que les rendre :
 
 | Élément               | Fonction                                                    | Détail                                                                                                 |
 | --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Barres ET             | `computeZChartItems`                                        | axe `Z_AXIS` de −3,5 à +3,5 (`zToFraction`), zone de chaque sous-test                                  |
-| Percentiles           | `computePercentileChartItems`                               | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), zone par `zoneFromPercentile`                      |
+| Percentiles           | `computePercentileChartItems`                               | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), zone du score résolu                               |
 | Radar                 | `computeRadarData`                                          | moyenne des z par catégorie, bornée à ±3 (`RADAR_RANGE`) ; vide s'il y a moins de 3 catégories         |
 | Tableaux de scores    | `buildTestScoreBlocks`                                      | lignes standardisées, lignes qualitatives (catégorie + `reportText`), notes des observations libres    |
-| Valeur affichée       | `formatScoreForMode`                                        | mode NS, ET ou % par test ; si la métrique demandée n'est pas calculable, valeur saisie avec son unité |
+| Valeur affichée       | `display(mode)` du score résolu                             | mode NS, ET ou % par test ; si la métrique demandée n'est pas calculable, valeur saisie avec son unité |
 | Disposition des pages | `buildDefaultPages`, `reconcilePages`, `moveSectionInPages` | sections masquées : `HIDDEN_SECTION_IDS` (`objectifs`)                                                 |
 
-Le type de graphique (`chartType`, défaut `bar`) et le mode d'affichage par test (`scoreDisplayModes`, défaut `ET`) sont enregistrés dans `BrandingConfig`, donc dans `practitioners.branding_config` (`ExportPage` → `updateBranding`). Les sous-tests sans z calculable (échelle `none` saisie en NS, brut, qualitatif) n'apparaissent pas dans les graphiques.
+Le type de graphique (`chartType`, défaut `bar`) et le mode d'affichage par test (`scoreDisplayModes`, défaut `ET`) sont enregistrés dans `BrandingConfig`, donc dans `practitioners.branding_config` (`ExportPage` → `updateBranding`). Les sous-tests sans z calculable (échelle `none` saisie en NS, qualitatif) n'apparaissent pas dans les graphiques.
+
+## 6 bis. Score résolu
+
+`utils/resolvedScore.ts` est le seul point d'entrée pour lire un score (voir `CONTEXT.md`). Il sert l'étape diagnostic, le résumé par test de la saisie, la lecture de l'échelle dans `ScoreTable`, les données du rapport et du PDF (`reportData`), la charge utile de l'IA (`buildScoresEvidence`, `buildScoresSummaryText`), les deltas et la consultation d'un bilan finalisé.
+
+| Fonction                                         | Rôle                                                                                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolveScores(tests, index)`                    | scores regroupés par test, dans l'ordre enregistré : nom, catégorie, moyenne z (`meanZ`), sous-tests qui ont une donnée ; les tests sans donnée restent |
+| `describeScore(index, testId, subtestId, score)` | un score résolu : libellé, test, échelle, définition, métrique saisie, z, percentile, zone, `valueIn(métrique)`, `display(mode)`                        |
+| `formatMetricValue(valeur, métrique, signé?)`    | format unique : `85 NS`, `+1.2 ET` (2 décimales au plus, ET toujours signé), `42 %` ; `signé` pour un écart (`+5 NS`)                                   |
+
+`display()` rend la valeur dans la métrique saisie, `display(mode)` dans la métrique demandée si elle est calculable (sinon la valeur saisie). Un score qualitatif affiche son libellé, un score vide `—`.
 
 ## 7. Deltas de réévaluation
 
 Fonctions de `utils/reevaluationHelpers.ts`, affichage par `components/assessment/shared/DeltaTable.tsx`.
 
 - **Scores de départ** : la réévaluation démarre avec les tests et sous-tests du bilan de référence, **sans valeur** (`buildEmptyTestsFrom`, `utils/assessment.ts`, appelé par `useAssessmentLauncher`). Le bilan de référence est le dernier bilan formel (`getLatestFormalAssessment`). Le praticien peut retirer un test, pas en ajouter.
-- **Métrique affichée** : `Step1Scores` n'affiche, pour chaque test, qu'une colonne : la métrique la plus utilisée dans le bilan précédent (`dominantMetric`, ET en cas d'égalité). Les sous-tests `raw_only` gardent leur champ « Brut ».
-- **`buildDeltaEntries`** : pour chaque sous-test, la métrique est celle du score précédent (sinon celle du nouveau). `prevValue` et `newValue` sont exprimés dans cette métrique (`extractMetricValue`) : un score saisi dans une autre métrique est converti avec l'échelle du sous-test, ou vaut `null` si l'échelle est inconnue. `delta` est leur différence. Les scores bruts ou qualitatifs ne sont pas comparés.
+- **Métrique affichée** : `Step1Scores` n'affiche, pour chaque test, qu'une colonne : la métrique la plus utilisée dans le bilan précédent (`dominantMetric`, ET en cas d'égalité).
+- **`buildDeltaEntries`** : pour chaque sous-test, la métrique est celle du score précédent (sinon celle du nouveau). `prevValue` et `newValue` sont exprimés dans cette métrique (`valueIn` du score résolu) : un score saisi dans une autre métrique est converti avec l'échelle du sous-test, ou vaut `null` si l'échelle est inconnue. `delta` est leur différence. Les scores qualitatifs ne sont pas comparés.
 - **Tendance en unités z** : `zDelta` = z(nouveau) − z(précédent), calculé avec l'échelle du sous-test. `trendFromZDelta` classe en amélioration au-delà de +0,5, régression en deçà de −0,5, stable entre les deux (`STABILITY_THRESHOLD_Z` = 0,5 ET, soit 1,5 point en NS scaled et 7,5 points en QI). Sans z calculable (échelle `none` saisie en NS), aucune tendance n'est affichée.
 - **Non mesuré** : un sous-test resté vide a `measured = false` et s'affiche « non mesuré » ; mesuré mais non convertible, il s'affiche « non comparable ». `buildDeltaStats` compte `improved`, `stable`, `declined` et `notMeasured`.
 - **Textes pour l'IA** : `buildScoresSummaryText` (scores d'un bilan) et `buildEvolutionSummaryText` (delta dans la métrique, delta en ET et tendance).
-- **Affichage** : `DeltaTable` montre les valeurs ET avec 2 décimales et les deltas avec 1 décimale ; l'infobulle du delta donne `zDelta`.
+- **Affichage** : `DeltaTable` et `buildEvolutionSummaryText` formatent valeurs et écarts avec `formatMetricValue` (`90 NS`, écart signé `+5 NS`) ; l'infobulle du delta donne `zDelta`.
 
 Un score précédent saisi dans une autre métrique que la métrique dominante du test est ressaisi dans la métrique dominante, puis converti pour la comparaison. Les deltas ne figurent pas dans le PDF (P1-15).
 
