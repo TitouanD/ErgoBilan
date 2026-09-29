@@ -16,16 +16,15 @@ import type {
   DraftPayload,
   Patient,
   PatientAssessment,
-  PatientDashboardPreviewMeta,
   PatientFile,
   PatientFollowup,
   PatientFollowupStatus,
-  PatientPreviewPayload,
   ReportSection,
 } from '../types';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { getPatientAgeForIdentity, isPatientCreationReady } from '../utils/patient';
 import { Logger } from '../utils/logger';
+import { buildPreviewMeta, resolveReminderStatus } from '../utils/patientStatus';
 
 // ─── Scoped DB accessor ────────────────────────────────────────────────────────
 let _localDB: ReturnType<typeof getLocalDB> | null = null;
@@ -49,21 +48,6 @@ const normalizePatientIdentity = (patient: Patient): Patient => ({
   ...patient,
   age: getPatientAgeForIdentity(patient),
 });
-
-const getLatestIsoDate = (dates: Array<string | null | undefined>): string | null => {
-  const timestamps = dates
-    .map((value) => (value ? new Date(value).getTime() : Number.NaN))
-    .filter((value) => Number.isFinite(value));
-  if (timestamps.length === 0) return null;
-  return new Date(Math.max(...timestamps)).toISOString();
-};
-
-const addMonthsToIso = (value: string, months: number): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString();
-};
 
 const rowToAssessment = (row: LocalAssessmentRow): PatientAssessment => ({
   id: row.id,
@@ -93,34 +77,8 @@ const assessmentToRow = (patientId: string, a: PatientAssessment, createdAt: str
 
 // ─── Followup helpers ─────────────────────────────────────────────────────────
 
-const resolveTemporalFollowupStatus = (dueAt: string): PatientFollowupStatus => {
-  const dueDate = new Date(dueAt);
-  if (Number.isNaN(dueDate.getTime())) return 'upcoming';
-  const overdueDate = new Date(dueDate);
-  overdueDate.setMonth(overdueDate.getMonth() + 6);
-  const now = Date.now();
-  if (now < dueDate.getTime()) return 'upcoming';
-  if (now <= overdueDate.getTime()) return 'due';
-  return 'overdue';
-};
-
 const mapLocalFollowupRow = (row: LocalFollowupRow): PatientFollowup => {
-  let normalizedStatus: PatientFollowupStatus;
-  if (row.status === 'completed' || row.status === 'scheduled') {
-    normalizedStatus = row.status;
-  } else if (row.status === 'snoozed') {
-    if (row.snoozedUntil) {
-      const snoozedUntil = new Date(row.snoozedUntil);
-      normalizedStatus =
-        !Number.isNaN(snoozedUntil.getTime()) && Date.now() < snoozedUntil.getTime()
-          ? 'snoozed'
-          : resolveTemporalFollowupStatus(row.dueAt);
-    } else {
-      normalizedStatus = resolveTemporalFollowupStatus(row.dueAt);
-    }
-  } else {
-    normalizedStatus = resolveTemporalFollowupStatus(row.dueAt);
-  }
+  const normalizedStatus = resolveReminderStatus(row, new Date());
 
   return {
     id: row.id,
@@ -135,113 +93,7 @@ const mapLocalFollowupRow = (row: LocalFollowupRow): PatientFollowup => {
   };
 };
 
-// ─── Preview / workflow helpers ───────────────────────────────────────────────
-
-const buildWorkflowState = (
-  patient: Patient,
-  metrics: PatientDashboardPreviewMeta['metrics'],
-  hasInitialReport: boolean,
-  hasReevaluationOpportunity: boolean,
-): PatientDashboardPreviewMeta['workflow'] => {
-  if (metrics.formalReportsCount > 0) {
-    return {
-      progressPercent: 100,
-      progressLabel: 'termine',
-      statusTone: 'success',
-      nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient',
-    };
-  }
-  if (metrics.assessmentsCount > 0) {
-    return { progressPercent: 60, progressLabel: 'tests_saisis', statusTone: 'neutral', nextAction: 'open_patient' };
-  }
-  const hasInitialInfos = Boolean(
-    patient.reason || patient.school || patient.familyExpectations || patient.classLevel,
-  );
-  if (hasInitialInfos) {
-    return { progressPercent: 35, progressLabel: 'infos_recues', statusTone: 'warning', nextAction: 'complete_initial' };
-  }
-  return { progressPercent: 10, progressLabel: 'created', statusTone: 'warning', nextAction: 'complete_initial' };
-};
-
-const buildPreviewPayload = (
-  patient: Patient,
-  options: { archived?: boolean; assessments?: PatientAssessment[] },
-): PatientPreviewPayload => {
-  const assessments = options.assessments || [];
-  const formalAssessments = assessments.filter((item) => item.hasFormalReport);
-  const hasInitialReport = formalAssessments.some((item) => item.kind === 'initial');
-  const hasReevaluationReport = formalAssessments.some((item) => item.kind === 'reevaluation');
-  const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
-
-  const metrics: PatientDashboardPreviewMeta['metrics'] = {
-    assessmentsCount: assessments.length,
-    formalReportsCount: formalAssessments.length,
-    lastAssessmentDate: getLatestIsoDate(assessments.map((item) => item.date)),
-    lastFormalReportDate: getLatestIsoDate(formalAssessments.map((item) => item.date)),
-  };
-
-  return {
-    uiVersion: 2,
-    identity: {
-      firstName: patient.firstName || '',
-      lastName: patient.lastName || '',
-      age: getPatientAgeForIdentity(patient),
-      classLevel: patient.classLevel || '',
-      gender: patient.gender || '',
-    },
-    workflow: buildWorkflowState(patient, metrics, hasInitialReport, hasReevaluationOpportunity),
-    metrics,
-    flags: { _archived: options.archived === true, hasInitialReport, hasReevaluationOpportunity },
-  };
-};
-
-const toPreviewMeta = (payload: PatientPreviewPayload): PatientDashboardPreviewMeta => ({
-  uiVersion: 2,
-  workflow: payload.workflow,
-  metrics: payload.metrics,
-  flags: payload.flags,
-});
-
-const buildFallbackPreviewMeta = (patient: Patient, archived: boolean): PatientDashboardPreviewMeta => {
-  const metrics: PatientDashboardPreviewMeta['metrics'] = {
-    assessmentsCount: 0,
-    formalReportsCount: 0,
-    lastAssessmentDate: null,
-    lastFormalReportDate: null,
-  };
-  return {
-    uiVersion: 2,
-    workflow: buildWorkflowState(patient, metrics, false, false),
-    metrics,
-    flags: { _archived: archived, hasInitialReport: false, hasReevaluationOpportunity: false },
-  };
-};
-
 // ─── Demo helpers ─────────────────────────────────────────────────────────────
-
-const buildFallbackFollowupFromAssessments = (
-  patientId: string,
-  assessments: PatientAssessment[],
-): PatientFollowup | null => {
-  const formalAssessments = assessments
-    .filter((item) => item.hasFormalReport)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const lastFormal = formalAssessments[0];
-  if (!lastFormal) return null;
-
-  const dueAt = addMonthsToIso(lastFormal.date, 6);
-  return {
-    id: `fallback-${patientId}`,
-    patientId,
-    organizationId: null,
-    status: resolveTemporalFollowupStatus(dueAt),
-    dueAt,
-    snoozedUntil: null,
-    note: null,
-    createdAt: lastFormal.date,
-    updatedAt: new Date().toISOString(),
-  };
-};
 
 const buildDemoAssessments = (patientId: string): PatientAssessment[] => {
   if (patientId !== DEMO_PATIENTS.SARAH.id) return [];
@@ -297,7 +149,7 @@ export const StorageService = {
       patient: { ...normalizedPatient, id },
       archived: false,
       lastInteraction: now,
-      previewMeta: buildFallbackPreviewMeta(normalizedPatient, false),
+      previewMeta: buildPreviewMeta(normalizedPatient, [], false),
       createdAt: now,
       updatedAt: now,
     });
@@ -331,9 +183,7 @@ export const StorageService = {
     const assessmentRows = await db().assessments.where('patientId').equals(patientId).toArray();
     const assessments = assessmentRows.map(rowToAssessment);
 
-    const previewMeta = toPreviewMeta(
-      buildPreviewPayload(normalizedPatient, { archived: existing.archived, assessments }),
-    );
+    const previewMeta = buildPreviewMeta(normalizedPatient, assessments, existing.archived);
 
     await db().patients.update(patientId, {
       patient: { ...normalizedPatient, id: patientId },
@@ -414,9 +264,7 @@ export const StorageService = {
       .map(rowToAssessment);
     const mergedAssessments = [...file.assessments, ...existingAssessments];
 
-    const previewMeta = toPreviewMeta(
-      buildPreviewPayload(normalizedPatient, { archived: file.archived, assessments: mergedAssessments }),
-    );
+    const previewMeta = buildPreviewMeta(normalizedPatient, mergedAssessments, file.archived);
 
     await db().patients.update(file.id, {
       patient: { ...normalizedPatient, id: file.id },
@@ -449,7 +297,7 @@ export const StorageService = {
       await db().assessments.put(assessmentToRow(patientId, assessment, now));
       const assessments = (await db().assessments.where('patientId').equals(patientId).toArray()).map(rowToAssessment);
       const archived = existing?.archived ?? false;
-      const previewMeta = toPreviewMeta(buildPreviewPayload(normalizedPatient, { archived, assessments }));
+      const previewMeta = buildPreviewMeta(normalizedPatient, assessments, archived);
       const row = { patient: { ...normalizedPatient, id: patientId }, previewMeta, lastInteraction: now, updatedAt: now };
       if (existing) await db().patients.update(patientId, row);
       else await db().patients.add({ id: patientId, archived, createdAt: now, ...row });
@@ -463,18 +311,15 @@ export const StorageService = {
   ): Promise<{ files: PatientFile[]; hasMore: boolean; nextOffset: number }> => {
     if (_isDemoMode) {
       const assessments = buildDemoAssessments(DEMO_PATIENTS.SARAH.id);
-      const followup = buildFallbackFollowupFromAssessments(
-        DEMO_PATIENTS.SARAH.id,
-        assessments,
-      );
       const demoFile: PatientFile = {
         id: DEMO_PATIENTS.SARAH.id,
         patient: DEMO_PATIENTS.SARAH.patient,
         assessments,
-        followup,
+        // The reminder is derived from the assessments (utils/patientStatus.ts).
+        followup: null,
         lastInteraction: assessments[0]?.date || new Date().toISOString(),
         archived: false,
-        previewMeta: toPreviewMeta(buildPreviewPayload(DEMO_PATIENTS.SARAH.patient, { archived: false, assessments })),
+        previewMeta: buildPreviewMeta(DEMO_PATIENTS.SARAH.patient, assessments, false),
       };
       return { files: [demoFile], hasMore: false, nextOffset: 1 };
     }
@@ -529,9 +374,7 @@ export const StorageService = {
             const assessments: PatientAssessment[] = allRows.map(rowToAssessment);
             const fileToRepair = files.find((f) => f.id === patientId);
             if (!fileToRepair) continue;
-            const repairedMeta = toPreviewMeta(
-              buildPreviewPayload(fileToRepair.patient, { archived: fileToRepair.archived, assessments }),
-            );
+            const repairedMeta = buildPreviewMeta(fileToRepair.patient, assessments, fileToRepair.archived);
             await db().patients.update(patientId, { previewMeta: repairedMeta, updatedAt: new Date().toISOString() });
             fileToRepair.previewMeta = repairedMeta;
           }
@@ -609,7 +452,7 @@ export const StorageService = {
         return {
           assessments,
           patient: { ...DEMO_PATIENTS.ELYA.patient, id: patientId },
-          followup: buildFallbackFollowupFromAssessments(patientId, assessments),
+          followup: null,
           hasMoreAssessments: false,
           nextAssessmentOffset: 0,
         };
@@ -618,7 +461,7 @@ export const StorageService = {
       return {
         assessments,
         patient: { ...DEMO_PATIENTS.SARAH.patient, id: patientId },
-        followup: buildFallbackFollowupFromAssessments(patientId, assessments),
+        followup: null,
         hasMoreAssessments: false,
         nextAssessmentOffset: 0,
       };

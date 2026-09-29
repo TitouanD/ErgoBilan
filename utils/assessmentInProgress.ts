@@ -18,7 +18,6 @@
 import type { StorageService } from '../services/storage';
 import type {
   ClinicalSynthesis,
-  DashboardDraftMeta,
   DraftPayload,
   Observations,
   Patient,
@@ -30,13 +29,13 @@ import { buildAssessmentRecord, buildEmptyTestsFrom, getAssessmentTests, getLate
 import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';
 import { getPatientAgeForIdentity, isPatientCreationReady } from './patient';
+import { reminderDueAt } from './patientStatus';
 import { normalizeTestData } from './scoring';
 
 export type ReportType = 'initial' | 'reevaluation' | 'historique';
 
 export const AUTOSAVE_DEBOUNCE_MS = 3_000;
 const DRAFT_VERSION = 3;
-const FOLLOWUP_DELAY_MONTHS = 6;
 
 export interface AssessmentState {
   patient: Patient;
@@ -193,10 +192,6 @@ export const initialAssessmentState: AssessmentState = {
   isAutoSaving: false,
 };
 
-/** Initial/historical draft left behind although the patient already has a formal report. */
-export const isStaleDraft = (meta: DashboardDraftMeta | undefined | null, hasFormalReport: boolean): boolean =>
-  Boolean(meta) && hasFormalReport && meta!.reportType !== 'reevaluation';
-
 export const buildDraft = (state: AssessmentState, patient: Patient, now: Date): DraftPayload => ({
   patient,
   tests: state.tests,
@@ -241,12 +236,6 @@ const applyReformulations = (current: TestData, sent: TestData, reformulated: Re
 
 /** The patient as stored: with its record id and the age computed today. */
 const withRecord = (patient: Patient, id = patient.id): Patient => ({ ...patient, id, age: getPatientAgeForIdentity(patient) });
-
-const addMonths = (iso: string, months: number): string => {
-  const d = new Date(iso);
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString();
-};
 
 const defaultSchedule = (fn: () => void, ms: number) => {
   const t = setTimeout(fn, ms);
@@ -553,7 +542,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
         await store.upsertPatientFollowup({
           patientId: patient.id!,
           status: 'upcoming',
-          dueAt: addMonths(date, FOLLOWUP_DELAY_MONTHS),
+          dueAt: reminderDueAt(date),
           note: reportType === 'reevaluation' ? 'Rappel généré après réévaluation' : 'Rappel généré après bilan initial',
         });
       } catch (e) {

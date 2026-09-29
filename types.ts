@@ -324,15 +324,13 @@ export interface PatientAssessment {
 
 export type PatientDashboardProgressLabel = 'created' | 'infos_recues' | 'tests_saisis' | 'termine';
 export type PatientDashboardStatusTone = 'neutral' | 'warning' | 'success';
-export type PatientDashboardNextAction = 'complete_initial' | 'resume_draft' | 'open_patient' | 'reevaluation_candidate';
 
+/** Dashboard preview cached on the patient row, computed by utils/patientStatus.ts (nothing is encrypted: see docs/TECH_DEBT.md P0-1). */
 export interface PatientDashboardPreviewMeta {
     uiVersion: 2;
     workflow: {
-        progressPercent: number;
         progressLabel: PatientDashboardProgressLabel;
         statusTone: PatientDashboardStatusTone;
-        nextAction: PatientDashboardNextAction;
     };
     metrics: {
         assessmentsCount: number;
@@ -345,21 +343,6 @@ export interface PatientDashboardPreviewMeta {
         hasInitialReport: boolean;
         hasReevaluationOpportunity: boolean;
     };
-}
-
-/** Dashboard preview computed from a patient file (nothing is encrypted: see docs/TECH_DEBT.md P0-1). */
-export interface PatientPreviewPayload {
-    uiVersion: 2;
-    identity: {
-        firstName: string;
-        lastName: string;
-        age: string;
-        classLevel: string;
-        gender: string;
-    };
-    workflow: PatientDashboardPreviewMeta['workflow'];
-    metrics: PatientDashboardPreviewMeta['metrics'];
-    flags: PatientDashboardPreviewMeta['flags'];
 }
 
 export interface PatientFile {

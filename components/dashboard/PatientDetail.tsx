@@ -7,6 +7,7 @@ import { StorageService } from '../../services/storage';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 import { getPatientAgeForIdentity } from '../../utils/patient';
+import { defaultScheduledDueAt, derivePatientStatus, reminderDueAt, snoozeEndAt } from '../../utils/patientStatus';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface Props {
@@ -45,24 +46,6 @@ const followupTone: Record<PatientFollowup['status'], string> = {
   scheduled: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   snoozed: 'border-[var(--border-color)] bg-[var(--hover-bg)] text-[var(--text-main)]',
-};
-
-const addMonths = (dateIso: string, months: number): string => {
-  const base = new Date(dateIso);
-  if (Number.isNaN(base.getTime())) return new Date().toISOString();
-  base.setMonth(base.getMonth() + months);
-  return base.toISOString();
-};
-
-const deriveTemporalStatus = (dueAt: string): PatientFollowup['status'] => {
-  const dueDate = new Date(dueAt);
-  if (Number.isNaN(dueDate.getTime())) return 'upcoming';
-  const overdueDate = new Date(dueDate);
-  overdueDate.setMonth(overdueDate.getMonth() + 6);
-  const now = Date.now();
-  if (now < dueDate.getTime()) return 'upcoming';
-  if (now <= overdueDate.getTime()) return 'due';
-  return 'overdue';
 };
 
 export const PatientDetail: React.FC<Props> = ({
@@ -113,24 +96,8 @@ export const PatientDetail: React.FC<Props> = ({
     setLocalPatient(file.patient);
   }, [file.patient]);
 
-  const fallbackFollowup = useMemo(() => {
-    const lastFormal = formalAssessments[0];
-    if (!lastFormal) return null;
-    const dueAt = addMonths(lastFormal.date, 6);
-    return {
-      id: `fallback-${file.id}`,
-      patientId: file.id,
-      organizationId: null,
-      status: deriveTemporalStatus(dueAt),
-      dueAt,
-      snoozedUntil: null,
-      note: null,
-      createdAt: lastFormal.date,
-      updatedAt: lastFormal.date,
-    } satisfies PatientFollowup;
-  }, [formalAssessments, file.id]);
-
-  const followup = followupState || fallbackFollowup;
+  // The stored reminder, or one derived from the last formal assessment (none when archived).
+  const followup = derivePatientStatus({ ...file, followup: followupState }, null, new Date()).reminder;
   const latestFormalIsReevaluation = formalAssessments[0]?.kind === 'reevaluation';
 
   const refreshFollowup = async () => {
@@ -178,7 +145,7 @@ export const PatientDetail: React.FC<Props> = ({
       await StorageService.upsertPatientFollowup({
         patientId: file.id,
         status: 'scheduled',
-        dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 1),
+        dueAt: followup?.dueAt || defaultScheduledDueAt(new Date()),
         note: 'Rappel planifie depuis la fiche patient',
       });
       await refreshFollowup();
@@ -192,7 +159,7 @@ export const PatientDetail: React.FC<Props> = ({
   };
 
   const handleSnoozeFollowup = async () => {
-    const snoozedUntil = addMonths(new Date().toISOString(), 1);
+    const snoozedUntil = snoozeEndAt(new Date());
     setIsFollowupBusy(true);
     try {
       if (followupState) {
@@ -201,7 +168,7 @@ export const PatientDetail: React.FC<Props> = ({
         await StorageService.upsertPatientFollowup({
           patientId: file.id,
           status: 'snoozed',
-          dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 6),
+          dueAt: followup?.dueAt || reminderDueAt(new Date()),
           snoozedUntil,
           note: 'Rappel reporte depuis la fiche patient',
         });
@@ -226,7 +193,7 @@ export const PatientDetail: React.FC<Props> = ({
         await StorageService.upsertPatientFollowup({
           patientId: file.id,
           status: 'completed',
-          dueAt: followup?.dueAt || addMonths(new Date().toISOString(), 6),
+          dueAt: followup?.dueAt || reminderDueAt(new Date()),
           note: 'Rappel clôturé après réévaluation formelle',
         });
       }
@@ -691,7 +658,7 @@ export const PatientDetail: React.FC<Props> = ({
                 </div>
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)] italic">Aucun rappel actif. Créez un bilan formel pour démarrer le suivi.</p>
+              <p className="rounded-xl border border-dashed border-[var(--border-color)] p-4 text-xs text-[var(--text-secondary)] italic">{file.archived ? 'Aucun rappel : patient archivé.' : 'Aucun rappel actif. Créez un bilan formel pour démarrer le suivi.'}</p>
             )}
           </div>
 

@@ -58,3 +58,9 @@ _Éviter_ : valider, clôturer
 **Abandonner** :
 Quitter le bilan en cours sans le garder : son brouillon est supprimé.
 _Éviter_ : annuler, quitter sans sauvegarder
+
+### Suivi des patients
+
+**Rappel de réévaluation** :
+Échéance à laquelle un patient qui a au moins un bilan formel devrait être réévalué, six mois après son dernier bilan formel. Il est à venir avant l'échéance, à planifier pendant les six mois qui suivent, puis en retard ; l'ergothérapeute peut aussi le planifier, le reporter ou le marquer complété.
+_Éviter_ : suivi, followup, relance

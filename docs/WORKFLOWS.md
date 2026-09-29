@@ -36,12 +36,12 @@ Points d'entrée vers `assessment` :
 
 Composants du dashboard impliqués :
 
-| Composant                                        | Rôle dans les parcours                                                                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `components/dashboard/Dashboard.tsx`             | Liste paginée des patients (`previewMeta`), questionnaires en attente + « Importer », bouton « Reprendre »                      |
-| `components/dashboard/NewPatientChoiceModal.tsx` | Choix lien famille / saisie manuelle / bilan antérieur                                                                          |
-| `components/dashboard/CommandPalette.tsx`        | Recherche patient, choix « nouveau patient », reprise de brouillon                                                              |
-| `components/dashboard/PatientDetail.tsx`         | Fiche patient : historique paginé, bannières de brouillon, actions de bilan, suivis, édition d'identité, archivage, suppression |
+| Composant                                        | Rôle dans les parcours                                                                                                                          |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/dashboard/Dashboard.tsx`             | Liste paginée des patients (`previewMeta`), questionnaires en attente + « Importer », bouton « Reprendre »                                      |
+| `components/dashboard/NewPatientChoiceModal.tsx` | Choix lien famille / saisie manuelle / bilan antérieur                                                                                          |
+| `components/dashboard/CommandPalette.tsx`        | Recherche patient, choix « nouveau patient », reprise de brouillon                                                                              |
+| `components/dashboard/PatientDetail.tsx`         | Fiche patient : historique paginé, bannières de brouillon, actions de bilan, rappel de réévaluation, édition d'identité, archivage, suppression |
 
 **Navigation dans un bilan** (`AssessmentWorkspace`). Le stepper (`shared/AssessmentStepper.tsx`) ne permet de cliquer que sur les étapes passées. `handleStepperClick` demande confirmation quand on revient à l'étape qui produit les sections (ou avant) depuis une étape ultérieure et que des sections existent : étape 3 en initial, étape 2 en réévaluation, jamais en historique (`GENERATION_STEP`). « Quitter » propose de sauvegarder le brouillon ou de le jeter (`handleQuitSave`, `handleQuitDiscard`). `shared/StepNavFooter.tsx` n'est qu'un pied de page « Retour + CTA ».
 
@@ -118,7 +118,7 @@ Sert à enregistrer un bilan réalisé hors application pour débloquer la réé
 | Sauver & quitter     | `flow.saveAndQuit` → `saveAndClose` : crée la fiche si besoin, puis `saveDraft(buildDraft(…))` ; bouton de l'en-tête ou modale « Quitter »                                                                                                                                                  |
 | Index dashboard      | `getDraftsMetadata` → `{updatedAt, step, reportType}`, rechargé par `loadData` (`useDataLoader`)                                                                                                                                                                                            |
 | Reprise              | `resumeDraft` → `resume` : charge le brouillon. Pour une réévaluation, la référence est relue en base (`previousAssessmentId`, sinon le dernier bilan formel) ; si le brouillon n'a pas de scores, les tests vides sont reconstruits                                                        |
-| Brouillon périmé     | `isStaleDraft` : brouillon `initial`/`historique` d'un patient qui a déjà un bilan formel. À la reprise, il est supprimé et une réévaluation démarre ; il est masqué dans `PatientDetail`                                                                                                   |
+| Brouillon périmé     | `derivePatientStatus(...).draft.stale` (`utils/patientStatus.ts`) : brouillon `initial`/`historique` d'un patient qui a déjà un bilan formel. À la reprise, il est supprimé et une réévaluation démarre ; il est masqué dans `PatientDetail`                                                |
 | Bannière / CTA       | `PatientDetail` : bannière « Réévaluation en cours » ou « Brouillon non terminé » et bouton d'action ; carte dashboard « Reprendre » si le bilan initial n'est pas fait **ou** si le brouillon est une réévaluation                                                                         |
 | Suppression          | `finalize` (après la remise à zéro), « Quitter sans sauvegarder » (`discard`), conversion d'un brouillon périmé, suppression du patient (`deleteFile`)                                                                                                                                      |
 
@@ -130,13 +130,15 @@ Sert à enregistrer un bilan réalisé hors application pour débloquer la réé
 2. `ensureFreshSession()`, puis `ensurePatient` : crée la fiche si elle n'a pas encore d'id et recalcule l'âge.
 3. `buildAssessmentRecord` (`utils/assessment.ts`) : `id` UUID, `date` (maintenant, ou `historicalDate` en historique), `kind` (`reevaluation`, sinon `initial`), `hasFormalReport: true`, `testName`, `results` (scores à plat) et `tests` sans les scores vides, `previousAssessmentId` en réévaluation, `report: {status: 'completed', patientName, sections}` seulement si des sections ont du contenu.
 4. `StorageService.addAssessment` : dans une transaction, écrit le bilan, recalcule `previewMeta` à partir de tous les bilans du patient et met à jour (ou crée) la ligne patient. **La finalisation est acquise à partir d'ici** : ce qui suit ne peut plus la faire échouer.
-5. Suivi : `upsertPatientFollowup` en `upcoming` à la date du bilan + 6 mois, pour tous les parcours (sans bloquer en cas d'échec).
+5. Rappel de réévaluation : `upsertPatientFollowup` en `upcoming` à la date du bilan + 6 mois, pour tous les parcours (sans bloquer en cas d'échec).
 6. Boucle de style, hors historique et sans crédit : les sections générées par l'IA puis modifiées (`originalContent` ≠ contenu) sont converties en texte, pseudonymisées et envoyées à la tâche `extract_style_feedback` ; `refreshProfile` recharge ensuite les préférences.
 7. Remise à zéro (annule l'autosave en attente), `deleteDraft` (retenté une fois, puis avertissement), `loadData` (sans bloquer), toast de succès, retour au dashboard.
 
-**`previewMeta`** (`services/storage.ts`, `buildPreviewPayload`) : `metrics` (nombre de bilans, de bilans formels, dates), `flags.hasInitialReport` (bilan formel de `kind` `initial`, donc bilans historiques inclus), `hasReevaluationOpportunity`, et `workflow` (progression, ton, prochaine action). C'est ce qui permet au dashboard, dont la liste ne charge pas les bilans, de savoir si un brouillon est périmé. `loadPatientListPage` répare en tâche de fond les `previewMeta` incohérents.
+**Statut patient** (`utils/patientStatus.ts`, fonctions pures, `now` injecté) : seul endroit où se calculent l'aperçu, le rappel de réévaluation et le brouillon périmé. `StorageService` enregistre `buildPreviewMeta` à chaque écriture ; `Dashboard`, `PatientDetail`, `App` et `useAssessmentLauncher` lisent `derivePatientStatus(fichier, brouillon, now)`.
 
-**Suivis dans l'UI** : le statut stocké est recalculé à la lecture (`mapLocalFollowupRow`) : `upcoming` avant l'échéance, `due` pendant 6 mois, puis `overdue` ; `snoozed` jusqu'à `snoozedUntil` ; `completed` et `scheduled` sont conservés. Sans suivi stocké, `PatientDetail` et `Dashboard` calculent un suivi virtuel (dernier bilan formel + 6 mois). Actions dans `PatientDetail` : planifier, reporter d'un mois, marquer comme fait.
+**`previewMeta`** (`buildPreviewMeta`) : `metrics` (nombre de bilans, de bilans formels, dates), `flags.hasInitialReport` (bilan formel de `kind` `initial`, donc bilans historiques inclus), `hasReevaluationOpportunity`, et `workflow` (étape d'avancement et ton). C'est ce qui permet au dashboard, dont la liste ne charge pas les bilans, de savoir si un patient a un bilan formel (`formalReportsCount > 0`), donc si un brouillon est périmé. `loadPatientListPage` répare en tâche de fond les `previewMeta` incohérents.
+
+**Rappel de réévaluation dans l'UI** : le statut stocké est recalculé à la lecture (`resolveReminderStatus`) : `upcoming` avant l'échéance, `due` pendant 6 mois, puis `overdue` ; `snoozed` jusqu'à `snoozedUntil` ; `completed` et `scheduled` sont conservés. Sans rappel stocké (et toujours en mode démo), `derivePatientStatus` en déduit un à partir du dernier bilan formel, quel que soit son parcours (+ 6 mois). Un patient archivé n'a pas de rappel. Actions dans `PatientDetail` : planifier, reporter d'un mois, marquer comme fait.
 
 ## 7. Portail parents de bout en bout
 

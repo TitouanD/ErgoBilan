@@ -22,6 +22,7 @@ import { ImportAnimation } from '../shared/ImportAnimation';
 import { CommandPalette } from './CommandPalette';
 import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 import { getPatientAgeForIdentity } from '../../utils/patient';
+import { derivePatientStatus } from '../../utils/patientStatus';
 
 interface Props {
   userProfile: UserProfile;
@@ -88,38 +89,10 @@ const getToneClasses = (tone: PatientDashboardPreviewMeta['workflow']['statusTon
   return { badge: 'bg-[var(--secondary)]/10 text-[var(--text-heading)] border-[var(--secondary)]/20', progress: 'bg-[var(--secondary)]' };
 };
 
-const buildSyntheticFollowup = (file: PatientFile): PatientFollowup | null => {
-  if (file.followup) return file.followup;
-  const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
-  const lastFormalDate = previewMeta.metrics.lastFormalReportDate;
-  if (!lastFormalDate || !previewMeta.flags.hasInitialReport) return null;
-
-  const dueDate = new Date(lastFormalDate);
-  if (Number.isNaN(dueDate.getTime())) return null;
-  dueDate.setMonth(dueDate.getMonth() + 6);
-
-  const overdueDate = new Date(dueDate);
-  overdueDate.setMonth(overdueDate.getMonth() + 6);
-  const now = Date.now();
-  const status = now < dueDate.getTime() ? 'upcoming' : now <= overdueDate.getTime() ? 'due' : 'overdue';
-
-  return {
-    id: `virtual-${file.id}`,
-    patientId: file.id,
-    organizationId: null,
-    status,
-    dueAt: dueDate.toISOString(),
-    snoozedUntil: null,
-    note: null,
-    createdAt: lastFormalDate,
-    updatedAt: lastFormalDate,
-  };
-};
-
 const buildFollowupStatusLabel = (followup: PatientFollowup): string => {
   const dueDateLabel = new Date(followup.dueAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   if (followup.status === 'due') {
-    return 'Fenêtre de réévaluation ouverte';
+    return 'Réévaluation à planifier';
   }
   if (followup.status === 'overdue') {
     return 'Réévaluation en retard';
@@ -143,42 +116,6 @@ const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName.toLowerCase();
   return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
-};
-
-const deriveFallbackPreviewMeta = (file: PatientFile): PatientDashboardPreviewMeta => {
-  const assessments = file.assessments || [];
-  const reportsCount = assessments.filter((assessment) => assessment.hasFormalReport).length;
-  const sessionsCount = assessments.length;
-  const hasInitialReport = assessments.some((assessment) => assessment.hasFormalReport && assessment.kind === 'initial');
-  const hasReevaluationReport = assessments.some((assessment) => assessment.hasFormalReport && assessment.kind === 'reevaluation');
-  const hasReevaluationOpportunity = hasInitialReport && !hasReevaluationReport;
-  const lastReportDate = reportsCount > 0 ? assessments.filter((assessment) => assessment.hasFormalReport).map((assessment) => assessment.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
-  const lastSessionDate = sessionsCount > 0 ? assessments.map((assessment) => assessment.date).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
-
-  if (reportsCount > 0) {
-    return {
-      uiVersion: 2,
-      workflow: { progressPercent: 100, progressLabel: 'termine', statusTone: 'success', nextAction: hasReevaluationOpportunity ? 'reevaluation_candidate' : 'open_patient' },
-      metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
-      flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
-    };
-  }
-
-  if (sessionsCount > 0) {
-    return {
-      uiVersion: 2,
-      workflow: { progressPercent: 60, progressLabel: 'tests_saisis', statusTone: 'neutral', nextAction: 'open_patient' },
-      metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
-      flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
-    };
-  }
-
-  return {
-    uiVersion: 2,
-    workflow: { progressPercent: 10, progressLabel: 'created', statusTone: 'warning', nextAction: 'complete_initial' },
-    metrics: { assessmentsCount: sessionsCount, formalReportsCount: reportsCount, lastAssessmentDate: lastSessionDate, lastFormalReportDate: lastReportDate },
-    flags: { _archived: file.archived === true, hasInitialReport, hasReevaluationOpportunity },
-  };
 };
 
 const KpiCard = ({
@@ -263,11 +200,13 @@ export const Dashboard: React.FC<Props> = ({
       const d = new Date(file.lastInteraction);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).length;
-    const followups = activeFiles.map((file) => buildSyntheticFollowup(file)).filter((item): item is PatientFollowup => item !== null);
-    const dueFollowups = followups.filter((item) => item.status === 'due' || item.status === 'overdue').length;
-    const reevaluationOpportunities = activeFiles.filter((file) => (file.previewMeta || deriveFallbackPreviewMeta(file)).flags.hasReevaluationOpportunity).length;
+    const statuses = activeFiles.map((file) => derivePatientStatus(file, null, now));
+    const dueFollowups = statuses.filter(({ reminder }) => reminder?.status === 'due' || reminder?.status === 'overdue').length;
+    const reevaluationOpportunities = statuses.filter(({ preview }) => preview.flags.hasReevaluationOpportunity).length;
     return { hoursSaved: Math.round(bilansThisMonth * 1.5), activeCount: activeFiles.length, newThisMonth, dueFollowups, reevaluationOpportunities };
   }, [activeFiles]);
+
+  const now = new Date();
 
   const pendingCompleted = useMemo(
     () => pendingQuestionnaires.filter((q) => q.status === 'completed'),
@@ -486,13 +425,12 @@ export const Dashboard: React.FC<Props> = ({
 
           <div className="space-y-3">
             {filteredFiles.map((file) => {
-              const previewMeta = file.previewMeta || deriveFallbackPreviewMeta(file);
               const draftMeta = draftsIndex[file.id];
+              const { preview: previewMeta, reminder } = derivePatientStatus(file, draftMeta, now);
               const hasDraft = Boolean(draftMeta);
               const activityDate = previewMeta.metrics.lastFormalReportDate || previewMeta.metrics.lastAssessmentDate || file.lastInteraction;
               const isInitialCompleted = previewMeta.flags.hasInitialReport;
-              const followup = !file.archived ? buildSyntheticFollowup(file) : null;
-              const followUpLabel = followup ? buildFollowupStatusLabel(followup) : null;
+              const followUpLabel = reminder ? buildFollowupStatusLabel(reminder) : null;
               const inProgressState = buildInProgressState(previewMeta, draftMeta?.step ?? null);
               const showProgress = !file.archived && !isInitialCompleted;
               const tone = getToneClasses(showProgress ? inProgressState.tone : previewMeta.workflow.statusTone);
@@ -502,8 +440,8 @@ export const Dashboard: React.FC<Props> = ({
 
               // Urgency signal for left border
               const urgencyLevel: UrgencyLevel =
-                followup?.status === 'overdue' ? 'overdue' :
-                followup?.status === 'due' ? 'due' :
+                reminder?.status === 'overdue' ? 'overdue' :
+                reminder?.status === 'due' ? 'due' :
                 (hasDraft && !isInitialCompleted) ? 'draft' : 'none';
 
               const urgencyBorder =

@@ -12,7 +12,7 @@
 import { useCallback } from 'react';
 import type { AssessmentContextType, ReportType } from '../contexts/AssessmentContext';
 import type { DashboardDraftMeta, Patient, PatientAssessment, PatientFile } from '../types';
-import { isStaleDraft } from '../utils/assessmentInProgress';
+import { derivePatientStatus } from '../utils/patientStatus';
 
 interface Params {
   assessment: AssessmentContextType;
@@ -40,8 +40,9 @@ export const useAssessmentLauncher = ({ assessment, patientFiles, draftsIndex, t
   /** Resume the patient's draft. Returns false when nothing could be opened. */
   const resumeDraft = useCallback(
     async (patientId: string): Promise<boolean> => {
-      const hasFormalReport = patientFiles.find((f) => f.id === patientId)?.previewMeta?.flags?.hasInitialReport ?? false;
-      const result = await assessment.resume(patientId, { stale: isStaleDraft(draftsIndex[patientId], hasFormalReport) });
+      const file = patientFiles.find((f) => f.id === patientId);
+      const stale = file ? (derivePatientStatus(file, draftsIndex[patientId], new Date()).draft?.stale ?? false) : false;
+      const result = await assessment.resume(patientId, { stale });
       if (result.ok) return true;
       if (result.reason === 'demo') toast.info('Brouillons désactivés en démo.');
       else if (result.reason === 'no-reference') toast.info(NO_REFERENCE);

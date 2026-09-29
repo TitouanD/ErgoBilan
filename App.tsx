@@ -21,7 +21,7 @@ import { getDaysSinceBackup } from './utils/backupTracking';
 import { useDataLoader } from './hooks/useDataLoader';
 import { useAssessmentFlow } from './hooks/useAssessmentFlow';
 import { useAssessmentLauncher } from './hooks/useAssessmentLauncher';
-import { isStaleDraft } from './utils/assessmentInProgress';
+import { derivePatientStatus } from './utils/patientStatus';
 import { useLinkManager } from './hooks/useLinkManager';
 import { usePendingProcessor } from './hooks/usePendingProcessor';
 import { Dashboard } from './components/dashboard/Dashboard';
@@ -306,8 +306,7 @@ const AppRouter = () => {
     );
   }
 
-  const draftMeta = selectedFile ? draftsIndex[selectedFile.id] : undefined;
-  const selectedHasFormalReport = selectedFile?.assessments?.some((a) => a.hasFormalReport) ?? false;
+  const selectedDraft = selectedFile ? derivePatientStatus(selectedFile, draftsIndex[selectedFile.id], new Date()).draft : null;
 
   return (
     <div className="min-h-screen bg-[var(--app-bg)] pb-20 font-sans">
@@ -377,8 +376,8 @@ const AppRouter = () => {
                 if (target) setViewingReport(target);
                 else toast.info('Document introuvable.');
               }}
-              draftAvailable={Boolean(draftMeta) && !isStaleDraft(draftMeta, selectedHasFormalReport)}
-              draftReportType={draftMeta?.reportType ?? null}
+              draftAvailable={selectedDraft?.stale === false}
+              draftReportType={selectedDraft?.meta.reportType ?? null}
               onResumeDraft={() => void resumeDraft(selectedFile.id)}
               hasMoreHistory={detailPaging.hasMoreAssessments}
               isLoadingMoreHistory={detailPaging.isLoadingMore}
