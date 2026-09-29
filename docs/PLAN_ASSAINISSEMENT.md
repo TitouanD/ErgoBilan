@@ -1,5 +1,7 @@
 # Plan d'assainissement
 
+> **Plan terminé, gardé pour l'historique.** Depuis le 2026-09-29, les points restés ouverts sont suivis dans les [issues GitHub](https://github.com/TitouanD/ErgoBilan/issues) (voir [ISSUES.md](ISSUES.md)) : 0.1 → [#63](https://github.com/TitouanD/ErgoBilan/issues/63), 0.6 → [#66](https://github.com/TitouanD/ErgoBilan/issues/66), 2.4 → [#56](https://github.com/TitouanD/ErgoBilan/issues/56), 5.2 (vues) → [#57](https://github.com/TitouanD/ErgoBilan/issues/57), 5.3 → [#64](https://github.com/TitouanD/ErgoBilan/issues/64), 5.4 → [#65](https://github.com/TitouanD/ErgoBilan/issues/65), 5.5 → [#58](https://github.com/TitouanD/ErgoBilan/issues/58). Les autres restes de [TECH_DEBT.md](TECH_DEBT.md) : [#59](https://github.com/TitouanD/ErgoBilan/issues/59) à [#62](https://github.com/TitouanD/ErgoBilan/issues/62), [#67](https://github.com/TitouanD/ErgoBilan/issues/67), [#68](https://github.com/TitouanD/ErgoBilan/issues/68).
+
 **Objectif** : repartir d'une base saine et entièrement fonctionnelle, **sans nouvelle fonctionnalité**. On corrige les bugs, on rend le code conforme aux bonnes pratiques, on supprime les répétitions et le code mort, et on documente.
 
 Le détail de chaque point (preuves, `fichier:ligne`) est dans [TECH_DEBT.md](TECH_DEBT.md). Les identifiants `P0-x`, `P1-x` et `P2-x` y renvoient.
@@ -21,7 +23,7 @@ Le détail de chaque point (preuves, `fichier:ligne`) est dans [TECH_DEBT.md](TE
 
 ## Avancement (2026-09-24)
 
-L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, **non commitée à ce jour**. L'état de chaque point est tenu dans [TECH_DEBT.md](TECH_DEBT.md).
+L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, fusionnée dans `main` le 2026-09-25. L'état de chaque point est tenu dans [TECH_DEBT.md](TECH_DEBT.md).
 
 | Contrôle                    | Départ        | Maintenant                                                 |
 | --------------------------- | ------------- | ---------------------------------------------------------- |
@@ -32,17 +34,17 @@ L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, 
 | CI                          | ❌ aucune     | ✅ `.github/workflows/ci.yml` (`npm run check`)            |
 | Parcours dans le navigateur | non testé     | ✅ démo complète déroulée (voir TECH_DEBT P2-9)            |
 
-| Phase                 | État                                                                                                                                                                             |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 — Filet de sécurité | Fait, sauf 0.1 (`supabase db pull`) et le retrait de `.env` / `.env.production` du suivi git (0.6). Les tests de 0.7 vérifient directement le comportement corrigé               |
-| 1 — Fonctionnalités   | Fait côté code. Les points qui dépendent de la base (1.2, 1.6, 1.9, 1.13) attendent l'application des migrations `supabase/migrations/20260924*` et le déploiement de `generate` |
-| 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, qui reste une tâche dédiée. Le volet base de 2.5 attend sa migration                                                                     |
-| 3 — Scores            | Fait                                                                                                                                                                             |
-| 4 — Code propre       | Fait                                                                                                                                                                             |
-| 5 — Base et edge      | 5.1 et 5.2 faits (migrations appliquées le 2026-09-25). 5.3, 5.4 et 5.5 restent à faire (décisions produit et réglages manuels)                                                  |
-| 6 — Documentation     | En-têtes de modules ajoutés sur les fichiers réécrits ; `docs/` mis à jour                                                                                                       |
+| Phase                 | État                                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0 — Filet de sécurité | Fait, sauf 0.1 (`supabase db pull`) → #63 et le retrait de `.env` / `.env.production` du suivi git (0.6) → #66. Les tests de 0.7 vérifient directement le comportement corrigé |
+| 1 — Fonctionnalités   | Fait (migrations `supabase/migrations/20260924*` appliquées et `generate` déployée le 2026-09-25)                                                                              |
+| 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, reportée le 2026-09-25 → #56. Le volet base de 2.5 est appliqué                                                                        |
+| 3 — Scores            | Fait                                                                                                                                                                           |
+| 4 — Code propre       | Fait                                                                                                                                                                           |
+| 5 — Base et edge      | 5.1 et 5.2 faits (migrations appliquées le 2026-09-25), sauf les vues de 5.2 → #57. 5.3 → #64, 5.4 → #65, 5.5 → #58                                                            |
+| 6 — Documentation     | En-têtes de modules ajoutés sur les fichiers réécrits ; `docs/` mis à jour                                                                                                     |
 
-Écart à la règle 1 : tout a été fait sur une seule branche. Il est conseillé de découper en commits cohérents (outillage, correctifs, scores, refactoring, migrations, doc) avant la PR.
+Écart à la règle 1 : tout a été fait sur une seule branche.
 
 ## Règles de conduite pendant l'assainissement
 
@@ -58,12 +60,12 @@ But : que la prochaine régression soit détectée automatiquement.
 
 | #   | Tâche                                                                                                                                                                                                                                                                          | Taille | Critère de fin                                                         |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------- |
-| 0.1 | Rapatrier le schéma : `npx supabase db pull` (migration de référence), `npx supabase functions download extract-norms` (pour archive, avant suppression en phase 5)                                                                                                            | S      | `supabase/migrations/` reflète la prod ; `supabase db diff` est vide   |
+| 0.1 | **→ #63** Rapatrier le schéma : `npx supabase db pull` (migration de référence), `npx supabase functions download extract-norms` (pour archive, avant suppression en phase 5)                                                                                                  | S      | `supabase/migrations/` reflète la prod ; `supabase db diff` est vide   |
 | 0.2 | Générer les types Supabase (`supabase gen types typescript` → `types/supabase.ts`) et typer le client : `createClient<Database>` dans `services/db.ts` et `PatientPortal.tsx`                                                                                                  | S      | Les appels `.from()` / `.rpc()` sont typés                             |
 | 0.3 | Ajouter les scripts `typecheck` (`tsc --noEmit`) et `check` (`lint && typecheck && test && build`)                                                                                                                                                                             | S      | `npm run check` existe                                                 |
 | 0.4 | Corriger les 14 erreurs `tsc`, plus celles révélées par 0.2. Cela corrige au passage P1-2, P1-5, P1-6, P1-16 et P1-20                                                                                                                                                          | M      | `npm run typecheck` = 0 erreur                                         |
 | 0.5 | CI GitHub Actions : `npm ci && npm run check` sur chaque PR et sur `main`                                                                                                                                                                                                      | S      | Une PR avec une erreur de type est bloquée                             |
-| 0.6 | Retirer `*.md` de `.prettierignore` et formater. Ne plus versionner `.env` et `.env.production` : les ajouter à `.gitignore` et documenter les variables dans `.env.example`                                                                                                   | S      | `format:check` couvre la doc                                           |
+| 0.6 | **→ #66** Retirer `*.md` de `.prettierignore` et formater. Ne plus versionner `.env` et `.env.production` : les ajouter à `.gitignore` et documenter les variables dans `.env.example`                                                                                         | S      | `format:check` couvre la doc                                           |
 | 0.7 | Premiers tests unitaires sur les fonctions pures dont dépend la justesse clinique : `utils/scoring.ts`, `utils/anonymizer.ts`, `calculateAge` (`utils.ts`), `utils/reevaluationHelpers.ts`. Commencer par figer le comportement actuel, y compris les cas faux, marqués `todo` | M      | Les tests documentent les bugs connus ; ils seront corrigés en phase 3 |
 
 ## Phase 1 — Fonctionnalités cassées
@@ -90,13 +92,13 @@ But : tout ce qui existe dans l'interface fonctionne. Les points déjà corrigé
 
 But : ce que l'application affiche et promet est vrai.
 
-| #   | Point      | Tâche                                                                                                                                                                                                                                                                                                      | Taille |
-| --- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 2.1 | P0-3       | **Libellés** : retirer « chiffré » de l'interface tant que 2.4 n'est pas fait                                                                                                                                                                                                                              | S      |
-| 2.2 | P0-4, P0-5 | **Anonymisation** : anonymiser toute la charge utile envoyée à l'IA (et non champ par champ) ; ajouter parents, fratrie et professionnels ; regex avec frontières de mots ; tests unitaires (0.7)                                                                                                          | M      |
-| 2.3 | P0-2       | **Déconnexion** : ajouter `StorageService.reset()` (fermeture de Dexie, vidage des caches), appelé par `logout` et `lockSession`                                                                                                                                                                           | S      |
-| 2.4 | P0-1, P0-6 | **Chiffrement local** : clé de données enveloppée par la clé du PIN ; chiffrement des blobs Dexie et de l'export `.ergobilan` v2 ; migration au premier déverrouillage ; renforcement du PIN. **Le plus gros chantier** : il demande sa propre spécification et des tests de `StorageService` au préalable | L      |
-| 2.5 | P0-7       | **Durcissement** : loopback désactivé en prod ; plus de clé en `?key=` ; UPDATE anon restreint à `family_encrypted_data` et `status` (migration)                                                                                                                                                           | S      |
+| #   | Point      | Tâche                                                                                                                                                                                                                                                                                                                          | Taille |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| 2.1 | P0-3       | **Libellés** : retirer « chiffré » de l'interface tant que 2.4 n'est pas fait                                                                                                                                                                                                                                                  | S      |
+| 2.2 | P0-4, P0-5 | **Anonymisation** : anonymiser toute la charge utile envoyée à l'IA (et non champ par champ) ; ajouter parents, fratrie et professionnels ; regex avec frontières de mots ; tests unitaires (0.7)                                                                                                                              | M      |
+| 2.3 | P0-2       | **Déconnexion** : ajouter `StorageService.reset()` (fermeture de Dexie, vidage des caches), appelé par `logout` et `lockSession`                                                                                                                                                                                               | S      |
+| 2.4 | P0-1, P0-6 | **→ #56 (reporté)** **Chiffrement local** : clé de données enveloppée par la clé du PIN ; chiffrement des blobs Dexie et de l'export `.ergobilan` v2 ; migration au premier déverrouillage ; renforcement du PIN. **Le plus gros chantier** : il demande sa propre spécification et des tests de `StorageService` au préalable | L      |
+| 2.5 | P0-7       | **Durcissement** : loopback désactivé en prod ; plus de clé en `?key=` ; UPDATE anon restreint à `family_encrypted_data` et `status` (migration)                                                                                                                                                                               | S      |
 
 ## Phase 3 — Justesse clinique des scores
 
@@ -131,13 +133,13 @@ But : un code lisible, sans répétition ni code mort, conforme aux bonnes prati
 
 Toutes les modifications passent par des migrations versionnées (règle 3).
 
-| #   | Point      | Tâche                                                                                                                                                                                                                     | Taille |
-| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 5.1 | P1-3, P0-8 | **Fonctions** : `DROP` des RPC de recommandations ; `REVOKE EXECUTE FROM anon` sur les fonctions admin ; `search_path` fixé partout                                                                                       | S      |
-| 5.2 | P0-8       | **RLS** : activée sur `ai_request_log` et `signup_rate_limit_log` ; purge de `ai_request_log` ; vues en `security_invoker` si la RLS donne le même résultat                                                               | S      |
-| 5.3 | P2-2       | **Inscription** : une seule durée d'essai ; un seul chemin de création (trigger **ou** bootstrap) ; nettoyage des organisations orphelines et des comptes sans praticien ; `enforce_edge_signup_channel` réel ou supprimé | M      |
-| 5.4 | P2-1, P2-8 | **Nettoyage** : supprimer l'edge `extract-norms` ; retirer les colonnes vestiges (`encrypted_org_key`, `stripe_customer_id`) et les index inutilisés ; alimenter ou supprimer `admin_audit_log`                           | S      |
-| 5.5 | P0-8       | **Auth** : activer la protection contre les mots de passe compromis                                                                                                                                                       | S      |
+| #   | Point      | Tâche                                                                                                                                                                                                                               | Taille |
+| --- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 5.1 | P1-3, P0-8 | **Fonctions** : `DROP` des RPC de recommandations ; `REVOKE EXECUTE FROM anon` sur les fonctions admin ; `search_path` fixé partout                                                                                                 | S      |
+| 5.2 | P0-8       | **RLS** : activée sur `ai_request_log` et `signup_rate_limit_log` ; purge de `ai_request_log` ; vues en `security_invoker` si la RLS donne le même résultat (→ #57)                                                                 | S      |
+| 5.3 | P2-2       | **→ #64** **Inscription** : une seule durée d'essai ; un seul chemin de création (trigger **ou** bootstrap) ; nettoyage des organisations orphelines et des comptes sans praticien ; `enforce_edge_signup_channel` réel ou supprimé | M      |
+| 5.4 | P2-1, P2-8 | **→ #65** **Nettoyage** : supprimer l'edge `extract-norms` ; retirer les colonnes vestiges (`encrypted_org_key`, `stripe_customer_id`) et les index inutilisés ; alimenter ou supprimer `admin_audit_log`                           | S      |
+| 5.5 | P0-8       | **→ #58** **Auth** : activer la protection contre les mots de passe compromis                                                                                                                                                       | S      |
 
 ## Phase 6 — Documentation
 
