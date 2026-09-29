@@ -12,7 +12,7 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 - Les vues `view_unified_catalog` et `view_unified_subtests` filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
 - Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests.
 - Répartition `score_type` : scaled 147, none 139, standard 24, t-score 17, percentile 2. Répartition `input_model` : numeric_4mode 324, raw_only 5. **Aucun** sous-test n'utilise `qualitative_category`, `custom_text` ou `computed_items` en base.
-- Migration `20260929100000_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé (la catégorie `lateralite` reste, vide), et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
+- Migration `20260929100000_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé avec sa catégorie `lateralite`, dont c'était le seul test, et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 

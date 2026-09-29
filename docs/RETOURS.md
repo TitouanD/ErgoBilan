@@ -4,7 +4,7 @@ Les retours des testeuses et des tests internes sont suivis dans les [issues Git
 
 ## Labels
 
-- Source : `retour-testeuse` ou `test-interne`. Un chantier interne de structure du code, sans demande utilisateur, porte `architecture` à la place : pas de milestone, pas de `a-verifier` ni de `non-regression`, une branche `refactor/<sujet>` dans son worktree.
+- Source : `retour-testeuse` ou `test-interne`. Un chantier interne de structure du code, sans demande utilisateur, porte `architecture` à la place : pas de milestone, pas de `a-verifier` ni de `non-regression`, une branche `refactor/<sujet>` dans son worktree. Son corps a deux parties : « À vérifier » (cases à cocher, seules à attendre un retour, avec les valeurs attendues ; `ready-for-human` tant qu'elles ne sont pas cochées) et « Référence » (problème et décisions, pour le suivi).
 - Nature : `bug`, `enhancement`, `catalogue` (passe par une migration Supabase).
 - Suivi : `a-verifier` (fait, reste à valider dans le navigateur ou par la testeuse), `non-regression` (à revérifier avant chaque mise en production).
 - Triage : `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` (voir [`agents/triage-labels.md`](agents/triage-labels.md)).
