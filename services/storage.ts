@@ -329,11 +329,8 @@ export const StorageService = {
     const pageSize = options?.limit ?? PATIENT_PAGE_SIZE;
     const offset = options?.offset ?? 0;
 
-    const allRows = (
-      await db().patients.orderBy('lastInteraction').reverse().toArray()
-    );
-
-    const page = allRows.slice(offset, offset + pageSize + 1);
+    // One row beyond the page tells whether another page exists.
+    const page = await db().patients.orderBy('lastInteraction').reverse().offset(offset).limit(pageSize + 1).toArray();
     const hasMore = page.length > pageSize;
     const pageRows = page.slice(0, pageSize);
 

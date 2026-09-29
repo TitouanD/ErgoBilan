@@ -66,7 +66,7 @@ Définie dans `services/localDB.ts`. Chaque utilisateur a **sa propre base** `Er
   - patients : `createPatient`, `ensurePatientId`, `syncPatientIdentityPreview`, `saveFile`, `deleteFile` (transaction sur les quatre tables), `toggleArchive` ;
   - bilans : `addAssessment` écrit le bilan et recalcule l'identité et le `previewMeta` du patient **dans une seule transaction** ; conversions `rowToAssessment` / `assessmentToRow` ;
   - brouillons : `saveDraft` (lecture puis écriture dans une transaction, donc jamais deux brouillons pour un patient), `getDraft`, `deleteDraft`, `getDraftsMetadata` ;
-  - lecture : `loadPatientListPage` (50 par page, découpée en mémoire après lecture de toute la table ; répare en tâche de fond les `previewMeta` périmés), `loadPatientPreviewById`, `loadPatientHistoryPage` (60 bilans par page), `loadPatientDetails` ;
+  - lecture : `loadPatientListPage` (50 par page, lue dans Dexie par `orderBy('lastInteraction').reverse().offset().limit()` ; répare en tâche de fond les `previewMeta` périmés), `loadPatientPreviewById`, `loadPatientHistoryPage` (60 bilans par page), `loadPatientDetails` ;
   - rappels : `getPatientFollowup`, `upsertPatientFollowup`, `markFollowupCompleted`, `snoozeFollowup`. Le statut est recalculé à la lecture (`resolveReminderStatus`, `utils/patientStatus.ts`) : `due` entre l'échéance et 6 mois après, `overdue` au-delà.
 - **Rappel par défaut** : `finalize` (`utils/assessmentInProgress.ts`) crée un rappel `upcoming` à 6 mois (`reminderDueAt`) après chaque bilan finalisé, quel que soit le parcours.
 - **Mode démo** : toutes les écritures sont ignorées et les lectures renvoient les patients de `data/demoData.ts`.

@@ -43,7 +43,7 @@ SPA React 19 (Vite, TypeScript) pour ergothérapeutes pédiatriques. **Local-fir
 
 Scripts `package.json` : `dev` (Vite, port 3000), `build`, `preview`, `test` (`vitest run`), `test:watch`, `lint` (`--max-warnings 0`), `lint:fix`, `typecheck` (`tsc --noEmit`), `format`, `format:check` (Markdown compris), et `check` = lint + typecheck + test + build, à lancer avant de rendre la main.
 
-- Tests : `vitest.config.ts` inclut `utils/**/*.test.ts` (5 fichiers : `anonymizer`, `patient`, `reportFlow`, `scoring`, `textSanitizer`). Les composants ne sont pas testés.
+- Tests : `vitest.config.ts` inclut `utils/**/*.test.ts`, `services/**/*.test.ts` (IndexedDB simulée par `fake-indexeddb`) et `components/**/*.test.tsx` (jsdom).
 - CI : `.github/workflows/ci.yml` lance `npm run check` (Node 20) sur les push vers `main` et les pull requests, avec des valeurs factices pour `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
 - Types Supabase générés dans `types/supabase.ts` ; le client est créé par `createClient<Database>` (`services/db.ts`).
 - `supabase/migrations/` ne contient que les 4 migrations `20260924*`, appliquées le 2026-09-25 ; l'historique des migrations de la base n'est pas dans le repo ([TECH_DEBT.md](TECH_DEBT.md) P2-1).

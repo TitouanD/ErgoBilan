@@ -40,7 +40,7 @@ Une migration est toujours écrite compatible avec le code déjà en production 
 
 ## Tests
 
-Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures dans `utils/**/*.test.ts`, composants avec Testing Library dans `components/**/*.test.tsx`). C'est ce test qui protège de la régression : il n'y a plus de liste de vérification manuelle à refaire avant une mise en production. Ce qui ne peut pas se tester automatiquement (le rendu visuel) va à la testeuse, qui utilise `dev` au quotidien.
+Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures dans `utils/**/*.test.ts`, stockage local dans `services/**/*.test.ts` (`fake-indexeddb`), composants avec Testing Library dans `components/**/*.test.tsx`). C'est ce test qui protège de la régression : il n'y a plus de liste de vérification manuelle à refaire avant une mise en production. Ce qui ne peut pas se tester automatiquement (le rendu visuel) va à la testeuse, qui utilise `dev` au quotidien.
 
 ## Branches et déploiement
 

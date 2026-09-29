@@ -58,7 +58,7 @@ Statuts :
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
 | P2-8  | Base de données, divers                              | Partiel → #65                       |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
-| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf → #67                  |
+| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu                              |
 
 ## Mise en production du 2026-09-25
 
@@ -270,7 +270,7 @@ Parcours démo complet (accueil, import d'un questionnaire, bilan initial en 5 �
 - en-tête praticien (crédits, avatar) affiché sur le portail famille ;
 - texte démo de réévaluation qui citait un autre patient.
 
-### P2-10 Points relevés à la relecture de la doc (2026-09-25) — Résolu, sauf → #67, #68
+### P2-10 Points relevés à la relecture de la doc (2026-09-25) — Résolu
 
 La réécriture des docs contre le code a fait apparaître d'autres défauts.
 
@@ -282,13 +282,13 @@ Corrigés :
 - **Métriques mixtes en réévaluation** : un score ressaisi dans une autre métrique était affiché « non mesuré » tout en ayant un delta. La valeur est convertie dans la métrique de référence ; « non mesuré » ne dépend plus que de l'absence de saisie, et « non comparable » s'affiche si l'échelle est inconnue.
 - **Scores masqués** : les tests ou sous-tests absents du catalogue (test privé supprimé, observation libre) disparaissaient de la réévaluation et, pour un sous-test supprimé, du bilan initial. `resolveTestDef` (`utils/catalogIndex.ts`) les affiche avec une définition de repli.
 - **Champs de catalogue inutiles** (#68) : `SubtestDef.displayName`, jamais rempli, est retiré avec ses replis (le nom du catalogue suffit) ; `subtests_count` n'est plus demandé à `view_unified_catalog`.
+- **Liste des patients paginée en mémoire** (#67) : `loadPatientListPage` lisait toute la table avant de découper la page ; elle lit désormais la page dans Dexie (`offset().limit()` sur l'index `lastInteraction`, sans changement de schéma). Ordre, `hasMore` et `nextOffset` inchangés, épinglés par `services/storage.test.ts`.
 - **Patient en double possible** : `Step1Admin`, `HistoricalPatientForm` et `persistPatient` créaient le patient sans passer par la promesse partagée du contexte. Ils utilisent tous `useAssessment().ensurePatientId`.
 - **Import d'un questionnaire** : si l'enregistrement du brouillon échouait, le patient créé restait orphelin. Le retour arrière couvre maintenant le brouillon et la suppression distante.
 - **Section `objectifs`** : encore visible dans les rapports archivés et demandée dans le bilan historique ; masquée partout.
 - **Légendes percentile** : « inférieur à 2 » et « entre 2 et 16 » alors que les seuils réels sont 2,3 et 15,9 ; libellés alignés.
 - **Divers** : message quand l'application est verrouillée au moment de finaliser (échec silencieux avant), garde contre le double clic sur « Terminer », bouton « Générer (simulation) » en démo au lieu de « 1 crédit », texte légal (`LegalModal`) qui parlait d'anonymisation avec « L'enfant » au lieu de pseudonymisation réversible, commentaire inexact dans la migration `20260924100000`.
 
-Ouverts :
+À noter :
 
-- `loadPatientListPage` pagine en mémoire → #67 ;
 - `enforce_public_acl_on_ddl` : `search_path` désormais fixé à `public` (constaté en base le 2026-09-29).
