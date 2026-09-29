@@ -8,7 +8,7 @@ interface Props {
 }
 
 const STEPS = [
-    { id: 1, label: "Sécurisation & Anonymisation", icon: ShieldCheck, duration: 3000 },
+    { id: 1, label: "Sécurisation & Pseudonymisation", icon: ShieldCheck, duration: 3000 },
     { id: 2, label: "Analyse Structurelle (IA)", icon: Brain, duration: 15000 },
     { id: 3, label: "Rédaction Clinique & Mise en page", icon: FileText, duration: 25000 }
 ];

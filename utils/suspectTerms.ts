@@ -110,7 +110,8 @@ export const findSuspectTerms = (value: unknown, options: { index: CatalogIndex;
       const word = raw.replace(ELISION, '');
       const before = text.slice(0, start).replace(/[ \t]+$/, '');
       const atSentenceStart = before === '' || SENTENCE_START.has(before.slice(-1));
-      const afterTitle = TITLES.includes(previousWord.toLowerCase()) && /^\.?\s+$/.test(between);
+      // A title is capitalized (Mme, M., Dr): the unit « m » of « 10 m en 5 s » is not one.
+      const afterTitle = /^\p{Lu}/u.test(previousWord) && TITLES.includes(previousWord.toLowerCase()) && /^\.?\s+$/.test(between);
       previousWord = word;
       previousEnd = start + match[0].length;
 

@@ -37,6 +37,10 @@ describe('findSuspectTerms', () => {
     expect(find("Le cahier d'Emma. L'Hôpital Necker.")).toEqual(['Emma', 'Hôpital', 'Necker']);
   });
 
+  it('does not take the unit « m » for a title', () => {
+    expect(find('Course de 10 m en 5 s, lancer à 3 m du mur.')).toEqual([]);
+  });
+
   it('skips allowed words (case-insensitive)', () => {
     expect(find('Il parle de Pikachu.', ['pikachu'])).toEqual([]);
   });

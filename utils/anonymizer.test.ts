@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Patient } from '../types';
-import { anonymizeDeep, anonymizeText, createAnonymization, hydrateReport } from './anonymizer';
+import { createAnonymization } from './anonymizer';
 
 const patient = {
   firstName: 'Ali',
@@ -13,6 +13,10 @@ const patient = {
   prescribingDoctor: 'Dr Dupont',
   medicalTracking: [{ id: '1', type: 'kiné', name: 'Paul Legrand', frequency: '', since: '', contact: '', reason: '' }],
 } as unknown as Patient;
+
+/** Anonymization and re-hydration through the only public entry point. */
+const anonymizeText = (text: string, p: Patient) => createAnonymization(p).deep(text);
+const hydrateReport = (text: string, p: Patient, options?: { asHtml?: boolean }) => createAnonymization(p).hydrate(text, options);
 
 describe('anonymizeText', () => {
   it('replaces whole words only (no corruption of longer words)', () => {
@@ -41,9 +45,9 @@ describe('anonymizeText', () => {
   });
 });
 
-describe('anonymizeDeep', () => {
+describe('deep', () => {
   it('walks nested objects and arrays', () => {
-    const out = anonymizeDeep({ a: 'Ali', b: [{ c: 'Martin' }], n: 3 }, patient);
+    const out = createAnonymization(patient).deep({ a: 'Ali', b: [{ c: 'Martin' }], n: 3 });
     expect(out).toEqual({ a: '{{PATIENT_PRENOM}}', b: [{ c: '{{PATIENT_NOM}}' }], n: 3 });
   });
 });
@@ -83,7 +87,7 @@ describe('createAnonymization', () => {
       x: 'Le {{DATE_1}} (il y a 1 an et 8 mois).',
       y: ['Depuis le {{DATE_1}} (il y a 1 an et 8 mois)'],
     });
-    expect(a.hydrate('{{PATIENT_PRENOM}} : {{DATE_1}} (il y a 1 an et 8 mois), puis {{DATE_1}}. {{DATE_9}}')).toBe(
+    expect(a.hydrate('{{PATIENT_PRENOM}} : {{DATE_1}} (il y a 1 an et 8 mois), puis {{DATE_1}}. {{DATE_9}} (il y a 3 mois)')).toBe(
       'Ali : 12/01/2025, puis 12/01/2025. ',
     );
   });
@@ -92,5 +96,13 @@ describe('createAnonymization', () => {
     const a = createAnonymization({ ...patient, aiMaskedTerms: ['Titi'] } as Patient, now);
     expect(a.deep('titi et Titi')).toBe('{{PERSONNE_1}} et {{PERSONNE_1}}');
     expect(a.hydrate('{{PERSONNE_1}} et {{PERSONNE_2}}')).toBe('Titi et cette personne');
+  });
+
+  it('writes ISO dates of the date fields back the French way, and ignores 3.2024', () => {
+    const a = createAnonymization(patient, now);
+    expect(a.deep('PCO le 2025-08-12, suivi depuis 2025-08, score 3.2024.')).toBe(
+      'PCO le {{DATE_1}} (il y a 1 an et 1 mois), suivi depuis {{DATE_2}} (il y a 1 an et 1 mois), score 3.2024.',
+    );
+    expect(a.hydrate('{{DATE_1}} et {{DATE_2}}')).toBe('12/08/2025 et 08/2025');
   });
 });

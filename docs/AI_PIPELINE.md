@@ -86,8 +86,8 @@ Vocabulaire : `CONTEXT.md` (Anonymisation, Pseudonymisation, Réhydratation). Tr
 
 - `buildReplacements(patient)` construit la table `{valeur → placeholder}`. Valeurs de moins de 2 caractères ignorées. Pour les champs de noms (parents, enseignant, médecins, professionnels), chaque mot d'au moins 3 lettres est aussi ajouté, **sensible à la casse**, hors titres et liaisons (`STOP_TOKENS` : Mme, Dr, et, les…). Tri par longueur décroissante, dédoublonnage.
 - Remplacement par regex bornée par des frontières Unicode (`(?<![\p{L}\p{N}_])…(?![\p{L}\p{N}_])`, drapeaux `giu` ou `gu`) : « Ali » ne touche plus « qualité ». Couvert par `utils/anonymizer.test.ts`.
-- `createAnonymization(patient, now).deep(value)` parcourt objets et tableaux et anonymise chaque chaîne (les clés restent intactes) : tout nouveau champ de la charge utile est couvert automatiquement. `anonymizeDeep` / `anonymizeText` n'appliquent que la table (sans les dates).
-- `hydrate(text, { asHtml })` (ou `hydrateReport(text, patient, { asHtml })` sans les dates) remplace chaque placeholder par la valeur complète (les entrées « mot » ne servent pas au retour). Avec `asHtml` (réévaluation, sortie HTML), les valeurs injectées sont échappées (`escapeHtml`). Les placeholders résiduels inconnus deviennent une formule neutre (`RESIDUAL_FALLBACKS`) : « l'enfant », « le parent », « un membre de la fratrie », « le professionnel », « le médecin », « l'établissement scolaire », « l'enseignant(e) », « cette personne », sinon chaîne vide.
+- `createAnonymization(patient, now).deep(value)` parcourt objets et tableaux et anonymise chaque chaîne (les clés restent intactes) : tout nouveau champ de la charge utile est couvert automatiquement. Aucune autre fonction d'anonymisation n'est exportée.
+- `hydrate(text, { asHtml })` remplace chaque placeholder par la valeur complète (les entrées « mot » ne servent pas au retour). Avec `asHtml` (réévaluation, sortie HTML), les valeurs injectées sont échappées (`escapeHtml`). Les placeholders résiduels inconnus deviennent une formule neutre (`RESIDUAL_FALLBACKS`) : « l'enfant », « le parent », « un membre de la fratrie », « le professionnel », « le médecin », « l'établissement scolaire », « l'enseignant(e) », « cette personne », sinon chaîne vide.
 
 ### Couverture
 
@@ -106,11 +106,11 @@ Vocabulaire : `CONTEXT.md` (Anonymisation, Pseudonymisation, Réhydratation). Tr
 
 ### Dates
 
-Toute date précise (12/03/2024, 2024-03-12, 03/2024, 12 mars 2024, mars 2024) devient `{{DATE_n}} (il y a 8 mois)` : l'IA garde la durée, le rapport retrouve la date telle qu'elle était écrite. Une même date a le même marqueur ; une année seule est gardée. À la réhydratation, la durée que l'IA a pu recopier après le marqueur est retirée. Les prompts edge n'ont pas changé : ils demandent déjà d'utiliser « les dates fournies dans le contexte ».
+Toute date précise (12/03/2024, 2024-03-12, 03/2024, 12 mars 2024, mars 2024) devient `{{DATE_n}} (il y a 8 mois)` : l'IA garde la durée, le rapport retrouve la date telle qu'elle était écrite. Une même date a le même marqueur ; une année seule est gardée. Une date ISO (champ date du navigateur : `2025-08-12`, `2025-08`) revient au format français (`12/08/2025`, `08/2025`) ; « 3.2024 » n'est pas une date. À la réhydratation, la durée que l'IA a pu recopier après le marqueur est retirée ; un marqueur de date inconnu disparaît avec sa durée. Les prompts edge n'ont pas changé : ils demandent déjà d'utiliser « les dates fournies dans le contexte ».
 
 ### Mots suspects (texte libre)
 
-La table ne couvre que la fiche. `findSuspectTerms` (`utils/suspectTerms.ts`) repère dans la charge utile déjà anonymisée les mots qui peuvent encore désigner quelqu'un : majuscule hors début de phrase, ou mot qui suit un titre (Mme, M., Dr, Pr). Ignorés : noms du catalogue (tests, sous-tests, catégories, options), mots tout en majuscules, mois, jours, liste courte de mots fréquents, mots autorisés du patient.
+La table ne couvre que la fiche. `findSuspectTerms` (`utils/suspectTerms.ts`) repère dans la charge utile déjà anonymisée les mots qui peuvent encore désigner quelqu'un : majuscule hors début de phrase, ou mot qui suit un titre écrit avec sa majuscule (Mme, M., Dr, Pr : l'unité « m » n'en est pas un). Ignorés : noms du catalogue (tests, sous-tests, catégories, options), mots tout en majuscules, mois, jours, liste courte de mots fréquents, mots autorisés du patient.
 
 - Avant une génération, `findInitialSuspectTerms` / `findReevaluationSuspectTerms` (via `useAssessmentFlow.findSuspectTerms`) alimentent `SuspectTermsReview` dans les deux modales : chaque mot est coché « masquer » par défaut.
 - Les choix sont enregistrés sur la fiche (`aiMaskedTerms`, `aiAllowedTerms`, `applySuspectTermDecisions`) : les mots masqués deviennent `{{PERSONNE_n}}` pour toutes les générations suivantes, les mots autorisés ne sont plus signalés.

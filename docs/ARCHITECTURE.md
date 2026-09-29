@@ -12,7 +12,7 @@ SPA React 19 (Vite, TypeScript) pour ergothérapeutes pédiatriques. **Local-fir
 │  ├─ Contexts : Theme / Auth / Catalog / Toast / Assessment              │
 │  ├─ StorageService ──► Dexie  ErgoBilanDB_${userId}  (EN CLAIR)         │
 │  ├─ ExportService  ──► fichier .ergobilan (JSON non chiffré)            │
-│  ├─ aiPayload + anonymizeDeep ──► charge utile pseudonymisée            │
+│  ├─ reportGenerator (aiPayload + anonymisation) ──► charge utile        │
 │  └─ utils/crypto   ──► PIN→PBKDF2 (verrou), AES-GCM (portail)           │
 └──────────────┬──────────────────────────────────────────┬──────────────┘
                │ supabase-js typé (JWT)                   │ fetch /functions/v1/generate
@@ -70,10 +70,10 @@ Scripts `package.json` : `dev` (Vite, port 3000), `build`, `preview`, `test` (`v
 | `services/localDB.ts`, `storage.ts`                                            | Schéma Dexie par utilisateur (+ migration de l'ancienne base globale) ; façade `StorageService`                                          |
 | `services/exportService.ts`                                                    | Export/import du fichier de sauvegarde `.ergobilan`                                                                                      |
 | `services/profile.ts`                                                          | `ProfileService` : profil, abonnement, branding (`practitioners.branding_config`), préférences de style IA                               |
-| `services/ai.ts` → `aiProxy.ts`                                                | `AIService` (générations, réhydratation) → appel HTTP de l'edge function `generate`                                                      |
+| `services/ai.ts` → `aiProxy.ts`                                                | Les deux générateurs (edge, démo) ; transport HTTP de l'edge function `generate`                                                         |
 | `services/admin.ts`, `sentryService.ts`                                        | RPC `admin_*` et `practitioner_save_custom_test` ; init Sentry front                                                                     |
 | `utils/patient.ts`                                                             | Âge (`calculateAge(dob, referenceDate)`, `getPatientAgeForIdentity`), `isPatientCreationReady`, signature d'identité                     |
-| `utils/aiPayload.ts`, `anonymizer.ts`                                          | Construction de la charge utile IA ; `anonymizeDeep` (pseudonymisation) et `hydrateReport` (retour)                                      |
+| `utils/reportGenerator.ts`, `aiPayload.ts`, `anonymizer.ts`, `suspectTerms.ts` | Seul point d'appel à l'IA : charge utile, anonymisation (`createAnonymization`), mots suspects, réhydratation                            |
 | `utils/resolvedScore.ts`                                                       | Score résolu : seul point d'entrée pour lire un score (noms, échelle, z, percentile, zone, format)                                       |
 | `utils/scoring.ts`, `catalogIndex.ts`, `catalogNames.ts`, `subtestOrdering.ts` | Calculs, échelles et zones ; index O(1) du catalogue ; normalisation des noms pour la recherche ; ordre d'affichage                      |
 | `utils/assessment.ts`                                                          | Construction d'un bilan finalisé, bilan de référence, reconstruction des tests depuis `results`                                          |
@@ -143,22 +143,22 @@ Hors `landing`, `admin` et `portal`, l'écran est entouré de `AppHeader`, du ba
 
 ## 7. Frontière local / Supabase
 
-| Donnée                                                                                                 | Où elle vit                                                         | Chiffrée ?                                   |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- | -------------------------------------------- |
-| Patients (identité, anamnèse, aperçu dashboard `previewMeta`)                                          | Dexie `ErgoBilanDB_${userId}.patients`                              | Non                                          |
-| Bilans (scores, rapports, `kind`, `previousAssessmentId`)                                              | Dexie `.assessments`                                                | Non                                          |
-| Brouillons, rappels                                                                                    | Dexie `.drafts`, `.followups`                                       | Non                                          |
-| Sauvegarde `.ergobilan`                                                                                | Fichier téléchargé (`ExportService.exportAll`)                      | Non                                          |
-| Profil praticien, crédits, `is_admin`, `ai_style_preferences`, `branding_config`                       | Supabase `practitioners`                                            | Non                                          |
-| Salt + validator du PIN                                                                                | Supabase `practitioners.encryption_salt` / `encryption_validator`   | Le validator est un jeton AES-GCM            |
-| Abonnement                                                                                             | Supabase `subscriptions`                                            | Non                                          |
-| Organisation                                                                                           | Supabase (RPC `bootstrap_org_for_user`)                             | Non                                          |
-| Catalogue de tests                                                                                     | Supabase (`view_unified_*`, `official_categories`, RPC `admin_*`)   | Non                                          |
-| Questionnaire parents                                                                                  | Supabase `pending_questionnaires.family_encrypted_data`             | Oui, AES-GCM avec la clé du lien             |
-| Clé du questionnaire                                                                                   | Hash de l'URL + `pending_questionnaires.practitioner_encrypted_key` | Oui dans la table, chiffrée par `sessionKey` |
-| Journal des générations, rate limit                                                                    | Supabase `generation_log`, `ai_request_log` + RPC                   | Non                                          |
-| Texte envoyé à Gemini                                                                                  | Transit via `generate`                                              | Pseudonymisé (`anonymizeDeep`), pas chiffré  |
-| Thème, favoris/récents, blocage PIN, date du dernier backup, brouillon d'inscription, session Supabase | `localStorage`                                                      | Non                                          |
+| Donnée                                                                                                 | Où elle vit                                                         | Chiffrée ?                                        |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------- |
+| Patients (identité, anamnèse, aperçu dashboard `previewMeta`)                                          | Dexie `ErgoBilanDB_${userId}.patients`                              | Non                                               |
+| Bilans (scores, rapports, `kind`, `previousAssessmentId`)                                              | Dexie `.assessments`                                                | Non                                               |
+| Brouillons, rappels                                                                                    | Dexie `.drafts`, `.followups`                                       | Non                                               |
+| Sauvegarde `.ergobilan`                                                                                | Fichier téléchargé (`ExportService.exportAll`)                      | Non                                               |
+| Profil praticien, crédits, `is_admin`, `ai_style_preferences`, `branding_config`                       | Supabase `practitioners`                                            | Non                                               |
+| Salt + validator du PIN                                                                                | Supabase `practitioners.encryption_salt` / `encryption_validator`   | Le validator est un jeton AES-GCM                 |
+| Abonnement                                                                                             | Supabase `subscriptions`                                            | Non                                               |
+| Organisation                                                                                           | Supabase (RPC `bootstrap_org_for_user`)                             | Non                                               |
+| Catalogue de tests                                                                                     | Supabase (`view_unified_*`, `official_categories`, RPC `admin_*`)   | Non                                               |
+| Questionnaire parents                                                                                  | Supabase `pending_questionnaires.family_encrypted_data`             | Oui, AES-GCM avec la clé du lien                  |
+| Clé du questionnaire                                                                                   | Hash de l'URL + `pending_questionnaires.practitioner_encrypted_key` | Oui dans la table, chiffrée par `sessionKey`      |
+| Journal des générations, rate limit                                                                    | Supabase `generation_log`, `ai_request_log` + RPC                   | Non                                               |
+| Texte envoyé à Gemini                                                                                  | Transit via `generate`                                              | Pseudonymisé (`createAnonymization`), pas chiffré |
+| Thème, favoris/récents, blocage PIN, date du dernier backup, brouillon d'inscription, session Supabase | `localStorage`                                                      | Non                                               |
 
 Un questionnaire importé est enregistré en local, puis la ligne distante est supprimée ; si la suppression échoue, l'import local est annulé (`usePendingProcessor`). La purge automatique des questionnaires non importés dépend de la migration `20260924100200_scheduled_cleanups.sql` (pg_cron), appliquée le 2026-09-25.
 

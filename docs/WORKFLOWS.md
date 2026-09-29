@@ -61,7 +61,7 @@ Composants du dashboard impliqués :
 
 **Étape 3.** Trois champs de synthèse ; le diagnostic est obligatoire. « Générer » vérifie crédits ou abonnement expert actif (sinon paywall), puis ouvre la modale de confirmation de `AssessmentWorkspace`, qui lance `flow.generateInitialReport`.
 
-**Génération** (`useAssessmentFlow` → `generateInitialReport`, détail dans [AI_PIPELINE.md](./AI_PIPELINE.md)) : la charge utile est construite par `buildInitialReportPayload` (`utils/aiPayload.ts`) puis pseudonymisée d'un bloc par `anonymizeDeep`, avec les préférences de style du praticien. `AIService.generateInitialReport` renvoie les sections et les observations reformulées, qui remplacent celles des subtests. Les crédits sont rechargés (`refreshProfile`) et le bilan passe à l'étape 4. Un double clic est ignoré. Erreur `CREDIT_INSUFFICIENT` → paywall ; autres erreurs → `CriticalErrorModal` avec « réessayer » (qui reprend au diagnostic si seul celui-ci a échoué). Le `GenerationLoader` peut être masqué sans annuler la génération.
+**Génération** (`useAssessmentFlow` → `generateInitialReport`, détail dans [AI_PIPELINE.md](./AI_PIPELINE.md)) : la modale liste d'abord les mots suspects du texte libre (masqués par défaut, choix gardés sur la fiche). Le générateur (`utils/reportGenerator.ts`) construit la charge utile (`buildInitialReportPayload`), l'anonymise d'un bloc (identifiants, mots masqués, dates) avec les préférences de style du praticien, puis renvoie les sections et les observations reformulées, qui remplacent celles des subtests. Les crédits sont rechargés (`refreshProfile`) et le bilan passe à l'étape 4. Un double clic est ignoré. Erreur `CREDIT_INSUFFICIENT` → paywall ; autres erreurs → `CriticalErrorModal` avec « réessayer » (qui reprend au diagnostic si seul celui-ci a échoué). Le `GenerationLoader` peut être masqué sans annuler la génération.
 
 **Étape 4.** Relecture section par section dans TipTap, validation unitaire ou « Tout valider », avertissements si des sections sont en cours d'édition ou non validées. La section `objectifs` est générée mais masquée partout (`HIDDEN_SECTION_IDS`, `utils/reportData.ts`).
 
@@ -84,7 +84,7 @@ Composants du dashboard impliqués :
 
 **Étape 2.** Deux possibilités :
 
-- « Générer avec l'IA » (`flow.generateReevaluation`) : charge utile `buildReevaluationPayload` (scores avant/après, deltas, extraits des sections `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` de la référence) pseudonymisée par `anonymizeDeep`. Les 4 sections renvoyées (rappel du bilan initial, évolution, conclusion, préconisations) remplacent `sections`, puis passage à l'étape 3. Même gestion d'erreur et même loader qu'en initial.
+- « Générer avec l'IA » (`flow.generateReevaluation`) : charge utile `buildReevaluationPayload` (scores avant/après, deltas, extraits des sections `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` de la référence), anonymisée par le générateur après la même liste de mots suspects. Les 4 sections renvoyées (rappel du bilan initial, évolution, conclusion, préconisations) remplacent `sections`, puis passage à l'étape 3. Même gestion d'erreur et même loader qu'en initial.
 - « Continuer » sans IA : les textes saisis pour `conclusion` et `recommandations_reev` remplacent la section correspondante seulement s'ils ont changé ; les autres sections sont conservées.
 
 Les deux zones de texte sont en état local : « Retour » sans « Continuer » perd les modifications non reportées.
@@ -181,7 +181,7 @@ L'aperçu et le PDF lisent les mêmes données (`utils/reportData.ts` pour les g
 - Stockage : les écritures Dexie sont des no-op ; l'autosave est désactivée (le contexte ne persiste qu'hors démo) ; la liste renvoie la patiente `SARAH` avec deux bilans fictifs qui ont des scores (`data/demoData.ts`). La reprise de brouillon est refusée.
 - Catalogue : sans session, `CatalogContext` utilise `data/demoCatalog.ts`, aligné sur les vrais identifiants de tests.
 - Portail : lien fictif, deux questionnaires factices (`useDataLoader` → `loadPending`), import animé (`ImportAnimation`) qui charge `ELYA` avec tests et observations (`usePendingProcessor`).
-- Générations simulées sans appel réseau ni crédit : `DEMO_SECTIONS` et `DEMO_REEVALUATION_SECTIONS` (`data/demoReport.ts`) après 2,5 s. La réévaluation démo part des scores de `SARAH`.
+- Générations simulées sans appel réseau ni crédit : le transport démo (`demoTransport`, `data/demoReport.ts`) renvoie après 2,5 s des réponses au format de l'edge, analysées et réhydratées comme en réel. La réévaluation démo part des scores de `SARAH`.
 - Conversion : « Télécharger PDF » (après téléchargement) et « Terminer & Archiver » ouvrent `DemoConversionModal` ; « convertir » déconnecte. « Sauver & quitter » ne fait que réinitialiser. En historique, « Enregistrer » passe par la branche démo de `finalize` (rien n'est enregistré).
 
 ## 10. Renvois

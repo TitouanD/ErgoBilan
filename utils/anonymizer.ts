@@ -50,7 +50,7 @@ const STOP_TOKENS = new Set(['mme', 'mlle', 'madame', 'monsieur', 'mr', 'dr', 'd
 const clean = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 /** Build the full replacement table for a patient (longest values first). */
-export const buildReplacements = (patient: Patient): Replacement[] => {
+const buildReplacements = (patient: Patient): Replacement[] => {
   const list: Replacement[] = [];
   const add = (value: unknown, placeholder: string, splitTokens = false) => {
     const v = clean(value);
@@ -123,15 +123,11 @@ const mapStrings = <T>(value: T, fn: (s: string) => string): T => {
   return walk(value) as T;
 };
 
-/** Pseudonymize one text (identifiers of the patient file only, dates kept). */
-export const anonymizeText = (text: string, patient: Patient): string => applyReplacements(text, buildReplacements(patient));
-
-/** Pseudonymize every string nested in `value` (identifiers of the patient file only, dates kept). */
-export const anonymizeDeep = <T>(value: T, patient: Patient): T => {
-  const replacements = buildReplacements(patient);
-  return mapStrings(value, (s) => applyReplacements(s, replacements));
-};
-
+/**
+ * Replace the placeholders of the patient file with the real values.
+ * `asHtml` escapes the injected values (they come from the patient file,
+ * partly typed by the family in the portal) when the output is HTML.
+ */
 const hydrateWith = (text: string, replacements: Replacement[], options: { asHtml?: boolean }): string => {
   const byPlaceholder = new Map<string, string>();
   for (const r of replacements) {
@@ -145,14 +141,6 @@ const hydrateWith = (text: string, replacements: Replacement[], options: { asHtm
   for (const [pattern, fallback] of RESIDUAL_FALLBACKS) result = result.replace(pattern, fallback);
   return result;
 };
-
-/**
- * Replace placeholders in a generated text with the real values (identifiers
- * of the patient file). `asHtml` escapes the injected values (they come from
- * the patient file, partly typed by the family in the portal) when the output is HTML.
- */
-export const hydrateReport = (text: string, patient: Patient, options: { asHtml?: boolean } = {}): string =>
-  hydrateWith(text, buildReplacements(patient), options);
 
 // ─── Dates ──────────────────────────────────────────────────────────────────
 
@@ -169,33 +157,49 @@ const MONTH_NAME = `(${[...MONTH_BY_NAME.keys()].join('|')})`;
 const NOT_BEFORE = '(?<![\\p{L}\\p{N}/.-])';
 const NOT_AFTER = '(?![\\p{L}\\p{N}]|[/.-]\\d)';
 /**
- * A precise date: 12/03/2024, 12-03-2024, 2024-03-12, 03/2024, 12 mars 2024,
- * 1er mars 2024, mars 2024. A year alone is kept (not precise enough).
+ * A precise date: 12/03/2024, 12-03-2024, 2024-03-12, 2024-03, 03/2024,
+ * 12 mars 2024, 1er mars 2024, mars 2024. A year alone is kept (not precise enough).
  */
 const DATE_PATTERN = new RegExp(
   [
     `${NOT_BEFORE}(\\d{1,2})[/.-](\\d{1,2})[/.-]${YEAR}${NOT_AFTER}`,
     `${NOT_BEFORE}${YEAR}-(\\d{1,2})-(\\d{1,2})${NOT_AFTER}`,
-    `${NOT_BEFORE}(\\d{1,2})[/.-]${YEAR}${NOT_AFTER}`,
+    `${NOT_BEFORE}${YEAR}-(\\d{1,2})${NOT_AFTER}`,
+    `${NOT_BEFORE}(\\d{1,2})/${YEAR}${NOT_AFTER}`,
     `(?<![\\p{L}\\p{N}])(?:(\\d{1,2})(?:er)?\\s+)?${MONTH_NAME}\\s+${YEAR}(?![\\p{L}\\p{N}])`,
   ].join('|'),
   'giu',
 );
-const DATE_GROUPS = 11;
+const DATE_GROUPS = 13;
 
-/** Year and month (1-12) of a matched date, or null when it is not a real date. */
-const parseDateMatch = (groups: Array<string | undefined>): { year: number; month: number } | null => {
-  const [d1, m1, y1, y2, m2, d2, m3, y3, d4, monthName, y4] = groups;
+const pad = (v: number) => String(v).padStart(2, '0');
+
+interface ParsedDate {
+  year: number;
+  month: number;
+  /** Written back in the report: as typed, except ISO dates (date fields of the browser) shown the French way. */
+  display: string;
+}
+
+/** A matched date, or null when it is not a real date. */
+const parseDateMatch = (match: string, groups: Array<string | undefined>): ParsedDate | null => {
+  const [d1, m1, y1, y2, m2, d2, y3, m3, m4, y4, d5, monthName, y5] = groups;
   const n = (v: string | undefined) => (v === undefined ? NaN : parseInt(v, 10));
   let year: number;
   let month: number;
   let day = 1;
+  let display = match;
   if (y1 !== undefined) [year, month, day] = [n(y1), n(m1), n(d1)];
-  else if (y2 !== undefined) [year, month, day] = [n(y2), n(m2), n(d2)];
-  else if (y3 !== undefined) [year, month] = [n(y3), n(m3)];
-  else [year, month, day] = [n(y4), MONTH_BY_NAME.get((monthName ?? '').toLowerCase()) ?? NaN, d4 === undefined ? 1 : n(d4)];
+  else if (y2 !== undefined) {
+    [year, month, day] = [n(y2), n(m2), n(d2)];
+    display = `${pad(day)}/${pad(month)}/${year}`;
+  } else if (y3 !== undefined) {
+    [year, month] = [n(y3), n(m3)];
+    display = `${pad(month)}/${year}`;
+  } else if (y4 !== undefined) [year, month] = [n(y4), n(m4)];
+  else [year, month, day] = [n(y5), MONTH_BY_NAME.get((monthName ?? '').toLowerCase()) ?? NaN, d5 === undefined ? 1 : n(d5)];
   if (!(month >= 1 && month <= 12) || !(day >= 1 && day <= 31)) return null;
-  return { year, month };
+  return { year, month, display };
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
@@ -235,13 +239,13 @@ export const createAnonymization = (patient: Patient, now: Date = new Date()): A
 
   const maskDates = (text: string) =>
     text.replace(DATE_PATTERN, (match: string, ...rest: unknown[]) => {
-      const parsed = parseDateMatch(rest.slice(0, DATE_GROUPS) as Array<string | undefined>);
+      const parsed = parseDateMatch(match, rest.slice(0, DATE_GROUPS) as Array<string | undefined>);
       if (!parsed) return match;
       let placeholder = placeholderByDate.get(match);
       if (!placeholder) {
         placeholder = `{{DATE_${placeholderByDate.size + 1}}}`;
         placeholderByDate.set(match, placeholder);
-        dateByPlaceholder.set(placeholder, match);
+        dateByPlaceholder.set(placeholder, parsed.display);
       }
       return `${placeholder} (${describeDateDistance(parsed, now)})`;
     });
@@ -251,7 +255,7 @@ export const createAnonymization = (patient: Patient, now: Date = new Date()): A
     hydrate: (text, options = {}) => {
       const withDates = text.replace(DATE_PLACEHOLDER_IN_ANSWER, (found, placeholder: string) => {
         const value = dateByPlaceholder.get(placeholder);
-        if (value === undefined) return found;
+        if (value === undefined) return ''; // unknown placeholder: dropped with its distance
         return options.asHtml ? escapeHtml(value) : value;
       });
       return hydrateWith(withDates, replacements, options);

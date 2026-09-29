@@ -262,13 +262,15 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
       } catch (e) {
         // Keep the paid "bio" step: a retry resumes at the diagnostic (see pendingBio).
         if (bioResponse.generationId)
-          pendingBio = { key: JSON.stringify(bioPayload), bio, generationId: bioResponse.generationId, at: Date.now() };
+          pendingBio = { key: JSON.stringify(bioPayload), bio, generationId: bioResponse.generationId, at: now().getTime() };
         throw e;
       }
     };
 
     const resumable =
-      pendingBio && pendingBio.key === JSON.stringify(bioPayload) && Date.now() - pendingBio.at < BIO_REUSE_WINDOW_MS ? pendingBio : null;
+      pendingBio && pendingBio.key === JSON.stringify(bioPayload) && now().getTime() - pendingBio.at < BIO_REUSE_WINDOW_MS
+        ? pendingBio
+        : null;
     pendingBio = null;
     let result: { bio: BioResponse; diag: DiagResponse };
     if (resumable) {
