@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CategoryDef } from '../data/testCatalog';
 import type { DraftPayload, Patient, PatientAssessment, ReportSection } from '../types';
-import { AUTOSAVE_DEBOUNCE_MS, createAssessmentSession, initialPatient, type AssessmentStore } from './assessmentSession';
+import { AUTOSAVE_DEBOUNCE_MS, createAssessmentInProgress, initialPatient, type AssessmentStore } from './assessmentInProgress';
 import { buildCatalogIndex } from './catalogIndex';
 
 vi.mock('./logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), capture: vi.fn() } }));
@@ -116,7 +116,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const setup = (options: { demo?: boolean } = {}) => {
   const db = makeStore();
   const timers = makeScheduler();
-  const session = createAssessmentSession({
+  const bilan = createAssessmentInProgress({
     store: db.store,
     canPersist: () => !options.demo,
     isDemoMode: () => Boolean(options.demo),
@@ -124,31 +124,31 @@ const setup = (options: { demo?: boolean } = {}) => {
     schedule: timers.schedule,
     now: () => new Date('2026-09-29T10:00:00.000Z'),
   });
-  return { db, timers, session };
+  return { db, timers, bilan };
 };
 
-describe('assessmentSession', () => {
+describe('assessmentInProgress', () => {
   let ctx: ReturnType<typeof setup>;
   beforeEach(() => {
     ctx = setup();
   });
 
   it('refuses a re-evaluation without reference and leaves the state untouched', async () => {
-    const { session, db } = ctx;
-    session.updateObservations({ anamnese: 'en cours' });
+    const { bilan, db } = ctx;
+    bilan.updateObservations({ anamnese: 'en cours' });
     db.addPatient({ ...identity, id: 'sarah' });
 
-    expect(await session.start('reevaluation', { ...identity, id: 'sarah' })).toEqual({ ok: false, reason: 'no-reference' });
-    expect(await session.start('reevaluation', identity)).toEqual({ ok: false, reason: 'no-patient' });
-    expect(session.getState().observations.anamnese).toBe('en cours');
+    expect(await bilan.start('reevaluation', { ...identity, id: 'sarah' })).toEqual({ ok: false, reason: 'no-reference' });
+    expect(await bilan.start('reevaluation', identity)).toEqual({ ok: false, reason: 'no-patient' });
+    expect(bilan.getState().observations.anamnese).toBe('en cours');
   });
 
   it('starts a re-evaluation from the reference subtests with empty scores', async () => {
-    const { session, db } = ctx;
+    const { bilan, db } = ctx;
     db.addPatient({ ...identity, id: 'sarah' }, [reference]);
 
-    expect(await session.start('reevaluation', { ...identity, id: 'sarah' })).toEqual({ ok: true });
-    const state = session.getState();
+    expect(await bilan.start('reevaluation', { ...identity, id: 'sarah' })).toEqual({ ok: true });
+    const state = bilan.getState();
     expect(state.reportType).toBe('reevaluation');
     expect(state.previousAssessment?.id).toBe('ref-1');
     expect(Object.keys(state.tests.mabc)).toEqual(['dext', 'balle']);
@@ -156,7 +156,7 @@ describe('assessmentSession', () => {
   });
 
   it('resumes a re-evaluation draft with its reference and keeps the entered scores', async () => {
-    const { session, db } = ctx;
+    const { bilan, db } = ctx;
     const newer: PatientAssessment = { ...reference, id: 'ref-2', date: '2026-06-01T00:00:00.000Z' };
     db.addPatient({ ...identity, id: 'sarah' }, [reference, newer]);
     db.drafts.set('sarah', {
@@ -167,37 +167,37 @@ describe('assessmentSession', () => {
       step: 2,
     });
 
-    expect(await session.resume('sarah', { stale: false })).toEqual({ ok: true });
-    const state = session.getState();
+    expect(await bilan.resume('sarah', { stale: false })).toEqual({ ok: true });
+    const state = bilan.getState();
     expect(state.previousAssessment?.id).toBe('ref-1');
     expect(state.tests.mabc.dext.value).toBe('12');
     expect(state.step).toBe(2);
   });
 
   it('turns a stale draft into a re-evaluation and deletes it', async () => {
-    const { session, db } = ctx;
+    const { bilan, db } = ctx;
     db.addPatient({ ...identity, id: 'sarah' }, [reference]);
     db.drafts.set('sarah', { patient: { ...identity, id: 'sarah' }, reportType: 'initial' });
 
-    expect(await session.resume('sarah', { stale: true })).toEqual({ ok: true });
+    expect(await bilan.resume('sarah', { stale: true })).toEqual({ ok: true });
     expect(db.drafts.has('sarah')).toBe(false);
-    expect(session.getState().reportType).toBe('reevaluation');
-    expect(session.getState().previousAssessment?.id).toBe('ref-1');
+    expect(bilan.getState().reportType).toBe('reevaluation');
+    expect(bilan.getState().previousAssessment?.id).toBe('ref-1');
   });
 
   it('autosaves after an edit, but never re-creates the draft after finalization', async () => {
-    const { session, db, timers } = ctx;
-    session.updatePatient(identity);
+    const { bilan, db, timers } = ctx;
+    bilan.updatePatient(identity);
     await settle(); // patient record created as soon as the identity is complete
-    const patientId = session.getState().patient.id!;
+    const patientId = bilan.getState().patient.id!;
     expect(patientId).toBe('p1');
 
     await timers.flush();
     expect(db.drafts.has(patientId)).toBe(true);
 
-    session.updateObservations({ anamnese: 'modifiée' }); // autosave scheduled again
+    bilan.updateObservations({ anamnese: 'modifiée' }); // autosave scheduled again
     expect(timers.pending()).toBeGreaterThan(0);
-    const result = await session.finalize(index);
+    const result = await bilan.finalize(index);
     expect(result.ok).toBe(true);
     await timers.flush();
     expect(db.drafts.has(patientId)).toBe(false);
@@ -205,48 +205,58 @@ describe('assessmentSession', () => {
   });
 
   it('keeps the finalization when the draft cannot be deleted', async () => {
-    const { session, db } = ctx;
-    session.updatePatient(identity);
+    const { bilan, db } = ctx;
+    bilan.updatePatient(identity);
     await settle();
-    const patientId = session.getState().patient.id!;
-    db.drafts.set(patientId, { patient: session.getState().patient });
+    const patientId = bilan.getState().patient.id!;
+    db.drafts.set(patientId, { patient: bilan.getState().patient });
     db.failures.deleteDraft = 2;
 
-    const result = await session.finalize(index);
+    const result = await bilan.finalize(index);
     expect(result).toMatchObject({ ok: true, demo: false, reportType: 'initial' });
     expect(db.fns.deleteDraft).toHaveBeenCalledTimes(2);
     expect(db.assessments.get(patientId)).toHaveLength(1);
-    expect(session.getState().patient).toEqual(initialPatient);
+    expect(bilan.getState().patient).toEqual(initialPatient);
+  });
+
+  it('saves the draft of an existing patient whose identity is incomplete', async () => {
+    const { bilan, db } = ctx;
+    const oldFile: Patient = { ...identity, id: 'ancien', dob: '' };
+    db.addPatient(oldFile, [reference]);
+    expect(await bilan.start('reevaluation', oldFile)).toEqual({ ok: true });
+
+    expect(await bilan.saveAndClose()).toEqual({ ok: true });
+    expect(db.drafts.get('ancien')?.reportType).toBe('reevaluation');
   });
 
   it('reports a failed save without closing the assessment', async () => {
-    const { session, db } = ctx;
-    session.updatePatient(identity);
+    const { bilan, db } = ctx;
+    bilan.updatePatient(identity);
     db.fns.addAssessment.mockRejectedValueOnce(new Error('IDB_WRITE'));
 
-    expect(await session.finalize(index)).toEqual({ ok: false, reason: 'save-failed' });
-    expect(session.getState().patient.firstName).toBe('Sarah');
+    expect(await bilan.finalize(index)).toEqual({ ok: false, reason: 'save-failed' });
+    expect(bilan.getState().patient.firstName).toBe('Sarah');
   });
 
   it('applies the AI result without losing edits made during the generation', async () => {
-    const { session } = ctx;
-    session.updateTests({
+    const { bilan } = ctx;
+    bilan.updateTests({
       mabc: { dext: { value: '7', unit: 'NS', observation: 'lent' }, balle: { value: '10', unit: 'NS', observation: 'rate' } },
     });
-    const ticket = session.beginGeneration();
+    const ticket = bilan.beginGeneration();
 
     // During the generation: a score and an observation are edited.
-    const during = session.getState().tests;
-    session.updateTests({
+    const during = bilan.getState().tests;
+    bilan.updateTests({
       mabc: { dext: { ...during.mabc.dext, value: '8' }, balle: { ...during.mabc.balle, observation: 'attrape à deux mains' } },
     });
 
-    const applied = session.applyGeneratedReport(ticket, {
+    const applied = bilan.applyGeneratedReport(ticket, {
       sections: [section('diagnostic')],
       reformulatedObservations: { dext: 'Geste lent et appliqué.', balle: 'Réceptions souvent manquées.' },
     });
     expect(applied).toBe(true);
-    const { tests, sections } = session.getState();
+    const { tests, sections } = bilan.getState();
     expect(tests.mabc.dext.value).toBe('8');
     expect(tests.mabc.dext.observation).toBe('Geste lent et appliqué.');
     expect(tests.mabc.balle.observation).toBe('attrape à deux mains');
@@ -254,54 +264,54 @@ describe('assessmentSession', () => {
   });
 
   it('drops an AI result that arrives after the assessment was closed', async () => {
-    const { session } = ctx;
-    const ticket = session.beginGeneration();
-    await session.discard();
-    expect(session.applyGeneratedReport(ticket, { sections: [section('diagnostic')] })).toBe(false);
-    expect(session.getState().sections).toEqual([]);
+    const { bilan } = ctx;
+    const ticket = bilan.beginGeneration();
+    await bilan.discard();
+    expect(bilan.applyGeneratedReport(ticket, { sections: [section('diagnostic')] })).toBe(false);
+    expect(bilan.getState().sections).toEqual([]);
   });
 
   it('discards: deletes the draft and returns to the initial state', async () => {
-    const { session, db } = ctx;
-    session.updatePatient(identity);
+    const { bilan, db } = ctx;
+    bilan.updatePatient(identity);
     await settle();
-    const patientId = session.getState().patient.id!;
-    db.drafts.set(patientId, { patient: session.getState().patient });
+    const patientId = bilan.getState().patient.id!;
+    db.drafts.set(patientId, { patient: bilan.getState().patient });
 
-    expect(await session.discard()).toBe(true);
+    expect(await bilan.discard()).toBe(true);
     expect(db.drafts.has(patientId)).toBe(false);
-    expect(session.getState().patient).toEqual(initialPatient);
+    expect(bilan.getState().patient).toEqual(initialPatient);
   });
 
   it('imports the family file as a new initial assessment, and rolls back when the commit fails', async () => {
-    const { session, db } = ctx;
+    const { bilan, db } = ctx;
     const family = { ...identity, reason: 'Écriture difficile' };
 
-    expect(await session.importFamily({ patient: family }, async () => {})).toEqual({ ok: true });
-    const state = session.getState();
+    expect(await bilan.importFamily({ patient: family }, async () => {})).toEqual({ ok: true });
+    const state = bilan.getState();
     expect(state.patient.id).toBe('p1');
     expect(state.patient.reason).toBe('Écriture difficile');
     expect(state.reportType).toBe('initial');
     expect(state.step).toBe(1);
     expect(db.drafts.get('p1')?.reportType).toBe('initial');
 
-    const failing = await session.importFamily({ patient: family }, async () => {
+    const failing = await bilan.importFamily({ patient: family }, async () => {
       throw new Error('SUPABASE_DELETE');
     });
     expect(failing).toEqual({ ok: false, reason: 'error' });
     expect(db.patients.has('p2')).toBe(false);
-    expect(session.getState().patient.id).toBe('p1'); // the current assessment is untouched
+    expect(bilan.getState().patient.id).toBe('p1'); // the current assessment is untouched
   });
 
   it('writes nothing in demo mode', async () => {
     const demo = setup({ demo: true });
-    const { session, db, timers } = demo;
-    await session.importFamily({ patient: { ...identity, id: 'demo-elya' }, tests: reference.tests });
-    session.updateObservations({ anamnese: 'démo' });
+    const { bilan, db, timers } = demo;
+    await bilan.importFamily({ patient: { ...identity, id: 'demo-elya' }, tests: reference.tests });
+    bilan.updateObservations({ anamnese: 'démo' });
     await timers.flush();
-    expect(await session.resume('demo-elya', { stale: false })).toEqual({ ok: false, reason: 'demo' });
-    expect(await session.saveAndClose()).toEqual({ ok: true });
-    expect(await session.finalize(index)).toEqual({ ok: true, demo: true });
+    expect(await bilan.resume('demo-elya', { stale: false })).toEqual({ ok: false, reason: 'demo' });
+    expect(await bilan.saveAndClose()).toEqual({ ok: true });
+    expect(await bilan.finalize(index)).toEqual({ ok: true, demo: true });
 
     expect(timers.pending()).toBe(0);
     for (const fn of [db.fns.createPatient, db.fns.saveDraft, db.fns.deleteDraft, db.fns.addAssessment, db.fns.upsertPatientFollowup]) {

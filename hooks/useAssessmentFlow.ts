@@ -1,7 +1,7 @@
 /**
  * useAssessmentFlow — AI generation, finalization and "save & quit" for the
  * assessment in progress (initial, re-evaluation and historical flows): the
- * lifecycle itself is in the session (utils/assessmentSession.ts); this hook
+ * lifecycle itself is in utils/assessmentInProgress.ts; this hook
  * adds the AI calls, the auth checks, the toasts and the list refresh.
  *
  * Everything sent to the AI goes through `anonymizeDeep` as a whole payload.
@@ -148,25 +148,32 @@ export const useAssessmentFlow = ({
     return ok && applied;
   }, [assessment, catalogIndex, isDemoMode, practitioner, refreshProfile, runGeneration, toast]);
 
+  /** Writes need the app unlocked and a fresh Supabase session (demo: nothing is written). */
+  const prepareWrite = useCallback(async (): Promise<boolean> => {
+    if (isDemoMode) return true;
+    if (!sessionKey) {
+      toast.error("L'application est verrouillée : déverrouillez-la puis réessayez.");
+      return false;
+    }
+    await ensureFreshSession();
+    return true;
+  }, [isDemoMode, sessionKey, toast]);
+
   /**
    * Save the assessment as a formal record, then send the style feedback
    * (edited AI sections) and refresh the lists. Returns true when the caller
    * can go back to the dashboard.
    */
   const finalize = useCallback(async (): Promise<boolean> => {
-    if (!isDemoMode && !sessionKey) {
-      toast.error("L'application est verrouillée : déverrouillez-la puis réessayez.");
-      return false;
-    }
     try {
-      if (!isDemoMode) await ensureFreshSession();
+      if (!(await prepareWrite())) return false;
       const result = await assessment.finalize(catalogIndex);
       if (!result.ok) {
         if (result.reason !== 'busy') toast.error(FINALIZE_ERRORS[result.reason]);
         return false;
       }
       if (result.demo) {
-        toast.success('Bilan validé (démo, rien n’est enregistré).');
+        toast.success('Bilan finalisé (démo, rien n’est enregistré).');
         return true;
       }
       const isHistorical = result.reportType === 'historique';
@@ -179,24 +186,20 @@ export const useAssessmentFlow = ({
           .catch((err) => Logger.warn('AI', 'Style feedback extraction failed (non-blocking)', err));
       }
 
-      await loadData().catch((e) => Logger.warn('DB', 'List refresh after finalization failed', e));
+      loadData().catch((e) => Logger.warn('DB', 'List refresh after finalization failed', e));
       toast.success(isHistorical ? 'Bilan de référence enregistré. La réévaluation est maintenant disponible.' : 'Bilan sauvegardé.');
       return true;
     } catch (e) {
-      Logger.error('DB', 'Finalization failed', e);
+      Logger.error('DB', 'Finalization aborted before saving', e);
       toast.error("Erreur lors de l'enregistrement du bilan.");
       return false;
     }
-  }, [assessment, catalogIndex, isDemoMode, loadData, practitioner, refreshProfile, sessionKey, toast]);
+  }, [assessment, catalogIndex, loadData, prepareWrite, practitioner, refreshProfile, toast]);
 
   /** Save a draft and leave. Returns true when the caller can go back to the dashboard. */
   const saveAndQuit = useCallback(async (): Promise<boolean> => {
-    if (!isDemoMode && !sessionKey) {
-      toast.error("L'application est verrouillée : déverrouillez-la puis réessayez.");
-      return false;
-    }
     try {
-      if (!isDemoMode) await ensureFreshSession();
+      if (!(await prepareWrite())) return false;
       const result = await assessment.saveAndClose();
       if (!result.ok) {
         toast.error(SAVE_ERRORS[result.reason]);
@@ -209,7 +212,7 @@ export const useAssessmentFlow = ({
       toast.error('Impossible de sauvegarder le brouillon.');
       return false;
     }
-  }, [assessment, isDemoMode, sessionKey, toast]);
+  }, [assessment, isDemoMode, prepareWrite, toast]);
 
   return {
     isGenerating,

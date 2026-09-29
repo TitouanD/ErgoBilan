@@ -1,7 +1,7 @@
 /**
  * usePendingProcessor — Handles importing a pending family questionnaire
  * into the assessment workflow: decryption here, patient and draft creation in
- * the session (`importFamily`).
+ * the assessment in progress (`importFamily`).
  */
 
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
@@ -86,7 +86,7 @@ export const usePendingProcessor = ({
         if (payload?.patient) {
           // SECURITY/PRIVACY GUARANTEE: deleting the row isolates the family's submission
           // from later edits (the link becomes invalid; local changes are never written
-          // back). The session rolls the local import back if the deletion fails, so a
+          // back). `importFamily` rolls the local import back if the deletion fails, so a
           // retry cannot create a duplicate patient.
           const result = await assessment.importFamily({ patient: payload.patient as Patient }, async () => {
             const { error: deleteError } = await supabase.from('pending_questionnaires').delete().eq('id', q.id);

@@ -1,6 +1,6 @@
 /**
- * useAssessmentLauncher — starts or resumes an assessment (the session does the
- * work, see utils/assessmentSession.ts) and turns refusals into messages.
+ * useAssessmentLauncher — starts or resumes an assessment (utils/assessmentInProgress.ts does the
+ * work, see utils/assessmentInProgress.ts) and turns refusals into messages.
  *
  * - New initial / historical assessment (optionally for an existing patient).
  * - Re-evaluation: starts from the reference assessment's tests with empty
@@ -12,7 +12,7 @@
 import { useCallback } from 'react';
 import type { AssessmentContextType, ReportType } from '../contexts/AssessmentContext';
 import type { DashboardDraftMeta, Patient, PatientAssessment, PatientFile } from '../types';
-import { isStaleDraft } from '../utils/assessmentSession';
+import { isStaleDraft } from '../utils/assessmentInProgress';
 
 interface Params {
   assessment: AssessmentContextType;
@@ -21,6 +21,7 @@ interface Params {
   toast: { error: (m: string) => void; info: (m: string) => void };
 }
 
+const NO_PATIENT = 'Impossible de démarrer la réévaluation : patient introuvable.';
 const NO_REFERENCE = "Aucun bilan de référence pour ce patient : réalisez ou importez d'abord un bilan initial.";
 
 export const useAssessmentLauncher = ({ assessment, patientFiles, draftsIndex, toast }: Params) => {
@@ -30,7 +31,7 @@ export const useAssessmentLauncher = ({ assessment, patientFiles, draftsIndex, t
       const result = await assessment.start(type, patient, knownAssessments);
       if (result.ok) return true;
       if (result.reason === 'no-reference') toast.info(NO_REFERENCE);
-      else toast.error('Impossible de démarrer la réévaluation : patient introuvable.');
+      else toast.error(NO_PATIENT);
       return false;
     },
     [assessment, toast],
@@ -44,6 +45,7 @@ export const useAssessmentLauncher = ({ assessment, patientFiles, draftsIndex, t
       if (result.ok) return true;
       if (result.reason === 'demo') toast.info('Brouillons désactivés en démo.');
       else if (result.reason === 'no-reference') toast.info(NO_REFERENCE);
+      else if (result.reason === 'no-patient') toast.error(NO_PATIENT);
       else toast.error('Impossible de charger ce brouillon.');
       return false;
     },

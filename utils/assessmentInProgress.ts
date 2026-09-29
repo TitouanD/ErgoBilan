@@ -1,5 +1,5 @@
 /**
- * assessmentSession — the assessment in progress ("bilan en cours", see
+ * assessmentInProgress — the assessment in progress ("bilan en cours", see
  * CONTEXT.md): its state and its lifecycle, outside React so every scenario
  * can be tested in node with an in-memory store.
  *
@@ -53,7 +53,7 @@ export interface AssessmentState {
   isAutoSaving: boolean;
 }
 
-/** What the session needs from the local storage (StorageService, which also serves the demo). */
+/** What the assessment in progress needs from the local storage (StorageService, which also serves the demo). */
 export type AssessmentStore = Pick<
   typeof StorageService,
   | 'ensurePatientId'
@@ -68,7 +68,7 @@ export type AssessmentStore = Pick<
   | 'upsertPatientFollowup'
 >;
 
-export interface SessionDeps {
+export interface AssessmentInProgressDeps {
   store: AssessmentStore;
   /** Drafts and patient records may be written (app unlocked, not in demo). Read at each use. */
   canPersist: () => boolean;
@@ -239,6 +239,9 @@ const applyReformulations = (current: TestData, sent: TestData, reformulated: Re
     ]),
   );
 
+/** The patient as stored: with its record id and the age computed today. */
+const withRecord = (patient: Patient, id = patient.id): Patient => ({ ...patient, id, age: getPatientAgeForIdentity(patient) });
+
 const addMonths = (iso: string, months: number): string => {
   const d = new Date(iso);
   d.setMonth(d.getMonth() + months);
@@ -250,7 +253,7 @@ const defaultSchedule = (fn: () => void, ms: number) => {
   return () => clearTimeout(t);
 };
 
-export const createAssessmentSession = (deps: SessionDeps) => {
+export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
   const { store } = deps;
   const schedule = deps.schedule ?? defaultSchedule;
   const now = deps.now ?? (() => new Date());
@@ -287,7 +290,7 @@ export const createAssessmentSession = (deps: SessionDeps) => {
     if (!isPatientCreationReady(snapshot)) return null;
     if (!createPromise) {
       const startedFor = token;
-      const toCreate = { ...snapshot, age: getPatientAgeForIdentity(snapshot) };
+      const toCreate = withRecord(snapshot);
       const promise: Promise<string> = store
         .ensurePatientId(toCreate)
         .then((id) => {
@@ -324,9 +327,7 @@ export const createAssessmentSession = (deps: SessionDeps) => {
     try {
       const patientId = snapshot.patient.id || (await ensurePatientId(snapshot.patient));
       if (!patientId || startedFor !== token) return;
-      await store.saveDraft(
-        buildDraft(snapshot, { ...snapshot.patient, id: patientId, age: getPatientAgeForIdentity(snapshot.patient) }, now()),
-      );
+      await store.saveDraft(buildDraft(snapshot, withRecord(snapshot.patient, patientId), now()));
     } catch (e) {
       Logger.error('DB', 'Autosave draft failed', e, { patientId: snapshot.patient.id ?? null });
     } finally {
@@ -362,11 +363,12 @@ export const createAssessmentSession = (deps: SessionDeps) => {
   /** Patient with its local record created (and its age refreshed), written back into the state. */
   const ensurePatient = async (options?: { syncPreview?: boolean }): Promise<EnsurePatientOutcome> => {
     const current = state.patient;
-    if (!isPatientCreationReady(current)) return { ok: false, reason: 'identity-incomplete' };
+    // An existing record is kept even if the identity was emptied since (old files may lack a date of birth).
+    if (!current.id && !isPatientCreationReady(current)) return { ok: false, reason: 'identity-incomplete' };
     const id = await ensurePatientId(current);
     if (!id) return { ok: false, reason: 'creation-failed' };
-    const patient: Patient = { ...state.patient, id, age: getPatientAgeForIdentity(state.patient) };
-    if (state.patient.id !== id || state.patient.age !== patient.age) change({ patient: { ...state.patient, id, age: patient.age } });
+    const patient = withRecord(state.patient, id);
+    if (state.patient.id !== id || state.patient.age !== patient.age) change({ patient });
     if (options?.syncPreview) await store.syncPatientIdentityPreview(id, patient);
     return { ok: true, patient };
   };
@@ -404,7 +406,7 @@ export const createAssessmentSession = (deps: SessionDeps) => {
     // The stored age is the one computed when the file was last saved: refresh it for the new report.
     change({
       reportType: type,
-      ...(patient ? { patient: { ...initialPatient, ...patient, age: getPatientAgeForIdentity(patient) } } : {}),
+      ...(patient ? { patient: withRecord(patient) } : {}),
     });
     if (reference) await applyReference(reference, true);
     return { ok: true };
@@ -625,4 +627,4 @@ export const createAssessmentSession = (deps: SessionDeps) => {
   };
 };
 
-export type AssessmentSession = ReturnType<typeof createAssessmentSession>;
+export type AssessmentInProgress = ReturnType<typeof createAssessmentInProgress>;

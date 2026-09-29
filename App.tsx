@@ -21,7 +21,7 @@ import { getDaysSinceBackup } from './utils/backupTracking';
 import { useDataLoader } from './hooks/useDataLoader';
 import { useAssessmentFlow } from './hooks/useAssessmentFlow';
 import { useAssessmentLauncher } from './hooks/useAssessmentLauncher';
-import { isStaleDraft } from './utils/assessmentSession';
+import { isStaleDraft } from './utils/assessmentInProgress';
 import { useLinkManager } from './hooks/useLinkManager';
 import { usePendingProcessor } from './hooks/usePendingProcessor';
 import { Dashboard } from './components/dashboard/Dashboard';
