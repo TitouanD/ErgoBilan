@@ -308,6 +308,8 @@ export interface PatientAssessmentReport {
     status: 'completed';
     patientName: string;
     sections: ReportSection[];
+    /** Page layout chosen at the export step (section ids per page, see utils/reportData.ts). Absent on older records. */
+    pages?: string[][];
 }
 
 export interface PatientAssessment {
@@ -392,6 +394,8 @@ export interface DraftPayload {
     historicalDate?: string;
     /** Reference assessment of a re-evaluation draft. */
     previousAssessmentId?: string;
+    /** Page layout chosen at the export step (section ids per page). Absent on older drafts. */
+    reportPages?: string[][];
     step?: number;
     version?: number;
     timestamp?: string;

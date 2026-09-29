@@ -210,6 +210,10 @@ export const reconcilePages = (pages: string[][], reportKind: ReportKind, sectio
   return result.length > 0 ? result : buildDefaultPages(reportKind, sections);
 };
 
+/** Layout shown at the export step: the saved one kept consistent with the sections, else the default one. */
+export const resolvePages = (saved: string[][] | null | undefined, reportKind: ReportKind, sections: ReportSection[]): string[][] =>
+  saved ? reconcilePages(saved, reportKind, sections) : buildDefaultPages(reportKind, sections);
+
 export type MoveDirection = 'up' | 'down' | 'prevPage' | 'nextPage';
 
 /** Move a section inside the layout. Returns a new array (never mutates). */

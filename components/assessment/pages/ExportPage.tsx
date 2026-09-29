@@ -1,17 +1,19 @@
 /**
  * ExportPage — final step: report preview, layout editing, PDF export and
- * finalization. The page layout lives here so the preview and the PDF use the
- * same order; chart type and score units are saved with the branding.
+ * finalization. The page layout is kept by the assessment in progress (saved
+ * with the draft, then with the finalized report) and resolved here so the
+ * preview and the PDF use the same order; chart type and score units are saved
+ * with the branding.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Check, Download, Loader2, Palette } from 'lucide-react';
 import type { BrandingConfig, Patient, ReportSection, TestData } from '../../../types';
 import { ReportView } from './ReportView';
 import { useToast } from '../../../contexts/ToastContext';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { Logger } from '../../../utils/logger';
-import { DEFAULT_CHART_TYPE, type ReportKind, type ScoreDisplayMode, buildDefaultPages, reconcilePages } from '../../../utils/reportData';
+import { DEFAULT_CHART_TYPE, type ReportKind, type ScoreDisplayMode, resolvePages } from '../../../utils/reportData';
 import { ReportToolbar } from './export/ReportToolbar';
 import { BrandingEditor } from './export/BrandingEditor';
 
@@ -20,6 +22,9 @@ interface Props {
   sections: ReportSection[];
   tests: TestData;
   reportType?: ReportKind;
+  /** Saved page layout (null or absent: default layout). */
+  reportPages?: string[][] | null;
+  onReportPagesChange: (pages: string[][]) => void;
   /** Save the assessment; resolves when done (the page shows a loader meanwhile). */
   onValidate: () => Promise<void>;
   onUpdateSection: (sectionId: string, updates: Partial<ReportSection>) => void;
@@ -45,6 +50,8 @@ export const ExportPage: React.FC<Props> = ({
   sections,
   tests,
   reportType = 'initial',
+  reportPages,
+  onReportPagesChange,
   onValidate,
   onUpdateSection,
   branding,
@@ -61,12 +68,8 @@ export const ExportPage: React.FC<Props> = ({
   const [showBranding, setShowBranding] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [pages, setPages] = useState<string[][]>(() => buildDefaultPages(reportType, sections));
-
-  // Keep the layout consistent when sections are added (e.g. "Page École") or removed.
-  useEffect(() => {
-    setPages((prev) => reconcilePages(prev, reportType, sections));
-  }, [sections, reportType]);
+  // Saved layout kept consistent with the sections (e.g. "Page École" added), else the default one.
+  const pages = useMemo(() => resolvePages(reportPages, reportType, sections), [reportPages, reportType, sections]);
 
   const chartType = branding.chartType ?? DEFAULT_CHART_TYPE;
   const scoreDisplayModes = branding.scoreDisplayModes ?? {};
@@ -198,7 +201,7 @@ export const ExportPage: React.FC<Props> = ({
           sections={sections}
           tests={tests}
           pages={pages}
-          onPagesChange={setPages}
+          onPagesChange={onReportPagesChange}
           onUpdateSection={onUpdateSection}
           branding={branding}
           scoreDisplayModes={scoreDisplayModes}

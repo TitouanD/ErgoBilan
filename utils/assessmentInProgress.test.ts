@@ -204,6 +204,33 @@ describe('assessmentInProgress', () => {
     expect(db.assessments.get(patientId)).toHaveLength(1);
   });
 
+  it('keeps the report layout in the draft and in the finalized report (#59)', async () => {
+    const { bilan, db } = ctx;
+    const layout = [['diagnostic'], ['mandat_ref'], ['annexes']];
+    bilan.updatePatient(identity);
+    bilan.setSections([section('mandat_ref'), section('diagnostic')]);
+    bilan.setReportPages(layout);
+    expect(await bilan.saveAndClose()).toEqual({ ok: true });
+    const patientId = 'p1';
+    expect(db.drafts.get(patientId)?.reportPages).toEqual(layout);
+    expect(bilan.getState().reportPages).toBeNull();
+
+    expect(await bilan.resume(patientId, { stale: false })).toEqual({ ok: true });
+    expect(bilan.getState().reportPages).toEqual(layout);
+    expect((await bilan.finalize(index)).ok).toBe(true);
+    expect(db.assessments.get(patientId)?.[0].report?.pages).toEqual(layout);
+  });
+
+  it('resumes a draft saved without layout (older versions)', async () => {
+    const { bilan, db } = ctx;
+    db.addPatient({ ...identity, id: 'ancien' });
+    db.drafts.set('ancien', { patient: { ...identity, id: 'ancien' }, sections: [section('diagnostic')], step: 5 });
+    expect(await bilan.resume('ancien', { stale: false })).toEqual({ ok: true });
+    expect(bilan.getState().reportPages).toBeNull();
+    expect((await bilan.finalize(index)).ok).toBe(true);
+    expect(db.assessments.get('ancien')?.[0].report).not.toHaveProperty('pages');
+  });
+
   it('keeps the finalization when the draft cannot be deleted', async () => {
     const { bilan, db } = ctx;
     bilan.updatePatient(identity);

@@ -55,6 +55,8 @@ interface BuildAssessmentInput {
   sections: ReportSection[];
   patientName: string;
   previousAssessmentId?: string;
+  /** Page layout chosen at the export step. */
+  pages?: string[][] | null;
   index: CatalogIndex;
 }
 
@@ -66,6 +68,7 @@ export const buildAssessmentRecord = ({
   sections,
   patientName,
   previousAssessmentId,
+  pages,
   index,
 }: BuildAssessmentInput): PatientAssessment => {
   const kept = pruneEmptyScores(tests);
@@ -85,6 +88,8 @@ export const buildAssessmentRecord = ({
     ...(previousAssessmentId ? { previousAssessmentId } : {}),
     results,
     tests: kept,
-    ...(filledSections.length > 0 ? { report: { status: 'completed' as const, patientName, sections: filledSections } } : {}),
+    ...(filledSections.length > 0
+      ? { report: { status: 'completed' as const, patientName, sections: filledSections, ...(pages ? { pages } : {}) } }
+      : {}),
   };
 };

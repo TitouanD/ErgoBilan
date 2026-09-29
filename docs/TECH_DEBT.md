@@ -35,7 +35,7 @@ Statuts :
 | P1-4  | Purge des questionnaires du portail                  | Résolu                              |
 | P1-5  | Style IA appris jamais utilisé                       | Résolu                              |
 | P1-6  | Plantage après téléchargement du PDF                 | Résolu                              |
-| P1-7  | Mise en page affichée ≠ exportée                     | Résolu, sauf → #59                  |
+| P1-7  | Mise en page affichée ≠ exportée                     | Résolu                              |
 | P1-8  | Crédits et sessions de génération                    | Résolu, sauf → #60                  |
 | P1-9  | Échelles et interprétation des scores                | Résolu                              |
 | P1-10 | Saisie `raw_only` / `computed_items`                 | Résolu                              |
@@ -58,7 +58,7 @@ Statuts :
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
 | P2-8  | Base de données, divers                              | Partiel → #65                       |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
-| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf → #59, #67, #68        |
+| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf → #67, #68             |
 
 ## Mise en production du 2026-09-25
 
@@ -147,12 +147,12 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 `const toast = useToast()` dans `ExportPage`.
 
-### P1-7 Mise en page affichée ≠ exportée — Résolu, sauf → #59
+### P1-7 Mise en page affichée ≠ exportée — Résolu
 
 - La disposition des pages est remontée dans `ExportPage` et partagée par `ReportView` (édition, déplacement) et `PdfDocument` (prop `pages`).
 - Chaque page de l'aperçu commence une nouvelle page du PDF (corrigé le 2026-09-25 : le PDF enchaînait tout).
 - `chartType` et `scoreDisplayModes` sont enregistrés dans le branding.
-- **Ouvert** : disposition des pages non enregistrée → #59.
+- La disposition des pages est enregistrée avec le bilan en cours (`reportPages`, donc dans le brouillon) puis avec le rapport finalisé (`report.pages`) ; elle est reprise par `resolvePages` (`utils/reportData.ts`), repli sur la disposition par défaut (#59).
 - La section `objectifs` est masquée partout (`HIDDEN_SECTION_IDS` dans `utils/reportData.ts`).
 
 ### P1-8 Crédits et sessions de génération — Résolu, sauf → #60
@@ -270,7 +270,7 @@ Parcours démo complet (accueil, import d'un questionnaire, bilan initial en 5 �
 - en-tête praticien (crédits, avatar) affiché sur le portail famille ;
 - texte démo de réévaluation qui citait un autre patient.
 
-### P2-10 Points relevés à la relecture de la doc (2026-09-25) — Résolu, sauf → #59, #67, #68
+### P2-10 Points relevés à la relecture de la doc (2026-09-25) — Résolu, sauf → #67, #68
 
 La réécriture des docs contre le code a fait apparaître d'autres défauts.
 
@@ -289,7 +289,6 @@ Corrigés :
 
 Ouverts :
 
-- disposition des pages non enregistrée → #59 ;
 - `loadPatientListPage` pagine en mémoire → #67 ;
 - `SubtestDef.displayName` jamais rempli, `subtests_count` inutilisé → #68 ;
 - `enforce_public_acl_on_ddl` : `search_path` désormais fixé à `public` (constaté en base le 2026-09-29).

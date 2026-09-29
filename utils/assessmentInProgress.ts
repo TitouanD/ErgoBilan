@@ -43,6 +43,8 @@ export interface AssessmentState {
   observations: Observations;
   synthesis: ClinicalSynthesis;
   sections: ReportSection[];
+  /** Page layout chosen at the export step; null = default layout (utils/reportData.ts resolvePages). */
+  reportPages: string[][] | null;
   reportType: ReportType;
   /** Date of the original assessment (historical flow only), ISO string. */
   historicalDate: string;
@@ -185,6 +187,7 @@ export const initialAssessmentState: AssessmentState = {
   observations: initialObs,
   synthesis: initialSynthesis,
   sections: [],
+  reportPages: null,
   reportType: 'initial',
   historicalDate: '',
   step: 1,
@@ -198,6 +201,7 @@ export const buildDraft = (state: AssessmentState, patient: Patient, now: Date):
   observations: state.observations,
   synthesis: state.synthesis,
   sections: state.sections,
+  ...(state.reportPages ? { reportPages: state.reportPages } : {}),
   reportType: state.reportType,
   historicalDate: state.historicalDate || undefined,
   previousAssessmentId: state.previousAssessment?.id,
@@ -214,6 +218,7 @@ const stateFromDraft = (draft: DraftPayload): AssessmentState => ({
   ...(draft.observations ? { observations: { ...initialObs, ...draft.observations } } : {}),
   ...(draft.synthesis ? { synthesis: { ...initialSynthesis, ...draft.synthesis } } : {}),
   ...(draft.sections ? { sections: [...draft.sections] } : {}),
+  ...(Array.isArray(draft.reportPages) ? { reportPages: draft.reportPages } : {}),
   ...(draft.reportType ? { reportType: draft.reportType } : {}),
   ...(draft.historicalDate ? { historicalDate: draft.historicalDate } : {}),
   ...(draft.step ? { step: draft.step } : {}),
@@ -518,7 +523,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
       const persisted = await ensurePatient();
       if (!persisted.ok) return persisted;
       const { patient } = persisted;
-      const { reportType, historicalDate, tests, sections, previousAssessment } = state;
+      const { reportType, historicalDate, tests, sections, reportPages, previousAssessment } = state;
       const date = reportType === 'historique' && historicalDate ? historicalDate : now().toISOString();
       const record = buildAssessmentRecord({
         // A historical import is the initial assessment done outside the app.
@@ -528,6 +533,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
         sections,
         patientName: `${patient.firstName} ${patient.lastName}`.trim(),
         previousAssessmentId: reportType === 'reevaluation' ? previousAssessment?.id : undefined,
+        pages: reportPages,
         index,
       });
       try {
@@ -584,6 +590,8 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
     updateObservations: (data: Partial<Observations>) => change({ observations: { ...state.observations, ...data } }),
     updateSynthesis: (data: Partial<ClinicalSynthesis>) => change({ synthesis: { ...state.synthesis, ...data } }),
     setSections: (sections: ReportSection[]) => change({ sections }),
+    /** Page layout of the export step (saved with the draft, then with the finalized report). */
+    setReportPages: (reportPages: string[][]) => change({ reportPages }),
     /** Patch a section (creates it when missing, e.g. the "Page École"). */
     updateSection: (id: string, update: Partial<ReportSection>) =>
       change({

@@ -5,7 +5,7 @@ import { buildAssessmentRecord, buildEmptyTestsFrom, getAssessmentTests, getLate
 import { buildCatalogIndex, getSubtestName, getTestName, resolveTestDef } from './catalogIndex';
 import { buildDeltaEntries, buildDeltaStats } from './reevaluationHelpers';
 import { markdownToHtml, sectionToHtml } from './reportContent';
-import { buildDefaultPages, buildTestScoreBlocks, computeRadarData, moveSectionInPages, reconcilePages } from './reportData';
+import { buildDefaultPages, buildTestScoreBlocks, computeRadarData, moveSectionInPages, reconcilePages, resolvePages } from './reportData';
 
 const catalog: CategoryDef[] = [
   {
@@ -201,6 +201,17 @@ describe('report data', () => {
     expect(moveSectionInPages(pages, 'c', 'prevPage')).toEqual([['a', 'b', 'c'], ['annexes']]);
     expect(pages).toEqual([['a', 'b'], ['c'], ['annexes']]);
     expect(reconcilePages([['a', 'gone'], ['annexes']], 'initial', sections(['a', 'new']))).toEqual([['a', 'new'], ['annexes']]);
+  });
+
+  it('resumes a saved layout (#59), reconciled with the sections, or falls back to the default one', () => {
+    const current = sections(['mandat_ref', 'profil', 'diagnostic']);
+    expect(resolvePages(undefined, 'initial', current)).toEqual(buildDefaultPages('initial', current));
+    expect(resolvePages(null, 'initial', current)).toEqual(buildDefaultPages('initial', current));
+    expect(resolvePages([['diagnostic'], ['profil', 'mandat_ref', 'gone'], ['annexes']], 'initial', current)).toEqual([
+      ['diagnostic'],
+      ['profil', 'mandat_ref'],
+      ['annexes'],
+    ]);
   });
 });
 
