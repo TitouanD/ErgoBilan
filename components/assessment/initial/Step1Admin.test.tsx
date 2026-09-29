@@ -7,7 +7,6 @@ import { Step1Admin } from './Step1Admin';
 import type { Patient } from '../../../types';
 
 vi.mock('../../../contexts/ToastContext', () => ({ useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }) }));
-vi.mock('../../../utils/logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 vi.mock('../../../contexts/AssessmentContext', () => ({ useAssessment: () => ({ ensurePatient: vi.fn() }) }));
 
 const patient = (overrides: Partial<Patient> = {}) =>
