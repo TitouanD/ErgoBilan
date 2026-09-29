@@ -1,15 +1,11 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+Les skills parlent de cinq rôles de triage. Ce tableau les fait correspondre aux labels du dépôt. Le système complet (qui a la main, nature, validation) est décrit dans [`../ISSUES.md`](../ISSUES.md).
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
-
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
-
-Edit the right-hand column to match whatever vocabulary you actually use.
+| Rôle dans les skills | Label ici                                         | Sens                                             |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `needs-triage`       | `trier`                                           | Claude doit lire et trier l'issue                |
+| `needs-info`         | `titouan` ou `testeuse` (celui qui doit répondre) | En attente d'une précision, posée en commentaire |
+| `ready-for-agent`    | `claude`                                          | Spécifié, Claude peut avancer seul               |
+| `ready-for-human`    | `titouan`                                         | Demande une décision ou une action de Titouan    |
+| `wontfix`            | fermeture « not planned » avec un commentaire     | Ne sera pas fait                                 |

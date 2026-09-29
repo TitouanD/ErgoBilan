@@ -1,0 +1,25 @@
+name: Signaler un problème ou une idée
+description: Quelque chose ne marche pas, ou pourrait être mieux.
+labels: [trier]
+body:
+  - type: textarea
+    id: fait
+    attributes:
+      label: Ce que j'ai fait
+      description: Où j'étais dans l'application et sur quoi j'ai cliqué.
+      placeholder: "Ex. : réévaluation de SARAH, étape Scores, j'ai coché puis décoché « Fatigabilité »."
+    validations:
+      required: true
+  - type: textarea
+    id: vu
+    attributes:
+      label: Ce qui s'est passé
+      description: Une capture d'écran aide beaucoup (glisser-déposer l'image ici).
+    validations:
+      required: true
+  - type: textarea
+    id: attendu
+    attributes:
+      label: Ce que j'attendais
+    validations:
+      required: false
