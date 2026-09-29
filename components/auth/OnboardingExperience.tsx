@@ -23,17 +23,18 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
     };
     
     return (
-        <div className="fixed inset-0 z-[200] bg-[var(--card-bg)] flex flex-col items-center justify-center animate-in fade-in duration-500 font-sans text-[var(--text-main)]">
-            
+        // Scrolls when a step is taller than the window (laptop screens); `my-auto` still centers it otherwise.
+        <div className="fixed inset-0 z-[200] bg-[var(--card-bg)] flex flex-col items-center overflow-y-auto animate-in fade-in duration-500 font-sans text-[var(--text-main)]">
+
             {/* PROGRESS BAR */}
-            <div className="absolute top-0 left-0 w-full h-2 bg-[var(--progress-bg)]">
+            <div className="fixed top-0 left-0 w-full h-2 z-10 bg-[var(--progress-bg)]">
                 <div 
                     className="h-full bg-[var(--primary)] transition-all duration-700 ease-out"
                     style={{ width: `${(step / maxSteps) * 100}%` }}
                 ></div>
             </div>
 
-            <div className="w-full max-w-6xl px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center h-full lg:h-auto py-8 lg:py-0 overflow-y-auto lg:overflow-visible">
+            <div className="w-full max-w-6xl px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center my-auto py-10">
                 
                 {/* PARTIE VISUELLE (GAUCHE) */}
                 <div className="hidden lg:flex flex-col items-center justify-center h-[600px] bg-[var(--card-bg-raised)] rounded-[40px] p-10 relative overflow-hidden shadow-inner order-2 lg:order-1">
