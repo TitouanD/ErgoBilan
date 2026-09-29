@@ -34,7 +34,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 npm run dev            # Vite (port 3000)
 npm run check          # lint + typecheck (strict) + tests + build : à lancer avant de rendre la main
 npm run typecheck      # tsc --noEmit
-npm test               # Vitest (utils/**/*.test.ts, composants : components/**/*.test.tsx en jsdom)
+npm test               # Vitest (utils/ et services/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
 npm run format:check   # Prettier, *.md compris
 ```
 
