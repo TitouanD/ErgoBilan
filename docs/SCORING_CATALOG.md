@@ -21,14 +21,12 @@ Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogCont
 | catalog.`id`, `label`                           | text                                                                                   | `TestDef.id`, `TestDef.name`                                        |
 | catalog.`category_id`, `category_label`         | FK `official_categories`                                                               | `CategoryDef.id`, `.name`                                           |
 | catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                  | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
-| catalog.`subtests_count`                        | calculé                                                                                | lu mais non utilisé                                                 |
+| catalog.`subtests_count`                        | calculé                                                                                | non chargé                                                          |
 | subtests.`unit`                                 | text                                                                                   | `unit` (défaut `'pts'`)                                             |
 | subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
 | subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text               | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
 | subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                          | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
 | subtests.`display_group_order`, `display_order` | integer                                                                                | `displayGroupOrder`, `displayOrder`                                 |
-
-`SubtestDef.displayName` existe dans le type mais n'est renseigné nulle part (les fonctions d'affichage retombent sur `name`).
 
 ## 2. Chargement côté client
 
@@ -192,4 +190,3 @@ L'état de chaque point est dans [TECH_DEBT.md](TECH_DEBT.md). Restent notamment
 1. Création de test perso bloquée en production jusqu'à l'application de `20260924100000` (P1-1) ; même migration pour les défauts de `admin_save_test_detail` (P1-14).
 2. Deltas absents du PDF, et pas d'ajout de test pendant une réévaluation (P1-15).
 3. Pas de pagination du catalogue (limite PostgREST de 1000 lignes) ni de cache persistant (§2).
-4. `SubtestDef.displayName` n'est jamais renseigné et `subtests_count` est chargé sans être utilisé (P2-10).

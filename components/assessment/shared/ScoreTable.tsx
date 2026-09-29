@@ -18,7 +18,7 @@ import { useCatalog } from '../../../contexts/CatalogContext';
 import { type Metric, describeScore } from '../../../utils/resolvedScore';
 import { type ScoreMetric, hasScoreValue, metricToUnit, unitToMetric } from '../../../utils/scoring';
 import { zoneRowClass, zoneTextClass } from './zoneStyles';
-import { getScaleLabel, getSubtestDisplayName } from '../../../utils/subtestOrdering';
+import { getScaleLabel } from '../../../utils/subtestOrdering';
 
 export const ALL_METRICS: ScoreMetric[] = ['standard', 'z', 'percentile'];
 const METRIC_HEADER: Record<ScoreMetric, Metric> = { standard: 'NS', z: 'ET', percentile: '%' };
@@ -145,7 +145,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
 
   const nameCell = (st: SubtestDef) => (
     <td className="py-2 px-3 font-medium text-[var(--text-heading)]">
-      <span className="block break-words">{getSubtestDisplayName(st)}</span>
+      <span className="block break-words">{st.name}</span>
       {st.inputModel === 'numeric_4mode' && getScaleLabel(st.scoreType) && (
         <span className="text-[9px] font-medium text-[var(--text-secondary)]">{getScaleLabel(st.scoreType)}</span>
       )}

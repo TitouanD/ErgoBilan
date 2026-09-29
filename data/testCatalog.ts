@@ -55,7 +55,6 @@ export interface SubtestInputConfig {
 export interface SubtestDef {
   id: string;
   name: string;
-  displayName?: string;
   displayGroupOrder?: number;
   displayOrder?: number;
   unit: string;

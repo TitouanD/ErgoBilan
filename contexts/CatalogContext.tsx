@@ -68,7 +68,10 @@ const toInputConfig = (value: Json | null): SubtestInputConfig | undefined => {
 };
 
 type SubtestRow = Tables<'view_unified_subtests'>;
-type TestRow = Tables<'view_unified_catalog'>;
+type TestRow = Pick<
+  Tables<'view_unified_catalog'>,
+  'id' | 'label' | 'category_id' | 'category_label' | 'icon_key' | 'sort_order'
+>;
 
 const toSubtestDef = (s: SubtestRow): SubtestDef | null => {
   if (!s.id || !s.name) return null;
@@ -158,7 +161,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setLoading(true);
       try {
         const [tests, subtests] = await Promise.all([
-          supabase.from('view_unified_catalog').select('id, label, category_id, category_label, icon_key, sort_order, subtests_count').order('sort_order'),
+          supabase.from('view_unified_catalog').select('id, label, category_id, category_label, icon_key, sort_order').order('sort_order'),
           supabase
             .from('view_unified_subtests')
             .select('id, test_id, name, unit, score_type, input_model, input_config, display_group_order, display_order'),

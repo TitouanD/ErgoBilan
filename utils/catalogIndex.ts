@@ -64,7 +64,7 @@ export const getTestName = (index: CatalogIndex, testId: string): string => {
 export const getSubtestName = (index: CatalogIndex, testId: string, subtestId: string, customLabel?: string): string => {
   if (customLabel?.trim()) return customLabel.trim();
   const def = getSubtestDef(index, testId, subtestId);
-  if (def) return def.displayName || def.name;
+  if (def) return def.name;
   if (subtestId.startsWith('custom_')) return 'Observation libre';
   return subtestId.replace(/_[a-f0-9]{8}$/i, '').replace(/[_-]/g, ' ');
 };

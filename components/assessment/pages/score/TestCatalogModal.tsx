@@ -15,7 +15,6 @@ import {
   compareSubtestsForDisplay,
   getDisplayGroupKey,
   getDisplayGroupLabel,
-  getSubtestDisplayName,
 } from '../../../../utils/subtestOrdering';
 import { CUSTOM_OBSERVATIONS_TEST_ID } from '../../../../utils/catalogIndex';
 
@@ -205,7 +204,7 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
               const alreadyCount = Object.keys(existingTests[test.id] || {}).length;
               const subtestSearch = (subtestSearchByTest[test.id] || '').trim().toLowerCase();
               const filteredSubtests = subtestSearch
-                ? test.subtests.filter((st) => getSubtestDisplayName(st).toLowerCase().includes(subtestSearch))
+                ? test.subtests.filter((st) => st.name.toLowerCase().includes(subtestSearch))
                 : test.subtests;
               return (
                 <div
@@ -308,7 +307,7 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
                                   onChange={() => toggleSubtest(test.id, st.id)}
                                   className="accent-[var(--primary)]"
                                 />
-                                <span className="min-w-0 break-words">{getSubtestDisplayName(st)}</span>
+                                <span className="min-w-0 break-words">{st.name}</span>
                                 {already && (
                                   <span className="ml-auto shrink-0 text-[10px] uppercase font-bold" title="Pour le retirer, utilisez la croix dans le tableau des scores">
                                     ajouté

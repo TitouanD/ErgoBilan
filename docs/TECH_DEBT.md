@@ -58,7 +58,7 @@ Statuts :
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
 | P2-8  | Base de données, divers                              | Partiel → #65                       |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
-| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf → #67, #68             |
+| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu, sauf → #67                  |
 
 ## Mise en production du 2026-09-25
 
@@ -281,6 +281,7 @@ Corrigés :
 - **« Réessayer » après un échec du diagnostic** : il relançait bio + diagnostic et ouvrait une nouvelle session (nouveau crédit). Le résultat « bio » est gardé en mémoire 15 minutes et la relance reprend au diagnostic dans la même session (`AIService.generateInitialReport`). `INVALID_GENERATION_SESSION` a un message lisible.
 - **Métriques mixtes en réévaluation** : un score ressaisi dans une autre métrique était affiché « non mesuré » tout en ayant un delta. La valeur est convertie dans la métrique de référence ; « non mesuré » ne dépend plus que de l'absence de saisie, et « non comparable » s'affiche si l'échelle est inconnue.
 - **Scores masqués** : les tests ou sous-tests absents du catalogue (test privé supprimé, observation libre) disparaissaient de la réévaluation et, pour un sous-test supprimé, du bilan initial. `resolveTestDef` (`utils/catalogIndex.ts`) les affiche avec une définition de repli.
+- **Champs de catalogue inutiles** (#68) : `SubtestDef.displayName`, jamais rempli, est retiré avec ses replis (le nom du catalogue suffit) ; `subtests_count` n'est plus demandé à `view_unified_catalog`.
 - **Patient en double possible** : `Step1Admin`, `HistoricalPatientForm` et `persistPatient` créaient le patient sans passer par la promesse partagée du contexte. Ils utilisent tous `useAssessment().ensurePatientId`.
 - **Import d'un questionnaire** : si l'enregistrement du brouillon échouait, le patient créé restait orphelin. Le retour arrière couvre maintenant le brouillon et la suppression distante.
 - **Section `objectifs`** : encore visible dans les rapports archivés et demandée dans le bilan historique ; masquée partout.
@@ -290,5 +291,4 @@ Corrigés :
 Ouverts :
 
 - `loadPatientListPage` pagine en mémoire → #67 ;
-- `SubtestDef.displayName` jamais rempli, `subtests_count` inutilisé → #68 ;
 - `enforce_public_acl_on_ddl` : `search_path` désormais fixé à `public` (constaté en base le 2026-09-29).

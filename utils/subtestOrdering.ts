@@ -22,10 +22,6 @@ export const getScaleLabel = (scoreType?: ScoreType): string | null => {
 
 export const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
-export const getSubtestDisplayName = (subtest: Pick<SubtestDef, 'name' | 'displayName'>): string => (
-  subtest.displayName || subtest.name
-);
-
 export const parseSubtestOrderFromName = (name: string): number | undefined => {
   const value = String(name || '').trim();
   if (!value) return undefined;
@@ -65,7 +61,7 @@ export const toGroupKey = (label: string): string => (
 );
 
 export const getDisplayGroupLabel = (subtest: SubtestDef): string | undefined => (
-  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(getSubtestDisplayName(subtest))
+  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(subtest.name)
 );
 
 export const getDisplayGroupKey = (subtest: SubtestDef): string | undefined => {
@@ -86,7 +82,7 @@ export const getDisplayOrderIndex = (subtest: SubtestDef): number => {
   if (Number.isFinite(subtest.displayOrder)) return Number(subtest.displayOrder);
   const configured = subtest.inputConfig?.orderIndex;
   if (Number.isFinite(configured)) return Number(configured);
-  const inferred = parseSubtestOrderFromName(getSubtestDisplayName(subtest));
+  const inferred = parseSubtestOrderFromName(subtest.name);
   return Number.isFinite(inferred) ? Number(inferred) : 999;
 };
 
@@ -109,5 +105,5 @@ export const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number 
   const oiB = getDisplayOrderIndex(b);
   if (oiA !== oiB) return oiA - oiB;
 
-  return getSubtestDisplayName(a).localeCompare(getSubtestDisplayName(b), 'fr', { sensitivity: 'base' });
+  return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
 };
