@@ -223,3 +223,56 @@ L'état de chaque point (résolu, ouvert) est tenu dans [TECH_DEBT.md](TECH_DEBT
 - **P0-7** (résolu) : loopback hors production, CORS par origine, suppression des replis sur RPC absentes.
 - **P0-4 / P0-5 / P1-5 / P1-11** : résolus (pseudonymisation complète, frontières Unicode, style appris, réévaluation).
 - Non suivis ailleurs : les observations reformulées sont indexées par `subtestId` seul, ce qui suppose des identifiants uniques entre tests (c'est le cas du catalogue, préfixé par le test, et des observations libres).
+
+## 9. Test de bout en bout (`npm run e2e:ai`)
+
+Il vérifie toute la chaîne sur un dossier fictif de la démo (Elya, Sarah) : payload, anonymisation, appel, réponse, réhydratation, sections du rapport. Fichiers : [`e2e/aiGeneration.e2e.ts`](../e2e/aiGeneration.e2e.ts), [`e2e/liveEdge.ts`](../e2e/liveEdge.ts), [`vitest.e2e.config.ts`](../vitest.e2e.config.ts). Il n'est lancé ni par `npm test`, ni par `npm run check`, ni par la CI.
+
+### Coût : règle
+
+**En mode réel, chaque exécution appelle Gemini, qui est payant. Le coût doit rester MINIME.**
+
+- **Obligatoire** (au moins une exécution réelle réussie avant de rendre la main) quand une modification touche la génération : `utils/reportGenerator.ts`, `utils/aiPayload.ts`, `utils/anonymizer.ts`, `utils/suspectTerms.ts`, `utils/reportSections.ts`, `services/ai.ts`, `services/aiProxy.ts`, `supabase/functions/generate/**`, ou la partie génération de `hooks/useAssessmentFlow.ts`. Claude la lance sans demander, dans ce périmètre seulement.
+- **Interdit hors de ce périmètre**, sauf demande explicite de Titouan.
+- **Uniquement quand tout est bon** : `npm run check` vert, tests à faux transport verts (dont un qui couvre la modification), puis le mode à blanc vert. Alors **une** exécution réelle, sur le seul parcours touché (`E2E_AI=all` seulement pour une modification transverse : edge, `aiProxy`, `anonymizer`).
+- **Jamais en boucle** pour déboguer ou « voir ». Si l'exécution réelle échoue : reproduire le problème dans un test à faux transport, corriger, relancer une fois. Au-delà de 2 exécutions réelles pour une même modification : s'arrêter et demander à Titouan.
+
+Plafond : le script refuse tout appel à `generate` au-delà de ceux du parcours demandé (bilan initial 2, réévaluation 1, style 1 ; 4 au plus), retries de `aiProxy` compris.
+
+### Lancer
+
+```bash
+npm run e2e:ai                                  # à blanc : transport démo, aucun réseau, gratuit
+E2E_AI=all npm run e2e:ai                       # à blanc, les trois parcours
+E2E_AI_LIVE=1 npm run e2e:ai                    # RÉEL : bilan initial (2 appels payants)
+E2E_AI_LIVE=1 E2E_AI=reevaluation npm run e2e:ai
+```
+
+PowerShell : `$env:E2E_AI_LIVE='1'; $env:E2E_AI='style'; npm run e2e:ai` (puis `Remove-Item Env:E2E_AI_LIVE`).
+
+`E2E_AI` : `initial` (défaut), `reevaluation`, `style`, `all`, ou une liste séparée par des virgules.
+
+### Ce qui est vérifié
+
+- Avant l'envoi de chaque requête : aucun identifiant du patient fictif (nom, prénom, parents, enseignant, médecins, école, adresse, téléphone, courriel, date de naissance, fratrie). La liste est construite dans le test, indépendamment de `anonymizer.ts`. Une fuite arrête l'exécution **avant** l'appel payant. Aucun mot suspect sur les dossiers utilisés.
+- Enchaînement des tâches ; en réel, le diagnostic réutilise le `generationId` du bio.
+- Rapport réhydraté : sections attendues, aucune vide, aucun « Non généré. », aucun marqueur `{{…}}`, le prénom du patient présent.
+- En réel : un crédit débité par rapport, aucun pour le style ; `ai_style_preferences` rempli après le style.
+
+### Trace
+
+Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) : par tâche, la requête pseudonymisée et la réponse ; par parcours, le rapport réhydraté ; en réel, les échanges HTTP bruts avec l'edge (`http-edge.json`) ; `resume.json` (appels, crédits avant et après). Le dossier est fictif : la trace ne contient aucune donnée réelle.
+
+### Compte de test et connexion
+
+- **Compte dédié**, jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
+- Turnstile empêche la connexion par mot de passe depuis un script. Le script restaure la session à partir d'un **refresh token**, dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
+
+  ```
+  E2E_REFRESH_TOKEN=...
+  # E2E_ORIGIN=https://dev.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
+  ```
+
+- Pour obtenir le jeton (une fois, puis à chaque perte) : se connecter avec le compte de test sur `http://localhost:3000`, puis dans la console du navigateur `copy(JSON.parse(localStorage['ergobilan.auth']).refresh_token)`, coller dans `.env.e2e.local`, et **fermer l'onglet sans se déconnecter** (la déconnexion révoque le jeton ; l'onglet resté ouvert le ferait tourner de son côté).
+- Supabase remplace le refresh token à chaque rafraîchissement : le script réécrit aussitôt le nouveau dans `.env.e2e.local`. Si le fichier est perdu ou le jeton révoqué, refaire l'étape ci-dessus.
+- Côté edge, le test ne passe par aucun mode spécial : même authentification, mêmes crédits, même limite de 15 requêtes par heure que l'application.

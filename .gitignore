@@ -25,3 +25,6 @@ dist-ssr
 
 # Supabase CLI cache
 supabase/.temp/
+
+# End-to-end AI test: trace of each run (see docs/AI_PIPELINE.md §9)
+.e2e-trace/

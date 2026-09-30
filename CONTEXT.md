@@ -76,3 +76,7 @@ Le moyen de l'anonymisation : remplacer chaque identifiant de la fiche patient p
 
 **Réhydratation** :
 Remettre les vraies valeurs à la place des marqueurs dans le texte renvoyé par l'IA, sur le poste de l'ergothérapeute.
+
+**Mot suspect** :
+Mot du texte libre qui pourrait encore identifier quelqu'un après la pseudonymisation (surnom, grand-parent, ville). L'ergothérapeute le masque ou l'autorise avant la génération, et ce choix reste sur le dossier du patient.
+_Éviter_ : fuite, terme sensible
