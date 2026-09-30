@@ -49,6 +49,7 @@ Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures d
 - Claude fusionne dans `dev` dès que `npm run check` est vert, sauf risque majeur. Puis il supprime le worktree et la branche.
 - **Chaque semaine**, Claude ouvre une PR `dev` → `main` avec un résumé : ce qui change, ce que la testeuse a validé, ce qui attend encore son test. **Titouan fusionne** : c'est son seul geste obligatoire.
 - Une issue `testeuse` sans réponse ne bloque pas la promotion. Un « pas OK » explicite retient le changement : Claude le corrige ou le retire de `dev` avant la PR.
+- Accès à `dev` : seuls les comptes listés dans la variable Vercel `VITE_TEST_ACCESS_EMAILS` (branche `dev` uniquement) passent la connexion ; les autres voient « Version de test, accès réservé ». Le mode démo reste ouvert, un badge « Version de test » est affiché et la page n'est pas indexée. Ce n'est pas une barrière de sécurité (même base que la production), seulement un garde-fou (`utils/testAccess.ts`).
 - Données de la testeuse : IndexedDB est propre à chaque domaine, ses bilans faits sur `dev` restent sur `dev` (l'export `.ergobilan` permet de les déplacer).
 
 ## Cycle d'une issue
