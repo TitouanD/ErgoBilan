@@ -137,7 +137,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 ### Authentification et CORS
 
 1. `verify_jwt = false` (`supabase/config.toml`) : la passerelle ne vérifie rien, l'edge le fait.
-2. Origine (`isAllowedOrigin`) : les origines loopback (`localhost`, `127.0.0.1`, `::1`) ne sont acceptées **qu'hors production**, sauf si `AI_ALLOW_LOOPBACK_ORIGINS=true`. La production est détectée par `APP_ENV`/`ENV` (`production`, `prod`) ou la présence de `DENO_DEPLOYMENT_ID`. Sinon liste `AI_ALLOWED_ORIGINS` ; si elle est vide, tout est refusé en production sauf `AI_DEV_MODE`. Rejet : 403 `FORBIDDEN_ORIGIN` (preflight : 403 `forbidden`).
+2. Origine (`isAllowedOrigin`) : les origines loopback (`localhost`, `127.0.0.1`, `::1`) ne sont acceptées **qu'hors production**, sauf si `AI_ALLOW_LOOPBACK_ORIGINS=true`. La production est détectée par `APP_ENV`/`ENV` (`production`, `prod`) ou la présence de `DENO_DEPLOYMENT_ID`. Sinon liste `AI_ALLOWED_ORIGINS` ; si elle est vide, tout est refusé en production sauf `AI_DEV_MODE`. Rejet : 403 `FORBIDDEN_ORIGIN` (preflight : 403 `forbidden`). Valeur en production (30/09/2026) : `https://app.ergobilan.com,https://dev.ergobilan.com,https://test.ergobilan.com`. `test.ergobilan.com` n'héberge aucun site : c'est l'origine envoyée par le test de bout en bout (§9), pour reconnaître ses appels dans Sentry (en-tête Origin). La liste ne bloque que les navigateurs ; un script peut envoyer n'importe quelle origine.
 3. `corsHeaders` renvoie l'origine appelante dans `Access-Control-Allow-Origin` seulement si elle est autorisée (plus de `*`), avec `Vary: Origin`.
 4. JWT : en-tête `Authorization` obligatoire (401 `Missing authorization`), puis `auth.getUser()` avec le client anon (401 `Unauthorized`).
 5. Clé service role et clé Gemini requises (500 `SERVER_MISCONFIGURED`).
@@ -270,7 +270,7 @@ Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) 
 
   ```
   E2E_REFRESH_TOKEN=...
-  # E2E_ORIGIN=https://app.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
+  # E2E_ORIGIN=https://test.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
   ```
 
 - Pour obtenir le jeton (une fois, puis à chaque perte) : se connecter avec le compte de test sur `http://localhost:3000`, puis dans la console du navigateur `copy(JSON.parse(localStorage['ergobilan.auth']).refresh_token)`, coller dans `.env.e2e.local`, et **fermer l'onglet sans se déconnecter** (la déconnexion révoque le jeton ; l'onglet resté ouvert le ferait tourner de son côté).
