@@ -265,12 +265,12 @@ Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) 
 
 ### Compte de test et connexion
 
-- **Compte dédié**, jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
+- **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
 - Turnstile empêche la connexion par mot de passe depuis un script. Le script restaure la session à partir d'un **refresh token**, dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
 
   ```
   E2E_REFRESH_TOKEN=...
-  # E2E_ORIGIN=https://dev.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
+  # E2E_ORIGIN=https://app.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
   ```
 
 - Pour obtenir le jeton (une fois, puis à chaque perte) : se connecter avec le compte de test sur `http://localhost:3000`, puis dans la console du navigateur `copy(JSON.parse(localStorage['ergobilan.auth']).refresh_token)`, coller dans `.env.e2e.local`, et **fermer l'onglet sans se déconnecter** (la déconnexion révoque le jeton ; l'onglet resté ouvert le ferait tourner de son côté).

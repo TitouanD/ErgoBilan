@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export const ENV_FILE = resolve(process.cwd(), '.env.e2e.local');
-const DEFAULT_ORIGIN = 'https://dev.ergobilan.com';
+const DEFAULT_ORIGIN = 'https://app.ergobilan.com';
 
 const readEnvFile = (): Map<string, string> => {
   const values = new Map<string, string>();
