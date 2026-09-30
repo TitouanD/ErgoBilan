@@ -57,4 +57,10 @@ export default [
       'no-duplicate-imports': 'error',
     },
   },
+
+  // ---- Node scripts: end-to-end test run from Node (docs/AI_PIPELINE.md §9) ----
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ];

@@ -25,6 +25,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 - **Scores** : lire un score par le score résolu (`utils/resolvedScore.ts` : `resolveScores`, `describeScore`, `formatMetricValue`), jamais en recomposant échelle, z, zone et nom à la main ; calculs et zones dans `utils/scoring.ts` ; noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`) ; ordre d'affichage dans `utils/subtestOrdering.ts` ; données des graphiques et des pages du rapport dans `utils/reportData.ts` (partagé par l'aperçu et le PDF).
 - **Statut patient** : aperçu du dashboard, rappel de réévaluation et brouillon périmé se calculent dans `utils/patientStatus.ts` (`buildPreviewMeta`, `derivePatientStatus`), jamais dans un écran.
 - **Mode démo** : aucun effet de bord côté Supabase ni IA. Il utilise `data/demoData.ts`, `data/demoCatalog.ts` et `data/demoReport.ts`.
+- **Test IA de bout en bout (Gemini PAYANT, coût MINIME)** : si une modification touche la génération (`reportGenerator`, `aiPayload`, `anonymizer`, `suspectTerms`, `reportSections`, `services/ai.ts`, `services/aiProxy.ts`, `supabase/functions/generate/`, génération dans `useAssessmentFlow`), lancer **une** exécution réelle `npm run e2e:ai` quand tout le reste est vert (check, tests à faux transport, mode à blanc). Jamais hors de ce périmètre, jamais en boucle pour déboguer, 2 exécutions réelles au plus par modification. Détail : [`docs/AI_PIPELINE.md`](docs/AI_PIPELINE.md) §9.
 - **Branches** : on part de `dev` et on fusionne dans `dev` (jamais directement dans `main`, qui reçoit la PR hebdomadaire `dev` → `main`). Claude fusionne dans `dev` sans demander ; l'accord de Titouan n'est requis que pour `main` et pour la base commune (migration Supabase, edge function) : voir `docs/ISSUES.md`. Chaque bug corrigé reçoit un test qui le reproduit.
 - **Toasts** : `const toast = useToast()` (le hook renvoie directement l'objet).
 
@@ -36,6 +37,7 @@ npm run check          # lint + typecheck (strict) + tests + build : à lancer a
 npm run typecheck      # tsc --noEmit
 npm test               # Vitest (utils/ et services/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
 npm run format:check   # Prettier, *.md compris
+npm run e2e:ai         # génération IA de bout en bout, à blanc ; E2E_AI_LIVE=1 = réel et PAYANT (AI_PIPELINE §9)
 ```
 
 ## Agent skills
