@@ -7,6 +7,7 @@ import { ExportService } from '../../services/exportService';
 import { Logger } from '../../utils/logger';
 import { getLastBackupDate, formatLastBackupLabel } from '../../utils/backupTracking';
 import { FormField } from '../shared/FormField';
+import type { InitialSectionId } from '../../utils/reportSections';
 
 interface ProfileEditorProps {
     onClose: () => void;
@@ -183,7 +184,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ onClose }) => {
     };
 
 
-    const SECTION_LABELS: Record<string, string> = {
+    // Short labels of the style rules; the keys are the section ids of utils/reportSections.ts.
+    const SECTION_LABELS: Record<InitialSectionId, string> = {
         mandat_ref: 'Mandat de référencement',
         mandat_eval: "Mandat d'évaluation",
         profil: 'Profil occupationnel',

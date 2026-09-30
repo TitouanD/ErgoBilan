@@ -1,6 +1,7 @@
 import { getVerifiedAccessToken, SUPABASE_ANON_KEY, SUPABASE_URL } from './db';
 import { Logger } from '../utils/logger';
 import { setAppContext } from './sentryService';
+import type { AIAnswer, AIRequest, AITransport } from '../utils/reportGenerator';
 
 const FUNCTION_NAME = 'generate';
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -8,18 +9,6 @@ const CLIENT_MAX_RETRIES = 2;
 const CLIENT_RETRY_BASE_MS = 3_000;
 const MIN_TOKEN_VALIDITY_MS = 120_000;
 
-export type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedback' | 'report_reevaluation';
-
-export interface TaskParams {
-  task: AITask;
-  payload: Record<string, unknown>;
-  generationId?: string;
-}
-
-export interface ProxyResponse {
-  text: string | null;
-  generationId?: string;
-}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -33,7 +22,7 @@ const parseResponseBody = async (res: Response): Promise<any> => {
   }
 };
 
-const invokeTask = async (jwt: string, params: TaskParams) => {
+const invokeTask = async (jwt: string, params: AIRequest) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -115,7 +104,8 @@ const isRetryable = (edgeBody: any, error: any): boolean => {
   return /fetch failed|network|econnreset|socket|timeout_ai/i.test(String(error?.message ?? ''));
 };
 
-export const callAIProxyTask = async (params: TaskParams): Promise<ProxyResponse> => {
+/** HTTP transport of the report generator: the edge function `generate` (JWT, retries, error codes). */
+export const callAIProxyTask: AITransport = async (params: AIRequest): Promise<AIAnswer> => {
   const initialToken = await getVerifiedAccessToken({
     minValidityMs: MIN_TOKEN_VALIDITY_MS,
     maxAttempts: 2,

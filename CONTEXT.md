@@ -64,3 +64,15 @@ _Éviter_ : annuler, quitter sans sauvegarder
 **Rappel de réévaluation** :
 Échéance à laquelle un patient qui a au moins un bilan formel devrait être réévalué, six mois après son dernier bilan formel. Il est à venir avant l'échéance, à planifier pendant les six mois qui suivent, puis en retard ; l'ergothérapeute peut aussi le planifier, le reporter ou le marquer complété.
 _Éviter_ : suivi, followup, relance
+
+### IA
+
+**Anonymisation** :
+Garantie que ce que reçoit l'IA ne permet pas de réidentifier l'enfant ni ses proches. Les identifiants sont remplacés par des marqueurs (pseudonymisation) et les dates précises sont masquées ; la correspondance avec les vraies valeurs ne quitte pas le poste et sert à réhydrater le rapport.
+_Éviter_ : chiffrement
+
+**Pseudonymisation** :
+Le moyen de l'anonymisation : remplacer chaque identifiant de la fiche patient par un marqueur, par exemple `{{PATIENT_PRENOM}}`.
+
+**Réhydratation** :
+Remettre les vraies valeurs à la place des marqueurs dans le texte renvoyé par l'IA, sur le poste de l'ergothérapeute.

@@ -9,20 +9,13 @@ import React, { useCallback, useState } from 'react';
 import type { Patient, ReportSection } from '../../../types';
 import { FileText, Save, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { StepNavFooter } from '../shared/StepNavFooter';
+import { INITIAL_SECTIONS } from '../../../utils/reportSections';
 
-// ─── Standard ErgoBilan sections (same IDs as AI generation uses) ─────────────
-// IDs MUST match the sections emitted by AIService.generateInitialReport ('objectifs' is
-// hidden from reports, see HIDDEN_SECTION_IDS in utils/reportData.ts, so it is not asked here).
-// This ensures the reevaluation AI can correctly reference previous sections.
+// ─── Standard ErgoBilan sections (same ids as the AI generation) ─────────────
+// 'objectifs' is hidden from reports (HIDDEN_SECTION_IDS in utils/reportData.ts),
+// so it is not asked here. The same ids let the re-evaluation AI use these sections.
 
-const DEFAULT_SECTIONS: { id: string; title: string }[] = [
-    { id: 'mandat_ref',     title: 'Mandat de référencement en ergothérapie' },
-    { id: 'mandat_eval',    title: 'Mandat d\'évaluation en ergothérapie' },
-    { id: 'profil',         title: 'Profil occupationnel' },
-    { id: 'diagnostic',     title: 'Diagnostic en ergothérapie' },
-    { id: 'project',        title: 'Projet d\'accompagnement' },
-    { id: 'recommandations', title: 'Recommandations' },
-];
+const DEFAULT_SECTIONS: { id: string; title: string }[] = INITIAL_SECTIONS.filter((s) => s.id !== 'objectifs');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

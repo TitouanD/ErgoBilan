@@ -93,7 +93,7 @@ Libellés corrigés dans `Step1Admin`, `AuthWizard` et `PinUnlock` (« Privé ·
 
 ### P0-4 Anonymisation incomplète — Résolu
 
-Toute la charge utile est construite par `utils/aiPayload.ts` puis pseudonymisée d'un bloc par `anonymizeDeep` (`utils/anonymizer.ts`) : observations, synthèse, rapport précédent en réévaluation, diffs de style. La table couvre le patient, les deux parents (noms, téléphones, e-mails), la fratrie, les professionnels du suivi, l'école, l'enseignant et les médecins.
+Toute la charge utile est construite par `utils/aiPayload.ts` puis pseudonymisée d'un bloc par `anonymizeDeep` (`utils/anonymizer.ts`) : observations, synthèse, rapport précédent en réévaluation, diffs de style. La table couvre le patient, les deux parents (noms, téléphones, e-mails), la fratrie, les professionnels du suivi, l'école, l'enseignant et les médecins. Depuis #53 et #54, c'est le générateur (`utils/reportGenerator.ts`) qui anonymise : table, mots masqués par le praticien, dates précises (voir AI_PIPELINE §4).
 
 ### P0-5 La regex corrompt des mots — Résolu
 
@@ -237,7 +237,7 @@ Canal d'inscription (`enforce_edge_signup_channel` vide), durée d'essai incohé
 
 ### P2-4 Doublons — Résolu
 
-Un seul tableau de scores (`ScoreTable`), une seule finalisation (`useAssessmentFlow.finalize`), un seul chemin de génération (`AIService`), des données de graphiques partagées entre l'aperçu et le PDF (`utils/reportData.ts`), un index du catalogue (`utils/catalogIndex.ts`) au lieu de 7 tables de noms.
+Un seul tableau de scores (`ScoreTable`), une seule finalisation (`useAssessmentFlow.finalize`), un seul chemin de génération (`utils/reportGenerator.ts`, depuis #53 ; `AIService` avant), des données de graphiques partagées entre l'aperçu et le PDF (`utils/reportData.ts`), un index du catalogue (`utils/catalogIndex.ts`) au lieu de 7 tables de noms.
 
 ### P2-5 Code mort — Résolu
 

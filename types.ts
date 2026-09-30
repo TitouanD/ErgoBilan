@@ -122,6 +122,10 @@ export interface Patient {
     priorities: string;
     goals?: string[];
     interviewNotes?: string;
+    /** Words of the free text masked before any AI call (e.g. a nickname), chosen in the generation confirmation. */
+    aiMaskedTerms?: string[];
+    /** Suspect words the practitioner chose to send as is: no longer reported for this patient. */
+    aiAllowedTerms?: string[];
     screenTime?: string;
     emotionalRegulation?: string;
     emotionalGlobalTags?: string;

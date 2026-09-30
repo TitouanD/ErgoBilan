@@ -48,7 +48,7 @@ Cross-flow steps live in `components/assessment/pages/` (`ScorePage`, `Validatio
 
 - The client **never** calls Gemini directly and holds no API key. `services/ai.ts` → `services/aiProxy.ts` → Edge Function `supabase/functions/generate` (prompts in `prompts.ts`). The function reads `GEMINI_API_KEY` from its secrets and handles JWT verification, rate limiting, credits (`generation_log`, session lock) and retries.
 - Credits are consumed **server-side** by the edge function, not by the client.
-- Build AI payloads in [utils/aiPayload.ts](../utils/aiPayload.ts), pseudonymize the whole payload with `anonymizeDeep` and rehydrate the answer with `hydrateReport` ([utils/anonymizer.ts](../utils/anonymizer.ts)).
+- Call the AI only through the report generator ([utils/reportGenerator.ts](../utils/reportGenerator.ts)): it builds the payload ([utils/aiPayload.ts](../utils/aiPayload.ts)), anonymizes it and rehydrates the answer (`createAnonymization`, [utils/anonymizer.ts](../utils/anonymizer.ts)).
 
 ## Scoring & catalog
 

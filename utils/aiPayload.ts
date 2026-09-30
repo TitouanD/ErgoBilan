@@ -1,16 +1,33 @@
 /**
- * aiPayload.ts — builds the (not yet pseudonymized) inputs sent to the AI.
+ * aiPayload.ts — builds the (not yet anonymized) inputs sent to the AI.
  *
- * Always pass the result through `anonymizeDeep(payload, patient)` before
+ * Only `utils/reportGenerator.ts` calls it, and anonymizes the result before
  * sending it: this module only formats data, it does not remove identifiers.
  */
 
 import type { ClinicalSynthesis, Observations, Patient, PatientAssessment, TestData } from '../types';
-import type { InitialReportPayload, ReevaluationPayload } from '../services/ai';
 import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
 import { type DeltaEntry, buildEvolutionSummaryText, buildScoresSummaryText } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml } from './reportContent';
 import { resolveScores } from './resolvedScore';
+
+/** Inputs of an initial report (anonymized before sending). */
+export interface InitialReportPayload {
+  questionnaire: string;
+  observations: string;
+  scoresEvidence: unknown;
+  childContext: string;
+  synthesis: ClinicalSynthesis;
+}
+
+/** Inputs of a re-evaluation (anonymized before sending). */
+export interface ReevaluationPayload {
+  childContext: string;
+  previousScoresSummary: string;
+  newScoresSummary: string;
+  evolutionSummary: string;
+  previousReportContext?: string;
+}
 
 /** `Label: value`, or '' when the value is empty / a placeholder. */
 const line = (label: string, value: string | undefined | null): string => {
@@ -108,13 +125,13 @@ export const buildQuestionnaireText = (p: Patient): string => {
     line('Comportement social', p.socialBehavior),
     '',
     '--- CONTEXTE FAMILIAL ---',
-    line('Garde', `${p.guardArrangement || ''} ${p.guardMode || ''}`.trim()),
+    line('Garde', [p.guardArrangement, p.guardMode].filter(Boolean).join(' ; ')),
     p.siblings?.length ? line('Fratrie', `${p.siblings.length} enfant(s) dans la fratrie`) : '',
     '',
     '--- NOTES LIBRES ---',
     line('Remarques', p.remarks),
     line("Notes d'entretien", p.interviewNotes),
-    p.goals?.length ? `Objectifs exprimés par la famille: ${p.goals.join(', ')}` : '',
+    p.goals?.length ? `Objectifs exprimés par la famille: ${p.goals.join(' ; ')}` : '',
   ]
     .filter(Boolean)
     .join('\n');

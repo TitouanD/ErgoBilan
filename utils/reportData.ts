@@ -8,6 +8,7 @@
 
 import type { PatientAssessmentKind, ReportSection, TestData } from '../types';
 import type { CatalogIndex } from './catalogIndex';
+import type { InitialSectionId, ReevaluationSectionId } from './reportSections';
 import { type Metric, type ResolvedScore, resolveScores } from './resolvedScore';
 import type { ScoreZone } from './scoring';
 
@@ -164,7 +165,7 @@ export const HIDDEN_SECTION_IDS: ReadonlySet<string> = new Set(['objectifs']);
 
 export const isReportSectionVisible = (section: Pick<ReportSection, 'id'>): boolean => !HIDDEN_SECTION_IDS.has(section.id);
 
-const PAGE_TEMPLATES: Record<'initial' | 'reevaluation', string[][]> = {
+const PAGE_TEMPLATES: { initial: InitialSectionId[][]; reevaluation: ReevaluationSectionId[][] } = {
   initial: [
     ['mandat_ref', 'mandat_eval', 'profil'],
     ['diagnostic', 'project', 'recommandations'],
@@ -183,7 +184,7 @@ const PAGE_TEMPLATES: Record<'initial' | 'reevaluation', string[][]> = {
 export const buildDefaultPages = (reportKind: ReportKind, sections: ReportSection[]): string[][] => {
   const visible = sections.filter(isReportSectionVisible);
   const existing = new Set(visible.map((s) => s.id));
-  const template = PAGE_TEMPLATES[reportKind === 'reevaluation' ? 'reevaluation' : 'initial'];
+  const template: string[][] = PAGE_TEMPLATES[reportKind === 'reevaluation' ? 'reevaluation' : 'initial'];
   const pages = template.map((page) => page.filter((id) => existing.has(id))).filter((page) => page.length > 0);
   const placed = new Set(pages.flat());
   const extra = visible.map((s) => s.id).filter((id) => !placed.has(id));
