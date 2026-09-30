@@ -28,6 +28,8 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { PinUnlock } from './components/auth/PinUnlock';
 import { NetworkErrorScreen } from './components/auth/NetworkErrorScreen';
+import { TestAccessScreen, TestBuildBadge } from './components/auth/TestAccessScreen';
+import { IS_TEST_BUILD, TEST_ACCESS_LIST, isEmailAllowed } from './utils/testAccess';
 import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -279,6 +281,11 @@ const AppRouter = () => {
     return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
   }
   if (isLoading || authState === 'authenticating') return <AppLoader />;
+  // Test environment (dev.ergobilan.com): only accounts on its access list get past sign-in.
+  const accountEmail = userProfile?.email || practitioner?.email || tempEmail || '';
+  if (!isDemoMode && authState !== 'unauthenticated' && accountEmail && !isEmailAllowed(accountEmail, TEST_ACCESS_LIST)) {
+    return <TestAccessScreen email={accountEmail} onLogout={() => void logout()} />;
+  }
   if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
   if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={unlockSession} onLogout={logout} />;
 
@@ -438,6 +445,7 @@ const App = () => (
         <ToastProvider>
           <AssessmentProvider>
             <AppRouter />
+            {IS_TEST_BUILD && <TestBuildBadge />}
           </AssessmentProvider>
         </ToastProvider>
       </CatalogProvider>

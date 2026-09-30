@@ -24,6 +24,12 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // Test builds (Vercel preview = dev.ergobilan.com) must not be indexed by search engines.
+    {
+      name: 'noindex-test-builds',
+      transformIndexHtml: (html) =>
+        appEnv === 'production' ? html : html.replace('<head>', '<head>\n    <meta name="robots" content="noindex, nofollow" />'),
+    },
     ...(uploadSourceMaps
       ? [
           sentryVitePlugin({

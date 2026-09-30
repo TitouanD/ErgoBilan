@@ -180,7 +180,7 @@ Un questionnaire importé est enregistré en local, puis la ligne distante est s
 
 Le code de `generate` et `signup` du repo diffère de la version déployée (`generate` v52, `signup` v27) par l'instrumentation Sentry ajoutée le 2026-09-25, qui reste à déployer (voir [TECH_DEBT.md](TECH_DEBT.md)). L'ancienne edge `purge-pending`, jamais déployée, a été supprimée au profit de la migration pg_cron. `supabase/config.toml` déclare `verify_jwt = false` pour `generate` et `signup`, qui valident le JWT elles-mêmes. Côté front, `aiProxy` appelle `generate` avec `fetch` (et non `functions.invoke`), avec un timeout de 180 s.
 
-**Déploiement** : hébergement Vercel (pas de `vercel.json`). `vite.config.ts` injecte `__APP_RELEASE__` à partir de `VERCEL_GIT_COMMIT_SHA` pour Sentry. Les actions en attente sur la production (migrations, déploiement de `generate`, réglages manuels) sont listées dans [TECH_DEBT.md](TECH_DEBT.md).
+**Déploiement** : hébergement Vercel. Seules `main` (production, `app.ergobilan.com`) et `dev` (recette, `dev.ergobilan.com`, preview) sont construites : `vercel.json` (`git.deploymentEnabled`) et l'Ignored Build Step du projet. `vite.config.ts` injecte `__APP_RELEASE__` (depuis `VERCEL_GIT_COMMIT_SHA`) et `__APP_ENV__` (`VERCEL_ENV`) ; hors production, la page porte `noindex` et l'app affiche un badge « Version de test ». Sur `dev`, `VITE_TEST_ACCESS_EMAILS` restreint la connexion aux comptes listés (`utils/testAccess.ts`, voir [ISSUES.md](ISSUES.md)). Les actions en attente sur la production (migrations, déploiement de `generate`, réglages manuels) sont listées dans [TECH_DEBT.md](TECH_DEBT.md).
 
 **Sentry** (org `ergobilan`, région `de`, projets `ergobilan-frontend` et `ergobilan-backend`) :
 
