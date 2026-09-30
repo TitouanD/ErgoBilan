@@ -23,7 +23,7 @@ import { buildDeltaEntries } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml, sectionToPlainText } from './reportContent';
 import { ADULT_RECOMMENDATIONS_TITLE, type InitialSectionId, type ReevaluationSectionId, sectionTitle } from './reportSections';
 import { findSuspectTerms } from './suspectTerms';
-import { sanitizeReportText } from './textSanitizer';
+import { decodeHtmlEntities, sanitizeReportText } from './textSanitizer';
 
 // ─── Transport ──────────────────────────────────────────────────────────────
 
@@ -230,7 +230,8 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
     Logger.info('AI', 'Starting initial report generation', { patientId: patient.id });
     const { anonymization, payload } = initialRequest(input, now());
     const profile = getAiProfile(patient.age);
-    const hydrate = (text: string | undefined) => sanitizeReportText(anonymization.hydrate(text || NOT_GENERATED));
+    // Plain-text answer: entities decoded before re-hydration, so that patient values stay as typed.
+    const hydrate = (text: string | undefined) => sanitizeReportText(anonymization.hydrate(decodeHtmlEntities(text || NOT_GENERATED)));
 
     const bioPayload = {
       profile,

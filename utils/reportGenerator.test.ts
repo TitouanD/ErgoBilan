@@ -119,6 +119,22 @@ describe('reportGenerator — initial report', () => {
     expect(requests[2].generationId).toBe('gen-1');
   });
 
+  it('decodes the HTML entities of a plain-text answer (#74)', async () => {
+    const withEntities = {
+      ...DIAG,
+      synthese_diagnostic:
+        '{{PATIENT_PRENOM}}, scolaris&eacute;e &agrave; l&#39;&eacute;cole, s&#x27;investit &laquo;&nbsp;bien&nbsp;&raquo;.',
+      reformulated_observations: [{ subtestId: 'dext', text: 'Pr&eacute;hension &amp; force.' }],
+    };
+    const { transport } = fakeTransport({ report_bio: [BIO], report_diagnostic: [withEntities] });
+    const report = await createReportGenerator(transport, { now: () => NOW }).generateInitial(input);
+
+    const diagnostic = report.sections.find((s) => s.id === 'diagnostic')!;
+    expect(diagnostic.content).toBe("Léa, scolarisée à l'école, s'investit « bien ».");
+    expect(diagnostic.originalContent).toBe('<p>Léa, scolarisée à l&#39;école, s&#39;investit « bien ».</p>');
+    expect(report.reformulatedObservations).toEqual({ dext: 'Préhension & force.' });
+  });
+
   it('refuses an empty answer', async () => {
     const { transport } = fakeTransport({ report_bio: [{}] });
     await expect(createReportGenerator(transport).generateInitial(input)).rejects.toThrow('AI_EMPTY_RESPONSE');

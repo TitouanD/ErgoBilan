@@ -153,14 +153,19 @@ const findLeaks = (request: AIRequest, patient: Patient): string[] => {
 };
 
 const NOT_GENERATED = 'Non généré.';
+const HTML_ENTITY = /&(#\d+|#x[0-9a-f]+|[a-z]{2,8});/i;
 
-const expectHydratedSections = (sections: ReportSection[], ids: string[], firstName: string) => {
+/** `firstName`: expected in the report (initial report); the re-evaluation prompt forbids the name. */
+const expectHydratedSections = (sections: ReportSection[], ids: string[], firstName?: string) => {
   expect(sections.map((s) => s.id)).toEqual(ids);
   for (const s of sections) {
     expect(s.content.trim(), `section ${s.id} vide`).not.toBe('');
     expect(s.content, `section ${s.id} non générée`).not.toContain(NOT_GENERATED);
     expect(s.content, `marqueur restant dans ${s.id}`).not.toMatch(/\{\{|\}\}/);
+    // A plain section is escaped when rendered: an entity would show as is (#74).
+    if (s.contentFormat === 'plain') expect(s.content, `entité HTML dans ${s.id}`).not.toMatch(HTML_ENTITY);
   }
+  if (!firstName) return;
   expect(
     sections.some((s) => s.content.includes(firstName)),
     `prénom ${firstName} absent du rapport réhydraté`,
@@ -314,6 +319,8 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
       ['mandat_ref', 'mandat_eval', 'profil', 'diagnostic', 'objectifs', 'project', 'recommandations'],
       input.patient.firstName,
     );
+    for (const [id, text] of Object.entries(report.reformulatedObservations))
+      expect(text, `entité HTML dans l'observation ${id}`).not.toMatch(HTML_ENTITY);
     await expectCreditDelta(before, -1);
   });
 
@@ -331,7 +338,9 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
     }
 
     expect(steps.map((s) => s.request.task)).toEqual(['report_reevaluation']);
-    expectHydratedSections(sections, ['resume_initial', 'evolution', 'conclusion', 'recommandations_reev'], input.patient.firstName);
+    // The initial report sections leave as context: without them the "Rappel" is written from the scores alone.
+    expect(steps[0].request.payload.previousReportContext, 'contexte du bilan initial absent').toMatch(/dysgraphie/);
+    expectHydratedSections(sections, ['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
     await expectCreditDelta(before, -1);
   });
 

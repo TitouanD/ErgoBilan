@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeReportText } from './textSanitizer';
+import { decodeHtmlEntities, sanitizeReportText } from './textSanitizer';
+
+describe('decodeHtmlEntities', () => {
+  it('decodes named, decimal and hexadecimal entities', () => {
+    expect(decodeHtmlEntities('&Eacute;cole &agrave; l&#39;&oelig;uvre, s&#x27;il&hellip; &euro;')).toBe("École à l'œuvre, s'il… €");
+  });
+
+  it('decodes once and leaves unknown entities and bare ampersands alone', () => {
+    expect(decodeHtmlEntities('A &amp;eacute; B &foo; C & D')).toBe('A &eacute; B &foo; C & D');
+  });
+});
 
 describe('sanitizeReportText', () => {
   it('repairs misordered combining accents before latin letters', () => {
