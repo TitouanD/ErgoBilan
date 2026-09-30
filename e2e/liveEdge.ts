@@ -30,7 +30,8 @@ const mainCheckout = (): string => {
 
 export const ENV_FILE = resolve(mainCheckout(), '.env.e2e.local');
 const LOCK_FILE = `${ENV_FILE}.lock`;
-const DEFAULT_ORIGIN = 'https://app.ergobilan.com';
+/** Allowed by the edge (AI_ALLOWED_ORIGINS) but served by no site: marks the e2e runs in Sentry. */
+const DEFAULT_ORIGIN = 'https://test.ergobilan.com';
 
 const readEnvFile = (): Map<string, string> => {
   const values = new Map<string, string>();
