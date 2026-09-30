@@ -184,6 +184,40 @@ describe('reportGenerator — re-evaluation', () => {
     expect(sections.map((s) => s.id)).toEqual(['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
   });
 
+  it('takes the context of a second re-evaluation from the previous re-evaluation (#70)', async () => {
+    const previousReevaluation = {
+      id: 'a2',
+      date: '2026-06-15',
+      kind: 'reevaluation',
+      hasFormalReport: true,
+      tests: { mabc: { dext: { value: '6', unit: 'NS' } } },
+      report: {
+        sections: [
+          { id: 'resume_initial', title: 'Rappel du bilan initial', content: 'Rappel.', status: 'validated' },
+          { id: 'evolution', title: 'Évolution des résultats', content: 'Tableaux.', status: 'validated' },
+          { id: 'conclusion', title: 'Conclusion', content: 'Progrès nets de Léa en motricité fine.', status: 'validated' },
+          { id: 'recommandations_reev', title: 'Préconisations', content: 'Poursuivre une séance par semaine.', status: 'validated' },
+        ],
+      },
+    } as unknown as PatientAssessment;
+    const { transport, requests } = fakeTransport({
+      report_reevaluation: [{ resume_initial: 'r', evolution_commentee: 'e', conclusion: 'c', recommandations: 'r' }],
+    });
+    await createReportGenerator(transport, { now: () => NOW }).generateReevaluation({
+      patient,
+      previousAssessment: previousReevaluation,
+      tests,
+      index,
+    });
+
+    const payload = requests[0].payload as Record<string, string>;
+    expect(payload.previousReportContext).toBe(
+      '[Conclusion]\nProgrès nets de {{PATIENT_PRENOM}} en motricité fine.\n\n[Préconisations]\nPoursuivre une séance par semaine.',
+    );
+    expect(payload.childContext).toContain('Réévaluation précédente réalisée : {{DATE_1}}');
+    expect(payload.childContext).not.toContain('Bilan initial réalisé');
+  });
+
   it('lists the suspect words of the previous report context', () => {
     expect(findReevaluationSuspectTerms({ patient, previousAssessment, tests, index }, NOW)).toEqual(['Josette']);
   });

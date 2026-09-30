@@ -198,8 +198,15 @@ export const buildInitialReportPayload = (input: {
 });
 
 const MONTH_YEAR: Intl.DateTimeFormatOptions = { month: '2-digit', year: 'numeric' };
-/** Sections of the previous report reused as context for the re-evaluation. */
-const PREVIOUS_CONTEXT_SECTIONS = ['profil', 'diagnostic', 'objectifs', 'project', 'recommandations'];
+/**
+ * Sections of the reference report reused as context for the re-evaluation:
+ * the clinical sections of an initial assessment, or the conclusion and
+ * recommendations of a previous re-evaluation (decision of 2026-09-30, #70).
+ */
+const PREVIOUS_CONTEXT_SECTIONS: Record<PatientAssessment['kind'], string[]> = {
+  initial: ['profil', 'diagnostic', 'objectifs', 'project', 'recommandations'],
+  reevaluation: ['conclusion', 'recommandations_reev'],
+};
 
 export const buildReevaluationPayload = (input: {
   patient: Patient;
@@ -214,15 +221,17 @@ export const buildReevaluationPayload = (input: {
     ? new Date(input.previousAssessment.date).toLocaleDateString('fr-FR', MONTH_YEAR)
     : undefined;
   const reevDate = (input.reevaluationDate ?? new Date()).toLocaleDateString('fr-FR', MONTH_YEAR);
+  const afterReevaluation = input.previousAssessment?.kind === 'reevaluation';
+  const contextSections = PREVIOUS_CONTEXT_SECTIONS[afterReevaluation ? 'reevaluation' : 'initial'];
   const previousReportContext = (input.previousAssessment?.report?.sections ?? [])
-    .filter((s) => PREVIOUS_CONTEXT_SECTIONS.includes(s.id) && s.content?.trim())
+    .filter((s) => contextSections.includes(s.id) && s.content?.trim())
     .map((s) => `[${s.title}]\n${htmlToPlainText(sectionToHtml(s))}`)
     .join('\n\n');
 
   return {
     childContext: [
       `${buildChildContext(input.patient)} Classe : ${input.patient.classLevel || 'non renseignée'}.`,
-      prevDate ? `Bilan initial réalisé : ${prevDate}` : '',
+      prevDate ? `${afterReevaluation ? 'Réévaluation précédente réalisée' : 'Bilan initial réalisé'} : ${prevDate}` : '',
       `Réévaluation réalisée : ${reevDate}`,
     ]
       .filter(Boolean)
