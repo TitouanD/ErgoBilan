@@ -38,6 +38,21 @@ export const getLatestFormalAssessment = (assessments: PatientAssessment[] | und
   null;
 
 /**
+ * Tests and subtests picked in the catalogue (`TestCatalogModal`) added with
+ * empty scores; existing scores are kept. `newTestIds`: tests that were not there.
+ */
+export const addCatalogSelection = (tests: TestData, selection: Record<string, string[]>): { tests: TestData; newTestIds: string[] } => {
+  const next: TestData = { ...tests };
+  const newTestIds: string[] = [];
+  for (const [testId, subtestIds] of Object.entries(selection)) {
+    if (!next[testId]) newTestIds.push(testId);
+    next[testId] = { ...(next[testId] ?? {}) };
+    for (const id of subtestIds) next[testId][id] ??= {};
+  }
+  return { tests: next, newTestIds };
+};
+
+/**
  * Same tests/subtests as the previous assessment, with empty scores.
  * A re-evaluation starts from this: a subtest the practitioner does not
  * re-measure stays empty and shows as "non mesuré" instead of a fake

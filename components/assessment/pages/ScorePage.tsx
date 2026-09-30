@@ -18,6 +18,7 @@ import { useCatalog } from '../../../contexts/CatalogContext';
 import { useFavoriteTests } from '../../../hooks/useFavoriteTests';
 import { hasScoreValue } from '../../../utils/scoring';
 import { CUSTOM_OBSERVATIONS_TEST_ID, resolveTestDef } from '../../../utils/catalogIndex';
+import { addCatalogSelection } from '../../../utils/assessment';
 import { ScoreTable, subtestDragId } from '../shared/ScoreTable';
 import { StepNavFooter } from '../shared/StepNavFooter';
 import { TestCatalogModal } from './score/TestCatalogModal';
@@ -91,13 +92,7 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
 
   const addTests = useCallback(
     (selection: Record<string, string[]>) => {
-      const next: TestData = { ...tests };
-      const newTestIds: string[] = [];
-      for (const [testId, subtestIds] of Object.entries(selection)) {
-        if (!next[testId]) newTestIds.push(testId);
-        next[testId] = { ...(next[testId] ?? {}) };
-        for (const id of subtestIds) next[testId][id] ??= {};
-      }
+      const { tests: next, newTestIds } = addCatalogSelection(tests, selection);
       if (newTestIds.length > 0) pushRecent(newTestIds.filter((id) => id !== CUSTOM_OBSERVATIONS_TEST_ID));
       updateTests(next);
     },

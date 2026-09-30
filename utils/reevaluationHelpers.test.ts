@@ -23,3 +23,16 @@ describe('réévaluation : retrait d’un sous-test ajouté par erreur (#48)', (
     expect(reevaluationSubtestIds(previous.bhk, {})).toEqual(['bhk__quality']);
   });
 });
+
+describe('réévaluation : sous-test ajouté depuis le catalogue (#62)', () => {
+  it('un sous-test absent de la référence s’affiche après ceux de la référence, et se retire', () => {
+    const withAdded: TestData = { bhk: { bhk__quality: {}, bhk__speed: {}, bhk__extra: {} } };
+    expect(reevaluationSubtestIds(previous.bhk, withAdded.bhk)).toEqual(['bhk__quality', 'bhk__speed', 'bhk__extra']);
+    expect(removeReevaluationSubtest(withAdded, previous, 'bhk', 'bhk__extra').bhk).toEqual({ bhk__quality: {}, bhk__speed: {} });
+  });
+
+  it('un test entier absent de la référence : tous ses sous-tests, retirables', () => {
+    expect(reevaluationSubtestIds(undefined, { a: {}, b: {} })).toEqual(['a', 'b']);
+    expect(canRemoveReevaluationSubtest(undefined, 'a')).toBe(true);
+  });
+});

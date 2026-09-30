@@ -57,14 +57,18 @@ export const canRemoveReevaluationSubtest = (prevScores: Record<string, ScoreRes
   !hasScoreValue(prevScores?.[subtestId]);
 
 /**
- * Subtests of the previous assessment shown on both sides of the re-evaluation
- * (same list left and right, so the rows stay aligned): every subtest with a
- * previous score, plus those without one that were not removed from the new scores.
+ * Subtests shown on both sides of the re-evaluation (same list left and right,
+ * so the rows stay aligned): every subtest with a previous score, plus those
+ * without one that are still in the new scores, including subtests added from
+ * the catalogue during the re-evaluation (#62).
  */
 export const reevaluationSubtestIds = (
   prevScores: Record<string, ScoreResult> | undefined,
   newScores: Record<string, ScoreResult> | undefined,
-): string[] => Object.keys(prevScores ?? {}).filter((id) => !canRemoveReevaluationSubtest(prevScores, id) || id in (newScores ?? {}));
+): string[] => [
+  ...Object.keys(prevScores ?? {}).filter((id) => !canRemoveReevaluationSubtest(prevScores, id) || id in (newScores ?? {})),
+  ...Object.keys(newScores ?? {}).filter((id) => !(id in (prevScores ?? {}))),
+];
 
 /** New scores without `subtestId`; unchanged when the subtest has a previous score (see `canRemoveReevaluationSubtest`). */
 export const removeReevaluationSubtest = (tests: TestData, previousTests: TestData, testId: string, subtestId: string): TestData => {

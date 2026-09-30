@@ -43,7 +43,7 @@ Statuts :
 | P1-12 | Brouillons                                           | Résolu                              |
 | P1-13 | Calcul de l'âge                                      | Résolu                              |
 | P1-14 | Admin : ajout de sous-test                           | Résolu                              |
-| P1-15 | Parcours, divers                                     | Résolu, sauf → #62                  |
+| P1-15 | Parcours, divers                                     | Résolu                              |
 | P1-16 | Création du lien famille                             | Résolu                              |
 | P1-17 | Personnalisation du rapport non sauvegardée          | Résolu                              |
 | P1-18 | Realtime des crédits inopérant                       | Résolu (abonnement retiré)          |
@@ -191,13 +191,9 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 `services/admin.ts` envoie `none` / `numeric_4mode` / `{}` ; la RPC `admin_save_test_detail` reçoit les mêmes défauts dans la migration `20260924100000`.
 
-### P1-15 Parcours, divers — Résolu, sauf → #62
+### P1-15 Parcours, divers — Résolu
 
-Résolus : deltas dans l'aperçu et le PDF de réévaluation (#61, colonne « Évolution »), `previousAssessmentId` renseigné, « Réévaluation 1 clic » refusée sans bilan de référence (message explicite), brouillon de réévaluation repris depuis le dashboard, suivi à +6 mois créé pour tous les parcours, « Sauver & quitter » conserve la date du bilan historique, garde du stepper propre à chaque parcours, coquille « Péconisations ».
-
-Ouverts (évolutions plutôt que bugs) :
-
-- ajout d'un nouveau test pendant une réévaluation → #62.
+Résolus : deltas dans l'aperçu et le PDF de réévaluation (#61, colonne « Évolution »), `previousAssessmentId` renseigné, « Réévaluation 1 clic » refusée sans bilan de référence (message explicite), brouillon de réévaluation repris depuis le dashboard, suivi à +6 mois créé pour tous les parcours, « Sauver & quitter » conserve la date du bilan historique, garde du stepper propre à chaque parcours, coquille « Péconisations », ajout d'un test absent du bilan de référence pendant une réévaluation (#62).
 
 ### P1-16 Création du lien famille — Résolu
 
