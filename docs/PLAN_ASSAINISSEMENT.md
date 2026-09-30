@@ -34,15 +34,15 @@ L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, 
 | CI                          | ❌ aucune     | ✅ `.github/workflows/ci.yml` (`npm run check`)            |
 | Parcours dans le navigateur | non testé     | ✅ démo complète déroulée (voir TECH_DEBT P2-9)            |
 
-| Phase                 | État                                                                                                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0 — Filet de sécurité | Fait, sauf 0.1 (`supabase db pull`) → #63 et le retrait de `.env` / `.env.production` du suivi git (0.6) → #66. Les tests de 0.7 vérifient directement le comportement corrigé |
-| 1 — Fonctionnalités   | Fait (migrations `supabase/migrations/20260924*` appliquées et `generate` déployée le 2026-09-25)                                                                              |
-| 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, reportée le 2026-09-25 → #56. Le volet base de 2.5 est appliqué                                                                        |
-| 3 — Scores            | Fait                                                                                                                                                                           |
-| 4 — Code propre       | Fait                                                                                                                                                                           |
-| 5 — Base et edge      | 5.1 et 5.2 faits (migrations appliquées le 2026-09-25), sauf les vues de 5.2 → #57. 5.3 → #64, 5.4 → #65, 5.5 → #58                                                            |
-| 6 — Documentation     | En-têtes de modules ajoutés sur les fichiers réécrits ; `docs/` mis à jour                                                                                                     |
+| Phase                 | État                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 0 — Filet de sécurité | Fait, sauf 0.1 (`supabase db pull`) → #63. Les tests de 0.7 vérifient directement le comportement corrigé           |
+| 1 — Fonctionnalités   | Fait (migrations `supabase/migrations/20260924*` appliquées et `generate` déployée le 2026-09-25)                   |
+| 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, reportée le 2026-09-25 → #56. Le volet base de 2.5 est appliqué             |
+| 3 — Scores            | Fait                                                                                                                |
+| 4 — Code propre       | Fait                                                                                                                |
+| 5 — Base et edge      | 5.1 et 5.2 faits (migrations appliquées le 2026-09-25), sauf les vues de 5.2 → #57. 5.3 → #64, 5.4 → #65, 5.5 → #58 |
+| 6 — Documentation     | En-têtes de modules ajoutés sur les fichiers réécrits ; `docs/` mis à jour                                          |
 
 Écart à la règle 1 : tout a été fait sur une seule branche.
 
@@ -65,7 +65,7 @@ But : que la prochaine régression soit détectée automatiquement.
 | 0.3 | Ajouter les scripts `typecheck` (`tsc --noEmit`) et `check` (`lint && typecheck && test && build`)                                                                                                                                                                             | S      | `npm run check` existe                                                 |
 | 0.4 | Corriger les 14 erreurs `tsc`, plus celles révélées par 0.2. Cela corrige au passage P1-2, P1-5, P1-6, P1-16 et P1-20                                                                                                                                                          | M      | `npm run typecheck` = 0 erreur                                         |
 | 0.5 | CI GitHub Actions : `npm ci && npm run check` sur chaque PR et sur `main`                                                                                                                                                                                                      | S      | Une PR avec une erreur de type est bloquée                             |
-| 0.6 | **→ #66** Retirer `*.md` de `.prettierignore` et formater. Ne plus versionner `.env` et `.env.production` : les ajouter à `.gitignore` et documenter les variables dans `.env.example`                                                                                         | S      | `format:check` couvre la doc                                           |
+| 0.6 | Fait (#66). Retirer `*.md` de `.prettierignore` et formater. Ne plus versionner `.env` et `.env.production` : les ajouter à `.gitignore` et documenter les variables dans `.env.example`                                                                                       | S      | `format:check` couvre la doc                                           |
 | 0.7 | Premiers tests unitaires sur les fonctions pures dont dépend la justesse clinique : `utils/scoring.ts`, `utils/anonymizer.ts`, `calculateAge` (`utils.ts`), `utils/reevaluationHelpers.ts`. Commencer par figer le comportement actuel, y compris les cas faux, marqués `todo` | M      | Les tests documentent les bugs connus ; ils seront corrigés en phase 3 |
 
 ## Phase 1 — Fonctionnalités cassées

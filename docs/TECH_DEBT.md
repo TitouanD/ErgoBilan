@@ -54,7 +54,7 @@ Statuts :
 | P2-3  | `App.tsx` trop gros                                  | Résolu                              |
 | P2-4  | Doublons                                             | Résolu                              |
 | P2-5  | Code mort                                            | Résolu (2 colonnes DB → #65)        |
-| P2-6  | Outillage                                            | Résolu (`.env` suivis → #66)        |
+| P2-6  | Outillage                                            | Résolu                              |
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
 | P2-8  | Base de données, divers                              | Partiel → #65                       |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
@@ -244,7 +244,7 @@ Supprimés : environ 580 lignes de `ScorePage`, `scoringEngine`, `subtestMatcher
 
 ### P2-6 Outillage — Résolu
 
-`strict`, scripts `typecheck` et `check`, CI GitHub (`.github/workflows/ci.yml`), règle ESLint `no-unused-vars`, 5 fichiers de tests (42 tests) sur les fonctions pures, `.env.example`, Markdown couvert par Prettier. Reste : `.env` et `.env.production` encore suivis par git → #66.
+`strict`, scripts `typecheck` et `check`, CI GitHub (`.github/workflows/ci.yml`), règle ESLint `no-unused-vars`, 5 fichiers de tests (42 tests) sur les fonctions pures, `.env.example`, Markdown couvert par Prettier. `.env` et `.env.production` ne sont plus suivis par git : variables dans Vercel (#66).
 
 ### P2-7 React — Résolu
 

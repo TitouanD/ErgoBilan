@@ -201,7 +201,7 @@ Le code de `generate` et `signup` du repo diffère de la version déployée (`ge
 | Edge `signup`             | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SIGNUP_MAX_BODY_BYTES`                                                                                                                                                                                                                                                                                                                               |
 | Edge Sentry               | `SENTRY_DSN_BACKEND`, `SENTRY_ENV`, `SENTRY_RELEASE`                                                                                                                                                                                                                                                                                                                                       |
 
-En développement, `services/db.ts` utilise une URL et une clé publishable Supabase codées en dur si les variables sont absentes ; en production, leur absence lève une erreur au chargement. `.env` et `.env.production` sont encore **versionnés** dans git ; ils ne contiennent que des variables `VITE_*`, de toute façon exposées dans le bundle (P2-6).
+En développement, `services/db.ts` utilise une URL et une clé publishable Supabase codées en dur si les variables sont absentes ; en production, leur absence lève une erreur au chargement. Aucun fichier `.env` n'est versionné (`.gitignore`) : les builds Vercel (`main` et `dev`) prennent leurs variables dans les variables d'environnement du projet Vercel, et le développement local dans `.env.local` (#66).
 
 ## 10. Autres documents
 
