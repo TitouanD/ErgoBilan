@@ -112,6 +112,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
       patient={assessment.patient}
       sections={assessment.sections}
       tests={assessment.tests}
+      previousTests={reportType === 'reevaluation' ? (assessment.previousAssessment?.tests ?? {}) : undefined}
       reportType={reportType}
       reportPages={assessment.reportPages}
       onReportPagesChange={assessment.setReportPages}

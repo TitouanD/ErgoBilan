@@ -16,19 +16,19 @@ import { sectionToHtml } from '../../../utils/reportContent';
 import {
   ANNEXES_ID,
   type ChartType,
-  PERCENTILE_TICKS,
+  type DotChart,
+  type DotChartScale,
   RADAR_RANGE,
   type ScoreDisplayMode,
+  type ScoreEvolution,
+  TREND_COLOR,
   type TestScoreBlock,
-  Z_AXIS,
   buildTestScoreBlocks,
-  computePercentileChartItems,
+  computeDotChart,
   computeRadarData,
-  computeZChartItems,
-  pctToFraction,
-  zToFraction,
+  readingGuide,
 } from '../../../utils/reportData';
-import { ZONE_META, ZONE_PERCENTILE_THRESHOLDS, formatZ } from '../../../utils/scoring';
+import { ZONE_META } from '../../../utils/scoring';
 import { type ReportTheme, formatBirthDate, formatReportDate, resolveReportTheme } from '../../../utils/reportTheme';
 
 interface PdfDocumentProps {
@@ -41,6 +41,8 @@ interface PdfDocumentProps {
   pages: string[][];
   scoreDisplayModes?: Record<string, ScoreDisplayMode>;
   chartType?: ChartType;
+  /** Re-evaluation: scores of the reference assessment, for the evolution column. */
+  previousTests?: TestData;
 }
 
 /** Body font of the PDF (Quicksand unless the branding sets one). */
@@ -193,42 +195,41 @@ const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string;
   </View>
 );
 
-const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: 'z' | 'percentile' }> = ({ theme, scale }) => (
-  <View wrap={false} style={{ marginBottom: 20, padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners) }}>
-    <Text style={{ fontSize: 9, fontWeight: 700, marginBottom: 6 }}>Guide de lecture{scale === 'percentile' ? ' (percentiles)' : ''} :</Text>
-    {(['normal', 'fragile', 'deficit'] as const).map((zone) => (
-      <View key={zone} style={{ flexDirection: 'row', gap: 4, marginBottom: 2 }}>
-        <Text style={{ fontSize: 8, fontWeight: 700, color: ZONE_META[zone].color }}>{ZONE_META[zone].label} :</Text>
-        <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{scale === 'z' ? ZONE_META[zone].zLegend : ZONE_META[zone].pctLegend}.</Text>
-      </View>
-    ))}
-  </View>
-);
+const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
+  const guide = readingGuide(scale);
+  return (
+    <View wrap={false} style={{ marginBottom: 20, padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners) }}>
+      <Text style={{ fontSize: 9, fontWeight: 700, marginBottom: 6 }}>{guide.title}</Text>
+      {guide.lines.map((line) => (
+        <View key={line.zone} style={{ flexDirection: 'row', gap: 4, marginBottom: 2 }}>
+          <Text style={{ fontSize: 8, fontWeight: 700, color: ZONE_META[line.zone].color }}>{line.label} :</Text>
+          <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{line.legend}.</Text>
+        </View>
+      ))}
+    </View>
+  );
+};
 
-/** Horizontal dot chart shared by the z and percentile profiles. */
-const PdfDotChart: React.FC<{
-  items: Array<{ key: string; label: string; position: number; color: string; value: string }>;
-  bands: Array<{ from: number; to: number; color: string }>;
-  centerLine: number;
-  ticks: Array<{ position: number; label: string; bold?: boolean }>;
-}> = ({ items, bands, centerLine, ticks }) => {
+/** Horizontal dot chart of the z and percentile profiles. */
+const PdfDotChart: React.FC<{ chart: DotChart }> = ({ chart: { items, bands, centerLine, ticks } }) => {
   const height = items.length * ROW_H;
   const x = (fraction: number) => LABEL_W + fraction * BAR_W;
   return (
     <Svg width={LABEL_W + BAR_W + VALUE_W} height={height + 24} viewBox={`0 0 ${LABEL_W + BAR_W + VALUE_W} ${height + 24}`}>
-      {bands.map((b, i) => (
-        <Rect key={i} x={x(b.from)} y={0} width={(b.to - b.from) * BAR_W} height={height} fill={b.color} />
+      {bands.map((b) => (
+        <Rect key={b.zone} x={x(b.from)} y={0} width={(b.to - b.from) * BAR_W} height={height} fill={ZONE_META[b.zone].band} />
       ))}
       <SvgLine x1={x(centerLine)} y1={0} x2={x(centerLine)} y2={height} stroke={COLORS.stone300} strokeWidth={0.5} />
       {items.map((item, i) => {
         const y = i * ROW_H + ROW_H / 2;
+        const color = ZONE_META[item.zone].color;
         return (
           <G key={item.key}>
             <SvgText x={LABEL_W - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
               {item.label}
             </SvgText>
-            <Circle cx={x(item.position)} cy={y} r={4} fill={item.color} />
-            <SvgText x={LABEL_W + BAR_W + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: item.color }}>
+            <Circle cx={x(item.position)} cy={y} r={4} fill={color} />
+            <SvgText x={LABEL_W + BAR_W + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: color }}>
               {item.value}
             </SvgText>
           </G>
@@ -243,48 +244,21 @@ const PdfDotChart: React.FC<{
   );
 };
 
-const PdfZChart: React.FC<{ tests: TestData; index: CatalogIndex; theme: ReportTheme; font: string }> = ({ tests, index, theme, font }) => {
-  const items = computeZChartItems(tests, index);
-  if (items.length === 0) return null;
+const PdfProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; index: CatalogIndex; theme: ReportTheme; font: string }> = ({
+  scale,
+  tests,
+  index,
+  theme,
+  font,
+}) => {
+  const chart = computeDotChart(scale, tests, index);
+  if (chart.items.length === 0) return null;
   return (
     <>
-      <PdfChartFrame title="Profil des scores (écarts-types)" theme={theme} font={font}>
-        <PdfDotChart
-          items={items.map((i) => ({ key: i.key, label: i.label, position: zToFraction(i.z), color: ZONE_META[i.zone].color, value: formatZ(i.z, 1) }))}
-          bands={[
-            { from: 0, to: zToFraction(-2), color: ZONE_META.deficit.band },
-            { from: zToFraction(-2), to: zToFraction(-1), color: ZONE_META.fragile.band },
-            { from: zToFraction(-1), to: 1, color: ZONE_META.normal.band },
-          ]}
-          centerLine={zToFraction(0)}
-          ticks={Z_AXIS.ticks.map((t) => ({ position: zToFraction(t), label: t === 0 ? '0' : `${t > 0 ? '+' : ''}${t} ET`, bold: t === 0 }))}
-        />
+      <PdfChartFrame title={chart.title} theme={theme} font={font}>
+        <PdfDotChart chart={chart} />
       </PdfChartFrame>
-      <PdfReadingGuide theme={theme} scale="z" />
-    </>
-  );
-};
-
-const PdfPercentileChart: React.FC<{ tests: TestData; index: CatalogIndex; theme: ReportTheme; font: string }> = ({ tests, index, theme, font }) => {
-  const items = computePercentileChartItems(tests, index);
-  if (items.length === 0) return null;
-  const deficitEnd = pctToFraction(ZONE_PERCENTILE_THRESHOLDS.deficit);
-  const fragileEnd = pctToFraction(ZONE_PERCENTILE_THRESHOLDS.fragile);
-  return (
-    <>
-      <PdfChartFrame title="Profil des scores (percentiles)" theme={theme} font={font}>
-        <PdfDotChart
-          items={items.map((i) => ({ key: i.key, label: i.label, position: pctToFraction(i.pct), color: ZONE_META[i.zone].color, value: `${i.pct}e` }))}
-          bands={[
-            { from: 0, to: deficitEnd, color: ZONE_META.deficit.band },
-            { from: deficitEnd, to: fragileEnd, color: ZONE_META.fragile.band },
-            { from: fragileEnd, to: 1, color: ZONE_META.normal.band },
-          ]}
-          centerLine={0.5}
-          ticks={PERCENTILE_TICKS.map((t) => ({ position: pctToFraction(t), label: String(t), bold: t === 50 }))}
-        />
-      </PdfChartFrame>
-      <PdfReadingGuide theme={theme} scale="percentile" />
+      <PdfReadingGuide theme={theme} scale={scale} />
     </>
   );
 };
@@ -339,6 +313,18 @@ const PdfRadarChart: React.FC<{ tests: TestData; index: CatalogIndex; theme: Rep
 
 const headCell = { fontSize: 7, fontWeight: 700 as const, textTransform: 'uppercase' as const, letterSpacing: 0.8, color: COLORS.stone400 };
 
+const EVOLUTION_W = '15%';
+
+const PdfEvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }) => {
+  const color = evolution.trend ? TREND_COLOR[evolution.trend] : COLORS.stone400;
+  return (
+    <View style={{ width: EVOLUTION_W, alignItems: 'center' }}>
+      <Text style={{ fontSize: 9, fontWeight: 700, color }}>{evolution.text}</Text>
+      {evolution.trendLabel ? <Text style={{ fontSize: 7, color }}>{evolution.trendLabel}</Text> : null}
+    </View>
+  );
+};
+
 // `last`: no trailing margin, which would push an empty page when the block ends at the bottom of a page.
 const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font: string; last?: boolean }> = ({ block, theme, font, last }) => (
   <View
@@ -371,7 +357,8 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
             <Text style={{ ...headCell, width: '35%' }}>Épreuves</Text>
             <Text style={{ ...headCell, width: '15%', textAlign: 'center' }}>{block.hasStandardizedScores ? 'Score' : 'Résultat'}</Text>
-            <Text style={{ ...headCell, width: '50%', paddingLeft: 8 }}>Observations</Text>
+            {block.showEvolution && <Text style={{ ...headCell, width: EVOLUTION_W, textAlign: 'center' }}>Évolution</Text>}
+            <Text style={{ ...headCell, width: block.showEvolution ? '35%' : '50%', paddingLeft: 8 }}>Observations</Text>
           </View>
           {block.rows.map((row) => (
             <View key={row.subtestId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
@@ -379,7 +366,10 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
               <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500 }}>
                 {row.display}
               </Text>
-              <Text style={{ width: '50%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 8 }}>{row.observation || '-'}</Text>
+              {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
+              <Text style={{ width: block.showEvolution ? '35%' : '50%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 8 }}>
+                {row.observation || '-'}
+              </Text>
             </View>
           ))}
         </View>
@@ -414,7 +404,8 @@ const PdfAnnexes: React.FC<{
   font: string;
   chartType: ChartType;
   scoreDisplayModes?: Record<string, ScoreDisplayMode>;
-}> = ({ tests, index, theme, font, chartType, scoreDisplayModes }) => (
+  previousTests?: TestData;
+}> = ({ tests, index, theme, font, chartType, scoreDisplayModes, previousTests }) => (
   <View>
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
       <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: theme.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
@@ -423,9 +414,8 @@ const PdfAnnexes: React.FC<{
       <Text style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: theme.primary, fontFamily: font }}>Annexes : Résultats</Text>
     </View>
     {chartType === 'radar' && <PdfRadarChart tests={tests} index={index} theme={theme} />}
-    {chartType === 'bar' && <PdfZChart tests={tests} index={index} theme={theme} font={font} />}
-    {chartType === 'percentile' && <PdfPercentileChart tests={tests} index={index} theme={theme} font={font} />}
-    {buildTestScoreBlocks(tests, index, scoreDisplayModes).map((block, i, blocks) => (
+    {chartType !== 'radar' && <PdfProfileChart scale={chartType === 'bar' ? 'z' : 'percentile'} tests={tests} index={index} theme={theme} font={font} />}
+    {buildTestScoreBlocks(tests, index, scoreDisplayModes, previousTests).map((block, i, blocks) => (
       <PdfScoreBlock key={block.testId} block={block} theme={theme} font={font} last={i === blocks.length - 1} />
     ))}
   </View>
@@ -433,7 +423,7 @@ const PdfAnnexes: React.FC<{
 
 // ─── Document ───────────────────────────────────────────────────────────────
 
-export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tests, branding, catalogIndex, pages, scoreDisplayModes, chartType = 'bar' }) => {
+export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tests, branding, catalogIndex, pages, scoreDisplayModes, chartType = 'bar', previousTests }) => {
   const theme = resolveReportTheme(branding);
   const font = bodyFont(branding, theme);
   const headingFont = theme.isCustom ? theme.headingFont : font;
@@ -496,7 +486,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tes
             if (id === ANNEXES_ID) {
               return (
                 <View key={id} break={breakBefore}>
-                  <PdfAnnexes tests={tests} index={catalogIndex} theme={theme} font={headingFont} chartType={chartType} scoreDisplayModes={scoreDisplayModes} />
+                  <PdfAnnexes tests={tests} index={catalogIndex} theme={theme} font={headingFont} chartType={chartType} scoreDisplayModes={scoreDisplayModes} previousTests={previousTests} />
                 </View>
               );
             }

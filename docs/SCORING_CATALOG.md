@@ -126,10 +126,11 @@ Les données des annexes sont calculées dans `utils/reportData.ts` ; l'aperçu 
 
 | Élément               | Fonction                                                    | Détail                                                                                                 |
 | --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Barres ET             | `computeZChartItems`                                        | axe `Z_AXIS` de −3,5 à +3,5 (`zToFraction`), zone de chaque sous-test                                  |
-| Percentiles           | `computePercentileChartItems`                               | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), zone du score résolu                               |
+| Barres ET             | `computeDotChart('z')`, `readingGuide`                      | axe `Z_AXIS` de −3,5 à +3,5 (`zToFraction`), bandes de zone, zone de chaque sous-test, légende         |
+| Percentiles           | `computeDotChart('percentile')`, `readingGuide`             | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), bandes de zone, zone du score résolu, légende      |
 | Radar                 | `computeRadarData`                                          | moyenne des z par catégorie, bornée à ±3 (`RADAR_RANGE`) ; vide s'il y a moins de 3 catégories         |
 | Tableaux de scores    | `buildTestScoreBlocks`                                      | lignes standardisées, lignes qualitatives (catégorie + `reportText`), notes des observations libres    |
+| Évolution             | `buildTestScoreBlocks(…, previousTests)`                    | réévaluation : écart au bilan de référence dans la métrique affichée, tendance en z (`TREND_COLOR`)    |
 | Valeur affichée       | `display(mode)` du score résolu                             | mode NS, ET ou % par test ; si la métrique demandée n'est pas calculable, valeur saisie avec son unité |
 | Disposition des pages | `buildDefaultPages`, `reconcilePages`, `moveSectionInPages` | sections masquées : `HIDDEN_SECTION_IDS` (`objectifs`)                                                 |
 
@@ -159,7 +160,7 @@ Fonctions de `utils/reevaluationHelpers.ts`, affichage par `components/assessmen
 - **Textes pour l'IA** : `buildScoresSummaryText` (scores d'un bilan) et `buildEvolutionSummaryText` (delta dans la métrique, delta en ET et tendance).
 - **Affichage** : `DeltaTable` et `buildEvolutionSummaryText` formatent valeurs et écarts avec `formatMetricValue` (`90 NS`, écart signé `+5 NS`) ; l'infobulle du delta donne `zDelta`.
 
-Un score précédent saisi dans une autre métrique que la métrique dominante du test est ressaisi dans la métrique dominante, puis converti pour la comparaison. Les deltas ne figurent pas dans le PDF (P1-15).
+Un score précédent saisi dans une autre métrique que la métrique dominante du test est ressaisi dans la métrique dominante, puis converti pour la comparaison. Dans l'aperçu et le PDF de réévaluation, chaque ligne de score porte une colonne « Évolution » : écart dans la métrique affichée et tendance (amélioration, stable, régression), « — » quand il n'y a rien à comparer (test absent du bilan de référence, autre échelle, non mesuré).
 
 ## 8. Tests personnalisés
 
