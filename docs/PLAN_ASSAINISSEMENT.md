@@ -151,7 +151,7 @@ Toutes les modifications passent par des migrations versionnées (règle 3).
 
 ## Recette manuelle
 
-Il n'existe pas de tests de bout en bout. Après chaque lot, dérouler les parcours concernés sur un compte de test :
+La chaîne de génération IA a son test de bout en bout (`npm run e2e:ai`, [`AI_PIPELINE.md`](AI_PIPELINE.md) §9) : pour les points 2 et 3, la génération elle-même (payload, anonymisation, appel, réhydratation, crédit débité une fois) est vérifiée par Claude, pas à la main. Le reste n'a pas de test de bout en bout. Après chaque lot, dérouler les parcours concernés sur un compte de test :
 
 1. **Connexion et PIN** : connexion, déverrouillage, verrouillage par inactivité, déconnexion puis reconnexion avec un autre compte (aucune donnée du premier ne doit apparaître).
 2. **Bilan initial complet** : patient → scores (NS, ET, %, qualitatif, brut) → synthèse → génération IA → validation → export PDF. Vérifier que le PDF correspond à l'aperçu et que le crédit est décompté une seule fois.
