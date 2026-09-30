@@ -5,16 +5,31 @@
  * - the session of the dedicated test account, restored from its refresh token
  *   (`.env.e2e.local`, never committed). Refreshing skips Turnstile, which only
  *   guards the password sign-in. Supabase rotates the token on every refresh, so
- *   the new one is written back at once;
+ *   the new one is written back at once. The file lives in the main checkout,
+ *   shared by every worktree: a copy per worktree would reuse a rotated token,
+ *   and Supabase then revokes the whole session. A lock file keeps two runs
+ *   from refreshing at the same time;
  * - a `fetch` wrapper that counts the HTTP requests sent to `generate` and
  *   refuses any beyond the cap (retries of `services/aiProxy.ts` included), sets
  *   the Origin the edge expects, and keeps each raw answer for the trace.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
-export const ENV_FILE = resolve(process.cwd(), '.env.e2e.local');
+/** Root of the main checkout (the parent of the shared `.git`), from any worktree. */
+const mainCheckout = (): string => {
+  try {
+    const gitDir = execSync('git rev-parse --path-format=absolute --git-common-dir', { encoding: 'utf8' }).trim();
+    return dirname(gitDir);
+  } catch {
+    return process.cwd();
+  }
+};
+
+export const ENV_FILE = resolve(mainCheckout(), '.env.e2e.local');
+const LOCK_FILE = `${ENV_FILE}.lock`;
 const DEFAULT_ORIGIN = 'https://app.ergobilan.com';
 
 const readEnvFile = (): Map<string, string> => {
@@ -75,9 +90,16 @@ export const signInTestAccount = async () => {
   if (!refreshToken) {
     throw new Error(`E2E_REFRESH_TOKEN absent de ${ENV_FILE} : voir docs/AI_PIPELINE.md §9 (connexion du compte de test).`);
   }
+  try {
+    writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
+  } catch {
+    throw new Error(`Une autre exécution réelle tourne (${LOCK_FILE}). Sinon, supprimer ce fichier resté après un arrêt brutal.`);
+  }
+  const unlock = () => rmSync(LOCK_FILE, { force: true });
   const { supabase } = await import('../services/db');
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
   if (error || !data.session) {
+    unlock();
     throw new Error(`Session du compte de test non restaurée (${error?.message ?? 'pas de session'}) : refaire la connexion, §9.`);
   }
   writeRefreshToken(data.session.refresh_token);
@@ -101,6 +123,7 @@ export const signInTestAccount = async () => {
     close: async () => {
       listener.subscription.unsubscribe();
       await supabase.auth.stopAutoRefresh();
+      unlock();
     },
   };
 };

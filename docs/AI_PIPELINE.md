@@ -274,6 +274,7 @@ Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) 
   ```
 
 - Pour obtenir le jeton (une fois, puis à chaque perte) : se connecter avec le compte de test sur `http://localhost:3000`, puis dans la console du navigateur `copy(JSON.parse(localStorage['ergobilan.auth']).refresh_token)`, coller dans `.env.e2e.local`, et **fermer l'onglet sans se déconnecter** (la déconnexion révoque le jeton ; l'onglet resté ouvert le ferait tourner de son côté).
+- Le fichier vit dans le **checkout principal** (`ErgoBilan/`), même quand le test tourne dans un worktree (`../ErgoBilan-<n>`) : le script le retrouve par `git rev-parse --git-common-dir`. Ne jamais le copier dans un worktree : deux copies du même jeton font révoquer la session par Supabase. Un verrou (`.env.e2e.local.lock`) empêche deux exécutions réelles simultanées ; s'il reste après un arrêt brutal, le supprimer.
 - Supabase remplace le refresh token à chaque rafraîchissement : le script réécrit aussitôt le nouveau dans `.env.e2e.local`. Si le fichier est perdu ou le jeton révoqué, refaire l'étape ci-dessus.
 - Les workers Vitest tournent avec `--use-system-ca` (`vitest.e2e.config.ts`) : derrière un proxy d'entreprise qui inspecte TLS, Node refuse sinon les certificats (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`).
 - Côté edge, le test ne passe par aucun mode spécial : même authentification, mêmes crédits, même limite de 15 requêtes par heure que l'application.
