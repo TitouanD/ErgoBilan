@@ -6,7 +6,7 @@ import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../../types/supabase';
-import { importQuestionnaireKey, encryptData, decryptData } from '../../utils/crypto';
+import { importQuestionnaireKey, encryptToEnvelope, decryptEnvelope, parseEnvelope } from '../../utils/crypto';
 import { isAdministrativeSectionReady } from '../../utils/patient';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
@@ -118,9 +118,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
           // 3. Déchiffrement si existant
           if (data.family_encrypted_data) {
               Logger.info('CRYPTO', 'Decrypting existing family data...');
-              const [iv, content] = data.family_encrypted_data.split(':');
-              if (iv && content) {
-                  const decrypted = await decryptData({ iv, content }, key) as { patient?: Patient } | null;
+              if (parseEnvelope(data.family_encrypted_data)) {
+                  const decrypted = await decryptEnvelope(data.family_encrypted_data, key) as { patient?: Patient } | null;
                   if (decrypted && decrypted.patient) {
                       setLocalPatient(prev => ({ ...prev, ...decrypted.patient as Patient }));
                   }
@@ -164,8 +163,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl }) => {
               timestamp: new Date().toISOString()
           };
           
-          const encrypted = await encryptData(payload, encryptionKey);
-          const encryptedString = `${encrypted.iv}:${encrypted.content}`;
+          const encryptedString = await encryptToEnvelope(payload, encryptionKey);
 
           // Utiliser le client portail (avec header token) pour l'update anon
           const client = portalClientRef.current || supabase;

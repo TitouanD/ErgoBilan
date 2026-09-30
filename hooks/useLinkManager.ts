@@ -5,7 +5,7 @@
 
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
-import { generateQuestionnaireKey, encryptData, decryptData } from '../utils/crypto';
+import { generateQuestionnaireKey, encryptToEnvelope, decryptEnvelope } from '../utils/crypto';
 import type { PendingQuestionnaire, PractitionerProfile } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -66,7 +66,7 @@ export const useLinkManager = ({
     }
 
     const { keyString } = await generateQuestionnaireKey();
-    const enc = await encryptData(keyString, sessionKey);
+    const practitionerEncryptedKey = await encryptToEnvelope(keyString, sessionKey);
 
     // Générer un token d'accès pour sécuriser l'accès anonyme
     const accessTokenBytes = new Uint8Array(32);
@@ -82,7 +82,7 @@ export const useLinkManager = ({
         organization_id: organizationId,
         label,
         status: 'pending',
-        practitioner_encrypted_key: `${enc.iv}:${enc.content}`,
+        practitioner_encrypted_key: practitionerEncryptedKey,
         access_token: accessToken,
       })
       .select()
@@ -154,8 +154,7 @@ export const useLinkManager = ({
       }
 
       try {
-        const [iv, content] = q.practitionerEncryptedKey.split(':');
-        const keyString = await decryptData({ iv, content }, sessionKey);
+        const keyString = await decryptEnvelope(q.practitionerEncryptedKey, sessionKey);
         await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}&t=${q.accessToken}#key=${keyString}`);
         toast.success('Lien copié');
       } catch (e) {

@@ -8,7 +8,8 @@
  * - Portal: one random AES-GCM key per questionnaire, carried in the URL fragment
  *   (`#key=...`, never sent to a server).
  *
- * Serialized ciphertexts are `{ iv: hex, content: base64 }` (stored as "iv:content").
+ * Serialized ciphertexts are `{ iv: hex, content: base64 }`, stored as an
+ * envelope string "iv:content" (encryptToEnvelope / decryptEnvelope).
  */
 
 const VALIDATION_TOKEN = 'ERGOBILAN_VALID_TOKEN';
@@ -33,13 +34,13 @@ export const deriveMasterKey = async (password: string, salt: string, iterations
 };
 
 /** AES-GCM encryption of any JSON-serializable value. */
-export const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: string; content: string }> => {
+const encryptData = async (data: unknown, key: CryptoKey): Promise<{ iv: string; content: string }> => {
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(data)));
   return { iv: toHex(iv), content: btoa(String.fromCharCode(...new Uint8Array(encrypted))) };
 };
 
-export const decryptData = async (encrypted: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
+const decryptData = async (encrypted: { iv: string; content: string }, key: CryptoKey): Promise<unknown> => {
   const ivBytes = encrypted.iv.match(/.{1,2}/g);
   if (!ivBytes) throw new Error('Invalid IV');
   const iv = new Uint8Array(ivBytes.map((byte) => parseInt(byte, 16)));
@@ -48,14 +49,32 @@ export const decryptData = async (encrypted: { iv: string; content: string }, ke
   return JSON.parse(new TextDecoder().decode(decrypted));
 };
 
+/** Split a stored "iv:content" envelope; null if it is malformed. Neither hex nor base64 contains ':'. */
+export const parseEnvelope = (envelope: string): { iv: string; content: string } | null => {
+  const [iv, content] = envelope.split(':');
+  return iv && content ? { iv, content } : null;
+};
+
+/** encryptData, serialized as the stored "iv:content" envelope. */
+export const encryptToEnvelope = async (data: unknown, key: CryptoKey): Promise<string> => {
+  const { iv, content } = await encryptData(data, key);
+  return `${iv}:${content}`;
+};
+
+/** Decrypt a stored "iv:content" envelope. Throws if it is malformed or the key is wrong. */
+export const decryptEnvelope = async (envelope: string, key: CryptoKey): Promise<unknown> => {
+  const parsed = parseEnvelope(envelope);
+  if (!parsed) throw new Error('Invalid envelope');
+  return decryptData(parsed, key);
+};
+
 // ─── PIN ─────────────────────────────────────────────────────────────────────
 
 /** New PIN: random salt, derived key and the validator to store. */
 export const setupPin = async (pin: string): Promise<{ key: CryptoKey; salt: string; validator: string }> => {
   const salt = toHex(window.crypto.getRandomValues(new Uint8Array(16)));
   const key = await deriveMasterKey(pin, salt);
-  const validation = await encryptData(VALIDATION_TOKEN, key);
-  return { key, salt, validator: `${validation.iv}:${validation.content}` };
+  return { key, salt, validator: await encryptToEnvelope(VALIDATION_TOKEN, key) };
 };
 
 export interface PinVerifyResult {
@@ -69,13 +88,12 @@ export interface PinVerifyResult {
  * changing a set validator), and the current-iteration key is returned.
  */
 export const verifyPin = async (pin: string, salt: string, validatorStr: string): Promise<PinVerifyResult | null> => {
-  const [iv, content] = validatorStr.split(':');
-  if (!iv || !content) return null;
+  if (!parseEnvelope(validatorStr)) return null;
 
   const matches = async (iterations: number): Promise<CryptoKey | null> => {
     try {
       const key = await deriveMasterKey(pin, salt, iterations);
-      return (await decryptData({ iv, content }, key)) === VALIDATION_TOKEN ? key : null;
+      return (await decryptEnvelope(validatorStr, key)) === VALIDATION_TOKEN ? key : null;
     } catch {
       return null;
     }
