@@ -17,6 +17,8 @@ export default defineConfig({
     // One file, run once: never retried (each retry could be a paid call).
     retry: 0,
     fileParallelism: false,
+    // Trust the Windows/macOS certificate store too (TLS-inspecting corporate proxies).
+    execArgv: ['--use-system-ca'],
     reporters: ['default'],
   },
 });
