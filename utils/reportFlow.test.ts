@@ -5,7 +5,16 @@ import { buildAssessmentRecord, buildEmptyTestsFrom, getAssessmentTests, getLate
 import { buildCatalogIndex, getSubtestName, getTestName, resolveTestDef } from './catalogIndex';
 import { buildDeltaEntries, buildDeltaStats } from './reevaluationHelpers';
 import { markdownToHtml, sectionToHtml } from './reportContent';
-import { buildDefaultPages, buildTestScoreBlocks, computeRadarData, moveSectionInPages, reconcilePages, resolvePages } from './reportData';
+import {
+  buildDefaultPages,
+  buildTestScoreBlocks,
+  computeDotChart,
+  computeRadarData,
+  moveSectionInPages,
+  reconcilePages,
+  resolvePages,
+  zToFraction,
+} from './reportData';
 
 const catalog: CategoryDef[] = [
   {
@@ -166,6 +175,33 @@ describe('report data', () => {
     );
     expect(block.rows).toEqual([expect.objectContaining({ display: '-2 ET', zone: 'deficit' })]);
     expect(block.qualitativeRows).toEqual([expect.objectContaining({ category: 'Mature', interpretation: 'Prise tripode.' })]);
+  });
+
+  it('adds the evolution since the reference assessment, in the shown metric (#61)', () => {
+    const previous = { mabc: { dext: { value: '7', unit: 'NS' as const } } };
+    const tests = { mabc: { dext: { value: '9', unit: 'NS' as const } }, dtvp: { copy: { value: '85', unit: 'NS' as const } } };
+    const [mabc, dtvp] = buildTestScoreBlocks(tests, index, { mabc: 'NS' }, previous);
+    expect(mabc.showEvolution).toBe(true);
+    expect(mabc.rows[0].evolution).toEqual({ text: '+2 NS', trend: 'improved', trendLabel: 'amélioration' });
+    // Test absent from the reference assessment: nothing to compare.
+    expect(dtvp.rows[0].evolution).toEqual({ text: '—', trend: null, trendLabel: '' });
+
+    const [inEt] = buildTestScoreBlocks(tests, index, { mabc: 'ET' }, previous);
+    expect(inEt.rows[0].evolution?.text).toBe('+0.67 ET');
+  });
+
+  it('has no evolution column outside a re-evaluation', () => {
+    const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
+    expect(block.showEvolution).toBe(false);
+    expect(block.rows[0].evolution).toBeUndefined();
+  });
+
+  it('places profile dots on the axis with the zone bands', () => {
+    const chart = computeDotChart('z', { mabc: { dext: { value: '4', unit: 'NS' } } }, index);
+    expect(chart.items).toEqual([expect.objectContaining({ label: 'Dextérité', zone: 'deficit', value: '-2.0', position: zToFraction(-2) })]);
+    expect(chart.bands.map((b) => b.zone)).toEqual(['deficit', 'fragile', 'normal']);
+    expect(chart.bands[0].to).toBe(chart.bands[1].from);
+    expect(computeDotChart('percentile', {}, index).items).toEqual([]);
   });
 
   it('needs three categories for a radar', () => {

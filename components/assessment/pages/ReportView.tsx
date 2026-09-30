@@ -16,20 +16,19 @@ import {
   ANNEXES_ID,
   type ChartType,
   type MoveDirection,
-  PERCENTILE_TICKS,
+  type DotChartScale,
   RADAR_RANGE,
   type ScoreDisplayMode,
+  type ScoreEvolution,
+  TREND_COLOR,
   type TestScoreBlock,
-  Z_AXIS,
   buildTestScoreBlocks,
-  computePercentileChartItems,
+  computeDotChart,
   computeRadarData,
-  computeZChartItems,
   moveSectionInPages,
-  pctToFraction,
-  zToFraction,
+  readingGuide,
 } from '../../../utils/reportData';
-import { ZONE_META, ZONE_PERCENTILE_THRESHOLDS, formatZ, type ScoreZone } from '../../../utils/scoring';
+import { ZONE_META, type ScoreZone } from '../../../utils/scoring';
 import { sectionToHtml } from '../../../utils/reportContent';
 import { type ReportTheme, formatBirthDate, formatReportDate, resolveReportTheme } from '../../../utils/reportTheme';
 import { TipTapEditor } from '../shared/TipTapEditor';
@@ -47,6 +46,8 @@ interface Props {
   onScoreDisplayModeChange?: (modes: Record<string, ScoreDisplayMode>) => void;
   chartType?: ChartType;
   onChartTypeChange?: (type: ChartType) => void;
+  /** Re-evaluation: scores of the reference assessment, for the evolution column. */
+  previousTests?: TestData;
   /** Full rich-text toolbar (paid plans). */
   isPerformance?: boolean;
 }
@@ -263,21 +264,24 @@ const ChartCard: React.FC<{ title: string; theme: ReportTheme; children: React.R
   </div>
 );
 
-const ReadingGuide: React.FC<{ theme: ReportTheme; scale: 'z' | 'percentile' }> = ({ theme, scale }) => (
-  <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass(theme.corners)}`}>
-    <p className="font-bold mb-2">Guide de lecture{scale === 'percentile' ? ' (percentiles)' : ''} :</p>
-    <ul className="list-disc ml-4 space-y-1">
-      {(['normal', 'fragile', 'deficit'] as const).map((zone) => (
-        <li key={zone}>
-          <span className="font-bold" style={{ color: ZONE_META[zone].color }}>
-            {ZONE_META[zone].label} :
-          </span>{' '}
-          {scale === 'z' ? ZONE_META[zone].zLegend : ZONE_META[zone].pctLegend}.
-        </li>
-      ))}
-    </ul>
-  </div>
-);
+const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
+  const guide = readingGuide(scale);
+  return (
+    <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass(theme.corners)}`}>
+      <p className="font-bold mb-2">{guide.title}</p>
+      <ul className="list-disc ml-4 space-y-1">
+        {guide.lines.map((line) => (
+          <li key={line.zone}>
+            <span className="font-bold" style={{ color: ZONE_META[line.zone].color }}>
+              {line.label} :
+            </span>{' '}
+            {line.legend}.
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
 
 const ChartRow: React.FC<{ label: string; position: number; color: string; value: string; bands: React.ReactNode }> = ({ label, position, color, value, bands }) => (
   <div className="flex items-center gap-3 text-xs">
@@ -294,80 +298,47 @@ const ChartRow: React.FC<{ label: string; position: number; color: string; value
   </div>
 );
 
-const Band: React.FC<{ from: number; to: number; color: string }> = ({ from, to, color }) => (
-  <div className="absolute inset-y-0" style={{ left: `${from * 100}%`, width: `${(to - from) * 100}%`, backgroundColor: color }} />
-);
-
-const ZBarChart: React.FC<{ tests: TestData; theme: ReportTheme }> = ({ tests, theme }) => {
-  const { index } = useCatalog();
-  const items = useMemo(() => computeZChartItems(tests, index), [tests, index]);
-  if (items.length === 0) return <p className="text-xs text-stone-400 italic mb-8 text-center py-8">Aucun score convertible en écart-type.</p>;
-  const deficitEnd = zToFraction(-2);
-  const fragileEnd = zToFraction(-1);
-  const bands = (
-    <>
-      <Band from={0} to={deficitEnd} color={ZONE_META.deficit.band} />
-      <Band from={deficitEnd} to={fragileEnd} color={ZONE_META.fragile.band} />
-      <Band from={fragileEnd} to={1} color={ZONE_META.normal.band} />
-      <div className="absolute top-0 bottom-0 w-px bg-stone-300" style={{ left: `${zToFraction(0) * 100}%` }} />
-    </>
-  );
-  return (
-    <>
-      <ChartCard title="Profil des scores (écarts-types)" theme={theme}>
-        {items.map((item) => (
-          <ChartRow key={item.key} label={item.label} position={zToFraction(item.z)} color={ZONE_META[item.zone].color} value={formatZ(item.z, 1)} bands={bands} />
-        ))}
-        <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
-          <span className="w-36" />
-          <div className="flex-1 flex justify-between px-1">
-            {Z_AXIS.ticks.map((t) => (
-              <span key={t} className={t === 0 ? 'font-bold' : ''}>
-                {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t} ET`}
-              </span>
-            ))}
-          </div>
-          <span className="w-14" />
-        </div>
-      </ChartCard>
-      <ReadingGuide theme={theme} scale="z" />
-    </>
-  );
+const EMPTY_CHART_TEXT: Record<DotChartScale, string> = {
+  z: 'Aucun score convertible en écart-type.',
+  percentile: 'Aucun score convertible en rang percentile.',
 };
 
-const PercentileChart: React.FC<{ tests: TestData; theme: ReportTheme }> = ({ tests, theme }) => {
+/** z or percentile profile (dot chart over the zone bands). */
+const ProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; theme: ReportTheme }> = ({ scale, tests, theme }) => {
   const { index } = useCatalog();
-  const items = useMemo(() => computePercentileChartItems(tests, index), [tests, index]);
-  if (items.length === 0) return <p className="text-xs text-stone-400 italic mb-8 text-center py-8">Aucun score convertible en rang percentile.</p>;
-  const deficitEnd = pctToFraction(ZONE_PERCENTILE_THRESHOLDS.deficit);
-  const fragileEnd = pctToFraction(ZONE_PERCENTILE_THRESHOLDS.fragile);
+  const chart = useMemo(() => computeDotChart(scale, tests, index), [scale, tests, index]);
+  if (chart.items.length === 0) return <p className="text-xs text-stone-400 italic mb-8 text-center py-8">{EMPTY_CHART_TEXT[scale]}</p>;
   const bands = (
     <>
-      <Band from={0} to={deficitEnd} color={ZONE_META.deficit.band} />
-      <Band from={deficitEnd} to={fragileEnd} color={ZONE_META.fragile.band} />
-      <Band from={fragileEnd} to={1} color={ZONE_META.normal.band} />
-      <div className="absolute top-0 bottom-0 w-px bg-stone-300 left-1/2" />
+      {chart.bands.map((b) => (
+        <div
+          key={b.zone}
+          className="absolute inset-y-0"
+          style={{ left: `${b.from * 100}%`, width: `${(b.to - b.from) * 100}%`, backgroundColor: ZONE_META[b.zone].band }}
+        />
+      ))}
+      <div className="absolute top-0 bottom-0 w-px bg-stone-300" style={{ left: `${chart.centerLine * 100}%` }} />
     </>
   );
   return (
     <>
-      <ChartCard title="Profil des scores (percentiles)" theme={theme}>
-        {items.map((item) => (
-          <ChartRow key={item.key} label={item.label} position={pctToFraction(item.pct)} color={ZONE_META[item.zone].color} value={`${item.pct}e`} bands={bands} />
+      <ChartCard title={chart.title} theme={theme}>
+        {chart.items.map((item) => (
+          <ChartRow key={item.key} label={item.label} position={item.position} color={ZONE_META[item.zone].color} value={item.value} bands={bands} />
         ))}
         <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
           <span className="w-36" />
           <div className="flex-1 flex justify-between px-1">
-            {PERCENTILE_TICKS.map((t) => (
-              <span key={t} className={t === 50 ? 'font-bold' : ''}>
-                {t}
+            {chart.ticks.map((t) => (
+              <span key={t.label} className={t.bold ? 'font-bold' : ''}>
+                {t.label}
               </span>
             ))}
           </div>
           <span className="w-14" />
         </div>
       </ChartCard>
-      <ReadingGuide theme={theme} scale="percentile" />
+      <ReadingGuide theme={theme} scale={scale} />
     </>
   );
 };
@@ -401,6 +372,16 @@ const RadarProfile: React.FC<{ tests: TestData; theme: ReportTheme }> = ({ tests
 };
 
 // ─── Score tables ───────────────────────────────────────────────────────────
+
+const EvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }) => {
+  const color = evolution.trend ? TREND_COLOR[evolution.trend] : '#A8A29E';
+  return (
+    <td className="py-3 text-center" style={{ color }}>
+      <div className="font-bold">{evolution.text}</div>
+      {evolution.trendLabel && <div className="text-[10px]">{evolution.trendLabel}</div>}
+    </td>
+  );
+};
 
 const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onModeChange?: (mode: ScoreDisplayMode) => void }> = ({ block, theme, onModeChange }) => {
   const headingCss: React.CSSProperties = { fontFamily: theme.headingFont, color: theme.primary };
@@ -443,7 +424,8 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
               <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
                 <th className="pb-3 w-[35%]">Épreuves</th>
                 <th className="pb-3 w-[15%] text-center">{block.hasStandardizedScores ? `Score (${block.mode})` : 'Résultat'}</th>
-                <th className="pb-3 w-[50%] pl-4">Observations</th>
+                {block.showEvolution && <th className="pb-3 w-[15%] text-center">Évolution</th>}
+                <th className={`pb-3 pl-4 ${block.showEvolution ? 'w-[35%]' : 'w-[50%]'}`}>Observations</th>
               </tr>
             </thead>
             <tbody className="text-stone-700">
@@ -453,6 +435,7 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
                   <td className="py-3 text-center font-bold" style={{ color: zoneTextColor(row.zone) ?? '#78716C' }}>
                     {row.display}
                   </td>
+                  {row.evolution && <EvolutionCell evolution={row.evolution} />}
                   <td className="py-3 pl-4 italic text-xs text-stone-500">{row.observation || '-'}</td>
                 </tr>
               ))}
@@ -496,10 +479,14 @@ const AnnexesBlock: React.FC<{
   onChartTypeChange?: (type: ChartType) => void;
   scoreDisplayModes: Record<string, ScoreDisplayMode>;
   onScoreDisplayModeChange?: (modes: Record<string, ScoreDisplayMode>) => void;
+  previousTests?: TestData;
   controls?: React.ReactNode;
-}> = ({ tests, theme, chartType, onChartTypeChange, scoreDisplayModes, onScoreDisplayModeChange, controls }) => {
+}> = ({ tests, theme, chartType, onChartTypeChange, scoreDisplayModes, onScoreDisplayModeChange, previousTests, controls }) => {
   const { index } = useCatalog();
-  const blocks = useMemo(() => buildTestScoreBlocks(tests, index, scoreDisplayModes), [tests, index, scoreDisplayModes]);
+  const blocks = useMemo(
+    () => buildTestScoreBlocks(tests, index, scoreDisplayModes, previousTests),
+    [tests, index, scoreDisplayModes, previousTests],
+  );
   return (
     <div className="relative group mb-8">
       {controls}
@@ -530,8 +517,7 @@ const AnnexesBlock: React.FC<{
         )}
 
         {chartType === 'radar' && <RadarProfile tests={tests} theme={theme} />}
-        {chartType === 'bar' && <ZBarChart tests={tests} theme={theme} />}
-        {chartType === 'percentile' && <PercentileChart tests={tests} theme={theme} />}
+        {chartType !== 'radar' && <ProfileChart scale={chartType === 'bar' ? 'z' : 'percentile'} tests={tests} theme={theme} />}
 
         <div className="space-y-12">
           {blocks.map((block) => (
@@ -659,6 +645,7 @@ export const ReportView: React.FC<Props> = ({
   onScoreDisplayModeChange,
   chartType = 'bar',
   onChartTypeChange,
+  previousTests,
   isPerformance = false,
 }) => {
   const { ensureCatalogLoaded } = useCatalog();
@@ -718,6 +705,7 @@ export const ReportView: React.FC<Props> = ({
                   onChartTypeChange={onChartTypeChange}
                   scoreDisplayModes={scoreDisplayModes}
                   onScoreDisplayModeChange={onScoreDisplayModeChange}
+                  previousTests={previousTests}
                   controls={controls}
                 />
               );
