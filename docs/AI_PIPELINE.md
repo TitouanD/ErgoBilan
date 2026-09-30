@@ -62,7 +62,7 @@ Côté edge, `scoresEvidence` est sérialisé tel quel (`JSON.stringify(..., nul
 - `childContext` = `buildChildContext` + classe + dates du bilan initial et de la réévaluation (mois/année, masquées en `{{DATE_n}} (il y a …)`), séparés par `|`.
 - `previousScoresSummary` / `newScoresSummary` = `buildScoresSummaryText` (`utils/reevaluationHelpers.ts`) : une ligne `Sous-test (Test): 85 NS` (format du score résolu), ou le libellé qualitatif.
 - `evolutionSummary` = `buildEvolutionSummaryText` : delta signé, delta en ET si calculable, tendance (seuil `STABILITY_THRESHOLD_Z` = ±0,5 ET).
-- `previousReportContext` = sections `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` du bilan précédent, en texte brut, **anonymisées** comme le reste.
+- `previousReportContext` = sections du bilan de référence (le dernier bilan formel), en texte brut, **anonymisées** comme le reste : `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` si c'est un bilan initial ; `conclusion` et `recommandations_reev` si c'est déjà une réévaluation (2e réévaluation et suivantes, #70). `childContext` indique alors « Réévaluation précédente réalisée » au lieu de « Bilan initial réalisé ». Le prompt de l'edge appelle encore ce bloc « CONTENU DU BILAN INITIAL ».
 
 `generateReevaluation` ajoute `profile` (`getAiProfile`) et `styleDirectives` (règles globales + `recommandations`, partagées avec le bilan initial).
 

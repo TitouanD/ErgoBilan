@@ -68,19 +68,27 @@ const elya = (): InitialReportInput => ({
   index,
 });
 
-const sarahInitial = DEMO_PATIENTS.SARAH.reports[0];
+/**
+ * Second re-evaluation of SARAH: the reference is her first re-evaluation, whose
+ * conclusion and recommendations leave as context (#70). The re-evaluation of an
+ * initial assessment is covered by utils/reportGenerator.test.ts.
+ */
+const sarahReevaluation = DEMO_PATIENTS.SARAH.reports[1];
 const sarah = (): ReevaluationInput => ({
   patient: { ...initialPatient, ...DEMO_PATIENTS.SARAH.patient, id: 'demo-sarah' },
   previousAssessment: {
-    id: sarahInitial.id,
-    date: '2026-03-30T10:00:00.000Z',
-    kind: 'initial',
+    id: sarahReevaluation.id,
+    date: '2026-06-30T10:00:00.000Z',
+    kind: 'reevaluation',
     hasFormalReport: true,
-    testName: 'Bilan initial',
-    tests: sarahInitial.tests,
-    report: { status: 'completed', patientName: sarahInitial.patientName, sections: sarahInitial.sections as ReportSection[] },
+    testName: 'Réévaluation',
+    tests: sarahReevaluation.tests,
+    report: { status: 'completed', patientName: sarahReevaluation.patientName, sections: sarahReevaluation.sections as ReportSection[] },
   } as PatientAssessment,
-  tests: DEMO_PATIENTS.SARAH.reports[1].tests,
+  tests: {
+    bhk: { bhk__speed: { value: '44', unit: '%' }, bhk__quality: { value: '31', unit: '%' } },
+    'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '10', unit: 'NS' } },
+  },
   index,
 });
 
@@ -338,8 +346,8 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
     }
 
     expect(steps.map((s) => s.request.task)).toEqual(['report_reevaluation']);
-    // The initial report sections leave as context: without them the "Rappel" is written from the scores alone.
-    expect(steps[0].request.payload.previousReportContext, 'contexte du bilan initial absent').toMatch(/dysgraphie/);
+    // The previous re-evaluation leaves as context: without it the "Rappel" is written from the scores alone.
+    expect(steps[0].request.payload.previousReportContext, 'contexte de la réévaluation précédente absent').toMatch(/tiers-temps/);
     expectHydratedSections(sections, ['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
     await expectCreditDelta(before, -1);
   });

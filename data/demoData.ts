@@ -195,7 +195,9 @@ export const DEMO_PATIENTS = {
           'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '9', unit: 'NS' } },
         } as TestData,
         sections: [
-          { id: 'evolution', title: 'Evolution', content: 'Progression de la vitesse et baisse de la crispation.', status: 'validated' }
+          { id: 'evolution', title: 'Evolution', content: 'Progression de la vitesse et baisse de la crispation.', status: 'validated' },
+          { id: 'conclusion', title: 'Conclusion', content: "Nette progression de la vitesse d'ecriture ; la lisibilite reste fragile en situation de copie longue.", status: 'validated' },
+          { id: 'recommandations_reev', title: 'Preconisations', content: "Poursuivre l'ergotherapie a raison d'une seance par semaine ; maintenir le tiers-temps en classe.", status: 'validated' }
         ]
       }
     ]
