@@ -29,8 +29,8 @@ _Éviter_ : niveau, couleur
 ### Bilans
 
 **Bilan** :
-L'évaluation d'un enfant par l'ergothérapeute, et le document qui en résulte et qui est remis à la famille : sections rédigées puis annexes de résultats. On le voit dans l'aperçu et on l'exporte en PDF.
-_Éviter_ : rapport, compte rendu
+L'évaluation d'un enfant par l'ergothérapeute, et le document qui en résulte et qui est remis à la famille : sections rédigées puis annexes de résultats. On le voit dans l'aperçu et on l'exporte en PDF. Un bilan est finalisé et rangé dans le dossier patient, où il reste figé ; celui qu'on rédige encore est le bilan en cours. Un bilan historique compte comme un bilan initial.
+_Éviter_ : rapport, compte rendu, bilan formel, bilan validé
 
 **Parcours** :
 Façon de rédiger un bilan : initial (premier bilan, sections rédigées par l'IA), réévaluation (nouveaux scores comparés à un bilan de référence) ou historique (saisie d'un bilan fait hors de l'application, sans IA).
@@ -45,28 +45,34 @@ Copie enregistrée d'un bilan en cours non finalisé, une par patient, qui perme
 _Éviter_ : sauvegarde, autosave (pour le brouillon lui-même)
 
 **Brouillon périmé** :
-Brouillon initial ou historique d'un patient qui a déjà un bilan formel ; il n'est plus repris tel quel, une réévaluation démarre à sa place.
-
-**Bilan formel** :
-Bilan finalisé et enregistré dans le dossier du patient. Un bilan historique est un bilan formel initial.
-_Éviter_ : rapport final, bilan validé
+Brouillon initial ou historique d'un patient qui a déjà un bilan ; il n'est plus repris tel quel, une réévaluation démarre à sa place.
 
 **Bilan de référence** :
-Le bilan formel le plus récent auquel une réévaluation se compare.
+Le bilan le plus récent auquel une réévaluation se compare.
 _Éviter_ : bilan précédent, ancien bilan
 
 **Finaliser** :
-Transformer le bilan en cours en bilan formel. Une fois le bilan formel enregistré, la finalisation est acquise, même si le nettoyage qui suit échoue.
+Transformer le bilan en cours en bilan, rangé dans le dossier patient. Une fois le bilan enregistré, la finalisation est acquise, même si le nettoyage qui suit échoue.
 _Éviter_ : valider, clôturer
 
 **Abandonner** :
 Quitter le bilan en cours sans le garder : son brouillon est supprimé.
 _Éviter_ : annuler, quitter sans sauvegarder
 
+### Patients
+
+**Dossier patient** :
+Tout ce que l'application garde d'un enfant : sa fiche, ses bilans, son brouillon et son rappel de réévaluation.
+_Éviter_ : fichier patient, fiche (pour l'ensemble)
+
+**Fiche patient** :
+L'identité de l'enfant et son contexte (scolarité, famille). C'est la seule source de vérité de l'identité : une correction faite dans la fiche vaut aussi pour le brouillon.
+_Éviter_ : profil, identité (pour la fiche entière)
+
 ### Suivi des patients
 
 **Rappel de réévaluation** :
-Échéance à laquelle un patient qui a au moins un bilan formel devrait être réévalué, six mois après son dernier bilan formel. Il est à venir avant l'échéance, à planifier pendant les six mois qui suivent, puis en retard ; l'ergothérapeute peut aussi le planifier, le reporter ou le marquer complété.
+Échéance à laquelle un patient qui a au moins un bilan devrait être réévalué, six mois après son dernier bilan. Il est à venir avant l'échéance, à planifier pendant les six mois qui suivent, puis en retard ; l'ergothérapeute peut aussi le planifier, le reporter ou le marquer complété.
 _Éviter_ : suivi, followup, relance
 
 ### IA
