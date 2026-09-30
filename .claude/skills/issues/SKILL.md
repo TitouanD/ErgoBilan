@@ -20,7 +20,7 @@ git fetch origin && git log --oneline origin/main..origin/dev
 Pour chacune, lire le corps et les commentaires, puis :
 
 - poser la nature (`bug`, `amelioration`, `chantier`, `catalogue`) ;
-- remplacer `trier` par `claude` si c'est faisable sans décision ; par `titouan` s'il faut un choix produit ou si c'est un risque majeur (poser **une** question, avec ta recommandation) ; par l'auteur (`testeuse` ou `titouan`) s'il manque une information (la demander en commentaire, concrètement) ;
+- remplacer `trier` par `claude` si c'est faisable sans décision ; par `titouan` s'il faut un choix produit ou une migration Supabase / edge function (poser **une** question, avec ta recommandation) ; par l'auteur (`testeuse` ou `titouan`) s'il manque une information (la demander en commentaire, concrètement) ;
 - doublon : fermer « not planned » avec un lien vers l'autre issue.
 
 ## 3. Relire ce qui attend un humain
@@ -36,7 +36,7 @@ Ordre : `urgent`, puis `bug`, `amelioration`, `chantier` ; les plus anciennes d'
 2. Lire le doc de `docs/` concerné par le module (voir CLAUDE.md).
 3. Bug : écrire d'abord le test qui échoue, puis corriger. Amélioration : tester le comportement nouveau.
 4. `npm run check` vert.
-5. **Risque majeur** (voir docs/ISSUES.md) : pousser la branche, ouvrir une PR vers `dev`, passer l'issue `titouan` avec une question. Ne pas fusionner.
+5. **Base commune** (migration Supabase, edge function) : écrire le fichier, pousser la branche, passer l'issue `titouan` avec une question. Ne rien appliquer ni déployer. Tout le reste se fusionne dans `dev` ; noter les points sensibles (Dexie, `.ergobilan`, anonymisation, auth, PIN, crédits) pour la PR hebdomadaire.
 6. Sinon : fusionner dans `dev` (`git checkout dev && git merge --no-ff <branche> && git push`), supprimer le worktree et la branche.
 7. Commenter l'issue : le commit, le test qui couvre le cas. Contrôle visuel utile → passer `testeuse` avec « sur dev.ergobilan.com : aller à …, on doit voir … ». Sinon, fermer.
 
@@ -50,6 +50,7 @@ Si la dernière PR `dev` → `main` fusionnée date de 7 jours ou plus (`gh pr l
 - **Validé par la testeuse** ;
 - **En attente de son test** (ne bloque pas) ;
 - **Retenu** : les « pas OK » explicites ; les retirer ou les corriger avant d'ouvrir la PR.
+- **Points sensibles à regarder** : Dexie, `.ergobilan`, anonymisation, auth, PIN, crédits.
 
 Ne jamais fusionner cette PR : c'est Titouan qui la fusionne.
 

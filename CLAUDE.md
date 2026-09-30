@@ -13,7 +13,7 @@ La documentation vérifiée (en français) est dans [`docs/`](docs/). **Lire le 
 - [`docs/SCORING_CATALOG.md`](docs/SCORING_CATALOG.md) : catalogue, modèles de saisie, échelles, zones, deltas, tests personnalisés.
 - [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, ouvert) et historique de mise en production.
 - [`docs/PLAN_ASSAINISSEMENT.md`](docs/PLAN_ASSAINISSEMENT.md) : plan d'assainissement, avancement et recette manuelle.
-- [`docs/ISSUES.md`](docs/ISSUES.md) : issues GitHub (labels, qui valide quoi, risque majeur), branches `dev`/`main`, worktrees, PR hebdomadaire. Commande `/issues` pour dérouler le cycle.
+- [`docs/ISSUES.md`](docs/ISSUES.md) : issues GitHub (labels, qui valide quoi), branches `dev`/`main`, worktrees, PR hebdomadaire. Commande `/issues` pour dérouler le cycle.
 
 Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKey → FileKey rencontrée ailleurs est **obsolète**.
 
@@ -25,7 +25,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 - **Scores** : lire un score par le score résolu (`utils/resolvedScore.ts` : `resolveScores`, `describeScore`, `formatMetricValue`), jamais en recomposant échelle, z, zone et nom à la main ; calculs et zones dans `utils/scoring.ts` ; noms et échelles via l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`) ; ordre d'affichage dans `utils/subtestOrdering.ts` ; données des graphiques et des pages du rapport dans `utils/reportData.ts` (partagé par l'aperçu et le PDF).
 - **Statut patient** : aperçu du dashboard, rappel de réévaluation et brouillon périmé se calculent dans `utils/patientStatus.ts` (`buildPreviewMeta`, `derivePatientStatus`), jamais dans un écran.
 - **Mode démo** : aucun effet de bord côté Supabase ni IA. Il utilise `data/demoData.ts`, `data/demoCatalog.ts` et `data/demoReport.ts`.
-- **Branches** : on part de `dev` et on fusionne dans `dev` (jamais directement dans `main`, qui reçoit la PR hebdomadaire `dev` → `main`). Pas de fusion sans accord en cas de risque majeur (`docs/ISSUES.md`). Chaque bug corrigé reçoit un test qui le reproduit.
+- **Branches** : on part de `dev` et on fusionne dans `dev` (jamais directement dans `main`, qui reçoit la PR hebdomadaire `dev` → `main`). Claude fusionne dans `dev` sans demander ; l'accord de Titouan n'est requis que pour `main` et pour la base commune (migration Supabase, edge function) : voir `docs/ISSUES.md`. Chaque bug corrigé reçoit un test qui le reproduit.
 - **Toasts** : `const toast = useToast()` (le hook renvoie directement l'objet).
 
 ## Commandes

@@ -23,18 +23,19 @@ Une issue fermée n'a plus de label « qui a la main ». Les milestones ne sont 
 
 ## Qui valide quoi
 
-| Cas                                                                   | Validation                                                        |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Bug de logique ou de comportement (clic, case, liste, calcul)         | Claude seul : un test automatique reproduit le cas, check au vert |
-| Visuel, ergonomie, ressenti (texte coupé, mise en page, lisibilité)   | Testeuse, sur `dev`                                               |
-| Choix produit, **risque majeur** (liste ci-dessous), vrais crédits IA | Titouan                                                           |
+| Cas                                                                 | Validation                                                        |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Bug de logique ou de comportement (clic, case, liste, calcul)       | Claude seul : un test automatique reproduit le cas, check au vert |
+| Visuel, ergonomie, ressenti (texte coupé, mise en page, lisibilité) | Testeuse, sur `dev`                                               |
+| Choix produit, vrais crédits IA                                     | Titouan (une question)                                            |
+| Passage dans `main`, base commune (liste ci-dessous)                | Titouan (fusion de la PR ou accord explicite)                     |
 
-**Risque majeur**, jamais fusionné dans `dev` sans l'accord de Titouan :
+**Dans `dev`, Claude fusionne tout lui-même** (décision de Titouan du 2026-09-30), y compris l'auth, l'anonymisation ou le schéma Dexie : `dev` est la recette, c'est au passage dans `main` que Titouan valide. Seules deux choses demandent son accord **avant**, parce qu'elles touchent la base commune (donc la production) immédiatement :
 
-- migration Supabase ou déploiement d'une edge function (la base est unique : ils touchent la production immédiatement) ;
-- schéma Dexie ou format `.ergobilan` (données locales des utilisateurs, dégâts irréversibles) ;
-- anonymisation ou contenu envoyé à l'IA ;
-- auth, PIN, crédits.
+- migration Supabase (fichier de `supabase/migrations/`, relu puis appliqué avec accord) ;
+- déploiement d'une edge function.
+
+Points sensibles, fusionnés dans `dev` mais **signalés** dans la PR hebdomadaire pour que Titouan les regarde avant `main` : schéma Dexie ou format `.ergobilan` (données locales, dégâts irréversibles), anonymisation ou contenu envoyé à l'IA, auth, PIN, crédits.
 
 Une migration est toujours écrite compatible avec le code déjà en production (ajouter avant de retirer), puisque `dev` et `main` partagent la même base.
 
@@ -46,7 +47,7 @@ Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures d
 
 - `main` = production (`app.ergobilan.com`). `dev` = recette (`dev.ergobilan.com`), utilisée au quotidien par la testeuse. Vercel ne déploie que ces deux branches (`vercel.json`, `git.deploymentEnabled`).
 - Une issue = une branche partant de `dev` (`fix/<n>-<sujet>`, `feat/<n>-<sujet>`, `refactor/<n>-<sujet>`), dans son worktree : `git worktree add -b fix/<n>-<sujet> ../ErgoBilan-<n> dev`.
-- Claude fusionne dans `dev` dès que `npm run check` est vert, sauf risque majeur. Puis il supprime le worktree et la branche.
+- Claude fusionne dans `dev` dès que `npm run check` est vert, sans demander (y compris ses PR vers `dev`). Puis il supprime le worktree et la branche.
 - **Chaque semaine**, Claude ouvre une PR `dev` → `main` avec un résumé : ce qui change, ce que la testeuse a validé, ce qui attend encore son test. **Titouan fusionne** : c'est son seul geste obligatoire.
 - Une issue `testeuse` sans réponse ne bloque pas la promotion. Un « pas OK » explicite retient le changement : Claude le corrige ou le retire de `dev` avant la PR.
 - Accès à `dev` : seuls les comptes listés dans la variable Vercel `VITE_TEST_ACCESS_EMAILS` (branche `dev` uniquement) passent la connexion ; les autres voient « Version de test, accès réservé ». Le mode démo reste ouvert, un badge « Version de test » est affiché et la page n'est pas indexée. Ce n'est pas une barrière de sécurité (même base que la production), seulement un garde-fou (`utils/testAccess.ts`).
