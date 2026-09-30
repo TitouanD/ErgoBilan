@@ -62,8 +62,6 @@ export const DEMO_CATALOG: CategoryDef[] = [
         subtests: [
           numeric('test-cloches__cibles', 'Nombre de cloches repérées (/35)', 'standard', 1),
           numeric('test-cloches__temps-total-secondes', 'Temps total (secondes)', 'none', 2),
-          numeric('test-cloches__omissions-gauche', 'Omissions hémichamp gauche', 'none', 3),
-          numeric('test-cloches__omissions-droite', 'Omissions hémichamp droit', 'none', 4),
         ],
       },
     ],

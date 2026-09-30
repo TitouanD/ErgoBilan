@@ -8,6 +8,8 @@ Règle générale : un score se lit par le **score résolu** (`utils/resolvedSco
 
 Hiérarchie : `official_categories` → `official_tests` → `official_subtests`. Le catalogue vient de Supabase. `data/testCatalog.ts` ne contient que les types (`CategoryDef`, `TestDef`, `SubtestDef`, `ScoreType`, `SubtestInputModel`, `SubtestInputConfig`) et `ICON_MAP` (icône lucide de chaque `icon_key`). En mode démo, sans session, le catalogue est `data/demoCatalog.ts` (voir §2).
 
+**Contenu du catalogue officiel** : une partie a été saisie sans source et contient des sous-tests inventés. La vérification contre les protocoles publiés (2026-09-30, sources à l'appui) est dans [`catalogue/verification-2026-09-30.md`](./catalogue/verification-2026-09-30.md) ; les corrections passent par une migration (#50). Tout ajout au catalogue cite sa source.
+
 - **Test officiel** : `organization_id IS NULL`. **Test perso** : `organization_id` = organisation du praticien.
 - Les vues `view_unified_catalog` et `view_unified_subtests` filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
 - Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests.
