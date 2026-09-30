@@ -57,6 +57,15 @@ describe('hydrateReport', () => {
     expect(hydrateReport('{{PATIENT_PRENOM}} va à {{ECOLE}}. {{INCONNU}}', patient)).toBe('Ali va à École Jean Moulin. ');
   });
 
+  it('does not repeat the kind of school already in its name (#82)', () => {
+    const tilleuls = { ...patient, school: 'École des Tilleuls' } as Patient;
+    expect(hydrateReport("Scolarisée en CE1 à l'école {{ECOLE}}.", tilleuls)).toBe("Scolarisée en CE1 à l'École des Tilleuls.");
+    expect(hydrateReport("<p>à l'école élémentaire {{ECOLE}}</p>", tilleuls, { asHtml: true })).toBe("<p>à l'École des Tilleuls</p>");
+    expect(hydrateReport('au collège {{ECOLE}}', { ...patient, school: 'Collège Victor Hugo' } as Patient)).toBe('au Collège Victor Hugo');
+    expect(hydrateReport('au collège {{ECOLE}}', { ...patient, school: 'Mescoat' } as Patient)).toBe('au collège Mescoat');
+    expect(hydrateReport("l'école de {{PATIENT_PRENOM}}, l'école {{ENSEIGNANT}}", tilleuls)).toBe("l'école de Ali, l'école l'enseignant(e)");
+  });
+
   it('escapes values injected into HTML', () => {
     const p = { ...patient, firstName: '<img src=x onerror=alert(1)>' } as Patient;
     expect(hydrateReport('<p>{{PATIENT_PRENOM}}</p>', p, { asHtml: true })).toBe('<p>&lt;img src=x onerror=alert(1)&gt;</p>');

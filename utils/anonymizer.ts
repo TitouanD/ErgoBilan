@@ -123,6 +123,25 @@ const mapStrings = <T>(value: T, fn: (s: string) => string): T => {
   return walk(value) as T;
 };
 
+/** Kinds of school a school name may start with ("École des Tilleuls", "Collège Mescoat"). */
+const SCHOOL_TYPES = ['groupe scolaire', 'école', 'collège', 'lycée', 'institut', 'institution', 'établissement'];
+
+/**
+ * The AI only sees `{{ECOLE}}` and writes its kind before it ("à l'école {{ECOLE}}").
+ * When the real name already starts with that kind, drop the AI's word (and the
+ * qualifiers after it) so the report does not read "à l'école École des Tilleuls".
+ */
+const dropRepeatedSchoolType = (text: string, school: string | undefined): string => {
+  if (!school) return text;
+  const type = SCHOOL_TYPES.find((t) => new RegExp(`^${escapeRegExp(t)}(?![\\p{L}\\p{N}_])`, 'iu').test(school));
+  if (!type) return text;
+  const repeated = new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegExp(type)}(?:\\s+(?:maternelle|élémentaire|primaire|privée|publique))*\\s+(?=\\{\\{ECOLE\\}\\})`,
+    'giu',
+  );
+  return text.replace(repeated, '');
+};
+
 /**
  * Replace the placeholders of the patient file with the real values.
  * `asHtml` escapes the injected values (they come from the patient file,
@@ -133,7 +152,7 @@ const hydrateWith = (text: string, replacements: Replacement[], options: { asHtm
   for (const r of replacements) {
     if (!r.caseSensitive && !byPlaceholder.has(r.placeholder)) byPlaceholder.set(r.placeholder, r.value);
   }
-  let result = text.replace(/\{\{[A-Z0-9_]+\}\}/g, (placeholder) => {
+  let result = dropRepeatedSchoolType(text, byPlaceholder.get('{{ECOLE}}')).replace(/\{\{[A-Z0-9_]+\}\}/g, (placeholder) => {
     const value = byPlaceholder.get(placeholder);
     if (value === undefined) return placeholder;
     return options.asHtml ? escapeHtml(value) : value;
