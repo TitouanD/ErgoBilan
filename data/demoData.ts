@@ -175,8 +175,10 @@ export const DEMO_PATIENTS = {
           'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '7', unit: 'NS' } },
         } as TestData,
         sections: [
-          { id: 'demo-sarah-1', title: 'Motif', content: "Difficulte d'ecriture, lenteur et fatigue.", status: 'validated' },
-          { id: 'demo-sarah-2', title: 'Synthese', content: 'Profil compatible avec une dysgraphie fonctionnelle avec retentissement scolaire.', status: 'validated' }
+          // Real section ids: the re-evaluation sends these sections as the previous report context (#70, #74).
+          { id: 'mandat_ref', title: 'Motif', content: "Difficulte d'ecriture, lenteur et fatigue.", status: 'validated' },
+          { id: 'diagnostic', title: 'Synthese', content: 'Profil compatible avec une dysgraphie fonctionnelle avec retentissement scolaire.', status: 'validated' },
+          { id: 'objectifs', title: 'Objectifs', content: "Gagner en vitesse d'ecriture ; ameliorer la lisibilite ; diminuer la crispation a la prehension.", status: 'validated' }
         ]
       },
       {
@@ -193,7 +195,7 @@ export const DEMO_PATIENTS = {
           'mabc-2': { 'mabc-2__manual-dexterity-total': { value: '9', unit: 'NS' } },
         } as TestData,
         sections: [
-          { id: 'demo-sarah-3', title: 'Evolution', content: 'Progression de la vitesse et baisse de la crispation.', status: 'validated' }
+          { id: 'evolution', title: 'Evolution', content: 'Progression de la vitesse et baisse de la crispation.', status: 'validated' }
         ]
       }
     ]
