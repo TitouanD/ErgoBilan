@@ -75,6 +75,20 @@ _Éviter_ : profil, identité (pour la fiche entière)
 Échéance à laquelle un patient qui a au moins un bilan devrait être réévalué, six mois après son dernier bilan. Il est à venir avant l'échéance, à planifier pendant les six mois qui suivent, puis en retard ; l'ergothérapeute peut aussi le planifier, le reporter ou le marquer complété.
 _Éviter_ : suivi, followup, relance
 
+### Portail famille
+
+**Portail famille** :
+La page où la famille remplit, sans compte, le questionnaire que l'ergothérapeute lui a envoyé par un lien. Ses réponses ne sont lisibles qu'avec la clé contenue dans ce lien.
+_Éviter_ : portail patient, formulaire
+
+**Questionnaire famille** :
+Les réponses d'une famille sur la fiche patient (identité, responsables, médical, motif), en attente sur le serveur jusqu'à leur import. Il est d'abord envoyé (lien créé, rien de rempli), puis rempli.
+_Éviter_ : pending, dossier en attente, formulaire
+
+**Importer un questionnaire** :
+Créer un nouveau dossier patient à partir d'un questionnaire famille rempli, avec un brouillon de bilan initial. Le questionnaire est alors supprimé du serveur ; les corrections faites ensuite dans la fiche ne lui reviennent jamais.
+_Éviter_ : synchroniser, récupérer
+
 ### IA
 
 **Anonymisation** :

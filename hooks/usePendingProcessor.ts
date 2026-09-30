@@ -6,7 +6,7 @@
 
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
-import { decryptData, importQuestionnaireKey } from '../utils/crypto';
+import { decryptEnvelope, importQuestionnaireKey } from '../utils/crypto';
 import type { PendingQuestionnaire, PatientFile, Patient } from '../types';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { Logger } from '../utils/logger';
@@ -76,12 +76,10 @@ export const usePendingProcessor = ({
           return null;
         }
 
-        const [kIv, kContent] = data.practitioner_encrypted_key.split(':');
-        const keyStr = await decryptData({ iv: kIv, content: kContent }, sessionKey) as string;
+        const keyStr = await decryptEnvelope(data.practitioner_encrypted_key, sessionKey) as string;
         const qKey = await importQuestionnaireKey(keyStr);
 
-        const [dIv, dContent] = data.family_encrypted_data.split(':');
-        const payload = await decryptData({ iv: dIv, content: dContent }, qKey) as Record<string, unknown> | null;
+        const payload = await decryptEnvelope(data.family_encrypted_data, qKey) as Record<string, unknown> | null;
 
         if (payload?.patient) {
           // SECURITY/PRIVACY GUARANTEE: deleting the row isolates the family's submission

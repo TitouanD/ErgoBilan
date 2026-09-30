@@ -50,6 +50,7 @@ Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures d
 
 - `main` = production (`app.ergobilan.com`). `dev` = recette (`dev.ergobilan.com`), utilisée au quotidien par la testeuse. Vercel ne déploie que ces deux branches (`vercel.json`, `git.deploymentEnabled`).
 - Une issue = une branche partant de `dev` (`fix/<n>-<sujet>`, `feat/<n>-<sujet>`, `refactor/<n>-<sujet>`), dans son worktree : `git worktree add -b fix/<n>-<sujet> ../ErgoBilan-<n> dev`.
+- **Toujours dans un worktree**, y compris hors issue (`../ErgoBilan-<sujet>`). Jamais de `git checkout -b` ni de travail dans le dépôt principal : il reste sur `dev`, propre.
 - Claude fusionne dans `dev` dès que `npm run check` est vert, sans demander (y compris ses PR vers `dev`). Puis il supprime le worktree et la branche.
 - **Chaque semaine**, Claude ouvre une PR `dev` → `main` avec un résumé : ce qui change, ce que la testeuse a validé, ce qui attend encore son test. **Titouan fusionne** : c'est son seul geste obligatoire.
 - Tant que cette PR est ouverte, chaque fusion dans `dev` s'y ajoute d'elle-même : Claude met alors à jour sa description (ce qui change, ce qui attend la testeuse).
