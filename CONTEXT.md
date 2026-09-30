@@ -19,7 +19,7 @@ La valeur tapée par l'ergothérapeute pour un sous-test, avec sa métrique (ou 
 _Éviter_ : score brut, résultat
 
 **Score résolu** :
-Un score saisi complété par tout ce qu'on en déduit : nom du sous-test et du test, échelle, z, percentile, zone et texte affiché. C'est ce que montrent les écrans, le rapport et le PDF, et ce qui est envoyé à l'IA.
+Un score saisi complété par tout ce qu'on en déduit : nom du sous-test et du test, échelle, z, percentile, zone et texte affiché. C'est ce que montrent les écrans, l'aperçu du bilan et le PDF, et ce qui est envoyé à l'IA.
 _Éviter_ : sous-test scoré, score calculé
 
 **Zone** :
@@ -28,8 +28,12 @@ _Éviter_ : niveau, couleur
 
 ### Bilans
 
+**Bilan** :
+L'évaluation d'un enfant par l'ergothérapeute, et le document qui en résulte et qui est remis à la famille : sections rédigées puis annexes de résultats. On le voit dans l'aperçu et on l'exporte en PDF.
+_Éviter_ : rapport, compte rendu
+
 **Parcours** :
-Façon de rédiger un bilan : initial (premier bilan, rapport généré par l'IA), réévaluation (nouveaux scores comparés à un bilan de référence) ou historique (saisie d'un bilan fait hors de l'application, sans IA).
+Façon de rédiger un bilan : initial (premier bilan, sections rédigées par l'IA), réévaluation (nouveaux scores comparés à un bilan de référence) ou historique (saisie d'un bilan fait hors de l'application, sans IA).
 _Éviter_ : flow, mode, type de rapport
 
 **Bilan en cours** :
