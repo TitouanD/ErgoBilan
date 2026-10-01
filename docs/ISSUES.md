@@ -60,11 +60,14 @@ Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures d
 
 ## Cycle d'une issue
 
-1. Créée par la testeuse ou Titouan (modèle « Signaler un problème ou une idée », label `trier`), ou par Claude dès qu'il relève quelque chose en travaillant (directement `claude` ou `titouan`).
+1. Créée de trois façons :
+   - par le bouton **« Signaler »** de l'app (en-tête, et « Décrire ce que je faisais » sur l'écran d'erreur). C'est le moyen à privilégier pour la testeuse comme pour tout utilisateur. Le retour arrive dans Sentry avec l'écran, l'utilisateur (identifiant) et le replay masqué, et `/issues` en fait une issue `trier` reformulée sans nom d'enfant ;
+   - par la testeuse ou Titouan dans GitHub (modèle « Signaler un problème ou une idée », label `trier`), qui reste disponible ;
+   - par Claude dès qu'il relève quelque chose en travaillant (directement `claude` ou `titouan`).
 2. Claude trie : il pose la nature, puis `claude`, `titouan` (avec sa question) ou demande une précision en commentaire (et passe l'issue à l'auteur : `testeuse` ou `titouan`).
 3. Claude traite les issues `claude` : `urgent` d'abord, puis bugs, améliorations, chantiers ; les plus anciennes d'abord.
 4. Fusion dans `dev`. Si un contrôle visuel est utile, l'issue passe `testeuse` avec un commentaire : quoi faire, ce qu'on doit voir. Sinon, Claude la ferme avec le commit et le test qui la couvre.
-5. La testeuse répond « OK » (Claude ferme) ou décrit ce qui ne va pas (l'issue repasse `claude`).
+5. La testeuse répond « OK » (Claude ferme) ou décrit ce qui ne va pas (l'issue repasse `claude`). Les échanges ont lieu dans GitHub : un retour Sentry ne permet pas de répondre à son auteur.
 
 La commande `/issues` (`.claude/skills/issues/`) déroule ce cycle en une session : tri, traitement de la file `claude`, relance de ce qui attend, PR hebdomadaire.
 

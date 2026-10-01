@@ -1,6 +1,8 @@
 ﻿import React, { type ErrorInfo, type ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home, MessageSquareText } from 'lucide-react';
 import { Logger } from '../../utils/logger';
+import { isFeedbackAvailable } from '../../services/sentryService';
+import { FeedbackModal } from './FeedbackModal';
 
 interface Props {
   children?: ReactNode;
@@ -9,6 +11,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  showFeedback: boolean;
 }
 
 export class GlobalErrorBoundary extends React.Component<Props, State> {
@@ -16,10 +19,11 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
 
   state: State = {
     hasError: false,
-    error: null
+    error: null,
+    showFeedback: false
   };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
@@ -79,7 +83,17 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
                     >
                         <Home size={16} /> Retour à l'accueil
                     </button>
+
+                    {isFeedbackAvailable() && (
+                        <button
+                            onClick={() => this.setState({ showFeedback: true })}
+                            className="w-full py-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors flex items-center justify-center gap-2 text-sm font-semibold"
+                        >
+                            <MessageSquareText size={16} /> Décrire ce que je faisais
+                        </button>
+                    )}
                 </div>
+                <FeedbackModal isOpen={this.state.showFeedback} onClose={() => this.setState({ showFeedback: false })} source="error_screen" />
             </div>
           </div>
         </div>
