@@ -7,6 +7,8 @@
  *
  * Options: --tablette (1024×768, else 1440×900), --plein (whole page),
  * --clic <selector> (repeatable, clicked in order before the screenshot),
+ * --pdf (after the screenshot, clicks « Télécharger PDF » and saves the PDF
+ * next to it: the scenario must be on the export step),
  * --out <dir> (default .captures/<date>), --port <n> (default 3100).
  *
  * - Starts its own Vite on the current checkout (a worktree is captured as is).
@@ -33,11 +35,12 @@ const AUTH_KEY = 'ergobilan.auth';
 const args = process.argv.slice(2);
 const targets = [];
 const clicks = [];
-const opts = { tablet: false, full: false, out: '', port: 3100 };
+const opts = { tablet: false, full: false, pdf: false, out: '', port: 3100 };
 for (let i = 0; i < args.length; i += 1) {
   const a = args[i];
   if (a === '--tablette') opts.tablet = true;
   else if (a === '--plein') opts.full = true;
+  else if (a === '--pdf') opts.pdf = true;
   else if (a === '--clic') clicks.push(args[(i += 1)]);
   else if (a === '--out') opts.out = args[(i += 1)];
   else if (a === '--port') opts.port = Number(args[(i += 1)]);
@@ -48,7 +51,7 @@ for (let i = 0; i < args.length; i += 1) {
   }
 }
 if (targets.length === 0) {
-  console.error('Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--out <dossier>]');
+  console.error('Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]');
   process.exit(1);
 }
 
@@ -158,6 +161,7 @@ try {
   vite = await startVite(opts.port);
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   const context = await browser.newContext({
+    acceptDownloads: true,
     viewport: opts.tablet ? { width: 1024, height: 768 } : { width: 1440, height: 900 },
     locale: 'fr-FR',
   });
@@ -210,6 +214,17 @@ try {
     const file = join(outDir, name);
     await page.screenshot({ path: file, fullPage: opts.full });
     console.log(`✓ ${file}`);
+    if (opts.pdf) {
+      try {
+        const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.click('button:has-text("Télécharger PDF")', { timeout: 10_000 })]);
+        const pdfFile = file.replace(/\.png$/, '.pdf');
+        await download.saveAs(pdfFile);
+        console.log(`✓ ${pdfFile}`);
+      } catch {
+        failures += 1;
+        console.error(`✗ ${target} : PDF non téléchargé (le scénario doit être sur l'étape d'export)`);
+      }
+    }
     if (pageErrors.length > 0) console.log(`  erreurs de la page :\n  - ${[...new Set(pageErrors)].join('\n  - ')}`);
   }
 } catch (e) {

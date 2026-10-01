@@ -63,12 +63,14 @@ Le tableau de bord contient :
 npm run capture -- dashboard initial-scores "scenario=reeval&etape=2&patient=lina"
 npm run capture -- reeval-evolution --tablette --plein
 npm run capture -- initial-scores --clic "button:has-text('Ajouter')" --out <dossier>
+npm run capture -- reeval-export "scenario=initial&etape=5&tests=nepsy-2" --pdf
 ```
 
 - Un nom seul vaut `scenario=<nom>`. Chaque argument donne une capture.
 - Le script démarre son propre Vite sur le checkout courant (port 3100) : un worktree est donc capturé tel quel.
 - Il se connecte au compte de test et tape le PIN, puis ouvre chaque scénario et prend une capture dans `.captures/<date>/` (ignoré par git), ou dans `--out`.
 - `--tablette` capture en 1024×768 au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
+- `--pdf` télécharge en plus le PDF (bouton « Télécharger PDF ») à côté de la capture : le scénario doit être sur l'étape d'export (`initial&etape=5`, `reeval&etape=4`). Le PDF est produit à part (`@react-pdf`, `PdfDocument.tsx`) et ne ressemble pas toujours à l'aperçu : on le lit lui-même. Un test long (`&tests=nepsy-2`) éprouve la pagination.
 - Les erreurs de la page (console, exceptions) sont affichées avec chaque capture.
 - Le navigateur est Microsoft Edge, déjà installé avec Windows, piloté par `playwright-core` : aucun téléchargement. Son profil est vidé à chaque exécution, donc les patients fictifs n'arrivent jamais dans le navigateur de Titouan.
 

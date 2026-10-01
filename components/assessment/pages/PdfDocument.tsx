@@ -178,17 +178,35 @@ const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: R
 
 // ─── Charts ─────────────────────────────────────────────────────────────────
 
-const LABEL_W = 130;
-const BAR_W = 250;
+// Chart width within the page (A4 minus padding and frame); the label column takes what the longest name needs.
+const CHART_W = 470;
 const VALUE_W = 40;
+const LABEL_W_MIN = 130;
+const LABEL_W_MAX = 230;
+/** Average width of a 7pt bold Helvetica character. */
+const LABEL_CHAR_W = 3.9;
 const ROW_H = 14;
+/** Rows per chart slice: a slice never breaks, the chart flows over several pages. */
+const CHART_SLICE = 40;
+/** Score rows above which a test card may break across pages (below, it moves whole). */
+const UNBREAKABLE_ROWS = 20;
 
-const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string; children: React.ReactNode }> = ({ title, theme, font, children }) => (
+const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string; breakable?: boolean; children: React.ReactNode }> = ({
+  title,
+  theme,
+  font,
+  breakable,
+  children,
+}) => (
   <View
     style={{ marginBottom: 12, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners), overflow: 'hidden' }}
-    wrap={false}
+    wrap={breakable ?? false}
   >
-    <View style={{ backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100, padding: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200 }}>
+    <View
+      wrap={false}
+      minPresenceAhead={ROW_H * 5}
+      style={{ backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100, padding: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200 }}
+    >
       <Text style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: theme.primary, fontFamily: font }}>{title}</Text>
     </View>
     <View style={{ padding: 10 }}>{children}</View>
@@ -210,14 +228,46 @@ const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = 
   );
 };
 
-/** Horizontal dot chart of the z and percentile profiles. */
+const sliceRows = <T,>(items: T[]): T[][] => Array.from({ length: Math.ceil(items.length / CHART_SLICE) }, (_, i) => items.slice(i * CHART_SLICE, (i + 1) * CHART_SLICE));
+
+/** Horizontal dot chart of the z and percentile profiles, in unbreakable slices of `CHART_SLICE` rows. */
 const PdfDotChart: React.FC<{ chart: DotChart }> = ({ chart: { items, bands, centerLine, ticks } }) => {
-  const height = items.length * ROW_H;
-  const x = (fraction: number) => LABEL_W + fraction * BAR_W;
+  const longest = Math.max(0, ...items.map((item) => item.label.length));
+  const labelW = Math.min(LABEL_W_MAX, Math.max(LABEL_W_MIN, Math.ceil(longest * LABEL_CHAR_W) + 8));
+  const barW = CHART_W - labelW - VALUE_W;
+  const slices = sliceRows(items);
   return (
-    <Svg width={LABEL_W + BAR_W + VALUE_W} height={height + 24} viewBox={`0 0 ${LABEL_W + BAR_W + VALUE_W} ${height + 24}`}>
+    <>
+      {slices.map((slice, s) => (
+        <PdfDotChartSlice
+          key={s}
+          items={slice}
+          bands={bands}
+          centerLine={centerLine}
+          ticks={s === slices.length - 1 ? ticks : []}
+          labelW={labelW}
+          barW={barW}
+        />
+      ))}
+    </>
+  );
+};
+
+const PdfDotChartSlice: React.FC<Pick<DotChart, 'items' | 'bands' | 'centerLine' | 'ticks'> & { labelW: number; barW: number }> = ({
+  items,
+  bands,
+  centerLine,
+  ticks,
+  labelW,
+  barW,
+}) => {
+  const height = items.length * ROW_H;
+  const total = height + (ticks.length > 0 ? 24 : 0);
+  const x = (fraction: number) => labelW + fraction * barW;
+  return (
+    <Svg width={CHART_W} height={total} viewBox={`0 0 ${CHART_W} ${total}`}>
       {bands.map((b) => (
-        <Rect key={b.zone} x={x(b.from)} y={0} width={(b.to - b.from) * BAR_W} height={height} fill={ZONE_META[b.zone].band} />
+        <Rect key={b.zone} x={x(b.from)} y={0} width={(b.to - b.from) * barW} height={height} fill={ZONE_META[b.zone].band} />
       ))}
       <SvgLine x1={x(centerLine)} y1={0} x2={x(centerLine)} y2={height} stroke={COLORS.stone300} strokeWidth={0.5} />
       {items.map((item, i) => {
@@ -225,11 +275,11 @@ const PdfDotChart: React.FC<{ chart: DotChart }> = ({ chart: { items, bands, cen
         const color = ZONE_META[item.zone].color;
         return (
           <G key={item.key}>
-            <SvgText x={LABEL_W - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
+            <SvgText x={labelW - 6} y={y + 3} textAnchor="end" style={{ fontSize: 7, fill: COLORS.stone600, fontWeight: 600 }}>
               {item.label}
             </SvgText>
             <Circle cx={x(item.position)} cy={y} r={4} fill={color} />
-            <SvgText x={LABEL_W + BAR_W + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: color }}>
+            <SvgText x={labelW + barW + 6} y={y + 3} style={{ fontSize: 7, fontWeight: 700, fill: color }}>
               {item.value}
             </SvgText>
           </G>
@@ -255,7 +305,7 @@ const PdfProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; index: 
   if (chart.items.length === 0) return null;
   return (
     <>
-      <PdfChartFrame title={chart.title} theme={theme} font={font}>
+      <PdfChartFrame title={chart.title} theme={theme} font={font} breakable={chart.items.length > CHART_SLICE}>
         <PdfDotChart chart={chart} />
       </PdfChartFrame>
       <PdfReadingGuide theme={theme} scale={scale} />
@@ -326,12 +376,15 @@ const PdfEvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }
 };
 
 // `last`: no trailing margin, which would push an empty page when the block ends at the bottom of a page.
+// A long test (NEPSY-2) is taller than a page: it then breaks between rows, its header kept with the first ones.
 const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font: string; last?: boolean }> = ({ block, theme, font, last }) => (
   <View
     style={{ marginBottom: last ? 0 : 16, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners), overflow: 'hidden' }}
-    wrap={false}
+    wrap={block.rows.length + block.qualitativeRows.length > UNBREAKABLE_ROWS}
   >
     <View
+      wrap={false}
+      minPresenceAhead={80}
       style={{
         backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100,
         padding: 10,
@@ -354,14 +407,14 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
       ))}
       {block.rows.length > 0 && (
         <View>
-          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
+          <View wrap={false} minPresenceAhead={40} style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
             <Text style={{ ...headCell, width: '35%' }}>Épreuves</Text>
             <Text style={{ ...headCell, width: '15%', textAlign: 'center' }}>{block.hasStandardizedScores ? 'Score' : 'Résultat'}</Text>
             {block.showEvolution && <Text style={{ ...headCell, width: EVOLUTION_W, textAlign: 'center' }}>Évolution</Text>}
             <Text style={{ ...headCell, width: block.showEvolution ? '35%' : '50%', paddingLeft: 8 }}>Observations</Text>
           </View>
           {block.rows.map((row) => (
-            <View key={row.subtestId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
+            <View key={row.subtestId} wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
               <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {row.label}</Text>
               <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500 }}>
                 {row.display}
@@ -377,14 +430,14 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
       {block.qualitativeRows.length > 0 && (
         <View>
           <Text style={{ ...headCell, marginBottom: 6 }}>Qualitatif</Text>
-          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
+          <View wrap={false} minPresenceAhead={40} style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
             <Text style={{ ...headCell, width: '30%' }}>Épreuves</Text>
             <Text style={{ ...headCell, width: '20%', textAlign: 'center' }}>Catégorie</Text>
             <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Interprétation</Text>
             <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Observations</Text>
           </View>
           {block.qualitativeRows.map((row) => (
-            <View key={row.subtestId} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
+            <View key={row.subtestId} wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
               <Text style={{ width: '30%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 4 }}>• {row.label}</Text>
               <Text style={{ width: '20%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: theme.primary }}>{row.category}</Text>
               <Text style={{ width: '25%', fontSize: 8, color: COLORS.stone600, paddingLeft: 6 }}>{row.interpretation}</Text>
@@ -422,6 +475,9 @@ const PdfAnnexes: React.FC<{
 );
 
 // ─── Document ───────────────────────────────────────────────────────────────
+
+/** Exported for the pagination tests. */
+export { PdfAnnexes };
 
 export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tests, branding, catalogIndex, pages, scoreDisplayModes, chartType = 'bar', previousTests }) => {
   const theme = resolveReportTheme(branding);
