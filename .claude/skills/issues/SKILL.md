@@ -19,7 +19,13 @@ git fetch origin && git log --oneline origin/main..origin/dev
 
 Les retours envoyés par le bouton « Signaler » arrivent dans Sentry (org `ergobilan`, projet `ergobilan-frontend`), pas dans GitHub. Avec le MCP Sentry (`search_issues`), chercher `issue.category:feedback is:unresolved`. Pour chacun :
 
-- créer une issue GitHub `trier`. Titre et corps reformulés : ce que la personne faisait, ce qui s'est passé. **Aucun nom d'enfant ni détail qui le reconnaisse**, même si le message en contient. Ajouter le lien vers le retour Sentry, le tag `demo_mode`, `app_mode` / `assessment_step` et, s'il existe, le lien vers l'erreur associée (retour envoyé depuis l'écran d'erreur) ;
+- créer une issue GitHub `trier`. Titre et corps reformulés : ce que la personne faisait, ce qui s'est passé. **Aucun nom d'enfant ni détail qui le reconnaisse**, même si le message en contient. Terminer par un bloc **Contexte** :
+  - liens : le retour Sentry, son replay (`replay_id`) et, s'il existe, l'erreur associée (retour envoyé depuis l'écran d'erreur), avec le titre de l'erreur et le fichier en cause ;
+  - où : `app_mode`, `report_type`, `assessment_step`, `demo_mode`, chemin de l'URL ;
+  - quoi : release (commit), environnement (`production` / `preview`), navigateur et OS ;
+  - qui : identifiant Sentry de l'utilisateur, jamais son e-mail. Un e-mail laissé en démo reste dans Sentry : noter seulement « e-mail laissé » ;
+  - avant : les 5 à 10 derniers breadcrumbs utiles (écrans, étapes, erreurs), relus pour qu'aucun nom ne passe ;
+- quand l'issue est traitée (étape 4), rouvrir le retour Sentry, le replay et l'erreur avec le MCP : c'est la source complète, l'issue n'en est que le résumé ;
 - passer le retour Sentry en résolu (`update_issue`), avec le numéro de l'issue GitHub en commentaire si possible.
 
 ## 2. Trier les issues `trier`
