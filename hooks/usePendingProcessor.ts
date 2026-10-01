@@ -76,10 +76,10 @@ export const usePendingProcessor = ({
           return null;
         }
 
-        const keyStr = await decryptEnvelope(data.practitioner_encrypted_key, sessionKey) as string;
+        const keyStr = (await decryptEnvelope(data.practitioner_encrypted_key, sessionKey)) as string;
         const qKey = await importQuestionnaireKey(keyStr);
 
-        const payload = await decryptEnvelope(data.family_encrypted_data, qKey) as Record<string, unknown> | null;
+        const payload = (await decryptEnvelope(data.family_encrypted_data, qKey)) as Record<string, unknown> | null;
 
         if (payload?.patient) {
           // SECURITY/PRIVACY GUARANTEE: deleting the row isolates the family's submission

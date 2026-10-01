@@ -82,7 +82,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // ─── Credits / generation sessions (service-role RPCs) ───────────────────────
 
 /** A database call that failed: reported to Sentry (it would otherwise look like a business refusal). */
-const reportDbError = (operation: string, error: { message?: string; code?: string; details?: string; hint?: string }, userId: string, genId: string | null = null) => {
+const reportDbError = (
+  operation: string,
+  error: { message?: string; code?: string; details?: string; hint?: string },
+  userId: string,
+  genId: string | null = null,
+) => {
   console.error(`${operation} failed`, error.message);
   return captureEdgeMessage(`DB ${operation} failed: ${error.code ?? ''} ${error.message ?? ''}`.trim(), {
     functionName: 'generate',
@@ -158,7 +163,9 @@ const isSessionReusable = async (admin: SupabaseClient, genId: string, userId: s
 
 /** Diagnostic data of a Gemini call (never the prompt nor the answer), sent to Sentry on failure. */
 type GeminiDetail = Record<string, unknown>;
-type GeminiResult = { ok: true; text: string; detail: GeminiDetail } | { ok: false; errorCode: string; retryable: boolean; status: number; detail: GeminiDetail };
+type GeminiResult =
+  | { ok: true; text: string; detail: GeminiDetail }
+  | { ok: false; errorCode: string; retryable: boolean; status: number; detail: GeminiDetail };
 
 /** Gemini error body: { error: { code, status, message } }. */
 const describeGeminiError = (raw: string) => {
@@ -188,7 +195,10 @@ const describeUsage = (data: GeminiResponse | null) => ({
 const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: built.contents }] }],
-    generationConfig: { responseMimeType: built.responseMimeType, ...(built.responseSchema ? { responseSchema: built.responseSchema } : {}) },
+    generationConfig: {
+      responseMimeType: built.responseMimeType,
+      ...(built.responseSchema ? { responseSchema: built.responseSchema } : {}),
+    },
     ...(built.systemInstruction ? { system_instruction: { parts: [{ text: built.systemInstruction }] } } : {}),
   });
 
@@ -227,7 +237,8 @@ const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
       const data = (await response.json()) as GeminiResponse | null;
       const usage = describeUsage(data);
       const text: string | null = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
-      if (!text?.trim()) return { ok: false, errorCode: 'GEMINI_EMPTY_RESPONSE', retryable: true, status: 502, detail: detail(attempt, usage) };
+      if (!text?.trim())
+        return { ok: false, errorCode: 'GEMINI_EMPTY_RESPONSE', retryable: true, status: 502, detail: detail(attempt, usage) };
       if (built.responseMimeType === 'application/json') {
         try {
           const parsed = JSON.parse(text);
@@ -238,18 +249,29 @@ const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
             errorCode: 'GEMINI_INVALID_JSON',
             retryable: true,
             status: 502,
-            detail: detail(attempt, { ...usage, textLength: text.length, parseError: parseErr instanceof Error ? parseErr.message.slice(0, 200) : null }),
+            detail: detail(attempt, {
+              ...usage,
+              textLength: text.length,
+              parseError: parseErr instanceof Error ? parseErr.message.slice(0, 200) : null,
+            }),
           };
         }
       }
       return { ok: true, text, detail: detail(attempt, { ...usage, textLength: text.length }) };
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        return { ok: false, errorCode: 'GEMINI_TIMEOUT', retryable: true, status: 504, detail: detail(attempt, { timeoutMs: GEMINI_TIMEOUT_MS }) };
+        return {
+          ok: false,
+          errorCode: 'GEMINI_TIMEOUT',
+          retryable: true,
+          status: 504,
+          detail: detail(attempt, { timeoutMs: GEMINI_TIMEOUT_MS }),
+        };
       }
       lastStatus = 0;
       lastError = { exception: err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 300) : String(err) };
-      if (attempt === GEMINI_MAX_RETRIES) return { ok: false, errorCode: 'GEMINI_EXCEPTION', retryable: true, status: 502, detail: detail(attempt) };
+      if (attempt === GEMINI_MAX_RETRIES)
+        return { ok: false, errorCode: 'GEMINI_EXCEPTION', retryable: true, status: 502, detail: detail(attempt) };
     } finally {
       clearTimeout(timer);
     }
@@ -264,14 +286,21 @@ const MAX_SECTION_RULES_CHARS = 200;
 
 const storeStylePreferences = async (admin: SupabaseClient, userId: string, text: string) => {
   const parsed = JSON.parse(text);
-  const global = String(parsed?.global || '').trim().slice(0, MAX_GLOBAL_RULES_CHARS);
+  const global = String(parsed?.global || '')
+    .trim()
+    .slice(0, MAX_GLOBAL_RULES_CHARS);
   const sections: Record<string, string> = {};
   for (const [key, value] of Object.entries(parsed?.sections && typeof parsed.sections === 'object' ? parsed.sections : {})) {
-    const rules = String(value || '').trim().slice(0, MAX_SECTION_RULES_CHARS);
+    const rules = String(value || '')
+      .trim()
+      .slice(0, MAX_SECTION_RULES_CHARS);
     if (rules) sections[key] = rules;
   }
   if (!global && Object.keys(sections).length === 0) return;
-  const { error } = await admin.from('practitioners').update({ ai_style_preferences: JSON.stringify({ global, sections }) }).eq('id', userId);
+  const { error } = await admin
+    .from('practitioners')
+    .update({ ai_style_preferences: JSON.stringify({ global, sections }) })
+    .eq('id', userId);
   if (error) await reportDbError('update_style_preferences', error, userId);
 };
 
@@ -314,12 +343,16 @@ Deno.serve(async (req: Request) => {
     trail.add('auth', 'User authenticated');
 
     if (!SUPABASE_SERVICE_ROLE_KEY || !GEMINI_API_KEY) {
-      await captureEdgeMessage('SERVER_MISCONFIGURED: missing SUPABASE_SERVICE_ROLE_KEY or GEMINI_API_KEY', { ...sentry(), level: 'fatal' });
+      await captureEdgeMessage('SERVER_MISCONFIGURED: missing SUPABASE_SERVICE_ROLE_KEY or GEMINI_API_KEY', {
+        ...sentry(),
+        level: 'fatal',
+      });
       return json(origin, 500, { error: 'SERVER_MISCONFIGURED' });
     }
     admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    if (!(await checkRateLimit(admin, userId))) return json(origin, 429, { error: 'RATE_LIMITED', message: 'Trop de requêtes. Réessayez plus tard.' });
+    if (!(await checkRateLimit(admin, userId)))
+      return json(origin, 429, { error: 'RATE_LIMITED', message: 'Trop de requêtes. Réessayez plus tard.' });
 
     const contentLength = Number(req.headers.get('content-length') || '0');
     if (Number.isFinite(contentLength) && contentLength > MAX_PAYLOAD_BYTES) return json(origin, 413, { error: 'PAYLOAD_TOO_LARGE' });
@@ -331,7 +364,10 @@ Deno.serve(async (req: Request) => {
     const requestBytes = new TextEncoder().encode(JSON.stringify(payload)).length;
     trail.add('request', `Task ${task}`, { requestBytes, providedGenerationId: providedGenId });
     if (requestBytes > MAX_PAYLOAD_BYTES) {
-      await captureEdgeMessage(`PAYLOAD_TOO_LARGE (${requestBytes} bytes)`, { ...sentry(), extra: { requestBytes, max: MAX_PAYLOAD_BYTES } });
+      await captureEdgeMessage(`PAYLOAD_TOO_LARGE (${requestBytes} bytes)`, {
+        ...sentry(),
+        extra: { requestBytes, max: MAX_PAYLOAD_BYTES },
+      });
       return json(origin, 413, { error: 'PAYLOAD_TOO_LARGE' });
     }
     if (!AI_TASKS.includes(task)) return json(origin, 400, { error: 'INVALID_TASK' });
@@ -366,7 +402,10 @@ Deno.serve(async (req: Request) => {
         return json(origin, 400, { error: 'INVALID_GENERATION_SESSION' });
       }
       if (!(await claimSession(admin, providedGenId, userId))) {
-        await captureEdgeMessage('GENERATION_SESSION_BUSY: diagnostic session already locked', { ...sentry(), extra: { lockTtlSeconds: GENERATION_LOCK_TTL_SECONDS } });
+        await captureEdgeMessage('GENERATION_SESSION_BUSY: diagnostic session already locked', {
+          ...sentry(),
+          extra: { lockTtlSeconds: GENERATION_LOCK_TTL_SECONDS },
+        });
         return json(origin, 409, { error: 'GENERATION_SESSION_BUSY' });
       }
       sessionId = providedGenId;

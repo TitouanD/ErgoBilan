@@ -180,7 +180,9 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
               <div className="px-5 py-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)] flex items-center justify-between gap-3">
                 <div>
                   <h4 className="font-bold text-[var(--text-heading)]">{test.name}</h4>
-                  <p className="text-[11px] text-[var(--text-secondary)]">Nouveau test : pas de comparaison possible avec le bilan précédent</p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Nouveau test : pas de comparaison possible avec le bilan précédent
+                  </p>
                 </div>
                 <button
                   onClick={() => handleDeleteTest(testId)}

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 
@@ -26,55 +25,61 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addToast = useCallback((message: string, type: ToastType) => {
     const id = crypto.randomUUID();
-    setToasts(prev => [...prev, { id, message, type }]);
-    
+    setToasts((prev) => [...prev, { id, message, type }]);
+
     // Auto-dismiss après 4 secondes
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   }, []);
 
   const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const toast = React.useMemo(() => ({
-    success: (msg: string) => addToast(msg, 'success'),
-    error: (msg: string) => addToast(msg, 'error'),
-    info: (msg: string) => addToast(msg, 'info'),
-    warning: (msg: string) => addToast(msg, 'warning'),
-  }), [addToast]);
+  const toast = React.useMemo(
+    () => ({
+      success: (msg: string) => addToast(msg, 'success'),
+      error: (msg: string) => addToast(msg, 'error'),
+      info: (msg: string) => addToast(msg, 'info'),
+      warning: (msg: string) => addToast(msg, 'warning'),
+    }),
+    [addToast],
+  );
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div className="fixed bottom-6 right-6 z-[300] w-[320px] max-w-[calc(100vw-3rem)] flex flex-col gap-3 pointer-events-none">
-        {toasts.map(t => (
-          <div 
-            key={t.id} 
+        {toasts.map((t) => (
+          <div
+            key={t.id}
             className="pointer-events-auto w-full animate-in slide-in-from-right-full fade-in duration-300 bg-[var(--card-bg)] rounded-2xl shadow-xl border border-[var(--border-color)] p-4 flex items-start gap-3"
           >
-            <div className={`mt-0.5 p-1 rounded-full shrink-0 ${
-                t.type === 'success' ? 'text-emerald-500 bg-emerald-50' :
-                t.type === 'error' ? 'text-rose-500 bg-rose-50' :
-                t.type === 'warning' ? 'text-amber-500 bg-amber-50' :
-                'text-[#3D405B] bg-stone-100'
-            }`}>
-                {t.type === 'success' && <CheckCircle2 size={18} strokeWidth={3} />}
-                {t.type === 'error' && <AlertCircle size={18} strokeWidth={3} />}
-                {t.type === 'warning' && <AlertTriangle size={18} strokeWidth={3} />}
-                {t.type === 'info' && <Info size={18} strokeWidth={3} />}
-            </div>
-            
-            <p className="text-sm font-bold text-[var(--text-main)] flex-1 leading-relaxed pt-0.5">
-                {t.message}
-            </p>
-
-            <button 
-                onClick={() => removeToast(t.id)}
-                className="text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors p-1"
+            <div
+              className={`mt-0.5 p-1 rounded-full shrink-0 ${
+                t.type === 'success'
+                  ? 'text-emerald-500 bg-emerald-50'
+                  : t.type === 'error'
+                    ? 'text-rose-500 bg-rose-50'
+                    : t.type === 'warning'
+                      ? 'text-amber-500 bg-amber-50'
+                      : 'text-[#3D405B] bg-stone-100'
+              }`}
             >
-                <X size={14} />
+              {t.type === 'success' && <CheckCircle2 size={18} strokeWidth={3} />}
+              {t.type === 'error' && <AlertCircle size={18} strokeWidth={3} />}
+              {t.type === 'warning' && <AlertTriangle size={18} strokeWidth={3} />}
+              {t.type === 'info' && <Info size={18} strokeWidth={3} />}
+            </div>
+
+            <p className="text-sm font-bold text-[var(--text-main)] flex-1 leading-relaxed pt-0.5">{t.message}</p>
+
+            <button
+              onClick={() => removeToast(t.id)}
+              className="text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors p-1"
+            >
+              <X size={14} />
             </button>
           </div>
         ))}

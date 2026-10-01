@@ -106,27 +106,21 @@ export const ExportService = {
 
     const db = getLocalDB(currentUserId);
 
-    await db.transaction(
-      'rw',
-      [db.patients, db.drafts, db.assessments, db.followups],
-      async () => {
-        // Upsert by UUID
-        if (patients.length) await db.patients.bulkPut(patients);
-        if (assessments.length) await db.assessments.bulkPut(assessments);
-        if (followups.length) await db.followups.bulkPut(followups);
+    await db.transaction('rw', [db.patients, db.drafts, db.assessments, db.followups], async () => {
+      // Upsert by UUID
+      if (patients.length) await db.patients.bulkPut(patients);
+      if (assessments.length) await db.assessments.bulkPut(assessments);
+      if (followups.length) await db.followups.bulkPut(followups);
 
-        // Drafts: delete existing rows for the imported patientIds, then re-add
-        if (drafts.length) {
-          const importedPatientIds = new Set(drafts.map((d) => d.patientId));
-          const toDelete = (await db.drafts.toArray())
-            .filter((d) => importedPatientIds.has(d.patientId))
-            .map((d) => d.id!);
+      // Drafts: delete existing rows for the imported patientIds, then re-add
+      if (drafts.length) {
+        const importedPatientIds = new Set(drafts.map((d) => d.patientId));
+        const toDelete = (await db.drafts.toArray()).filter((d) => importedPatientIds.has(d.patientId)).map((d) => d.id!);
 
-          if (toDelete.length) await db.drafts.bulkDelete(toDelete);
-          await db.drafts.bulkAdd(drafts as LocalDraftRow[]);
-        }
-      },
-    );
+        if (toDelete.length) await db.drafts.bulkDelete(toDelete);
+        await db.drafts.bulkAdd(drafts as LocalDraftRow[]);
+      }
+    });
 
     return {
       patients: patients.length,

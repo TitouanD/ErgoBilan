@@ -28,7 +28,14 @@ const catalog: CategoryDef[] = [
         name: 'MABC-2',
         subtests: [
           { id: 'dext', name: 'Dextérité', unit: 'pts', scoreType: 'scaled', inputModel: 'numeric_4mode' },
-          { id: 'grip', name: 'Préhension', unit: '', scoreType: 'none', inputModel: 'qualitative_category', inputConfig: { options: [{ code: 'mature', label: 'Mature', order: 1, reportText: 'Prise tripode.' }] } },
+          {
+            id: 'grip',
+            name: 'Préhension',
+            unit: '',
+            scoreType: 'none',
+            inputModel: 'qualitative_category',
+            inputConfig: { options: [{ code: 'mature', label: 'Mature', order: 1, reportText: 'Prise tripode.' }] },
+          },
         ],
       },
     ],
@@ -143,7 +150,11 @@ describe('re-evaluation deltas', () => {
   });
 
   it('converts a score typed in another metric instead of reporting it as not measured', () => {
-    const [entry] = buildDeltaEntries({ mabc: { dext: { value: '7', unit: 'NS' } } }, { mabc: { dext: { value: '50', unit: '%' } } }, index);
+    const [entry] = buildDeltaEntries(
+      { mabc: { dext: { value: '7', unit: 'NS' } } },
+      { mabc: { dext: { value: '50', unit: '%' } } },
+      index,
+    );
     expect(entry.measured).toBe(true);
     expect(entry.newValue).toBe(10);
     expect(entry.delta).toBe(3);
@@ -198,7 +209,9 @@ describe('report data', () => {
 
   it('places profile dots on the axis with the zone bands', () => {
     const chart = computeDotChart('z', { mabc: { dext: { value: '4', unit: 'NS' } } }, index);
-    expect(chart.items).toEqual([expect.objectContaining({ label: 'Dextérité', zone: 'deficit', value: '-2.0', position: zToFraction(-2) })]);
+    expect(chart.items).toEqual([
+      expect.objectContaining({ label: 'Dextérité', zone: 'deficit', value: '-2.0', position: zToFraction(-2) }),
+    ]);
     expect(chart.bands.map((b) => b.zone)).toEqual(['deficit', 'fragile', 'normal']);
     expect(chart.bands[0].to).toBe(chart.bands[1].from);
     expect(computeDotChart('percentile', {}, index).items).toEqual([]);

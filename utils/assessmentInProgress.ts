@@ -18,15 +18,7 @@
  */
 
 import type { StorageService } from '../services/storage';
-import type {
-  ClinicalSynthesis,
-  DraftPayload,
-  Observations,
-  Patient,
-  PatientAssessment,
-  ReportSection,
-  TestData,
-} from '../types';
+import type { ClinicalSynthesis, DraftPayload, Observations, Patient, PatientAssessment, ReportSection, TestData } from '../types';
 import { buildAssessmentRecord, buildEmptyTestsFrom, getAssessmentTests, getLatestFormalAssessment } from './assessment';
 import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';

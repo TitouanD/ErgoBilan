@@ -4,21 +4,18 @@ import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import type { AdminTestSummary, AdminTestRecord, AdminSubtestRecord } from '../../types';
 import { supabase } from '../../services/db';
-import {
-  Loader2, Plus, RefreshCw, Save, Search, Trash2,
-  Globe, Lock, GripVertical, X,
-} from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Save, Search, Trash2, Globe, Lock, GripVertical, X } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const SCORE_TYPES = [
-  { value: 'none',       label: 'Sans score' },
-  { value: 'standard',   label: 'Note Standard (moy 100)' },
-  { value: 'scaled',     label: 'Note Scalée (moy 10)' },
-  { value: 't-score',    label: 'Score T (moy 50)' },
+  { value: 'none', label: 'Sans score' },
+  { value: 'standard', label: 'Note Standard (moy 100)' },
+  { value: 'scaled', label: 'Note Scalée (moy 10)' },
+  { value: 't-score', label: 'Score T (moy 50)' },
   { value: 'percentile', label: 'Percentile' },
-  { value: 'sten',       label: 'Sten (1-10)' },
-  { value: 'stanine',    label: 'Stanine (1-9)' },
+  { value: 'sten', label: 'Sten (1-10)' },
+  { value: 'stanine', label: 'Stanine (1-9)' },
 ];
 
 const makeSubtestId = (testId: string) => {
@@ -60,9 +57,13 @@ export const AdminLibrary: React.FC = () => {
 
   // ── Load categories ────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from('official_categories').select('id, label').order('sort_order').then(({ data }) => {
-      if (data) setCategories(data as Array<{ id: string; label: string }>);
-    });
+    supabase
+      .from('official_categories')
+      .select('id, label')
+      .order('sort_order')
+      .then(({ data }) => {
+        if (data) setCategories(data as Array<{ id: string; label: string }>);
+      });
   }, []);
 
   // ── Load tests list ────────────────────────────────────────────────────────
@@ -79,32 +80,42 @@ export const AdminLibrary: React.FC = () => {
     }
   }, [scope, toast]);
 
-  useEffect(() => { loadTests(); }, [loadTests]);
+  useEffect(() => {
+    loadTests();
+  }, [loadTests]);
 
   // ── Load detail ────────────────────────────────────────────────────────────
-  const loadDetail = useCallback(async (testId: string) => {
-    setLoadingDetail(true);
-    setIsDirty(false);
-    setDeletedSubtestIds([]);
-    try {
-      const { test, subtests: subs } = await AdminService.loadTestDetail(testId);
-      setTestRecord(test);
-      setSubtests(subs.map((s, i) => ({
-        ...s,
-        display_order: (s as SubtestDraft).display_order ?? i + 1,
-        display_group_order: (s as SubtestDraft).display_group_order ?? null,
-      })));
-    } catch (e) {
-      Logger.error('DB', 'Failed to load test detail', e);
-      toast.error('Erreur lors du chargement du test.');
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, [toast]);
+  const loadDetail = useCallback(
+    async (testId: string) => {
+      setLoadingDetail(true);
+      setIsDirty(false);
+      setDeletedSubtestIds([]);
+      try {
+        const { test, subtests: subs } = await AdminService.loadTestDetail(testId);
+        setTestRecord(test);
+        setSubtests(
+          subs.map((s, i) => ({
+            ...s,
+            display_order: (s as SubtestDraft).display_order ?? i + 1,
+            display_group_order: (s as SubtestDraft).display_group_order ?? null,
+          })),
+        );
+      } catch (e) {
+        Logger.error('DB', 'Failed to load test detail', e);
+        toast.error('Erreur lors du chargement du test.');
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     if (selectedTestId) loadDetail(selectedTestId);
-    else { setTestRecord(null); setSubtests([]); }
+    else {
+      setTestRecord(null);
+      setSubtests([]);
+    }
   }, [selectedTestId, loadDetail]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -154,18 +165,18 @@ export const AdminLibrary: React.FC = () => {
       organization_id: testRecord.organization_id ?? null,
       isNew: true,
     };
-    setSubtests(prev => [...prev, newSub]);
+    setSubtests((prev) => [...prev, newSub]);
     setIsDirty(true);
   };
 
   const updateSubtest = (id: string, patch: Partial<SubtestDraft>) => {
-    setSubtests(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    setSubtests((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     setIsDirty(true);
   };
 
   const removeSubtest = (id: string) => {
-    setSubtests(prev => prev.filter(s => s.id !== id));
-    setDeletedSubtestIds(prev => [...prev, id]);
+    setSubtests((prev) => prev.filter((s) => s.id !== id));
+    setDeletedSubtestIds((prev) => [...prev, id]);
     setIsDirty(true);
   };
 
@@ -173,10 +184,10 @@ export const AdminLibrary: React.FC = () => {
   const handleDragStart = (id: string) => setDraggingId(id);
   const handleDrop = (targetId: string) => {
     if (!draggingId || draggingId === targetId) return;
-    setSubtests(prev => {
+    setSubtests((prev) => {
       const arr = [...prev];
-      const fromIdx = arr.findIndex(s => s.id === draggingId);
-      const toIdx = arr.findIndex(s => s.id === targetId);
+      const fromIdx = arr.findIndex((s) => s.id === draggingId);
+      const toIdx = arr.findIndex((s) => s.id === targetId);
       if (fromIdx === -1 || toIdx === -1) return prev;
       const [item] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, item);
@@ -189,22 +200,24 @@ export const AdminLibrary: React.FC = () => {
   // ── Filtered list ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return tests.filter(t => !q || t.name.toLowerCase().includes(q));
+    return tests.filter((t) => !q || t.name.toLowerCase().includes(q));
   }, [tests, search]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full overflow-hidden">
-
       {/* LEFT — test list */}
       <div className="w-72 shrink-0 flex flex-col border-r border-white/5 bg-[#131419]">
         {/* Scope + search */}
         <div className="p-4 space-y-3 border-b border-white/5">
           <div className="flex gap-1 bg-white/5 rounded-lg p-1">
-            {(['public', 'private', 'all'] as const).map(s => (
+            {(['public', 'private', 'all'] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => { setScope(s); setSelectedTestId(null); }}
+                onClick={() => {
+                  setScope(s);
+                  setSelectedTestId(null);
+                }}
                 className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-1.5 rounded-md transition-all ${scope === s ? 'bg-white/10 text-white' : 'text-stone-500 hover:text-stone-300'}`}
               >
                 {s === 'public' ? 'Public' : s === 'private' ? 'Privé' : 'Tous'}
@@ -215,7 +228,7 @@ export const AdminLibrary: React.FC = () => {
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher..."
               className="w-full bg-white/5 border border-white/5 rounded-lg pl-8 pr-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 outline-none focus:border-white/20"
             />
@@ -225,19 +238,23 @@ export const AdminLibrary: React.FC = () => {
         {/* List */}
         <div className="flex-1 overflow-y-auto py-2">
           {loadingTests ? (
-            <div className="flex justify-center py-8 text-stone-500"><Loader2 size={20} className="animate-spin" /></div>
+            <div className="flex justify-center py-8 text-stone-500">
+              <Loader2 size={20} className="animate-spin" />
+            </div>
           ) : filtered.length === 0 ? (
             <p className="text-center text-stone-600 text-xs py-8">Aucun test</p>
           ) : (
-            filtered.map(t => (
+            filtered.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setSelectedTestId(t.id)}
                 className={`w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-colors ${selectedTestId === t.id ? 'bg-white/10 text-white' : 'text-stone-400 hover:bg-white/5 hover:text-stone-200'}`}
               >
-                {t.organization_id
-                  ? <Lock size={12} className="shrink-0 text-amber-500" />
-                  : <Globe size={12} className="shrink-0 text-emerald-500" />}
+                {t.organization_id ? (
+                  <Lock size={12} className="shrink-0 text-amber-500" />
+                ) : (
+                  <Globe size={12} className="shrink-0 text-emerald-500" />
+                )}
                 <span className="truncate">{t.name}</span>
                 <span className="ml-auto text-[10px] text-stone-600 shrink-0">{(t as any).subtest_count ?? 0}</span>
               </button>
@@ -247,7 +264,11 @@ export const AdminLibrary: React.FC = () => {
 
         {/* Refresh */}
         <div className="p-3 border-t border-white/5">
-          <button onClick={loadTests} disabled={loadingTests} className="w-full flex items-center justify-center gap-2 py-2 text-xs text-stone-500 hover:text-stone-300 transition-colors">
+          <button
+            onClick={loadTests}
+            disabled={loadingTests}
+            className="w-full flex items-center justify-center gap-2 py-2 text-xs text-stone-500 hover:text-stone-300 transition-colors"
+          >
             <RefreshCw size={12} className={loadingTests ? 'animate-spin' : ''} /> Actualiser
           </button>
         </div>
@@ -268,9 +289,11 @@ export const AdminLibrary: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#1A1C23] shrink-0">
               <div className="flex items-center gap-3">
-                {testRecord.organization_id
-                  ? <Lock size={14} className="text-amber-500" />
-                  : <Globe size={14} className="text-emerald-500" />}
+                {testRecord.organization_id ? (
+                  <Lock size={14} className="text-amber-500" />
+                ) : (
+                  <Globe size={14} className="text-emerald-500" />
+                )}
                 <h2 className="font-bold text-white text-base truncate max-w-sm">{testRecord.name}</h2>
               </div>
               <div className="flex items-center gap-2">
@@ -294,14 +317,16 @@ export const AdminLibrary: React.FC = () => {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-
               {/* Test metadata */}
               <section className="grid grid-cols-2 gap-4">
                 <label className="col-span-2 block">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Nom du test</span>
                   <input
                     value={testRecord.name}
-                    onChange={e => { setTestRecord(r => r ? { ...r, name: e.target.value } : r); setIsDirty(true); }}
+                    onChange={(e) => {
+                      setTestRecord((r) => (r ? { ...r, name: e.target.value } : r));
+                      setIsDirty(true);
+                    }}
                     className="mt-1 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-white/30"
                   />
                 </label>
@@ -309,17 +334,27 @@ export const AdminLibrary: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Catégorie</span>
                   <select
                     value={testRecord.category_id}
-                    onChange={e => { setTestRecord(r => r ? { ...r, category_id: e.target.value } : r); setIsDirty(true); }}
+                    onChange={(e) => {
+                      setTestRecord((r) => (r ? { ...r, category_id: e.target.value } : r));
+                      setIsDirty(true);
+                    }}
                     className="mt-1 w-full bg-[#1A1C23] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-white/30"
                   >
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Auteur</span>
                   <input
                     value={testRecord.author ?? ''}
-                    onChange={e => { setTestRecord(r => r ? { ...r, author: e.target.value } : r); setIsDirty(true); }}
+                    onChange={(e) => {
+                      setTestRecord((r) => (r ? { ...r, author: e.target.value } : r));
+                      setIsDirty(true);
+                    }}
                     placeholder="Auteur"
                     className="mt-1 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-white/30"
                   />
@@ -329,21 +364,22 @@ export const AdminLibrary: React.FC = () => {
               {/* Subtests */}
               <section>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">
-                    Sous-tests ({subtests.length})
-                  </h3>
-                  <button onClick={addSubtest} className="flex items-center gap-1.5 text-xs font-bold text-[var(--primary)] hover:opacity-80">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">Sous-tests ({subtests.length})</h3>
+                  <button
+                    onClick={addSubtest}
+                    className="flex items-center gap-1.5 text-xs font-bold text-[var(--primary)] hover:opacity-80"
+                  >
                     <Plus size={13} /> Ajouter
                   </button>
                 </div>
 
                 <div className="space-y-2">
-                  {subtests.map(sub => (
+                  {subtests.map((sub) => (
                     <div
                       key={sub.id}
                       draggable
                       onDragStart={() => handleDragStart(sub.id)}
-                      onDragOver={e => e.preventDefault()}
+                      onDragOver={(e) => e.preventDefault()}
                       onDrop={() => handleDrop(sub.id)}
                       className={`group flex items-start gap-2 p-3 rounded-xl border transition-colors ${draggingId === sub.id ? 'border-[var(--primary)]/60 bg-[var(--primary)]/5' : 'border-white/5 bg-white/3 hover:border-white/10'}`}
                     >
@@ -354,17 +390,21 @@ export const AdminLibrary: React.FC = () => {
                         {/* Name */}
                         <input
                           value={sub.name}
-                          onChange={e => updateSubtest(sub.id, { name: e.target.value })}
+                          onChange={(e) => updateSubtest(sub.id, { name: e.target.value })}
                           placeholder="Nom *"
                           className="col-span-6 bg-transparent border-b border-white/10 text-sm text-white py-1 outline-none focus:border-[var(--primary)] placeholder:text-stone-600"
                         />
                         {/* Score type */}
                         <select
                           value={sub.score_type ?? 'none'}
-                          onChange={e => updateSubtest(sub.id, { score_type: e.target.value })}
+                          onChange={(e) => updateSubtest(sub.id, { score_type: e.target.value })}
                           className="col-span-6 bg-[#1A1C23] border border-white/5 rounded-lg text-xs text-stone-300 px-2 py-1 outline-none focus:border-white/20"
                         >
-                          {SCORE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          {SCORE_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <button
@@ -383,14 +423,17 @@ export const AdminLibrary: React.FC = () => {
                   )}
                 </div>
               </section>
-
             </div>
 
             {/* Dirty footer */}
             {isDirty && (
               <div className="px-6 py-3 border-t border-white/5 flex items-center justify-between shrink-0 bg-amber-900/10">
                 <span className="text-xs text-amber-400">Modifications non sauvegardées</span>
-                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-200">
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-200"
+                >
                   <Save size={12} /> Sauvegarder
                 </button>
               </div>

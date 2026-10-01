@@ -14,7 +14,9 @@ vi.mock('../../../contexts/CatalogContext', () => ({ useCatalog: () => ({ index 
 vi.mock('../pages/score/TestCatalogModal', () => ({
   TestCatalogModal: ({ isOpen, onAddTests }: { isOpen: boolean; onAddTests: (s: Record<string, string[]>) => void }) =>
     isOpen ? (
-      <button onClick={() => onAddTests({ 'mabc-2': ['mabc-2__manual-dexterity-total'], bhk: ['bhk__extra'] })}>Choisir dans le catalogue</button>
+      <button onClick={() => onAddTests({ 'mabc-2': ['mabc-2__manual-dexterity-total'], bhk: ['bhk__extra'] })}>
+        Choisir dans le catalogue
+      </button>
     ) : null,
 }));
 

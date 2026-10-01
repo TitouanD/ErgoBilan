@@ -20,7 +20,7 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
   state: State = {
     hasError: false,
     error: null,
-    showFeedback: false
+    showFeedback: false,
   };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -29,7 +29,10 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
 
   // Sentry capture happens once, in the React root `onCaughtError` hook (index.tsx), with the component stack.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    Logger.warn('SYSTEM', 'Uncaught error in component tree (error screen shown)', { message: error.message, componentStack: errorInfo.componentStack });
+    Logger.warn('SYSTEM', 'Uncaught error in component tree (error screen shown)', {
+      message: error.message,
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   private handleReload = () => {
@@ -51,49 +54,51 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
             <div className="absolute -top-10 -left-10 w-32 h-32 bg-rose-50 rounded-full blur-3xl"></div>
 
             <div className="relative z-10">
-                <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500 shadow-sm">
-                    <AlertTriangle size={40} strokeWidth={2} />
+              <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500 shadow-sm">
+                <AlertTriangle size={40} strokeWidth={2} />
+              </div>
+
+              <h1 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">Une erreur est survenue</h1>
+
+              <p className="text-[var(--text-secondary)] text-sm mb-6 leading-relaxed">
+                L'application a rencontré un problème inattendu. Nous avons sécurisé les données locales par précaution.
+              </p>
+
+              {this.state.error && (
+                <div className="bg-[var(--card-bg-raised)] p-3 rounded-xl border border-[var(--border-color)] text-xs font-mono text-[var(--text-main)] mb-8 text-left overflow-auto max-h-32">
+                  {this.state.error.toString()}
                 </div>
+              )}
 
-                <h1 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">
-                    Une erreur est survenue
-                </h1>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={this.handleReload}
+                  className="w-full py-4 bg-[var(--secondary)] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={18} /> Recharger l'application
+                </button>
 
-                <p className="text-[var(--text-secondary)] text-sm mb-6 leading-relaxed">
-                    L'application a rencontré un problème inattendu. Nous avons sécurisé les données locales par précaution.
-                </p>
+                <button
+                  onClick={this.handleGoHome}
+                  className="w-full py-3 text-[var(--text-secondary)] font-bold hover:text-[var(--text-main)] transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
+                >
+                  <Home size={16} /> Retour à l'accueil
+                </button>
 
-                {this.state.error && (
-                    <div className="bg-[var(--card-bg-raised)] p-3 rounded-xl border border-[var(--border-color)] text-xs font-mono text-[var(--text-main)] mb-8 text-left overflow-auto max-h-32">
-                        {this.state.error.toString()}
-                    </div>
+                {isFeedbackAvailable() && (
+                  <button
+                    onClick={() => this.setState({ showFeedback: true })}
+                    className="w-full py-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors flex items-center justify-center gap-2 text-sm font-semibold"
+                  >
+                    <MessageSquareText size={16} /> Décrire ce que je faisais
+                  </button>
                 )}
-
-                <div className="flex flex-col gap-3">
-                    <button
-                        onClick={this.handleReload}
-                        className="w-full py-4 bg-[var(--secondary)] text-white rounded-xl font-bold shadow-lg hover:bg-[#2c2e42] transition-all flex items-center justify-center gap-2"
-                    >
-                        <RefreshCw size={18} /> Recharger l'application
-                    </button>
-
-                    <button
-                        onClick={this.handleGoHome}
-                        className="w-full py-3 text-[var(--text-secondary)] font-bold hover:text-[var(--text-main)] transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
-                    >
-                        <Home size={16} /> Retour à l'accueil
-                    </button>
-
-                    {isFeedbackAvailable() && (
-                        <button
-                            onClick={() => this.setState({ showFeedback: true })}
-                            className="w-full py-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors flex items-center justify-center gap-2 text-sm font-semibold"
-                        >
-                            <MessageSquareText size={16} /> Décrire ce que je faisais
-                        </button>
-                    )}
-                </div>
-                <FeedbackModal isOpen={this.state.showFeedback} onClose={() => this.setState({ showFeedback: false })} source="error_screen" />
+              </div>
+              <FeedbackModal
+                isOpen={this.state.showFeedback}
+                onClose={() => this.setState({ showFeedback: false })}
+                source="error_screen"
+              />
             </div>
           </div>
         </div>
@@ -103,4 +108,3 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
     return this.props.children;
   }
 }
-

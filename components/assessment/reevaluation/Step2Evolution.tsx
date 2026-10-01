@@ -63,7 +63,9 @@ export const Step2Evolution: React.FC<Props> = ({
   /** Suspect words of the confirmation; null while it is closed. */
   const [confirmTerms, setConfirmTerms] = useState<string[] | null>(null);
   const termChoices = useSuspectTermChoices(confirmTerms ?? []);
-  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(MANUAL_SECTIONS.map((s) => [s.id, sectionText(sections, s.id)])));
+  const [texts, setTexts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(MANUAL_SECTIONS.map((s) => [s.id, sectionText(sections, s.id)])),
+  );
   const hasAiSections = sections.some((s) => s.isAiGenerated);
 
   const deltas = useMemo(() => buildDeltaEntries(previousAssessment?.tests ?? {}, newTests, index), [previousAssessment, newTests, index]);
@@ -97,7 +99,8 @@ export const Step2Evolution: React.FC<Props> = ({
             </div>
             <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Générer la synthèse</h3>
             <p className="text-[var(--text-secondary)] text-sm mb-4 font-medium leading-relaxed">
-              L'IA rédige le rappel du bilan initial, l'évolution commentée, la conclusion et les préconisations à partir de l'évolution des scores.
+              L'IA rédige le rappel du bilan initial, l'évolution commentée, la conclusion et les préconisations à partir de l'évolution des
+              scores.
               {hasAiSections && ' Les sections déjà générées seront remplacées.'}
             </p>
             <SuspectTermsReview terms={confirmTerms} isMasked={termChoices.isMasked} onToggle={termChoices.toggle} />

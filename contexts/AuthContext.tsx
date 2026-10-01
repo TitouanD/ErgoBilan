@@ -33,7 +33,16 @@ const PRACTITIONER_COLUMNS =
 
 type PractitionerRow = Pick<
   Tables<'practitioners'>,
-  'id' | 'email' | 'first_name' | 'last_name' | 'phone_pro' | 'siret' | 'address_pro' | 'encryption_salt' | 'encryption_validator' | 'ai_style_preferences'
+  | 'id'
+  | 'email'
+  | 'first_name'
+  | 'last_name'
+  | 'phone_pro'
+  | 'siret'
+  | 'address_pro'
+  | 'encryption_salt'
+  | 'encryption_validator'
+  | 'ai_style_preferences'
 >;
 
 const toPractitionerProfile = (row: PractitionerRow): PractitionerProfile => ({
@@ -74,7 +83,15 @@ const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number): Promise<{ t
   }
 };
 
-export type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'subscription_locked' | 'network_error' | 'error';
+export type AuthState =
+  | 'unauthenticated'
+  | 'registering'
+  | 'authenticating'
+  | 'locked'
+  | 'authenticated'
+  | 'subscription_locked'
+  | 'network_error'
+  | 'error';
 
 interface AuthContextType {
   userProfile: UserProfile;

@@ -8,7 +8,21 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, ClipboardList, FileText, Home, Mail, Pencil, Phone, PieChart, Plus, Sparkles, Star } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ClipboardList,
+  FileText,
+  Home,
+  Mail,
+  Pencil,
+  Phone,
+  PieChart,
+  Plus,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { BrandingConfig, Patient, ReportSection, TestData } from '../../../types';
 import { useCatalog } from '../../../contexts/CatalogContext';
@@ -52,7 +66,8 @@ interface Props {
   isPerformance?: boolean;
 }
 
-const roundedClass = (corners: ReportTheme['corners']) => (corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl');
+const roundedClass = (corners: ReportTheme['corners']) =>
+  corners === 'sharp' ? 'rounded-none' : corners === 'rounded' ? 'rounded-xl' : 'rounded-2xl';
 const zoneTextColor = (zone: ScoreZone | null) => (zone ? ZONE_META[zone].color : undefined);
 
 // ─── Section title ──────────────────────────────────────────────────────────
@@ -142,7 +157,10 @@ const SectionTitle: React.FC<{ title: string; theme: ReportTheme; onSave?: (titl
     );
   }
   return (
-    <div className="flex items-center gap-3 mb-6 pb-2 border-b-2" style={{ borderColor: theme.isCustom ? theme.primary + '20' : '#E5E7EB' }}>
+    <div
+      className="flex items-center gap-3 mb-6 pb-2 border-b-2"
+      style={{ borderColor: theme.isCustom ? theme.primary + '20' : '#E5E7EB' }}
+    >
       <div
         className={`p-1.5 ${rounded} ${theme.isCustom ? '' : 'bg-stone-100 text-stone-500'}`}
         style={theme.isCustom ? { backgroundColor: theme.primary + '15', color: theme.primary } : undefined}
@@ -156,15 +174,20 @@ const SectionTitle: React.FC<{ title: string; theme: ReportTheme; onSave?: (titl
 
 // ─── Layout controls ────────────────────────────────────────────────────────
 
-const SectionControls: React.FC<{ onMove: (direction: MoveDirection) => void; isFirstPage: boolean; isFirst: boolean; isLast: boolean }> = ({
-  onMove,
-  isFirstPage,
-  isFirst,
-  isLast,
-}) => (
+const SectionControls: React.FC<{
+  onMove: (direction: MoveDirection) => void;
+  isFirstPage: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+}> = ({ onMove, isFirstPage, isFirst, isLast }) => (
   <div className="absolute -left-12 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity no-print z-50">
     <div className="bg-stone-800 text-white rounded-lg p-1 shadow-lg flex flex-col gap-1">
-      <button onClick={() => onMove('prevPage')} disabled={isFirstPage} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30" title="Page précédente">
+      <button
+        onClick={() => onMove('prevPage')}
+        disabled={isFirstPage}
+        className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"
+        title="Page précédente"
+      >
         <ArrowUp size={14} />
       </button>
       <button onClick={() => onMove('nextPage')} className="p-1 hover:bg-stone-600 rounded" title="Page suivante">
@@ -174,7 +197,12 @@ const SectionControls: React.FC<{ onMove: (direction: MoveDirection) => void; is
       <button onClick={() => onMove('up')} disabled={isFirst} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30" title="Monter">
         <ArrowUp size={10} />
       </button>
-      <button onClick={() => onMove('down')} disabled={isLast} className="p-1 hover:bg-stone-600 rounded disabled:opacity-30" title="Descendre">
+      <button
+        onClick={() => onMove('down')}
+        disabled={isLast}
+        className="p-1 hover:bg-stone-600 rounded disabled:opacity-30"
+        title="Descendre"
+      >
         <ArrowDown size={10} />
       </button>
     </div>
@@ -239,7 +267,11 @@ const ReportSectionBlock: React.FC<{
   return (
     <div className="mb-8 relative group">
       {controls}
-      <SectionTitle title={section.title} theme={theme} onSave={onUpdateSection ? (title) => onUpdateSection(section.id, { title }) : undefined} />
+      <SectionTitle
+        title={section.title}
+        theme={theme}
+        onSave={onUpdateSection ? (title) => onUpdateSection(section.id, { title }) : undefined}
+      />
       <TipTapEditor
         content={html}
         onChange={(next) => onUpdateSection?.(section.id, { content: next, contentFormat: 'html' })}
@@ -255,7 +287,10 @@ const ReportSectionBlock: React.FC<{
 
 const ChartCard: React.FC<{ title: string; theme: ReportTheme; children: React.ReactNode }> = ({ title, theme, children }) => (
   <div className={`mb-8 break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass(theme.corners)}`}>
-    <div className="bg-stone-100 p-4 border-b border-stone-200" style={{ backgroundColor: theme.isCustom ? theme.primary + '08' : undefined }}>
+    <div
+      className="bg-stone-100 p-4 border-b border-stone-200"
+      style={{ backgroundColor: theme.isCustom ? theme.primary + '08' : undefined }}
+    >
       <h3 className="font-bold text-sm uppercase tracking-wide" style={{ fontFamily: theme.headingFont, color: theme.primary }}>
         {title}
       </h3>
@@ -283,14 +318,23 @@ const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ 
   );
 };
 
-const ChartRow: React.FC<{ label: string; position: number; color: string; value: string; bands: React.ReactNode }> = ({ label, position, color, value, bands }) => (
+const ChartRow: React.FC<{ label: string; position: number; color: string; value: string; bands: React.ReactNode }> = ({
+  label,
+  position,
+  color,
+  value,
+  bands,
+}) => (
   <div className="flex items-center gap-3 text-xs">
     <span className="w-36 text-right text-stone-600 font-medium text-[10px] leading-tight break-words shrink-0" title={label}>
       {label}
     </span>
     <div className="flex-1 h-4 bg-stone-100 rounded-full relative overflow-hidden">
       {bands}
-      <div className="absolute top-0.5 bottom-0.5 w-3 rounded-full shadow-sm" style={{ left: `calc(${position * 100}% - 6px)`, backgroundColor: color }} />
+      <div
+        className="absolute top-0.5 bottom-0.5 w-3 rounded-full shadow-sm"
+        style={{ left: `calc(${position * 100}% - 6px)`, backgroundColor: color }}
+      />
     </div>
     <span className="w-14 text-right font-bold shrink-0" style={{ color }}>
       {value}
@@ -324,7 +368,14 @@ const ProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; theme: Rep
     <>
       <ChartCard title={chart.title} theme={theme}>
         {chart.items.map((item) => (
-          <ChartRow key={item.key} label={item.label} position={item.position} color={ZONE_META[item.zone].color} value={item.value} bands={bands} />
+          <ChartRow
+            key={item.key}
+            label={item.label}
+            position={item.position}
+            color={ZONE_META[item.zone].color}
+            value={item.value}
+            bands={bands}
+          />
         ))}
         <div className="flex items-center gap-3 text-[9px] text-stone-400 mt-2 pt-2 border-t border-stone-100">
           <span className="w-36" />
@@ -347,7 +398,9 @@ const RadarProfile: React.FC<{ tests: TestData; theme: ReportTheme }> = ({ tests
   const { index } = useCatalog();
   const data = useMemo(() => computeRadarData(tests, index).map((p) => ({ subject: p.label, value: p.value })), [tests, index]);
   if (data.length === 0) {
-    return <p className="text-xs text-stone-400 italic mb-8 text-center py-8">Le radar nécessite des scores dans au moins trois domaines.</p>;
+    return (
+      <p className="text-xs text-stone-400 italic mb-8 text-center py-8">Le radar nécessite des scores dans au moins trois domaines.</p>
+    );
   }
   return (
     <div className="w-full h-[300px] mb-8 bg-stone-50 rounded-2xl border border-stone-200 relative break-inside-avoid">
@@ -383,17 +436,26 @@ const EvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }) =
   );
 };
 
-const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onModeChange?: (mode: ScoreDisplayMode) => void }> = ({ block, theme, onModeChange }) => {
+const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onModeChange?: (mode: ScoreDisplayMode) => void }> = ({
+  block,
+  theme,
+  onModeChange,
+}) => {
   const headingCss: React.CSSProperties = { fontFamily: theme.headingFont, color: theme.primary };
   return (
     <div className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass(theme.corners)}`}>
-      <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center" style={{ backgroundColor: theme.primary + '08' }}>
+      <div
+        className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center"
+        style={{ backgroundColor: theme.primary + '08' }}
+      >
         <div className="flex items-center gap-4">
           <h3 className="font-bold text-lg" style={headingCss}>
             {block.testName}
           </h3>
           {!block.isFreeObservations && (
-            <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">{block.rows.length + block.qualitativeRows.length} épreuves</span>
+            <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              {block.rows.length + block.qualitativeRows.length} épreuves
+            </span>
           )}
         </div>
         {onModeChange && block.hasStandardizedScores && (
@@ -507,7 +569,9 @@ const AnnexesBlock: React.FC<{
                 key={type}
                 onClick={() => onChartTypeChange(type)}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
-                  chartType === type ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
+                  chartType === type
+                    ? 'bg-[var(--secondary)] text-white border-[var(--secondary)]'
+                    : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
                 }`}
               >
                 {type === 'radar' ? 'Radar' : type === 'bar' ? 'Barres ET' : 'Percentiles'}
@@ -525,7 +589,9 @@ const AnnexesBlock: React.FC<{
               key={block.testId}
               block={block}
               theme={theme}
-              onModeChange={onScoreDisplayModeChange ? (mode) => onScoreDisplayModeChange({ ...scoreDisplayModes, [block.testId]: mode }) : undefined}
+              onModeChange={
+                onScoreDisplayModeChange ? (mode) => onScoreDisplayModeChange({ ...scoreDisplayModes, [block.testId]: mode }) : undefined
+              }
             />
           ))}
         </div>
@@ -536,7 +602,11 @@ const AnnexesBlock: React.FC<{
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
-const PatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({ patient, theme, align }) => {
+const PatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
+  patient,
+  theme,
+  align,
+}) => {
   const content = (
     <>
       <h2 className="font-bold text-2xl text-stone-900 mb-1">
@@ -546,15 +616,27 @@ const PatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'lef
       {patient.age && <p className="text-sm text-stone-500">{patient.age}</p>}
     </>
   );
-  if (theme.patientBlockStyle === 'minimal') return <div className="w-full" style={{ textAlign: align }}>{content}</div>;
+  if (theme.patientBlockStyle === 'minimal')
+    return (
+      <div className="w-full" style={{ textAlign: align }}>
+        {content}
+      </div>
+    );
   return (
-    <div className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass(theme.corners)} min-w-[200px] w-full`} style={{ textAlign: align }}>
+    <div
+      className={`p-4 bg-stone-50 border border-stone-100 ${roundedClass(theme.corners)} min-w-[200px] w-full`}
+      style={{ textAlign: align }}
+    >
       {content}
     </div>
   );
 };
 
-const PractitionerBlock: React.FC<{ branding?: BrandingConfig; theme: ReportTheme; alignEnd?: boolean }> = ({ branding, theme, alignEnd }) => {
+const PractitionerBlock: React.FC<{ branding?: BrandingConfig; theme: ReportTheme; alignEnd?: boolean }> = ({
+  branding,
+  theme,
+  alignEnd,
+}) => {
   const logoClass = theme.logoSize === 'small' ? 'w-28 h-12' : theme.logoSize === 'medium' ? 'w-40 h-20' : 'w-64 h-32';
   return (
     <div className={alignEnd ? 'flex flex-col items-end text-right' : ''}>
@@ -677,7 +759,11 @@ export const ReportView: React.FC<Props> = ({
               <div className="mb-8 text-sm text-stone-500 italic text-right">Fait le {formatReportDate()}</div>
               <h1
                 className="text-center font-bold text-3xl mb-12"
-                style={theme.titleStyle === 'underline' ? { ...titleCss, borderBottom: `4px solid ${theme.secondary}`, display: 'inline-block', paddingBottom: '8px' } : titleCss}
+                style={
+                  theme.titleStyle === 'underline'
+                    ? { ...titleCss, borderBottom: `4px solid ${theme.secondary}`, display: 'inline-block', paddingBottom: '8px' }
+                    : titleCss
+                }
               >
                 {branding?.documentTitle || 'Rapport d’évaluation'}
               </h1>
@@ -713,7 +799,14 @@ export const ReportView: React.FC<Props> = ({
             const section = sectionById.get(sectionId);
             if (!section) return null;
             return (
-              <ReportSectionBlock key={sectionId} section={section} theme={theme} isPerformance={isPerformance} onUpdateSection={onUpdateSection} controls={controls} />
+              <ReportSectionBlock
+                key={sectionId}
+                section={section}
+                theme={theme}
+                isPerformance={isPerformance}
+                onUpdateSection={onUpdateSection}
+                controls={controls}
+              />
             );
           })}
 
@@ -737,7 +830,11 @@ export const ReportView: React.FC<Props> = ({
           <AddPageMenu
             onAddBlank={() => onPagesChange([...pages, []])}
             onAddSchoolPage={() => {
-              onUpdateSection('ecole', { title: 'Recommandations scolaires', content: '<p>Aménagements et recommandations pour le milieu scolaire.</p>', contentFormat: 'html' });
+              onUpdateSection('ecole', {
+                title: 'Recommandations scolaires',
+                content: '<p>Aménagements et recommandations pour le milieu scolaire.</p>',
+                contentFormat: 'html',
+              });
               onPagesChange([...pages, ['ecole']]);
             }}
           />

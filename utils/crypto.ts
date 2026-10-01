@@ -23,7 +23,10 @@ const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).pad
 /** Derive the AES-GCM key of a PIN. */
 export const deriveMasterKey = async (password: string, salt: string, iterations = CURRENT_ITERATIONS): Promise<CryptoKey> => {
   const enc = new TextEncoder();
-  const keyMaterial = await window.crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits', 'deriveKey']);
+  const keyMaterial = await window.crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, [
+    'deriveBits',
+    'deriveKey',
+  ]);
   return window.crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: enc.encode(salt), iterations, hash: 'SHA-256' },
     keyMaterial,

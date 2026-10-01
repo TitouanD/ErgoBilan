@@ -219,7 +219,9 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                               {category && (
                                 <div className="flex items-center gap-1 mb-0.5">
                                   <CatIcon size={10} className="text-[var(--text-secondary)]" />
-                                  <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">{category.name}</span>
+                                  <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
+                                    {category.name}
+                                  </span>
                                 </div>
                               )}
                               <h4 className="font-bold text-[var(--text-heading)] truncate">{def.name}</h4>
@@ -241,7 +243,10 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                             {subtests.length === 0 ? (
                               <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>
                             ) : (
-                              <SortableContext items={subtests.map((s) => subtestDragId(testId, s.id))} strategy={verticalListSortingStrategy}>
+                              <SortableContext
+                                items={subtests.map((s) => subtestDragId(testId, s.id))}
+                                strategy={verticalListSortingStrategy}
+                              >
                                 <ScoreTable
                                   testId={testId}
                                   subtests={subtests}

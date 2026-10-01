@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/react";
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { initSentry, reactRootErrorHandler, withSentryProfiler } from './services/sentryService';
 
 // Local font assets for lower startup latency and fewer third-party requests.
@@ -14,7 +14,7 @@ import '@fontsource/merriweather/latin-700.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+  throw new Error('Could not find root element to mount to');
 }
 
 initSentry();
@@ -31,5 +31,5 @@ root.render(
     <AppWithProfiler />
     <Analytics />
     <SpeedInsights />
-  </React.StrictMode>
+  </React.StrictMode>,
 );
