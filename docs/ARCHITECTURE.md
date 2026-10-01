@@ -41,7 +41,7 @@ SPA React 19 (Vite, TypeScript) pour ergothérapeutes pédiatriques. **Local-fir
 | Anti-bot       | `@marsidev/react-turnstile` (captcha Supabase Auth)                           |
 | Outillage      | Vite 6, TypeScript ~5.8 (`strict`), Vitest 4, ESLint 9, Prettier 3            |
 
-Scripts `package.json` : `dev` (Vite, port 3000), `build`, `preview`, `test` (`vitest run`), `test:watch`, `lint` (`--max-warnings 0`), `lint:fix`, `typecheck` (`tsc --noEmit`), `format`, `format:check` (Markdown compris), et `check` = lint + typecheck + test + build, à lancer avant de rendre la main.
+Scripts `package.json` : `dev` (Vite, port 3000), `build`, `preview`, `test` (`vitest run`), `test:watch`, `lint` (`--max-warnings 0`), `lint:fix`, `typecheck` (`tsc --noEmit`), `format`, `format:check` (Markdown compris), et `check` = lint + format:check + typecheck + test + build (`npm run format` corrige le format), à lancer avant de rendre la main.
 
 - Tests : `vitest.config.ts` inclut `utils/**/*.test.ts`, `services/**/*.test.ts` (IndexedDB simulée par `fake-indexeddb`) et `components/**/*.test.tsx` (jsdom).
 - CI : `.github/workflows/ci.yml` lance `npm run check` (Node 20) sur les push vers `main` et les pull requests, avec des valeurs factices pour `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
