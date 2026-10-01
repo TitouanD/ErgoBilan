@@ -34,3 +34,6 @@ supabase/.temp/
 # End-to-end AI test: trace of each run (see docs/AI_PIPELINE.md §9)
 .e2e-trace/
 .env.e2e.local.lock
+
+# Screenshots of the dev scenarios (npm run capture, docs/VERIFICATION.md)
+.captures/

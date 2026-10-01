@@ -53,7 +53,9 @@ Ordre : `urgent`, puis `bug`, `amelioration`, `chantier` ; les plus anciennes d'
    - Edge `generate` modifiée : l'exécution réelle vient après le déploiement accordé par Titouan (étape 5).
 5. **Base commune** (migration Supabase, edge function) : écrire le fichier, pousser la branche, passer l'issue `titouan` avec une question. Ne rien appliquer ni déployer. Tout le reste se fusionne dans `dev` ; noter les points sensibles (Dexie, `.ergobilan`, anonymisation, auth, PIN, crédits) pour la PR hebdomadaire.
 6. Sinon : fusionner dans `dev` (`git checkout dev && git merge --no-ff <branche> && git push`), supprimer le worktree et la branche.
-7. Commenter l'issue : le commit, le test qui couvre le cas. Contrôle visuel utile → passer `testeuse` avec « sur dev.ergobilan.com : aller à …, on doit voir … ». Sinon, fermer.
+7. Commenter l'issue : le commit, le test qui couvre le cas, puis fermer.
+   - **Interface touchée** : avant la fusion, `npm run capture -- "scenario=…"` depuis le worktree (`docs/VERIFICATION.md`). Si l'écran n'a pas de scénario, en ajouter un. Regarder la capture soi-même : c'est la vérification. Le commentaire donne le lien du scénario (`localhost:3000/?scenario=…`) et ce que montre la capture.
+   - **Vrai doute important** sur le rendu ou l'ergonomie, seulement dans ce cas : passer `titouan` et `testeuse`, avec le lien du scénario et la question précise.
 
 Tout ce que tu relèves en chemin et qui sort de l'issue devient une nouvelle issue (`claude` ou `titouan`), pas un ajout silencieux.
 

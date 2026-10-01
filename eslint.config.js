@@ -13,6 +13,12 @@ export default [
   // ---- Base JS rules ----
   js.configs.recommended,
 
+  // ---- Node scripts (e2e/capture.mjs: Node, plus the code evaluated in the page) ----
+  {
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+
   // ---- TypeScript + React ----
   {
     files: ['**/*.{ts,tsx}'],
