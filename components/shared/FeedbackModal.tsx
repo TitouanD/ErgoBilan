@@ -4,10 +4,10 @@
  * each feedback into a GitHub issue.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle2, MessageSquareText, X } from 'lucide-react';
 import { Modal } from './Modal';
-import { sendAppFeedback, type FeedbackSource } from '../../services/sentryService';
+import { prepareFeedback, sendAppFeedback, type FeedbackSource } from '../../services/sentryService';
 
 interface Props {
   isOpen: boolean;
@@ -23,6 +23,10 @@ export const FeedbackModal: React.FC<Props> = ({ isOpen, onClose, source, askEma
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<Status>('editing');
+
+  useEffect(() => {
+    if (isOpen) void prepareFeedback();
+  }, [isOpen]);
 
   const close = () => {
     if (status === 'sent') {

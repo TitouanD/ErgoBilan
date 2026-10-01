@@ -243,19 +243,37 @@ export const isFeedbackAvailable = (): boolean => !isPortalUrl();
 export type FeedbackSource = 'header' | 'error_screen';
 
 /**
- * Send a feedback to Sentry (picked up by /issues and turned into a GitHub issue).
- * Linked to the last captured error when sent from the error screen. False when Sentry is off.
+ * Call when the feedback form opens. Replays are sampled on error only (buffer mode):
+ * this sends the buffered minute and keeps recording, so the feedback can point to it.
+ * Done at opening because the replay integration only reads the replay id synchronously.
+ */
+export const prepareFeedback = async (): Promise<void> => {
+  if (!IS_ENABLED) return;
+  try {
+    await Sentry.getReplay()?.flush();
+  } catch {
+    // No replay: the feedback is still sent, without it.
+  }
+};
+
+/**
+ * Send a feedback to Sentry (picked up by /issues and turned into a GitHub issue), with
+ * the replay when there is one. Linked to the last captured error when sent from the
+ * error screen. False when Sentry is off.
  */
 export const sendAppFeedback = (message: string, source: FeedbackSource, email?: string): boolean => {
   if (!IS_ENABLED) return false;
-  Sentry.captureFeedback({
-    message,
-    email: email?.trim() || undefined,
-    url: window.location.href,
-    source,
-    associatedEventId: source === 'error_screen' ? Sentry.lastEventId() : undefined,
-    tags: { feedback_source: source },
-  });
+  Sentry.captureFeedback(
+    {
+      message,
+      email: email?.trim() || undefined,
+      url: window.location.href,
+      source,
+      associatedEventId: source === 'error_screen' ? Sentry.lastEventId() : undefined,
+      tags: { feedback_source: source },
+    },
+    { includeReplay: true },
+  );
   return true;
 };
 

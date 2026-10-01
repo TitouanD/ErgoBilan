@@ -5,7 +5,11 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const sendAppFeedback = vi.fn();
-vi.mock('../../services/sentryService', () => ({ sendAppFeedback: (...args: unknown[]) => sendAppFeedback(...args) }));
+const prepareFeedback = vi.fn();
+vi.mock('../../services/sentryService', () => ({
+  sendAppFeedback: (...args: unknown[]) => sendAppFeedback(...args),
+  prepareFeedback: () => prepareFeedback(),
+}));
 
 import { FeedbackModal } from './FeedbackModal';
 
@@ -21,6 +25,14 @@ describe('FeedbackModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
     expect(sendAppFeedback).toHaveBeenCalledWith('Le bouton Suivant ne répond plus', 'header', undefined);
     expect(screen.getByText('Merci !')).toBeInTheDocument();
+  });
+
+  it("prépare le replay à l'ouverture seulement", () => {
+    prepareFeedback.mockReset();
+    const { rerender } = render(<FeedbackModal isOpen={false} onClose={() => {}} source="header" />);
+    expect(prepareFeedback).not.toHaveBeenCalled();
+    rerender(<FeedbackModal isOpen onClose={() => {}} source="header" />);
+    expect(prepareFeedback).toHaveBeenCalledOnce();
   });
 
   it("en démo, propose un e-mail facultatif et l'envoie", async () => {
