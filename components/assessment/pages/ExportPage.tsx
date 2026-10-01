@@ -209,7 +209,9 @@ export const ExportPage: React.FC<Props> = ({
           onUpdateSection={onUpdateSection}
           branding={branding}
           scoreDisplayModes={scoreDisplayModes}
-          onScoreDisplayModeChange={(modes: Record<string, ScoreDisplayMode>) => onUpdateBranding({ ...branding, scoreDisplayModes: modes })}
+          onScoreDisplayModeChange={(modes: Record<string, ScoreDisplayMode>) =>
+            onUpdateBranding({ ...branding, scoreDisplayModes: modes })
+          }
           chartType={chartType}
           onChartTypeChange={(type) => onUpdateBranding({ ...branding, chartType: type })}
           previousTests={previousTests}
@@ -217,7 +219,14 @@ export const ExportPage: React.FC<Props> = ({
         />
       </div>
 
-      {showBranding && <BrandingEditor branding={branding} onUpdate={onUpdateBranding} onClose={() => setShowBranding(false)} onOpenProfile={onOpenProfile} />}
+      {showBranding && (
+        <BrandingEditor
+          branding={branding}
+          onUpdate={onUpdateBranding}
+          onClose={() => setShowBranding(false)}
+          onOpenProfile={onOpenProfile}
+        />
+      )}
     </div>
   );
 };

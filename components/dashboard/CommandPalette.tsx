@@ -143,7 +143,9 @@ export const CommandPalette: React.FC<Props> = ({
               </button>
             ))}
             {filteredActions.length === 0 && (
-              <div className="rounded-xl border border-dashed border-[var(--border-color)] px-3 py-4 text-xs text-[var(--text-secondary)]">Aucune action correspondante.</div>
+              <div className="rounded-xl border border-dashed border-[var(--border-color)] px-3 py-4 text-xs text-[var(--text-secondary)]">
+                Aucune action correspondante.
+              </div>
             )}
           </div>
 
@@ -167,7 +169,9 @@ export const CommandPalette: React.FC<Props> = ({
               </button>
             ))}
             {filteredPatients.length === 0 && (
-              <div className="rounded-xl border border-dashed border-[var(--border-color)] px-3 py-4 text-xs text-[var(--text-secondary)]">Aucun patient trouvé.</div>
+              <div className="rounded-xl border border-dashed border-[var(--border-color)] px-3 py-4 text-xs text-[var(--text-secondary)]">
+                Aucun patient trouvé.
+              </div>
             )}
           </div>
         </div>

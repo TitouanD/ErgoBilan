@@ -34,7 +34,8 @@ const REPLAYS_ON_ERROR_SAMPLE_RATE = parseRate(env.VITE_SENTRY_REPLAYS_ON_ERROR_
 
 // ─── Scrubbing ────────────────────────────────────────────────────────────────
 
-const sensitiveKeyPattern = /(patient|email|phone|name|nom|prenom|address|siret|content|report|questionnaire|observation|notes?|diagnostic|payload|body|key|token|password|pin)/i;
+const sensitiveKeyPattern =
+  /(patient|email|phone|name|nom|prenom|address|siret|content|report|questionnaire|observation|notes?|diagnostic|payload|body|key|token|password|pin)/i;
 const sensitiveValuePattern = /([A-Z][a-z]+\s[A-Z][a-z]+)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(?:\+?\d[\d\s().-]{7,}\d)/g;
 const MAX_DEPTH = 8;
 
@@ -65,7 +66,20 @@ export const scrubUrl = (url: string): string => {
 const scrubMaybeUrl = (value: unknown): unknown => (typeof value === 'string' ? scrubUrl(value) : value);
 
 /** Contexts set by the SDK: kept as is. Everything else comes from the app and is scrubbed. */
-const SDK_CONTEXTS = new Set(['browser', 'os', 'device', 'trace', 'runtime', 'culture', 'react', 'replay', 'app', 'cloud_resource', 'profile', 'flags']);
+const SDK_CONTEXTS = new Set([
+  'browser',
+  'os',
+  'device',
+  'trace',
+  'runtime',
+  'culture',
+  'react',
+  'replay',
+  'app',
+  'cloud_resource',
+  'profile',
+  'flags',
+]);
 
 const URL_FIELDS = new Set(['url', 'from', 'to']);
 
@@ -73,7 +87,9 @@ const scrubBreadcrumb = (crumb: Breadcrumb): Breadcrumb => ({
   ...crumb,
   message: crumb.message ? scrubString(crumb.message) : crumb.message,
   data: crumb.data
-    ? Object.fromEntries(Object.entries(crumb.data).map(([key, value]) => [key, URL_FIELDS.has(key) ? scrubMaybeUrl(value) : scrubData(value)]))
+    ? Object.fromEntries(
+        Object.entries(crumb.data).map(([key, value]) => [key, URL_FIELDS.has(key) ? scrubMaybeUrl(value) : scrubData(value)]),
+      )
     : crumb.data,
 });
 
@@ -198,7 +214,12 @@ const normalizeError = (error: unknown): { error: Error; details?: Context } => 
       const { error: inner, ...rest } = obj;
       return { error: inner as Error, details: rest };
     }
-    const message = typeof obj.message === 'string' ? obj.message : typeof obj.error === 'string' ? obj.error : JSON.stringify(scrubData(obj)).slice(0, 300);
+    const message =
+      typeof obj.message === 'string'
+        ? obj.message
+        : typeof obj.error === 'string'
+          ? obj.error
+          : JSON.stringify(scrubData(obj)).slice(0, 300);
     const code = typeof obj.code === 'string' || typeof obj.code === 'number' ? `${obj.code}: ` : '';
     const normalized = new Error(`${code}${message}`);
     normalized.name = typeof obj.name === 'string' ? obj.name : 'NonErrorException';

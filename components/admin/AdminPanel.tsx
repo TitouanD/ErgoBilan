@@ -32,7 +32,9 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
       }
     };
     verify();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (checkingAdmin) {
@@ -49,7 +51,9 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
         <Ban size={64} className="mb-4" />
         <h1 className="text-3xl font-bold">ACCÈS INTERDIT</h1>
         <p className="mt-2 text-rose-200">Incident de sécurité signalé.</p>
-        <button onClick={onClose} className="mt-8 px-6 py-2 bg-white text-rose-900 rounded-lg font-bold">Retour</button>
+        <button onClick={onClose} className="mt-8 px-6 py-2 bg-white text-rose-900 rounded-lg font-bold">
+          Retour
+        </button>
       </div>
     );
   }
@@ -63,7 +67,9 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
             <ShieldAlert size={16} className="text-rose-500" />
             <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Zone Restreinte</span>
           </div>
-          <h1 className="font-serif font-bold text-xl text-white tracking-wide">Panel <span className="text-[var(--primary)]">Admin</span></h1>
+          <h1 className="font-serif font-bold text-xl text-white tracking-wide">
+            Panel <span className="text-[var(--primary)]">Admin</span>
+          </h1>
         </div>
 
         <nav className="flex-1 p-4 space-y-2">
@@ -91,7 +97,10 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
         </nav>
 
         <div className="p-4 border-t border-white/5">
-          <button onClick={onClose} className="w-full py-2 text-stone-500 hover:text-white text-xs font-bold uppercase tracking-wider text-center flex items-center justify-center gap-2">
+          <button
+            onClick={onClose}
+            className="w-full py-2 text-stone-500 hover:text-white text-xs font-bold uppercase tracking-wider text-center flex items-center justify-center gap-2"
+          >
             <X size={14} /> Fermer Session
           </button>
         </div>
@@ -101,9 +110,9 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#1A1C23]">
           <h2 className="font-bold text-white text-lg">
-            {activeTab === 'catalogue' && "Catalogue Officiel"}
-            {activeTab === 'users' && "Gestion Utilisateurs & Abonnements"}
-            {activeTab === 'ops' && "Supervision Technique & IA"}
+            {activeTab === 'catalogue' && 'Catalogue Officiel'}
+            {activeTab === 'users' && 'Gestion Utilisateurs & Abonnements'}
+            {activeTab === 'ops' && 'Supervision Technique & IA'}
           </h2>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-xs font-bold text-stone-500 bg-white/5 px-3 py-1.5 rounded-full">
@@ -114,9 +123,7 @@ export const AdminPanel: React.FC<Props> = ({ onClose }) => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-0 bg-[#1A1C23]">
-          {activeTab === 'catalogue' && (
-            <AdminLibrary />
-          )}
+          {activeTab === 'catalogue' && <AdminLibrary />}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'ops' && <OpsMonitoring />}
         </main>

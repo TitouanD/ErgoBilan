@@ -26,17 +26,14 @@ export const useLinkManager = ({
   setPendingQuestionnaires,
   toast,
 }: UseLinkManagerParams) => {
-  const tryCopyLink = useCallback(
-    async (link: string): Promise<boolean> => {
-      try {
-        await navigator.clipboard.writeText(link);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [],
-  );
+  const tryCopyLink = useCallback(async (link: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(link);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // ------------------------------------------------------------------
   // Generate a new questionnaire link
@@ -45,7 +42,13 @@ export const useLinkManager = ({
     if (isDemoMode) {
       const demoLink = `${window.location.origin}/?q_id=demo-q1#key=demo-key`;
       setPendingQuestionnaires((prev) => [
-        { id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
+        {
+          id: 'demo-new',
+          label: 'Nouveau Dossier (Simulé)',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          practitionerEncryptedKey: '',
+        },
         ...prev,
       ]);
       const copied = await tryCopyLink(demoLink);
@@ -71,7 +74,9 @@ export const useLinkManager = ({
     // Générer un token d'accès pour sécuriser l'accès anonyme
     const accessTokenBytes = new Uint8Array(32);
     crypto.getRandomValues(accessTokenBytes);
-    const accessToken = Array.from(accessTokenBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const accessToken = Array.from(accessTokenBytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
 
     const label = `Dossier #${pendingQuestionnaires.length + 1} (${new Date().toLocaleDateString()})`;
 
@@ -122,10 +127,7 @@ export const useLinkManager = ({
 
       if (isDemoMode) return;
 
-      const { error } = await supabase
-        .from('pending_questionnaires')
-        .delete()
-        .eq('id', q.id);
+      const { error } = await supabase.from('pending_questionnaires').delete().eq('id', q.id);
 
       if (error) {
         // Rollback on failure

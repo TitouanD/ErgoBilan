@@ -20,12 +20,7 @@ interface UseDataLoaderParams {
 
 const PATIENT_PAGE_SIZE = 50;
 
-export const useDataLoader = ({
-  sessionKey,
-  authState,
-  practitioner,
-  isDemoMode,
-}: UseDataLoaderParams) => {
+export const useDataLoader = ({ sessionKey, authState, practitioner, isDemoMode }: UseDataLoaderParams) => {
   const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
   const [pendingQuestionnaires, setPendingQuestionnaires] = useState<PendingQuestionnaire[]>([]);
   const [draftsIndex, setDraftsIndex] = useState<Record<string, DashboardDraftMeta>>({});
@@ -92,8 +87,20 @@ export const useDataLoader = ({
   const loadPending = useCallback(async () => {
     if (isDemoMode) {
       setPendingQuestionnaires([
-        { id: 'demo-q1', label: 'Famille RAVEL (En attente)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
-        { id: 'demo-leo', label: 'Famille RAVEL (Dossier complet)', status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), practitionerEncryptedKey: '' },
+        {
+          id: 'demo-q1',
+          label: 'Famille RAVEL (En attente)',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          practitionerEncryptedKey: '',
+        },
+        {
+          id: 'demo-leo',
+          label: 'Famille RAVEL (Dossier complet)',
+          status: 'completed',
+          createdAt: new Date(Date.now() - 86400000).toISOString(),
+          practitionerEncryptedKey: '',
+        },
       ]);
       return;
     }
@@ -159,7 +166,12 @@ export const useDataLoader = ({
       .channel('dashboard-pending')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'pending_questionnaires', filter: practitioner ? `practitioner_id=eq.${practitioner.id}` : undefined },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pending_questionnaires',
+          filter: practitioner ? `practitioner_id=eq.${practitioner.id}` : undefined,
+        },
         () => schedule(loadPending),
       )
       .subscribe();

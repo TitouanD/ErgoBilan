@@ -11,13 +11,7 @@
  */
 
 import Dexie, { type Table } from 'dexie';
-import type {
-  DraftPayload,
-  Patient,
-  PatientAssessment,
-  PatientDashboardPreviewMeta,
-  PatientFollowupStatus,
-} from '../types';
+import type { DraftPayload, Patient, PatientAssessment, PatientDashboardPreviewMeta, PatientFollowupStatus } from '../types';
 import { Logger } from '../utils/logger';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
@@ -163,9 +157,7 @@ export const migrateLegacyDB = async (userId: string, targetDB: ErgoBilanDB): Pr
     // Write to new scoped DB, stripping userId + organizationId
     await targetDB.transaction('rw', [targetDB.patients, targetDB.drafts, targetDB.assessments, targetDB.followups], async () => {
       if (patients.length) {
-        await targetDB.patients.bulkPut(
-          patients.map(({ userId: _u, organizationId: _o, ...rest }) => rest as unknown as LocalPatientRow),
-        );
+        await targetDB.patients.bulkPut(patients.map(({ userId: _u, organizationId: _o, ...rest }) => rest as unknown as LocalPatientRow));
       }
       if (assessments.length) {
         await targetDB.assessments.bulkPut(
@@ -173,14 +165,10 @@ export const migrateLegacyDB = async (userId: string, targetDB: ErgoBilanDB): Pr
         );
       }
       if (followups.length) {
-        await targetDB.followups.bulkPut(
-          followups.map(({ organizationId: _o, ...rest }) => rest as unknown as LocalFollowupRow),
-        );
+        await targetDB.followups.bulkPut(followups.map(({ organizationId: _o, ...rest }) => rest as unknown as LocalFollowupRow));
       }
       if (draftRows.length) {
-        await targetDB.drafts.bulkAdd(
-          draftRows.map(({ id: _id, userId: _u, ...rest }) => rest as unknown as LocalDraftRow),
-        );
+        await targetDB.drafts.bulkAdd(draftRows.map(({ id: _id, userId: _u, ...rest }) => rest as unknown as LocalDraftRow));
       }
     });
 

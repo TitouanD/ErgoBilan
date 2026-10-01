@@ -6,12 +6,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = globalThis.process?.env ?? {};
-const appRelease =
-  env.VERCEL_GIT_COMMIT_SHA ||
-  env.GITHUB_SHA ||
-  env.COMMIT_SHA ||
-  env.VITE_SENTRY_RELEASE ||
-  'local';
+const appRelease = env.VERCEL_GIT_COMMIT_SHA || env.GITHUB_SHA || env.COMMIT_SHA || env.VITE_SENTRY_RELEASE || 'local';
 // Vercel: production | preview | development. Overridden at runtime by VITE_SENTRY_ENVIRONMENT.
 const appEnv = env.VERCEL_ENV || '';
 // Source maps are only built when they can be uploaded to Sentry, then deleted from dist (never served).
@@ -51,7 +46,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
-    }
+    },
   },
   // @react-pdf/renderer compatibility: resolve pako and other Node-style imports
   optimizeDeps: {

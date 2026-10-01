@@ -40,7 +40,9 @@ import { AssessmentWorkspace } from './components/assessment/AssessmentWorkspace
 
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then((m) => ({ default: m.AdminPanel })));
 const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEditor').then((m) => ({ default: m.ProfileEditor })));
-const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })));
+const OnboardingExperience = React.lazy(() =>
+  import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })),
+);
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
 /** Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build. */
@@ -223,7 +225,11 @@ const AppRouter = () => {
       const baseFile = patientFiles.find((f) => f.id === id);
       if (!baseFile) return;
       setSelectedFile({ ...baseFile, assessments: details.assessments, followup: details.followup, patient: details.patient });
-      setDetailPaging({ hasMoreAssessments: details.hasMoreAssessments, nextAssessmentOffset: details.nextAssessmentOffset, isLoadingMore: false });
+      setDetailPaging({
+        hasMoreAssessments: details.hasMoreAssessments,
+        nextAssessmentOffset: details.nextAssessmentOffset,
+        isLoadingMore: false,
+      });
       setMode('detail');
     } catch (e) {
       Logger.error('DB', 'Failed to open patient file', e);
@@ -242,7 +248,11 @@ const AppRouter = () => {
         history.assessments.forEach((a) => byId.set(a.id, a));
         return { ...prev, assessments: [...byId.values()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) };
       });
-      setDetailPaging({ hasMoreAssessments: history.hasMoreAssessments, nextAssessmentOffset: history.nextAssessmentOffset, isLoadingMore: false });
+      setDetailPaging({
+        hasMoreAssessments: history.hasMoreAssessments,
+        nextAssessmentOffset: history.nextAssessmentOffset,
+        isLoadingMore: false,
+      });
     } catch (e) {
       Logger.warn('DB', 'Failed to load more history', e);
       toast.error("Impossible de charger plus d'historique.");
@@ -289,7 +299,8 @@ const AppRouter = () => {
     return <TestAccessScreen email={accountEmail} onLogout={() => void logout()} />;
   }
   if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
-  if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={unlockSession} onLogout={logout} />;
+  if (authState === 'locked' && practitioner && !isDemoMode)
+    return <PinUnlock practitioner={practitioner} onUnlock={unlockSession} onLogout={logout} />;
 
   if (mode === 'landing') {
     return (

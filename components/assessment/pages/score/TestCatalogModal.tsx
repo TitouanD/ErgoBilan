@@ -11,11 +11,7 @@ import type { SubtestDef } from '../../../../data/testCatalog';
 import { useCatalog } from '../../../../contexts/CatalogContext';
 import { useFavoriteTests } from '../../../../hooks/useFavoriteTests';
 import { CustomTestEditor } from '../../shared/CustomTestEditor';
-import {
-  compareSubtestsForDisplay,
-  getDisplayGroupKey,
-  getDisplayGroupLabel,
-} from '../../../../utils/subtestOrdering';
+import { compareSubtestsForDisplay, getDisplayGroupKey, getDisplayGroupLabel } from '../../../../utils/subtestOrdering';
 import { CUSTOM_OBSERVATIONS_TEST_ID } from '../../../../utils/catalogIndex';
 
 interface Props {
@@ -309,7 +305,10 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
                                 />
                                 <span className="min-w-0 break-words">{st.name}</span>
                                 {already && (
-                                  <span className="ml-auto shrink-0 text-[10px] uppercase font-bold" title="Pour le retirer, utilisez la croix dans le tableau des scores">
+                                  <span
+                                    className="ml-auto shrink-0 text-[10px] uppercase font-bold"
+                                    title="Pour le retirer, utilisez la croix dans le tableau des scores"
+                                  >
                                     ajouté
                                   </span>
                                 )}

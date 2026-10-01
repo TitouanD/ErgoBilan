@@ -63,7 +63,9 @@ describe('hydrateReport', () => {
     expect(hydrateReport("<p>à l'école élémentaire {{ECOLE}}</p>", tilleuls, { asHtml: true })).toBe("<p>à l'École des Tilleuls</p>");
     expect(hydrateReport('au collège {{ECOLE}}', { ...patient, school: 'Collège Victor Hugo' } as Patient)).toBe('au Collège Victor Hugo');
     expect(hydrateReport('au collège {{ECOLE}}', { ...patient, school: 'Mescoat' } as Patient)).toBe('au collège Mescoat');
-    expect(hydrateReport("l'école de {{PATIENT_PRENOM}}, l'école {{ENSEIGNANT}}", tilleuls)).toBe("l'école de Ali, l'école l'enseignant(e)");
+    expect(hydrateReport("l'école de {{PATIENT_PRENOM}}, l'école {{ENSEIGNANT}}", tilleuls)).toBe(
+      "l'école de Ali, l'école l'enseignant(e)",
+    );
   });
 
   it('escapes values injected into HTML', () => {

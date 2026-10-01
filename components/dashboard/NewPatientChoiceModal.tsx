@@ -9,13 +9,7 @@ interface Props {
   onChooseHistorical: () => void;
 }
 
-export const NewPatientChoiceModal: React.FC<Props> = ({
-  isOpen,
-  onClose,
-  onChooseFamilyLink,
-  onChooseManual,
-  onChooseHistorical,
-}) => {
+export const NewPatientChoiceModal: React.FC<Props> = ({ isOpen, onClose, onChooseFamilyLink, onChooseManual, onChooseHistorical }) => {
   const firstButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -51,7 +45,10 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--secondary)]/45 p-4 backdrop-blur-sm" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--secondary)]/45 p-4 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
       <div
         className="w-full max-w-[620px] rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl md:p-7"
         onMouseDown={(event) => event.stopPropagation()}
@@ -111,7 +108,9 @@ export const NewPatientChoiceModal: React.FC<Props> = ({
             </span>
             <div>
               <div className="text-sm font-bold text-[var(--text-main)]">Bilan antérieur</div>
-              <div className="mt-1 text-xs text-[var(--text-secondary)]">Importer un bilan existant pour activer la réévaluation 1-clic.</div>
+              <div className="mt-1 text-xs text-[var(--text-secondary)]">
+                Importer un bilan existant pour activer la réévaluation 1-clic.
+              </div>
             </div>
           </button>
         </div>

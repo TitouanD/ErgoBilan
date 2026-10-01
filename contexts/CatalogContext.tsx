@@ -68,10 +68,7 @@ const toInputConfig = (value: Json | null): SubtestInputConfig | undefined => {
 };
 
 type SubtestRow = Tables<'view_unified_subtests'>;
-type TestRow = Pick<
-  Tables<'view_unified_catalog'>,
-  'id' | 'label' | 'category_id' | 'category_label' | 'icon_key' | 'sort_order'
->;
+type TestRow = Pick<Tables<'view_unified_catalog'>, 'id' | 'label' | 'category_id' | 'category_label' | 'icon_key' | 'sort_order'>;
 
 const toSubtestDef = (s: SubtestRow): SubtestDef | null => {
   if (!s.id || !s.name) return null;

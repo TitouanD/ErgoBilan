@@ -79,11 +79,11 @@ const makeStore = () => {
     loadPatientDetails: vi.fn(async (id: string) => {
       if (!patients.has(id)) throw new Error('Patient introuvable.');
       return {
-      patient: patients.get(id)!,
-      assessments: assessments.get(id) ?? [],
-      followup: null,
-      hasMoreAssessments: false,
-      nextAssessmentOffset: 0,
+        patient: patients.get(id)!,
+        assessments: assessments.get(id) ?? [],
+        followup: null,
+        hasMoreAssessments: false,
+        nextAssessmentOffset: 0,
       };
     }),
     upsertPatientFollowup: vi.fn(async () => {}),

@@ -290,7 +290,11 @@ export const normalizeFlatResults = (results: Record<string, ScoreResult> | unde
 
 /** Does this (normalized) ScoreResult carry any meaningful data? */
 export const hasScoreValue = (r?: Partial<ScoreResult>): boolean =>
-  Boolean((r?.value && String(r.value).trim()) || (r?.observation && String(r.observation).trim()) || (r?.customLabel && String(r.customLabel).trim()));
+  Boolean(
+    (r?.value && String(r.value).trim()) ||
+    (r?.observation && String(r.observation).trim()) ||
+    (r?.customLabel && String(r.customLabel).trim()),
+  );
 
 /** Drop subtests without data and tests left empty (e.g. before persisting a finalized assessment). */
 export const pruneEmptyScores = (tests: Record<string, Record<string, ScoreResult>>): Record<string, Record<string, ScoreResult>> => {

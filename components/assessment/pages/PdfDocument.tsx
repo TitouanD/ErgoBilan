@@ -51,7 +51,14 @@ const bodyFont = (branding: BrandingConfig, theme: ReportTheme) => (theme.isCust
 // ─── Section title ──────────────────────────────────────────────────────────
 
 const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: string }> = ({ title, theme, font }) => {
-  const text = { fontSize: 13, fontWeight: 700 as const, textTransform: 'uppercase' as const, letterSpacing: 1, fontFamily: font, color: theme.primary };
+  const text = {
+    fontSize: 13,
+    fontWeight: 700 as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+    fontFamily: font,
+    color: theme.primary,
+  };
   const row = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, marginBottom: 16, marginTop: 12 };
 
   if (theme.titleStyle === 'underline') {
@@ -64,7 +71,9 @@ const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: strin
   if (theme.titleStyle === 'filled-shape') {
     return (
       <View style={row}>
-        <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}
+        >
           <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.white }} />
         </View>
         <Text style={{ ...text, color: theme.secondary }}>{title}</Text>
@@ -74,7 +83,16 @@ const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: strin
   if (theme.titleStyle.startsWith('icon-')) {
     return (
       <View style={row}>
-        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: theme.secondary + '20', alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: theme.secondary + '20',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.secondary }} />
         </View>
         <Text style={text}>{title}</Text>
@@ -83,7 +101,16 @@ const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: strin
   }
   return (
     <View style={row}>
-      <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: theme.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 6,
+          backgroundColor: theme.primary + '15',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <View style={{ width: 10, height: 2, backgroundColor: theme.primary, borderRadius: 1 }} />
       </View>
       <View>
@@ -96,27 +123,57 @@ const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: strin
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
-const PdfPatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({ patient, theme, align }) => {
+const PdfPatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
+  patient,
+  theme,
+  align,
+}) => {
   const textAlign = align;
   const lines = (
     <>
       <Text style={{ fontSize: theme.patientBlockStyle === 'minimal' ? 16 : 13, fontWeight: 700, color: COLORS.stone800, textAlign }}>
         {patient.firstName} {patient.lastName}
       </Text>
-      {patient.dob ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {formatBirthDate(patient.dob)}</Text> : null}
+      {patient.dob ? (
+        <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {formatBirthDate(patient.dob)}</Text>
+      ) : null}
       {patient.age ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 1, textAlign }}>{patient.age}</Text> : null}
     </>
   );
   if (theme.patientBlockStyle === 'minimal') return <View>{lines}</View>;
   return (
-    <View style={{ padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone100}`, borderRadius: getCornerRadius(theme.corners) }}>
-      <Text style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: COLORS.stone400, marginBottom: 4, textAlign }}>Patient</Text>
+    <View
+      style={{
+        padding: 10,
+        backgroundColor: COLORS.stone50,
+        border: `0.5pt solid ${COLORS.stone100}`,
+        borderRadius: getCornerRadius(theme.corners),
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 8,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: 0.8,
+          color: COLORS.stone400,
+          marginBottom: 4,
+          textAlign,
+        }}
+      >
+        Patient
+      </Text>
       {lines}
     </View>
   );
 };
 
-const PdfPractitionerBlock: React.FC<{ branding: BrandingConfig; theme: ReportTheme; font: string; alignEnd?: boolean }> = ({ branding, theme, font, alignEnd }) => {
+const PdfPractitionerBlock: React.FC<{ branding: BrandingConfig; theme: ReportTheme; font: string; alignEnd?: boolean }> = ({
+  branding,
+  theme,
+  font,
+  alignEnd,
+}) => {
   const small = (size: number, color: string, bold = false) => ({ fontSize: size, color, fontWeight: bold ? 700 : 400, marginBottom: 1 });
   return (
     <View style={{ alignItems: alignEnd ? 'flex-end' : 'flex-start' }}>
@@ -125,9 +182,13 @@ const PdfPractitionerBlock: React.FC<{ branding: BrandingConfig; theme: ReportTh
           <Image src={branding.logoUrl} style={{ height: getLogoHeight(theme.logoSize), objectFit: 'contain' }} />
         </View>
       ) : null}
-      {branding.cabinetName ? <Text style={{ fontSize: 16, fontWeight: 700, color: theme.primary, fontFamily: font }}>{branding.cabinetName}</Text> : null}
+      {branding.cabinetName ? (
+        <Text style={{ fontSize: 16, fontWeight: 700, color: theme.primary, fontFamily: font }}>{branding.cabinetName}</Text>
+      ) : null}
       {branding.brandSubtitle ? (
-        <Text style={{ fontSize: 10, color: theme.secondary, fontWeight: 600, marginTop: 2, fontFamily: font }}>{branding.brandSubtitle}</Text>
+        <Text style={{ fontSize: 10, color: theme.secondary, fontWeight: 600, marginTop: 2, fontFamily: font }}>
+          {branding.brandSubtitle}
+        </Text>
       ) : null}
       <View style={{ marginTop: 6, alignItems: alignEnd ? 'flex-end' : 'flex-start' }}>
         {branding.practitionerName ? <Text style={small(9, COLORS.stone700, true)}>{branding.practitionerName}</Text> : null}
@@ -140,7 +201,12 @@ const PdfPractitionerBlock: React.FC<{ branding: BrandingConfig; theme: ReportTh
   );
 };
 
-const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: ReportTheme; font: string }> = ({ patient, branding, theme, font }) => {
+const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: ReportTheme; font: string }> = ({
+  patient,
+  branding,
+  theme,
+  font,
+}) => {
   const frame = { marginBottom: 32, borderBottomWidth: 1.5, borderBottomColor: COLORS.stone100, paddingBottom: 20 };
   if (theme.headerTemplate === 'corporate') {
     return (
@@ -199,15 +265,30 @@ const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string;
   children,
 }) => (
   <View
-    style={{ marginBottom: 12, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners), overflow: 'hidden' }}
+    style={{
+      marginBottom: 12,
+      backgroundColor: COLORS.white,
+      border: `0.5pt solid ${COLORS.stone200}`,
+      borderRadius: getCornerRadius(theme.corners),
+      overflow: 'hidden',
+    }}
     wrap={breakable ?? false}
   >
     <View
       wrap={false}
       minPresenceAhead={ROW_H * 5}
-      style={{ backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100, padding: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.stone200 }}
+      style={{
+        backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100,
+        padding: 10,
+        borderBottomWidth: 0.5,
+        borderBottomColor: COLORS.stone200,
+      }}
     >
-      <Text style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: theme.primary, fontFamily: font }}>{title}</Text>
+      <Text
+        style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: theme.primary, fontFamily: font }}
+      >
+        {title}
+      </Text>
     </View>
     <View style={{ padding: 10 }}>{children}</View>
   </View>
@@ -216,7 +297,16 @@ const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string;
 const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
   const guide = readingGuide(scale);
   return (
-    <View wrap={false} style={{ marginBottom: 20, padding: 10, backgroundColor: COLORS.stone50, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners) }}>
+    <View
+      wrap={false}
+      style={{
+        marginBottom: 20,
+        padding: 10,
+        backgroundColor: COLORS.stone50,
+        border: `0.5pt solid ${COLORS.stone200}`,
+        borderRadius: getCornerRadius(theme.corners),
+      }}
+    >
       <Text style={{ fontSize: 9, fontWeight: 700, marginBottom: 6 }}>{guide.title}</Text>
       {guide.lines.map((line) => (
         <View key={line.zone} style={{ flexDirection: 'row', gap: 4, marginBottom: 2 }}>
@@ -228,7 +318,8 @@ const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = 
   );
 };
 
-const sliceRows = <T,>(items: T[]): T[][] => Array.from({ length: Math.ceil(items.length / CHART_SLICE) }, (_, i) => items.slice(i * CHART_SLICE, (i + 1) * CHART_SLICE));
+const sliceRows = <T,>(items: T[]): T[][] =>
+  Array.from({ length: Math.ceil(items.length / CHART_SLICE) }, (_, i) => items.slice(i * CHART_SLICE, (i + 1) * CHART_SLICE));
 
 /** Horizontal dot chart of the z and percentile profiles, in unbreakable slices of `CHART_SLICE` rows. */
 const PdfDotChart: React.FC<{ chart: DotChart }> = ({ chart: { items, bands, centerLine, ticks } }) => {
@@ -286,7 +377,13 @@ const PdfDotChartSlice: React.FC<Pick<DotChart, 'items' | 'bands' | 'centerLine'
         );
       })}
       {ticks.map((t, i) => (
-        <SvgText key={i} x={x(t.position)} y={height + 16} textAnchor="middle" style={{ fontSize: 6, fill: COLORS.stone400, fontWeight: t.bold ? 700 : 400 }}>
+        <SvgText
+          key={i}
+          x={x(t.position)}
+          y={height + 16}
+          textAnchor="middle"
+          style={{ fontSize: 6, fill: COLORS.stone400, fontWeight: t.bold ? 700 : 400 }}
+        >
           {t.label}
         </SvgText>
       ))}
@@ -325,11 +422,21 @@ const PdfRadarChart: React.FC<{ tests: TestData; index: CatalogIndex; theme: Rep
     const angle = i * angleStep - Math.PI / 2;
     return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
   };
-  const polygon = data.map((d, i) => toXY(d.value, i)).map((p) => `${p.x},${p.y}`).join(' ');
+  const polygon = data
+    .map((d, i) => toXY(d.value, i))
+    .map((p) => `${p.x},${p.y}`)
+    .join(' ');
 
   return (
-    <View style={{ marginBottom: 20, backgroundColor: COLORS.stone50, borderRadius: 16, border: `0.5pt solid ${COLORS.stone200}`, padding: 12 }} wrap={false}>
-      <Text style={{ fontSize: 8, fontWeight: 700, color: COLORS.stone400, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>Profil par domaine</Text>
+    <View
+      style={{ marginBottom: 20, backgroundColor: COLORS.stone50, borderRadius: 16, border: `0.5pt solid ${COLORS.stone200}`, padding: 12 }}
+      wrap={false}
+    >
+      <Text
+        style={{ fontSize: 8, fontWeight: 700, color: COLORS.stone400, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}
+      >
+        Profil par domaine
+      </Text>
       <View style={{ alignItems: 'center' }}>
         <Svg width={300} height={260} viewBox="0 0 300 260">
           {[0.33, 0.66, 1].map((level) => (
@@ -354,7 +461,9 @@ const PdfRadarChart: React.FC<{ tests: TestData; index: CatalogIndex; theme: Rep
           })}
         </Svg>
       </View>
-      <Text style={{ fontSize: 7, color: COLORS.stone400, fontStyle: 'italic', textAlign: 'right', marginTop: 4 }}>0 = moyenne • -2 = seuil de difficulté</Text>
+      <Text style={{ fontSize: 7, color: COLORS.stone400, fontStyle: 'italic', textAlign: 'right', marginTop: 4 }}>
+        0 = moyenne • -2 = seuil de difficulté
+      </Text>
     </View>
   );
 };
@@ -377,9 +486,20 @@ const PdfEvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }
 
 // `last`: no trailing margin, which would push an empty page when the block ends at the bottom of a page.
 // A long test (NEPSY-2) is taller than a page: it then breaks between rows, its header kept with the first ones.
-const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font: string; last?: boolean }> = ({ block, theme, font, last }) => (
+const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font: string; last?: boolean }> = ({
+  block,
+  theme,
+  font,
+  last,
+}) => (
   <View
-    style={{ marginBottom: last ? 0 : 16, backgroundColor: COLORS.white, border: `0.5pt solid ${COLORS.stone200}`, borderRadius: getCornerRadius(theme.corners), overflow: 'hidden' }}
+    style={{
+      marginBottom: last ? 0 : 16,
+      backgroundColor: COLORS.white,
+      border: `0.5pt solid ${COLORS.stone200}`,
+      borderRadius: getCornerRadius(theme.corners),
+      overflow: 'hidden',
+    }}
     wrap={block.rows.length + block.qualitativeRows.length > UNBREAKABLE_ROWS}
   >
     <View
@@ -407,20 +527,44 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
       ))}
       {block.rows.length > 0 && (
         <View>
-          <View wrap={false} minPresenceAhead={40} style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
+          <View
+            wrap={false}
+            minPresenceAhead={40}
+            style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}
+          >
             <Text style={{ ...headCell, width: '35%' }}>Épreuves</Text>
             <Text style={{ ...headCell, width: '15%', textAlign: 'center' }}>{block.hasStandardizedScores ? 'Score' : 'Résultat'}</Text>
             {block.showEvolution && <Text style={{ ...headCell, width: EVOLUTION_W, textAlign: 'center' }}>Évolution</Text>}
             <Text style={{ ...headCell, width: block.showEvolution ? '35%' : '50%', paddingLeft: 8 }}>Observations</Text>
           </View>
           {block.rows.map((row) => (
-            <View key={row.subtestId} wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
+            <View
+              key={row.subtestId}
+              wrap={false}
+              style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}
+            >
               <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {row.label}</Text>
-              <Text style={{ width: '15%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500 }}>
+              <Text
+                style={{
+                  width: '15%',
+                  fontSize: 9,
+                  textAlign: 'center',
+                  fontWeight: 700,
+                  color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500,
+                }}
+              >
                 {row.display}
               </Text>
               {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
-              <Text style={{ width: block.showEvolution ? '35%' : '50%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 8 }}>
+              <Text
+                style={{
+                  width: block.showEvolution ? '35%' : '50%',
+                  fontSize: 8,
+                  fontStyle: 'italic',
+                  color: COLORS.stone500,
+                  paddingLeft: 8,
+                }}
+              >
                 {row.observation || '-'}
               </Text>
             </View>
@@ -430,18 +574,28 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
       {block.qualitativeRows.length > 0 && (
         <View>
           <Text style={{ ...headCell, marginBottom: 6 }}>Qualitatif</Text>
-          <View wrap={false} minPresenceAhead={40} style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}>
+          <View
+            wrap={false}
+            minPresenceAhead={40}
+            style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}
+          >
             <Text style={{ ...headCell, width: '30%' }}>Épreuves</Text>
             <Text style={{ ...headCell, width: '20%', textAlign: 'center' }}>Catégorie</Text>
             <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Interprétation</Text>
             <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Observations</Text>
           </View>
           {block.qualitativeRows.map((row) => (
-            <View key={row.subtestId} wrap={false} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}>
+            <View
+              key={row.subtestId}
+              wrap={false}
+              style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}
+            >
               <Text style={{ width: '30%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 4 }}>• {row.label}</Text>
               <Text style={{ width: '20%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: theme.primary }}>{row.category}</Text>
               <Text style={{ width: '25%', fontSize: 8, color: COLORS.stone600, paddingLeft: 6 }}>{row.interpretation}</Text>
-              <Text style={{ width: '25%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 6 }}>{row.observation || '-'}</Text>
+              <Text style={{ width: '25%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 6 }}>
+                {row.observation || '-'}
+              </Text>
             </View>
           ))}
         </View>
@@ -461,13 +615,26 @@ const PdfAnnexes: React.FC<{
 }> = ({ tests, index, theme, font, chartType, scoreDisplayModes, previousTests }) => (
   <View>
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
-      <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: theme.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 4,
+          backgroundColor: theme.primary + '15',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <View style={{ width: 8, height: 2, backgroundColor: theme.primary, borderRadius: 1 }} />
       </View>
-      <Text style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: theme.primary, fontFamily: font }}>Annexes : Résultats</Text>
+      <Text style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: theme.primary, fontFamily: font }}>
+        Annexes : Résultats
+      </Text>
     </View>
     {chartType === 'radar' && <PdfRadarChart tests={tests} index={index} theme={theme} />}
-    {chartType !== 'radar' && <PdfProfileChart scale={chartType === 'bar' ? 'z' : 'percentile'} tests={tests} index={index} theme={theme} font={font} />}
+    {chartType !== 'radar' && (
+      <PdfProfileChart scale={chartType === 'bar' ? 'z' : 'percentile'} tests={tests} index={index} theme={theme} font={font} />
+    )}
     {buildTestScoreBlocks(tests, index, scoreDisplayModes, previousTests).map((block, i, blocks) => (
       <PdfScoreBlock key={block.testId} block={block} theme={theme} font={font} last={i === blocks.length - 1} />
     ))}
@@ -479,14 +646,28 @@ const PdfAnnexes: React.FC<{
 /** Exported for the pagination tests. */
 export { PdfAnnexes };
 
-export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tests, branding, catalogIndex, pages, scoreDisplayModes, chartType = 'bar', previousTests }) => {
+export const PdfDocument: React.FC<PdfDocumentProps> = ({
+  patient,
+  sections,
+  tests,
+  branding,
+  catalogIndex,
+  pages,
+  scoreDisplayModes,
+  chartType = 'bar',
+  previousTests,
+}) => {
   const theme = resolveReportTheme(branding);
   const font = bodyFont(branding, theme);
   const headingFont = theme.isCustom ? theme.headingFont : font;
   const sectionById = new Map(sections.map((s) => [s.id, s]));
 
   return (
-    <Document title={`Bilan_${patient.lastName}_${patient.firstName}`} author={branding.practitionerName || 'Ergothérapeute'} subject="Rapport d'évaluation en ergothérapie">
+    <Document
+      title={`Bilan_${patient.lastName}_${patient.firstName}`}
+      author={branding.practitionerName || 'Ergothérapeute'}
+      subject="Rapport d'évaluation en ergothérapie"
+    >
       <Page size="A4" style={[baseStyles.page, { fontFamily: font }]}>
         <View style={baseStyles.footer} fixed>
           <View>
@@ -494,13 +675,18 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tes
             <Text style={[baseStyles.footerText, { marginTop: 2 }]}>Profession inscrite au code de la santé publique.</Text>
           </View>
           {branding.showPageNumbers && (
-            <Text style={[baseStyles.footerText, { fontFamily: 'Roboto' }]} render={({ pageNumber, totalPages }) => `Page ${pageNumber}/${totalPages}`} />
+            <Text
+              style={[baseStyles.footerText, { fontFamily: 'Roboto' }]}
+              render={({ pageNumber, totalPages }) => `Page ${pageNumber}/${totalPages}`}
+            />
           )}
         </View>
 
         <PdfHeader patient={patient} branding={branding} theme={theme} font={headingFont} />
 
-        <Text style={{ fontSize: 9, fontStyle: 'italic', color: COLORS.stone500, textAlign: 'right', marginBottom: 20 }}>Fait le {formatReportDate()}</Text>
+        <Text style={{ fontSize: 9, fontStyle: 'italic', color: COLORS.stone500, textAlign: 'right', marginBottom: 20 }}>
+          Fait le {formatReportDate()}
+        </Text>
 
         <Text
           style={{
@@ -542,7 +728,15 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ patient, sections, tes
             if (id === ANNEXES_ID) {
               return (
                 <View key={id} break={breakBefore}>
-                  <PdfAnnexes tests={tests} index={catalogIndex} theme={theme} font={headingFont} chartType={chartType} scoreDisplayModes={scoreDisplayModes} previousTests={previousTests} />
+                  <PdfAnnexes
+                    tests={tests}
+                    index={catalogIndex}
+                    theme={theme}
+                    font={headingFont}
+                    chartType={chartType}
+                    scoreDisplayModes={scoreDisplayModes}
+                    previousTests={previousTests}
+                  />
                 </View>
               );
             }
