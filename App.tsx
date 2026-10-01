@@ -43,6 +43,8 @@ const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEdi
 const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })));
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
+/** Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build. */
+const DevTools = import.meta.env.DEV ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools }))) : null;
 
 type Mode = 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile';
 
@@ -421,6 +423,12 @@ const AppRouter = () => {
             patientName={`${selectedFile.patient.firstName} ${selectedFile.patient.lastName}`}
             onClose={() => setViewingReport(null)}
           />
+        )}
+
+        {DevTools && authState === 'authenticated' && sessionKey && !isDemoMode && (
+          <Suspense fallback={null}>
+            <DevTools onLoadData={loadData} onResumeDraft={resumeDraft} onShowDashboard={() => setMode('dashboard')} />
+          </Suspense>
         )}
 
         {demoConversionAction && (

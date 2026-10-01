@@ -13,6 +13,7 @@ La documentation vérifiée (en français) est dans [`docs/`](docs/). **Lire le 
 - [`docs/SCORING_CATALOG.md`](docs/SCORING_CATALOG.md) : catalogue, modèles de saisie, échelles, zones, deltas, tests personnalisés.
 - [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, ouvert) et historique de mise en production.
 - [`docs/PLAN_ASSAINISSEMENT.md`](docs/PLAN_ASSAINISSEMENT.md) : plan d'assainissement, avancement et recette manuelle.
+- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) : vérifier un écran sans saisie (scénarios par URL, patients fictifs `FICTIF`, `npm run capture`, fixtures des tests de composants).
 - [`docs/ISSUES.md`](docs/ISSUES.md) : issues GitHub (labels, qui valide quoi), branches `dev`/`main`, worktrees, PR hebdomadaire. Commande `/issues` pour dérouler le cycle.
 
 Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKey → FileKey rencontrée ailleurs est **obsolète**.
@@ -28,6 +29,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 - **Test IA de bout en bout (Gemini PAYANT, coût MINIME)** : si une modification touche la génération (`reportGenerator`, `aiPayload`, `anonymizer`, `suspectTerms`, `reportSections`, `services/ai.ts`, `services/aiProxy.ts`, `supabase/functions/generate/`, génération dans `useAssessmentFlow`), lancer **une** exécution réelle `npm run e2e:ai` quand tout le reste est vert (check, tests à faux transport, mode à blanc). C'est la vérification de la génération : ne pas demander à Titouan de la tester à la main. Jamais hors de ce périmètre, jamais en boucle pour déboguer, 2 exécutions réelles au plus par modification. Détail : [`docs/AI_PIPELINE.md`](docs/AI_PIPELINE.md) §9.
 - **Branches** : tout travail se fait dans un worktree (`git worktree add -b <branche> ../ErgoBilan-<sujet> dev`), jamais par une branche créée dans le dépôt principal. On part de `dev` et on fusionne dans `dev` (jamais directement dans `main`, qui reçoit la PR hebdomadaire `dev` → `main`). Claude fusionne dans `dev` sans demander ; l'accord de Titouan n'est requis que pour `main` et pour la base commune (migration Supabase, edge function) : voir `docs/ISSUES.md`. Chaque bug corrigé reçoit un test qui le reproduit.
 - **Toasts** : `const toast = useToast()` (le hook renvoie directement l'objet).
+- **Vérifier une interface** : ouvrir l'écran par un scénario (`?scenario=…`, `dev/scenarios.ts`) et le capturer avec `npm run capture`, puis regarder la capture. Ne jamais remplir un formulaire ou dérouler un parcours au navigateur : un écran sans scénario reçoit un scénario. Détail : [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ## Commandes
 
@@ -35,9 +37,10 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 npm run dev            # Vite (port 3000)
 npm run check          # lint + typecheck (strict) + tests + build : à lancer avant de rendre la main
 npm run typecheck      # tsc --noEmit
-npm test               # Vitest (utils/ et services/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
+npm test               # Vitest (utils/, services/, dev/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
 npm run format:check   # Prettier, *.md compris
 npm run e2e:ai         # génération IA de bout en bout, à blanc ; E2E_AI_LIVE=1 = réel et PAYANT (AI_PIPELINE §9)
+npm run capture -- "scenario=initial&etape=2"   # capture d'un scénario, compte de test (VERIFICATION.md)
 ```
 
 ## Agent skills

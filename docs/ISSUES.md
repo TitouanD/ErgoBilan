@@ -23,13 +23,13 @@ Une issue fermée n'a plus de label « qui a la main ». Les milestones ne sont 
 
 ## Qui valide quoi
 
-| Cas                                                                 | Validation                                                         |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Bug de logique ou de comportement (clic, case, liste, calcul)       | Claude seul : un test automatique reproduit le cas, check au vert  |
-| Visuel, ergonomie, ressenti (texte coupé, mise en page, lisibilité) | Testeuse, sur `dev`                                                |
-| Génération IA (payload, anonymisation, appel, réhydratation)        | Claude seul : `npm run e2e:ai` réel, une fois, quand tout est vert |
-| Choix produit, crédits d'un vrai compte                             | Titouan (une question)                                             |
-| Passage dans `main`, base commune (liste ci-dessous)                | Titouan (fusion de la PR ou accord explicite)                      |
+| Cas                                                                 | Validation                                                                                                                             |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Bug de logique ou de comportement (clic, case, liste, calcul)       | Claude seul : un test automatique reproduit le cas, check au vert                                                                      |
+| Visuel, ergonomie, ressenti (texte coupé, mise en page, lisibilité) | Claude seul : capture du scénario ([`VERIFICATION.md`](VERIFICATION.md)) ; Titouan + testeuse seulement en cas de vrai doute important |
+| Génération IA (payload, anonymisation, appel, réhydratation)        | Claude seul : `npm run e2e:ai` réel, une fois, quand tout est vert                                                                     |
+| Choix produit, crédits d'un vrai compte                             | Titouan (une question)                                                                                                                 |
+| Passage dans `main`, base commune (liste ci-dessous)                | Titouan (fusion de la PR ou accord explicite)                                                                                          |
 
 **Dans `dev`, Claude fusionne tout lui-même** (décision de Titouan du 2026-09-30), y compris l'auth, l'anonymisation ou le schéma Dexie : `dev` est la recette, c'est au passage dans `main` que Titouan valide. Seules deux choses demandent son accord **avant**, parce qu'elles touchent la base commune (donc la production) immédiatement :
 
@@ -42,7 +42,7 @@ Une migration est toujours écrite compatible avec le code déjà en production 
 
 ## Tests
 
-Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures dans `utils/**/*.test.ts`, stockage local dans `services/**/*.test.ts` (`fake-indexeddb`), composants avec Testing Library dans `components/**/*.test.tsx`). C'est ce test qui protège de la régression : il n'y a plus de liste de vérification manuelle à refaire avant une mise en production. Ce qui ne peut pas se tester automatiquement (le rendu visuel) va à la testeuse, qui utilise `dev` au quotidien.
+Chaque bug corrigé reçoit un test qui le reproduit (Vitest : fonctions pures dans `utils/**/*.test.ts`, stockage local dans `services/**/*.test.ts` (`fake-indexeddb`), composants avec Testing Library dans `components/**/*.test.tsx`). C'est ce test qui protège de la régression : il n'y a plus de liste de vérification manuelle à refaire avant une mise en production. Le rendu visuel se vérifie par une capture d'écran : un scénario ouvre l'écran directement, avec des patients fictifs, et `npm run capture` le photographie ([`VERIFICATION.md`](VERIFICATION.md)). La testeuse continue d'utiliser `dev` au quotidien, mais une issue ne lui est passée qu'en cas de vrai doute.
 
 **Génération IA** : une modification du périmètre génération (liste dans `CLAUDE.md`) est vérifiée par Claude avec le test de bout en bout `npm run e2e:ai` en réel, sur le compte de test dédié, **au lieu d'une vérification manuelle par Titouan**. Gemini est payant : une exécution quand tout le reste est vert, jamais en boucle ; règles complètes dans [`AI_PIPELINE.md`](AI_PIPELINE.md) §9. Exception : une modification de l'edge `generate` n'est testable en réel qu'une fois déployée, donc après l'accord de Titouan sur le déploiement.
 
