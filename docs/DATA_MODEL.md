@@ -95,7 +95,7 @@ Vérifié en base le 2026-09-23. Projet `hxlsjpkwrqunuqpaukmg`. Le nombre de lig
 | `official_tests`      | 44     | `id` (text), `name`, `category_id` → categories, `author`, `version`, `organization_id` → organizations (**NULL = test officiel**, sinon test perso)                                                                                                                                                                                |
 | `official_subtests`   | 329    | `id` (text), `test_id` → tests, `name`, `unit`, `score_type` (standard \| scaled \| t-score \| percentile \| sten \| stanine \| none, défaut `none`), `input_model` (numeric_4mode \| qualitative_category \| custom_text, défaut `numeric_4mode`), `input_config` jsonb, `display_order`, `display_group_order`, `organization_id` |
 
-La contrainte de `input_model` correspond au type client `SubtestInputModel` depuis la migration `20260929100000_retrait_harris_brut.sql` (#49), qui retire `raw_only` et `computed_items` ; une valeur inconnue est lue comme `numeric_4mode`.
+La contrainte de `input_model` correspond au type client `SubtestInputModel` depuis la migration `20260929090606_retrait_harris_brut.sql` (#49), qui retire `raw_only` et `computed_items` ; une valeur inconnue est lue comme `numeric_4mode`.
 
 Le client lit le catalogue **uniquement via deux vues** (`contexts/CatalogContext.tsx`, fonction `load`) :
 
@@ -134,7 +134,7 @@ L'accès de la famille (rôle `anon`) passe par l'en-tête HTTP `x-questionnaire
 | `signup_rate_limit_log` | 0      | oui | Rate limit de l'inscription (hash d'IP et d'e-mail). Purgé toutes les heures par pg_cron.                                                                                                         |
 | `admin_audit_log`       | 0      | oui | Prévu pour tracer les actions admin, jamais alimenté.                                                                                                                                             |
 
-`ai_request_log` et `signup_rate_limit_log` ont la RLS activée sans policy (`20260924100300_rls_on_internal_logs.sql`) et aucun droit pour `anon` ni `authenticated`. Seules les fonctions SECURITY DEFINER (propriétaire des tables) et le `service_role` y écrivent.
+`ai_request_log` et `signup_rate_limit_log` ont la RLS activée sans policy (`20260925082802_rls_on_internal_logs.sql`) et aucun droit pour `anon` ni `authenticated`. Seules les fonctions SECURITY DEFINER (propriétaire des tables) et le `service_role` y écrivent.
 
 ### Droits des rôles clients (GRANT)
 
@@ -147,7 +147,7 @@ L'accès de la famille (rôle `anon`) passe par l'en-tête HTTP `x-questionnaire
 | `view_unified_catalog`, `view_unified_subtests` | —                                                                                                                                                                      | SELECT                         |
 | Autres tables                                   | —                                                                                                                                                                      | —                              |
 
-`official_tests` et `official_subtests` ont des policies d'écriture mais **aucun GRANT**. Toute écriture dans le catalogue passe donc par des RPC SECURITY DEFINER. La restriction par colonne du portail vient de `20260924100100_portal_family_column_grants.sql`.
+`official_tests` et `official_subtests` ont des policies d'écriture mais **aucun GRANT**. Toute écriture dans le catalogue passe donc par des RPC SECURITY DEFINER. La restriction par colonne du portail vient de `20260925082742_portal_family_column_grants.sql`.
 
 ### Politiques RLS
 
@@ -192,7 +192,7 @@ Toutes sont dans `public` et en `SECURITY DEFINER`, sauf mention contraire. « E
 | `get_contextual_recommendations`, `upsert_recommendation`                                      | authenticated, anon | **Cassées** : elles visent `recommendation_crowd`, table qui n'existe plus. Non utilisées. **À appliquer** : DROP                                                | —                                                                          |
 | `is_practitioner_pin_configured`, `extract_trailing_tag`, `normalize_subtest_abbreviation_tag` | —                   | Utilitaires internes                                                                                                                                             | —                                                                          |
 
-Cinq fonctions n'ont pas de `search_path` fixé : `admin_save_test_detail`, `practitioner_save_custom_test`, `get_contextual_recommendations`, `upsert_recommendation` et `enforce_public_acl_on_ddl` (trigger d'événement DDL). La migration `20260924100000` fixe les deux premières et supprime les deux suivantes ; `enforce_public_acl_on_ddl` reste sans `search_path`.
+Cinq fonctions n'ont pas de `search_path` fixé : `admin_save_test_detail`, `practitioner_save_custom_test`, `get_contextual_recommendations`, `upsert_recommendation` et `enforce_public_acl_on_ddl` (trigger d'événement DDL). La migration `20260925082729` fixe les deux premières et supprime les deux suivantes ; `enforce_public_acl_on_ddl` reste sans `search_path`.
 
 ### Triggers
 
@@ -215,7 +215,7 @@ Cinq fonctions n'ont pas de `search_path` fixé : `admin_save_test_detail`, `pra
 | `sweep_stale_generations`      | `*/15 * * * *`                  | Rembourse les `generation_log` restés `pending` plus de 30 min (`ABANDONED_SESSION`)         | **À appliquer** |
 | `purge_ai_request_log`         | `30 3 * * *` (chaque nuit)      | Supprime les lignes d'`ai_request_log` de plus de 2 jours                                    | **À appliquer** |
 
-Ces trois jobs viennent de `20260924100200_scheduled_cleanups.sql`. Tant qu'elle n'est pas appliquée, rien ne purge `pending_questionnaires`, `ai_request_log` ni les lignes `generation_log` restées en `pending`.
+Ces trois jobs viennent de `20260925082801_scheduled_cleanups.sql`. Tant qu'elle n'est pas appliquée, rien ne purge `pending_questionnaires`, `ai_request_log` ni les lignes `generation_log` restées en `pending`.
 
 ### Extensions installées
 
@@ -233,18 +233,35 @@ Ces trois jobs viennent de `20260924100200_scheduled_cleanups.sql`. Tant qu'elle
 
 ## Schéma et migrations
 
-`supabase/migrations/` ne contient que les quatre migrations de l'assainissement, appliquées le 2026-09-25 :
+Les fichiers de `supabase/migrations/` portent la **même version** que la table d'historique de la base (`supabase_migrations.schema_migrations`) : les six migrations écrites dans le repo depuis l'assainissement ont été renommées le 2026-10-01 (#63), sans `migration repair`.
 
-- `20260924100000_fix_client_rpc_grants.sql`
-- `20260924100100_portal_family_column_grants.sql`
-- `20260924100200_scheduled_cleanups.sql`
-- `20260924100300_rls_on_internal_logs.sql`
+Appliquées :
 
-La base garde la trace de **60 migrations** historiques appliquées, de `20260305000001_audit_corrections` à `20260724201933_add_branding_config_column`, qui ne sont pas dans le repo. Le schéma de référence, la RLS, les fonctions et `extract-norms` n'existent donc qu'en production (point P2-1). Pour les versionner :
+- `20260925082729_fix_client_rpc_grants.sql`
+- `20260925082742_portal_family_column_grants.sql`
+- `20260925082801_scheduled_cleanups.sql`
+- `20260925082802_rls_on_internal_logs.sql`
+- `20260928090438_catalog_retours_testeuse.sql`
+- `20260929090606_retrait_harris_brut.sql`
+
+Écrites le 2026-10-01, **en attente de l'accord de Titouan**, à appliquer dans l'ordre :
+
+| Fichier                                             | Issue | Contenu                                                                                             |
+| --------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `20261001100000_generation_log_kind.sql`            | #60   | colonne `generation_log.kind`, paramètre facultatif `p_kind` de `consume_credit_for_user`           |
+| `20261001100100_inscription_essai_30j.sql`          | #64   | `ensure_org_and_subscription` (essai 30 j), `handle_new_user` et `bootstrap_org_for_user` délèguent |
+| `20261001100200_nettoyage_vestiges.sql`             | #65   | 2 index, 2 colonnes, `admin_audit_log` ; exige 100100 avant                                         |
+| `20261001100300_catalogue_corrections.sql`          | #50   | données du catalogue seulement (inventés, métadonnées, échelles, ordres, catégories)                |
+| `20261001100400_catalog_views_security_invoker.sql` | #57   | GRANT de lecture par colonne, policy onboardé, vues en `security_invoker`                           |
+
+`supabase/checks/` contient les requêtes à lancer juste après une migration (résultat attendu en commentaire) ; `supabase/rollback/` les retours arrière, jamais appliqués automatiquement.
+
+La base garde aussi **60 migrations** historiques, de `20260305000001_audit_corrections` à `20260724201933_add_branding_config_column`, absentes du repo ; elles ne contiennent pas la création des tables, faite avant mars hors migrations. Le schéma complet n'existe donc qu'en production (P2-1). Pour le versionner (lecture seule, réseau nécessaire) :
 
 ```bash
-npx supabase db pull            # génère une migration de référence à partir du schéma distant
-npx supabase functions download extract-norms
+npx supabase migration fetch --linked                 # les 60 fichiers historiques, mêmes versions que la base
+npx supabase db dump --linked -f supabase/schema.sql  # schéma de référence complet
+npx supabase migration list --linked                  # local et distant doivent coïncider
 ```
 
 Avant toute modification de la base, lire l'état réel avec le MCP Supabase ou `supabase db dump`, et non ce document, qui peut dater.

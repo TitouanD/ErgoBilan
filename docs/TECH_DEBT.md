@@ -62,7 +62,7 @@ Statuts :
 
 ## Mise en production du 2026-09-25
 
-- Migrations `supabase/migrations/20260924*` appliquées (droits des RPC, colonnes du portail, purges pg_cron, RLS des journaux).
+- Migrations `supabase/migrations/2026092508*` appliquées (droits des RPC, colonnes du portail, purges pg_cron, RLS des journaux).
 - Edge `generate` déployée (v52) avec la CLI : `npx supabase functions deploy generate --project-ref hxlsjpkwrqunuqpaukmg --no-verify-jwt --use-api`.
 - L'edge `extract-norms` est supprimée (constaté le 2026-09-29). Protection contre les mots de passe compromis (Auth) à activer à la main → #58.
 
@@ -110,12 +110,12 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 
 - `generate` : loopback autorisé seulement hors production, CORS qui renvoie l'origine autorisée (plus de `*`), plus de repli « fail-open » sur des RPC absentes.
 - Portail : la clé ne circule plus que dans le fragment `#key=` (repli `?key=` supprimé).
-- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260924100100_portal_family_column_grants.sql`.
+- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260925082742_portal_family_column_grants.sql`.
 
 ### P0-8 Hygiène de la base — Résolu, sauf → #57, #58
 
-- RLS sur `ai_request_log` et `signup_rate_limit_log` : `20260924100300_rls_on_internal_logs.sql`.
-- REVOKE `anon` sur les RPC `admin_*` et `search_path` fixé : `20260924100000_fix_client_rpc_grants.sql`.
+- RLS sur `ai_request_log` et `signup_rate_limit_log` : `20260925082802_rls_on_internal_logs.sql`.
+- REVOKE `anon` sur les RPC `admin_*` et `search_path` fixé : `20260925082729_fix_client_rpc_grants.sql`.
 - **Ouvert** : vues `view_unified_*` en `security definer` → #57.
 - **Manuel** : protection contre les mots de passe compromis → #58.
 
@@ -124,7 +124,7 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 ### P1-1 Création de test personnalisé — Résolu
 
 - Côté client : catégorie `autre`, échelle par défaut `none`, `reloadCatalog()` forcé après création (`TestCatalogModal`).
-- GRANT EXECUTE à `authenticated` (migration `20260924100000`, appliquée).
+- GRANT EXECUTE à `authenticated` (migration `20260925082729`, appliquée).
 
 ### P1-2 Signalement de type de score — Résolu
 
@@ -132,11 +132,11 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 ### P1-3 RPC mortes — Résolu
 
-`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) ont été supprimées (migration `20260924100000`).
+`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) ont été supprimées (migration `20260925082729`).
 
 ### P1-4 Purge du portail — Résolu
 
-- `purge_pending_questionnaires` + pg_cron (14 j `pending`, 30 j `completed`) dans `20260924100200_scheduled_cleanups.sql`. L'edge `purge-pending`, jamais déployée, est supprimée du repo.
+- `purge_pending_questionnaires` + pg_cron (14 j `pending`, 30 j `completed`) dans `20260925082801_scheduled_cleanups.sql`. L'edge `purge-pending`, jamais déployée, est supprimée du repo.
 - Import d'un questionnaire (`hooks/usePendingProcessor.ts`) : le patient est créé en local, puis la ligne distante est supprimée ; si la suppression échoue, la création locale est annulée. Plus de doublon possible.
 
 ### P1-5 Style IA appris — Résolu
@@ -189,7 +189,7 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 ### P1-14 Admin : ajout de sous-test — Résolu
 
-`services/admin.ts` envoie `none` / `numeric_4mode` / `{}` ; la RPC `admin_save_test_detail` reçoit les mêmes défauts dans la migration `20260924100000`.
+`services/admin.ts` envoie `none` / `numeric_4mode` / `{}` ; la RPC `admin_save_test_detail` reçoit les mêmes défauts dans la migration `20260925082729`.
 
 ### P1-15 Parcours, divers — Résolu
 
@@ -248,7 +248,7 @@ Les composants de `ReportView` sont définis au niveau du module ; les mises à 
 
 ### P2-8 Base de données, divers — Partiel → #65
 
-- Purge d'`ai_request_log` : fait (migration `20260924100200`).
+- Purge d'`ai_request_log` : fait (migration `20260925082801`).
 - Ouverts : 4 index inutilisés, `admin_audit_log` jamais alimenté → #65.
 
 ### P2-9 Bugs trouvés au test navigateur du 2026-09-24 — Résolu
@@ -282,7 +282,7 @@ Corrigés :
 - **Import d'un questionnaire** : si l'enregistrement du brouillon échouait, le patient créé restait orphelin. Le retour arrière couvre maintenant le brouillon et la suppression distante.
 - **Section `objectifs`** : encore visible dans les rapports archivés et demandée dans le bilan historique ; masquée partout.
 - **Légendes percentile** : « inférieur à 2 » et « entre 2 et 16 » alors que les seuils réels sont 2,3 et 15,9 ; libellés alignés.
-- **Divers** : message quand l'application est verrouillée au moment de finaliser (échec silencieux avant), garde contre le double clic sur « Terminer », bouton « Générer (simulation) » en démo au lieu de « 1 crédit », texte légal (`LegalModal`) qui parlait d'anonymisation avec « L'enfant » au lieu de pseudonymisation réversible, commentaire inexact dans la migration `20260924100000`.
+- **Divers** : message quand l'application est verrouillée au moment de finaliser (échec silencieux avant), garde contre le double clic sur « Terminer », bouton « Générer (simulation) » en démo au lieu de « 1 crédit », texte légal (`LegalModal`) qui parlait d'anonymisation avec « L'enfant » au lieu de pseudonymisation réversible, commentaire inexact dans la migration `20260925082729`.
 
 À noter :
 

@@ -46,7 +46,7 @@ Scripts `package.json` : `dev` (Vite, port 3000), `build`, `preview`, `test` (`v
 - Tests : `vitest.config.ts` inclut `utils/**/*.test.ts`, `services/**/*.test.ts` (IndexedDB simulée par `fake-indexeddb`) et `components/**/*.test.tsx` (jsdom).
 - CI : `.github/workflows/ci.yml` lance `npm run check` (Node 20) sur les push vers `main` et les pull requests, avec des valeurs factices pour `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
 - Types Supabase générés dans `types/supabase.ts` ; le client est créé par `createClient<Database>` (`services/db.ts`).
-- `supabase/migrations/` ne contient que les 4 migrations `20260924*`, appliquées le 2026-09-25 ; l'historique des migrations de la base n'est pas dans le repo ([TECH_DEBT.md](TECH_DEBT.md) P2-1).
+- `supabase/migrations/` : les migrations écrites depuis l'assainissement, aux mêmes versions que la base ; l'historique antérieur et le schéma complet ne sont pas encore dans le repo ([DATA_MODEL.md](DATA_MODEL.md) « Schéma et migrations », [TECH_DEBT.md](TECH_DEBT.md) P2-1).
 
 ## 3. Arborescence commentée
 
@@ -160,7 +160,7 @@ Hors `landing`, `admin` et `portal`, l'écran est entouré de `AppHeader`, du ba
 | Texte envoyé à Gemini                                                                                  | Transit via `generate`                                              | Pseudonymisé (`createAnonymization`), pas chiffré |
 | Thème, favoris/récents, blocage PIN, date du dernier backup, brouillon d'inscription, session Supabase | `localStorage`                                                      | Non                                               |
 
-Un questionnaire importé est enregistré en local, puis la ligne distante est supprimée ; si la suppression échoue, l'import local est annulé (`usePendingProcessor`). La purge automatique des questionnaires non importés dépend de la migration `20260924100200_scheduled_cleanups.sql` (pg_cron), appliquée le 2026-09-25.
+Un questionnaire importé est enregistré en local, puis la ligne distante est supprimée ; si la suppression échoue, l'import local est annulé (`usePendingProcessor`). La purge automatique des questionnaires non importés dépend de la migration `20260925082801_scheduled_cleanups.sql` (pg_cron), appliquée le 2026-09-25.
 
 ## 8. Crypto réellement utilisée (`utils/crypto.ts`)
 

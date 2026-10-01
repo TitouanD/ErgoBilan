@@ -37,7 +37,7 @@ L'essentiel du plan a été réalisé sur la branche `refactor/assainissement`, 
 | Phase                 | État                                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 0 — Filet de sécurité | Fait, sauf 0.1 (`supabase db pull`) → #63. Les tests de 0.7 vérifient directement le comportement corrigé           |
-| 1 — Fonctionnalités   | Fait (migrations `supabase/migrations/20260924*` appliquées et `generate` déployée le 2026-09-25)                   |
+| 1 — Fonctionnalités   | Fait (migrations `supabase/migrations/2026092508*` appliquées et `generate` déployée le 2026-09-25)                 |
 | 2 — Confidentialité   | Fait, sauf **2.4 (chiffrement local)**, reportée le 2026-09-25 → #56. Le volet base de 2.5 est appliqué             |
 | 3 — Scores            | Fait                                                                                                                |
 | 4 — Code propre       | Fait                                                                                                                |

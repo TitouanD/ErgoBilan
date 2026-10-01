@@ -1,8 +1,8 @@
 # Pipeline IA — génération des comptes rendus
 
 > État du code au 29/09/2026 (branche `refactor/generation-rapport`, issues #53 et #54). Les références citent un fichier et une fonction, pas de numéro de ligne.
-> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/20260924*`. Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
-> **Déploiement** : l'edge function `generate` décrite ici est en production depuis le 2026-09-25 (v52), et la migration `20260924100200_scheduled_cleanups.sql` est appliquée.
+> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user`, réécrite par `20261001100000_generation_log_kind.sql`, en attente d'application). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
+> **Déploiement** : l'edge function `generate` décrite ici est en production depuis le 2026-09-25 (v52), et la migration `20260925082801_scheduled_cleanups.sql` est appliquée.
 
 ## 1. Vue d'ensemble
 
@@ -174,7 +174,7 @@ stateDiagram-v2
 | `report_reevaluation` | finalize `completed`                   | finalize échec → remboursé         | finalize `INTERNAL_ERROR` → remboursé |
 
 - `finalize_generation_internal` ne fait rien si la ligne n'est plus `pending` (retourne `FALSE`). `finalizeSession` journalise ses erreurs dans la console sans les propager.
-- **Sessions abandonnées** : `sweep_stale_generations` (migration `20260924100200_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min.
+- **Sessions abandonnées** : `sweep_stale_generations` (migration `20260925082801_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min.
 - Colonnes : `id, user_id, status, created_at, refunded_at, error_code` ; le type de tâche n'est pas journalisé (TECH_DEBT P1-8).
 - Données au 23/09/2026 : 24 `completed`, 7 `refunded` (`GEMINI_RETRYABLE_ERROR` ×3, `GEMINI_TIMEOUT` ×2, `STUCK_PENDING_ADMIN_FIX` ×2), 2 `pending` bloquées depuis le 22/02/2026 (remboursées au premier passage du sweep).
 

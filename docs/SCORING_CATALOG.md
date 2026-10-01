@@ -14,7 +14,7 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 - Les vues `view_unified_catalog` et `view_unified_subtests` filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
 - Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests.
 - Répartition `score_type` : scaled 147, none 139, standard 24, t-score 17, percentile 2. Répartition `input_model` : numeric_4mode 324, raw_only 5. **Aucun** sous-test n'utilise `qualitative_category`, `custom_text` ou `computed_items` en base.
-- Migration `20260929100000_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé avec sa catégorie `lateralite`, dont c'était le seul test, et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
+- Migration `20260929090606_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé avec sa catégorie `lateralite`, dont c'était le seul test, et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
@@ -170,7 +170,7 @@ Parcours : bouton « Créer un test » du `TestCatalogModal` (`components/assess
 
 Fonction SQL (SECURITY DEFINER, relevée en base) : org = première ligne de `organization_members` ; `category_id` inexistant → repli `'autre'` ; test `version '1.0'`, `author 'practitioner'` ; sous-tests `score_type` défaut `'none'`, `input_model` défaut `'numeric_4mode'`, `unit 'pts'`, `display_order` = index. `abbreviation` et `order_index` du payload sont ignorés.
 
-La fonction est exécutable par `authenticated` depuis la migration `20260924100000_fix_client_rpc_grants.sql` (appliquée le 2026-09-25, P1-1).
+La fonction est exécutable par `authenticated` depuis la migration `20260925082729_fix_client_rpc_grants.sql` (appliquée le 2026-09-25, P1-1).
 
 ## 9. Administration du catalogue
 
@@ -180,7 +180,7 @@ La fonction est exécutable par `authenticated` depuis la migration `20260924100
 | -------------------------- | ------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lister                     | `listTests(scope)`                                            | `admin_list_tests(p_scope)` public, private ou all |                                                                                                                                                       |
 | Détail                     | `loadTestDetail`                                              | `admin_get_test_detail`                            |                                                                                                                                                       |
-| Enregistrer                | `saveTestDetail`                                              | `admin_save_test_detail`                           | Le client envoie `score_type ?? 'none'`, `input_model ?? 'numeric_4mode'`, `input_config ?? {}`. Mêmes défauts côté SQL (migration `20260924100000`). |
+| Enregistrer                | `saveTestDetail`                                              | `admin_save_test_detail`                           | Le client envoie `score_type ?? 'none'`, `input_model ?? 'numeric_4mode'`, `input_config ?? {}`. Mêmes défauts côté SQL (migration `20260925082729`). |
 | Supprimer test / sous-test | `deleteTest`, `deleteSubtest`                                 | `admin_delete_test`, `admin_delete_subtest`        |                                                                                                                                                       |
 | Catégories                 | — (lecture directe `official_categories` dans `AdminLibrary`) | —                                                  |                                                                                                                                                       |
 
@@ -190,6 +190,6 @@ Un nouveau sous-test reçoit `score_type: 'none'` et `input_model: 'numeric_4mod
 
 L'état de chaque point est dans [TECH_DEBT.md](TECH_DEBT.md). Restent notamment, pour ce module :
 
-1. Création de test perso bloquée en production jusqu'à l'application de `20260924100000` (P1-1) ; même migration pour les défauts de `admin_save_test_detail` (P1-14).
+1. Création de test perso bloquée en production jusqu'à l'application de `20260925082729` (P1-1) ; même migration pour les défauts de `admin_save_test_detail` (P1-14).
 2. Deltas absents du PDF, et pas d'ajout de test pendant une réévaluation (P1-15).
 3. Pas de pagination du catalogue (limite PostgREST de 1000 lignes) ni de cache persistant (§2).

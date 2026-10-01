@@ -45,7 +45,7 @@ export const DEMO_CATALOG: CategoryDef[] = [
           numeric('mabc-2__manual-dexterity-total', 'Note totale dextérité manuelle', 'scaled', 1),
           numeric('mabc-2__aiming-catching-total', 'Note totale viser et attraper', 'scaled', 2),
           numeric('mabc-2__balance-composite', 'Note totale Équilibre', 'scaled', 3),
-          numeric('mabc-2__total-score', 'Note totale du test', 'standard', 4),
+          numeric('mabc-2__total-score', 'Note totale du test', 'scaled', 4),
         ],
       },
     ],
