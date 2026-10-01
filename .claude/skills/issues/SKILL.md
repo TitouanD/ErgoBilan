@@ -15,6 +15,13 @@ gh issue list --state open --limit 100 --json number,title,labels,author,updated
 git fetch origin && git log --oneline origin/main..origin/dev
 ```
 
+## 1 bis. Relever les retours de l'app
+
+Les retours envoyés par le bouton « Signaler » arrivent dans Sentry (org `ergobilan`, projet `ergobilan-frontend`), pas dans GitHub. Avec le MCP Sentry (`search_issues`), chercher `issue.category:feedback is:unresolved`. Pour chacun :
+
+- créer une issue GitHub `trier`. Titre et corps reformulés : ce que la personne faisait, ce qui s'est passé. **Aucun nom d'enfant ni détail qui le reconnaisse**, même si le message en contient. Ajouter le lien vers le retour Sentry, le tag `demo_mode`, `app_mode` / `assessment_step` et, s'il existe, le lien vers l'erreur associée (retour envoyé depuis l'écran d'erreur) ;
+- passer le retour Sentry en résolu (`update_issue`), avec le numéro de l'issue GitHub en commentaire si possible.
+
 ## 2. Trier les issues `trier`
 
 Pour chacune, lire le corps et les commentaires, puis :

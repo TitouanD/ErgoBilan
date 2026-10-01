@@ -150,9 +150,9 @@ const PrivacyContent: React.FC = () => (
               <td className="border border-[var(--border-color)] p-2 font-medium">Logs techniques</td>
               <td className="border border-[var(--border-color)] p-2">
                 User-agent, identifiant technique du compte, erreurs et parcours technique, relecture de session en cas d'erreur avec textes et saisies
-                masqués (Sentry)
+                masqués, retours envoyés par le bouton « Signaler » (message, e-mail facultatif en démo) (Sentry)
               </td>
-              <td className="border border-[var(--border-color)] p-2">Sécurité, débogage</td>
+              <td className="border border-[var(--border-color)] p-2">Sécurité, débogage, amélioration du service</td>
               <td className="border border-[var(--border-color)] p-2">90 jours</td>
             </tr>
           </tbody>

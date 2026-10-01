@@ -110,6 +110,25 @@ const scrubTransaction = (event: TransactionEvent): TransactionEvent => {
   return event;
 };
 
+/**
+ * Feedback events (type 'feedback') skip `beforeSend`, which only sees error events:
+ * scrubbed by an event processor. The message is free text typed by the practitioner,
+ * so it gets the string scrubbing; the e-mail is kept because the person typed it to be answered.
+ */
+export const scrubFeedback = (event: Event): Event => {
+  const feedback = event.contexts?.feedback as Record<string, unknown> | undefined;
+  if (!feedback || !event.contexts) return scrubCommon(event);
+  delete event.contexts.feedback;
+  scrubCommon(event);
+  const { name: _name, ...kept } = feedback;
+  event.contexts.feedback = {
+    ...kept,
+    message: typeof feedback.message === 'string' ? scrubString(feedback.message) : feedback.message,
+    url: typeof feedback.url === 'string' ? scrubUrl(feedback.url) : feedback.url,
+  };
+  return event;
+};
+
 const scrubLog = (log: Log): Log => ({
   ...log,
   message: typeof log.message === 'string' ? scrubString(log.message) : log.message,
@@ -152,8 +171,9 @@ export const initSentry = (): void => {
     beforeSendLog: scrubLog,
   });
 
-  // Replay events do not go through beforeSend: strip their URLs here.
+  // Replay and feedback events do not go through beforeSend: scrub them here.
   Sentry.addEventProcessor((event) => {
+    if (event.type === 'feedback') return scrubFeedback(event);
     const replay = event as Event & { urls?: string[] };
     if (event.type === 'replay_event' && Array.isArray(replay.urls)) replay.urls = replay.urls.map(scrubUrl);
     return event;
@@ -213,6 +233,30 @@ export const recordAppLog = (level: 'debug' | 'info' | 'warn' | 'error', scope: 
   const attributes = data === undefined ? undefined : (scrubData(data instanceof Error ? data : { data }) as Record<string, unknown>);
   Sentry.addBreadcrumb({ category: scope.toLowerCase(), message, level: level === 'warn' ? 'warning' : level, data: attributes });
   Sentry.logger[level](message, { scope, ...(attributes ? { details: JSON.stringify(attributes).slice(0, 2000) } : {}) });
+};
+
+// ─── User feedback ("Signaler un problème ou une idée") ──────────────────────
+
+/** Never on the family portal: parents go through their therapist. */
+export const isFeedbackAvailable = (): boolean => !isPortalUrl();
+
+export type FeedbackSource = 'header' | 'error_screen';
+
+/**
+ * Send a feedback to Sentry (picked up by /issues and turned into a GitHub issue).
+ * Linked to the last captured error when sent from the error screen. False when Sentry is off.
+ */
+export const sendAppFeedback = (message: string, source: FeedbackSource, email?: string): boolean => {
+  if (!IS_ENABLED) return false;
+  Sentry.captureFeedback({
+    message,
+    email: email?.trim() || undefined,
+    url: window.location.href,
+    source,
+    associatedEventId: source === 'error_screen' ? Sentry.lastEventId() : undefined,
+    tags: { feedback_source: source },
+  });
+  return true;
 };
 
 export const setAppUser = (id: string | null): void => {
