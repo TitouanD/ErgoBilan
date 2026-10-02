@@ -37,7 +37,7 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 npm run dev            # Vite (port 3000)
 npm run check          # lint + format + typecheck (strict) + tests + build : à lancer avant de rendre la main
 npm run typecheck      # tsc --noEmit
-npm test               # Vitest (utils/, services/, dev/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
+npm test               # Vitest (utils/, services/, dev/, supabase/functions/ : *.test.ts ; composants : components/**/*.test.tsx en jsdom)
 npm run format:check   # Prettier, *.md compris
 npm run e2e:ai         # génération IA de bout en bout, à blanc ; E2E_AI_LIVE=1 = réel et PAYANT (AI_PIPELINE §9)
 npm run capture -- "scenario=initial&etape=2"   # capture d'un scénario, compte de test (VERIFICATION.md)

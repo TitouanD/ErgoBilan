@@ -8,11 +8,19 @@ const INVENTED = [
   'nepsy-2__discrimination-digitale',
   'nepsy-2__precision-motrice',
   'alouette__indice-d-efficience-ctl',
+  'tihm__shift',
+  'tihm__rotation',
 ];
+
+const subtests = () => DEMO_CATALOG.flatMap((c) => c.tests.flatMap((t) => t.subtests));
 
 describe('catalogue de démo', () => {
   it('ne contient aucun sous-test inventé (#50)', () => {
-    const ids = DEMO_CATALOG.flatMap((c) => c.tests.flatMap((t) => t.subtests.map((s) => s.id)));
+    const ids = subtests().map((s) => s.id);
     expect(ids.filter((id) => INVENTED.includes(id))).toEqual([]);
+  });
+
+  it('note la note totale MABC-2 en NS (m=10, σ=3), comme la base (#50)', () => {
+    expect(subtests().find((s) => s.id === 'mabc-2__total-score')?.scoreType).toBe('scaled');
   });
 });

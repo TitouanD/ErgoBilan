@@ -10,6 +10,14 @@ export type AITask = 'report_bio' | 'report_diagnostic' | 'extract_style_feedbac
 
 export const AI_TASKS: readonly AITask[] = ['report_bio', 'report_diagnostic', 'extract_style_feedback', 'report_reevaluation'];
 
+/**
+ * Value of `generation_log.kind` for the session a task opens: the task itself for
+ * report_bio (initial assessment; the session also covers report_diagnostic) and
+ * report_reevaluation. null for tasks that open no session.
+ */
+export const sessionKind = (task: AITask): 'report_bio' | 'report_reevaluation' | null =>
+  task === 'report_bio' || task === 'report_reevaluation' ? task : null;
+
 export type BuildResult = {
   contents: string;
   systemInstruction?: string;
@@ -590,6 +598,14 @@ const REEVALUATION_RESPONSE_SCHEMA = {
   required: ['resume_initial', 'evolution_commentee', 'recommandations', 'conclusion'],
 };
 
+/**
+ * The reference report of a re-evaluation is the initial assessment, or the previous
+ * re-evaluation (client >= #70 then writes "Réévaluation précédente réalisée : MM/YYYY"
+ * in childContext; older clients always send an initial assessment).
+ */
+export const isAfterReevaluation = (childContext: string): boolean =>
+  /r[ée]{2}valuation pr[ée]c[ée]dente r[ée]alis[ée]e/i.test(childContext.normalize('NFC'));
+
 const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult => {
   const profile = String(payload.profile || 'pediatric');
   const childContext = String(payload.childContext || '');
@@ -599,6 +615,29 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
   const previousReportContext = String(payload.previousReportContext || '').trim();
   const styleBlock = String(payload.styleDirectives || '').trim();
   const subjectLabel = profile === 'adult' ? 'PATIENT' : 'ENFANT';
+  const afterReevaluation = isAfterReevaluation(childContext);
+  const referenceSource = afterReevaluation
+    ? 'ici : la reevaluation precedente, sections [Conclusion] et [Préconisations]'
+    : 'ici : le bilan initial, sections cliniques du rapport';
+  const referenceColumn = afterReevaluation ? 'Reevaluation precedente' : 'Bilan initial';
+  const resumeInstructions = afterReevaluation
+    ? [
+        '   Resume concis de la reevaluation precedente (bilan de reference) pour un compte-rendu de suivi, style clinique sobre.',
+        '   IMPORTANT : utilise EXCLUSIVEMENT les informations fournies dans le CONTENU DU BILAN DE REFERENCE ci-dessus.',
+        '   Le bilan de reference est la DERNIERE REEVALUATION, pas le bilan initial : ne parle pas de "bilan initial" et ne lui attribue pas la date de la reevaluation precedente.',
+        '   Structure obligatoire en deux parties :',
+        `   (a) Phrase d'introduction situant la reevaluation precedente ("Lors de la derniere reevaluation, le [date de la reevaluation precedente si presente dans le contexte], ...") + liste <ul><li> des constats et points de vigilance retenus (extraits litteralement de [Conclusion]).`,
+        '   (b) Phrase "A la suite de cette reevaluation, les preconisations etaient :" + liste <ul><li> des preconisations (extraites litteralement de [Préconisations]).',
+        '   Ne paraphrase pas : reprends les formulations cliniques exactes de la reevaluation precedente fournie.',
+      ]
+    : [
+        '   Resume concis du bilan initial (bilan de reference) pour un compte-rendu de suivi, style clinique sobre.',
+        '   IMPORTANT : utilise EXCLUSIVEMENT les informations fournies dans le CONTENU DU BILAN DE REFERENCE ci-dessus.',
+        '   Structure obligatoire en deux parties :',
+        "   (a) Phrase d'introduction situant le bilan initial (date si presente dans le contexte, motif) + liste <ul><li> des deficits/fragilites identifies (extraits litteralement du [Diagnostic en ergothérapie]).",
+        '   (b) Phrase "A la suite de ce bilan, les objectifs de prise en charge etaient :" + liste <ul><li> des objectifs (extraits litteralement de [Les objectifs généraux]).',
+        '   Ne paraphrase pas : reprends les formulations cliniques exactes du bilan initial fourni.',
+      ];
 
   const userPrompt = [
     SECURITY_INSTRUCTION,
@@ -606,8 +645,10 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
     ...(styleBlock ? ['PREFERENCES DE STYLE DU PRATICIEN :', styleBlock, ''] : []),
     `CONTEXTE ${subjectLabel} : ${childContext}`,
     '',
-    ...(previousReportContext ? ['CONTENU DU BILAN INITIAL (sections cliniques du rapport precedent) :', previousReportContext, ''] : []),
-    'SCORES BILAN INITIAL (valeur NS ou ET selon le test) :',
+    ...(previousReportContext
+      ? [`CONTENU DU BILAN DE REFERENCE (bilan initial ou reevaluation precedente ; ${referenceSource}) :`, previousReportContext, '']
+      : []),
+    'SCORES BILAN DE REFERENCE (valeur NS ou ET selon le test) :',
     previousScoresSummary,
     '',
     'SCORES REEVALUATION (valeur NS ou ET selon le test) :',
@@ -619,20 +660,15 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
     'TACHE : Redige un JSON avec 4 champs (valeurs = strings HTML) :',
     '',
     '1. "resume_initial" (80-150 mots, HTML) :',
-    '   Resume concis du bilan initial pour un compte-rendu de suivi, style clinique sobre.',
-    '   IMPORTANT : utilise EXCLUSIVEMENT les informations fournies dans le CONTENU DU BILAN INITIAL ci-dessus.',
-    '   Structure obligatoire en deux parties :',
-    "   (a) Phrase d'introduction situant le bilan (date si presente dans le contexte, motif) + liste <ul><li> des deficits/fragilites identifies (extraits litteralement du [Diagnostique]).",
-    '   (b) Phrase "A la suite de ce bilan, les objectifs de prise en charge etaient :" + liste <ul><li> des objectifs (extraits litteralement du [Objectifs]).',
-    '   Ne paraphrase pas : reprends les formulations cliniques exactes du bilan initial fourni.',
+    ...resumeInstructions,
     '   Utilise <p> et <ul><li> uniquement.',
     '',
     '2. "evolution_commentee" (200-400 mots, HTML) :',
     '   EXCEPTION CRITIQUE : Contrairement aux bilans initiaux, ce document est un compte-rendu de suivi adresse a des professionnels de sante (medecins, enseignants specialises). Pour cette section UNIQUEMENT, tu DOIS :',
     '   - Citer les noms des tests par leur denomination exacte (Lespargot, BHK, EVIC, MABC-2, DTVP, NEPSY, etc.).',
     '   - Creer une table HTML de comparaison pour CHAQUE test evalue. Format obligatoire pour chaque table :',
-    '     <table><thead><tr><th>Epreuve</th><th>Bilan initial (DATE_INITIALE)</th><th>Reevaluation (DATE_REEV)</th><th>Tendance</th></tr></thead><tbody>... scores ET ou NS avec signe ... </tbody></table>',
-    '   Remplace DATE_INITIALE et DATE_REEV par les dates reelles fournies dans le contexte (ex: "07/2025", "02/2026"). Si les dates ne sont pas disponibles, utilise "Bilan initial" et "Reevaluation".',
+    `     <table><thead><tr><th>Epreuve</th><th>${referenceColumn} (DATE_REFERENCE)</th><th>Reevaluation (DATE_REEV)</th><th>Tendance</th></tr></thead><tbody>... scores ET ou NS avec signe ... </tbody></table>`,
+    `   Remplace DATE_REFERENCE et DATE_REEV par les dates reelles fournies dans le contexte (ex: "07/2025", "02/2026"). Si les dates ne sont pas disponibles, utilise "${referenceColumn}" et "Reevaluation".`,
     "   Apres chaque table, ajoute UN PARAGRAPHE <p> d'interpretation clinique (2-3 phrases) : progression observee, points de vigilance, lien avec la prise en charge.",
     "   Commence la section par une phrase d'introduction situant la reevaluation (date, contexte, motif si fourni).",
     '   IMPORTANT : cite les valeurs numeriques exactes des scores fournis (NS, ET, delta) — ne les omets pas.',
@@ -650,7 +686,9 @@ const buildReevaluationTask = (payload: Record<string, unknown>): BuildResult =>
     '   Synthese conclusive du compte-rendu de suivi, style "Conclusion" de rapport clinique.',
     '   Commence par resumer la progression globale observee (ton positif si pertinent, nuance si necessaire).',
     "   Mentionne l'investissement et la motivation du patient si cela ressort du contexte fourni.",
-    "   Indique si les objectifs initiaux restent inchanges ou s'ils evoluent.",
+    afterReevaluation
+      ? "   Indique si les objectifs et preconisations de la reevaluation precedente restent inchanges ou s'ils evoluent."
+      : "   Indique si les objectifs initiaux restent inchanges ou s'ils evoluent.",
     '   Termine par une phrase sur la continuite du suivi et les prochains objectifs prioritaires.',
     '   Utilise <p> pour les paragraphes.',
     '',

@@ -17,7 +17,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { captureEdgeException, captureEdgeMessage, createTrail } from '../_shared/sentry.ts';
-import { AI_TASKS, type AITask, type BuildResult, buildTask } from './prompts.ts';
+import { AI_TASKS, type AITask, type BuildResult, buildTask, sessionKind } from './prompts.ts';
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -105,9 +105,12 @@ const checkRateLimit = async (admin: SupabaseClient, userId: string): Promise<bo
   return !error && data === true;
 };
 
-/** Consume a credit and open a generation session; returns its id, or null when not allowed. */
-const openGenerationSession = async (admin: SupabaseClient, userId: string): Promise<string | null> => {
-  const { data, error } = await admin.rpc('consume_credit_for_user', { p_user_id: userId });
+/**
+ * Consume a credit and open a generation session tagged with its kind (generation_log.kind);
+ * returns its id, or null when not allowed. p_kind needs migration 20261001100000.
+ */
+const openGenerationSession = async (admin: SupabaseClient, userId: string, kind: string | null): Promise<string | null> => {
+  const { data, error } = await admin.rpc('consume_credit_for_user', { p_user_id: userId, p_kind: kind });
   if (error) await reportDbError('consume_credit_for_user', error, userId);
   return !error && data ? String(data) : null;
 };
@@ -412,7 +415,7 @@ Deno.serve(async (req: Request) => {
       trail.add('session', 'Generation session claimed');
     } else {
       if (providedGenId) return json(origin, 400, { error: 'INVALID_GENERATION_SESSION' });
-      const opened = await openGenerationSession(admin, userId);
+      const opened = await openGenerationSession(admin, userId, sessionKind(task));
       if (!opened) return json(origin, 402, { error: 'CREDIT_INSUFFICIENT', message: 'Crédits insuffisants.' });
       sessionId = opened;
       trail.add('session', 'Credit consumed, generation session opened', { generationId: opened });
