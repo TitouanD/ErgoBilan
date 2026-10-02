@@ -1,0 +1,2 @@
+-- SQL non conservé par la table d'historique de la base (statements NULL).
+-- Version gardée pour que l'historique local corresponde à la base (#63).

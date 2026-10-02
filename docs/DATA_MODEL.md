@@ -244,7 +244,7 @@ Appliquées :
 - `20260928090438_catalog_retours_testeuse.sql`
 - `20260929090606_retrait_harris_brut.sql`
 
-Écrites le 2026-10-01, **en attente de l'accord de Titouan**, à appliquer dans l'ordre :
+Écrites le 2026-10-01 et validées par Titouan ; `20261001100000` est appliquée (2026-10-02), les suivantes sont à appliquer dans l'ordre, par `npx supabase db push --linked` (aperçu avec `--dry-run`) :
 
 | Fichier                                             | Issue | Contenu                                                                                             |
 | --------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------- |
@@ -256,12 +256,6 @@ Appliquées :
 
 `supabase/checks/` contient les requêtes à lancer juste après une migration (résultat attendu en commentaire) ; `supabase/rollback/` les retours arrière, jamais appliqués automatiquement.
 
-La base garde aussi **60 migrations** historiques, de `20260305000001_audit_corrections` à `20260724201933_add_branding_config_column`, absentes du repo ; elles ne contiennent pas la création des tables, faite avant mars hors migrations. Le schéma complet n'existe donc qu'en production (P2-1). Pour le versionner (lecture seule, réseau nécessaire) :
-
-```bash
-npx supabase migration fetch --linked                 # les 60 fichiers historiques, mêmes versions que la base
-npx supabase db dump --linked -f supabase/schema.sql  # schéma de référence complet
-npx supabase migration list --linked                  # local et distant doivent coïncider
-```
+Les **60 migrations** historiques de la base, de `20260305000001_audit_corrections` à `20260724201933_add_branding_config_column`, ont été récupérées le 2026-10-02 (`npx supabase migration fetch --linked`) : `supabase migration list --linked` montre local et distant identiques. Deux n'ont pas de SQL conservé (`20260324000310`, `20260324000320`, fichiers vides commentés). Elles ne contiennent pas la création des tables, faite avant mars hors migrations : le schéma complet n'existe donc qu'en production (P2-1). Pour le versionner, `npx supabase db dump --linked -f supabase/schema.sql`, qui exige Docker.
 
 Avant toute modification de la base, lire l'état réel avec le MCP Supabase ou `supabase db dump`, et non ce document, qui peut dater.
