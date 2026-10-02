@@ -1547,6 +1547,7 @@ DECLARE
   v_plan_id text;
   v_status text;
   v_gen_id uuid;
+  v_rows integer;
 BEGIN
   IF v_user_id IS NULL THEN
     RETURN NULL;
@@ -1600,9 +1601,10 @@ BEGIN
   SET credits = credits - 1
   WHERE id = v_user_id
     AND credits > 0;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
   PERFORM set_config('app.internal_operation', 'false', true);
 
-  IF NOT FOUND THEN
+  IF v_rows = 0 THEN
     RETURN NULL;
   END IF;
 
