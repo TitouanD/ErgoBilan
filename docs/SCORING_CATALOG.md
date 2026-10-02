@@ -18,17 +18,17 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
-| Colonne (vue)                                   | Type / contrainte                                                                      | Mappé vers                                                          |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| catalog.`id`, `label`                           | text                                                                                   | `TestDef.id`, `TestDef.name`                                        |
-| catalog.`category_id`, `category_label`         | FK `official_categories`                                                               | `CategoryDef.id`, `.name`                                           |
-| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                  | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
-| catalog.`subtests_count`                        | calculé                                                                                | non chargé                                                          |
-| subtests.`unit`                                 | text                                                                                   | `unit` (défaut `'pts'`)                                             |
-| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
-| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text               | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
-| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                          | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
-| subtests.`display_group_order`, `display_order` | integer                                                                                | `displayGroupOrder`, `displayOrder`                                 |
+| Colonne (vue)                                   | Type / contrainte                                                                               | Mappé vers                                                          |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| catalog.`id`, `label`                           | text                                                                                            | `TestDef.id`, `TestDef.name`                                        |
+| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                        | `CategoryDef.id`, `.name`                                           |
+| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                           | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
+| catalog.`subtests_count`                        | calculé                                                                                         | non chargé                                                          |
+| subtests.`unit`                                 | text                                                                                            | `unit` (défaut `'pts'`)                                             |
+| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, v-scale, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
+| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text                        | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
+| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                   | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
+| subtests.`display_group_order`, `display_order` | integer                                                                                         | `displayGroupOrder`, `displayOrder`                                 |
 
 ## 2. Chargement côté client
 
@@ -70,6 +70,7 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 | `scaled`     | 10      | 3   | 1–19            | NS (m=10, σ=3)         | paramétrique                         |
 | `standard`   | 100     | 15  | 40–160          | QI (m=100, σ=15)       | paramétrique                         |
 | `t-score`    | 50      | 10  | 20–80           | T (m=50, σ=10)         | paramétrique                         |
+| `v-scale`    | 15      | 3   | 1–24            | Note v (m=15, σ=3)     | paramétrique (Vineland, #90)         |
 | `sten`       | 5,5     | 2   | 1–10            | Sten (m=5.5, σ=2)      | paramétrique                         |
 | `stanine`    | 5       | 2   | 1–9             | Stanine (m=5, σ=2)     | paramétrique                         |
 | `percentile` | —       | —   | 1–99            | Rang percentile        | la valeur « NS » est un rang centile |
