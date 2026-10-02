@@ -137,3 +137,37 @@ describe('runScenario', () => {
     expect((await allFiles()).some((f) => f.id === realId)).toBe(true);
   });
 });
+
+describe('buildFictiveTests : ordre des sous-tests (#90)', () => {
+  it("ajoute un test entier dans l'ordre d'affichage du catalogue, pas dans celui renvoyé par la base", () => {
+    const shuffled = buildCatalogIndex([
+      {
+        id: 'cat',
+        name: 'Cat',
+        iconKey: 'Box',
+        sortOrder: 1,
+        tests: [
+          {
+            id: 't',
+            name: 'Test',
+            subtests: [
+              {
+                id: 'indice',
+                name: 'Indice',
+                unit: '',
+                scoreType: 'standard',
+                inputModel: 'numeric_4mode',
+                displayGroupOrder: 2,
+                displayOrder: 3,
+              },
+              { id: 'b', name: 'B', unit: '', scoreType: 'scaled', inputModel: 'numeric_4mode', displayGroupOrder: 1, displayOrder: 2 },
+              { id: 'a', name: 'A', unit: '', scoreType: 'scaled', inputModel: 'numeric_4mode', displayGroupOrder: 1, displayOrder: 1 },
+            ],
+          },
+        ],
+      },
+    ]);
+    const { tests } = buildFictiveTests(shuffled, [{ testId: 't' }], { level: 0, fill: 'vide' });
+    expect(Object.keys(tests.t)).toEqual(['a', 'b', 'indice']);
+  });
+});
