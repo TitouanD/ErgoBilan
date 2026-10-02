@@ -182,6 +182,7 @@ describe('reportGenerator — re-evaluation', () => {
     expect(JSON.stringify(payload)).not.toMatch(/\d{2}\/2026/);
     expect(sections[0].content).toBe('<p>Bilan du 02/2026 pour &lt;b&gt;Léa&lt;/b&gt;.</p>');
     expect(sections.map((s) => s.id)).toEqual(['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
+    expect(sections[0].title).toBe('Rappel du bilan initial');
   });
 
   it('takes the context of a second re-evaluation from the previous re-evaluation (#70)', async () => {
@@ -203,7 +204,7 @@ describe('reportGenerator — re-evaluation', () => {
     const { transport, requests } = fakeTransport({
       report_reevaluation: [{ resume_initial: 'r', evolution_commentee: 'e', conclusion: 'c', recommandations: 'r' }],
     });
-    await createReportGenerator(transport, { now: () => NOW }).generateReevaluation({
+    const sections = await createReportGenerator(transport, { now: () => NOW }).generateReevaluation({
       patient,
       previousAssessment: previousReevaluation,
       tests,
@@ -216,6 +217,8 @@ describe('reportGenerator — re-evaluation', () => {
     );
     expect(payload.childContext).toContain('Réévaluation précédente réalisée : {{DATE_1}}');
     expect(payload.childContext).not.toContain('Bilan initial réalisé');
+    // The recall section is titled after the reference report (#89).
+    expect(sections[0].title).toBe('Rappel de la réévaluation précédente');
   });
 
   it('lists the suspect words of the previous report context', () => {
