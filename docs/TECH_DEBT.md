@@ -19,46 +19,46 @@ Statuts :
 
 ## Tableau de bord
 
-| Point | Sujet                                                | Statut                               |
-| ----- | ---------------------------------------------------- | ------------------------------------ |
-| P0-1  | Données de santé en clair dans IndexedDB et l'export | Reporté (décision 2026-09-25) → #56  |
-| P0-2  | La déconnexion laisse la base ouverte                | Résolu                               |
-| P0-3  | L'interface annonce « chiffré »                      | Résolu                               |
-| P0-4  | Anonymisation incomplète avant Gemini                | Résolu                               |
-| P0-5  | La regex d'anonymisation corrompt des mots           | Résolu                               |
-| P0-6  | PIN cassable hors ligne                              | Risque accepté (2026-09-25)          |
-| P0-7  | Durcissement edge functions et portail               | Résolu                               |
-| P0-8  | Hygiène de la base                                   | Résolu (2026-10-02), sauf → #58      |
-| P1-1  | Création de test personnalisé                        | Résolu                               |
-| P1-2  | Signalement de type de score                         | Résolu (fonction retirée)            |
-| P1-3  | RPC mortes                                           | Résolu                               |
-| P1-4  | Purge des questionnaires du portail                  | Résolu                               |
-| P1-5  | Style IA appris jamais utilisé                       | Résolu                               |
-| P1-6  | Plantage après téléchargement du PDF                 | Résolu                               |
-| P1-7  | Mise en page affichée ≠ exportée                     | Résolu                               |
-| P1-8  | Crédits et sessions de génération                    | Résolu (2026-10-02)                  |
-| P1-9  | Échelles et interprétation des scores                | Résolu                               |
-| P1-10 | Saisie `raw_only` / `computed_items`                 | Résolu                               |
-| P1-11 | Réévaluation                                         | Résolu                               |
-| P1-12 | Brouillons                                           | Résolu                               |
-| P1-13 | Calcul de l'âge                                      | Résolu                               |
-| P1-14 | Admin : ajout de sous-test                           | Résolu                               |
-| P1-15 | Parcours, divers                                     | Résolu                               |
-| P1-16 | Création du lien famille                             | Résolu                               |
-| P1-17 | Personnalisation du rapport non sauvegardée          | Résolu                               |
-| P1-18 | Realtime des crédits inopérant                       | Résolu (abonnement retiré)           |
-| P1-19 | Migration du validateur PIN en échec silencieux      | Résolu                               |
-| P1-20 | Erreurs TypeScript                                   | Résolu (`strict`, 0 erreur)          |
-| P2-1  | Schéma, migrations, `extract-norms` hors du repo     | Partiel (`schema.sql`) → #63         |
-| P2-2  | Création de compte                                   | Résolu (2026-10-02), orphelins → #64 |
-| P2-3  | `App.tsx` trop gros                                  | Résolu                               |
-| P2-4  | Doublons                                             | Résolu                               |
-| P2-5  | Code mort                                            | Résolu (2026-10-02)                  |
-| P2-6  | Outillage                                            | Résolu                               |
-| P2-7  | Composants React recréés, mutations d'état           | Résolu                               |
-| P2-8  | Base de données, divers                              | Résolu (2026-10-02)                  |
-| P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                               |
-| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu                               |
+| Point | Sujet                                                | Statut                              |
+| ----- | ---------------------------------------------------- | ----------------------------------- |
+| P0-1  | Données de santé en clair dans IndexedDB et l'export | Reporté (décision 2026-09-25) → #56 |
+| P0-2  | La déconnexion laisse la base ouverte                | Résolu                              |
+| P0-3  | L'interface annonce « chiffré »                      | Résolu                              |
+| P0-4  | Anonymisation incomplète avant Gemini                | Résolu                              |
+| P0-5  | La regex d'anonymisation corrompt des mots           | Résolu                              |
+| P0-6  | PIN cassable hors ligne                              | Risque accepté (2026-09-25)         |
+| P0-7  | Durcissement edge functions et portail               | Résolu                              |
+| P0-8  | Hygiène de la base                                   | Résolu (2026-10-02), sauf → #58     |
+| P1-1  | Création de test personnalisé                        | Résolu                              |
+| P1-2  | Signalement de type de score                         | Résolu (fonction retirée)           |
+| P1-3  | RPC mortes                                           | Résolu                              |
+| P1-4  | Purge des questionnaires du portail                  | Résolu                              |
+| P1-5  | Style IA appris jamais utilisé                       | Résolu                              |
+| P1-6  | Plantage après téléchargement du PDF                 | Résolu                              |
+| P1-7  | Mise en page affichée ≠ exportée                     | Résolu                              |
+| P1-8  | Crédits et sessions de génération                    | Résolu (2026-10-02)                 |
+| P1-9  | Échelles et interprétation des scores                | Résolu                              |
+| P1-10 | Saisie `raw_only` / `computed_items`                 | Résolu                              |
+| P1-11 | Réévaluation                                         | Résolu                              |
+| P1-12 | Brouillons                                           | Résolu                              |
+| P1-13 | Calcul de l'âge                                      | Résolu                              |
+| P1-14 | Admin : ajout de sous-test                           | Résolu                              |
+| P1-15 | Parcours, divers                                     | Résolu                              |
+| P1-16 | Création du lien famille                             | Résolu                              |
+| P1-17 | Personnalisation du rapport non sauvegardée          | Résolu                              |
+| P1-18 | Realtime des crédits inopérant                       | Résolu (abonnement retiré)          |
+| P1-19 | Migration du validateur PIN en échec silencieux      | Résolu                              |
+| P1-20 | Erreurs TypeScript                                   | Résolu (`strict`, 0 erreur)         |
+| P2-1  | Schéma, migrations, `extract-norms` hors du repo     | Résolu (2026-10-02, #63)            |
+| P2-2  | Création de compte                                   | Résolu (2026-10-02, #64)            |
+| P2-3  | `App.tsx` trop gros                                  | Résolu                              |
+| P2-4  | Doublons                                             | Résolu                              |
+| P2-5  | Code mort                                            | Résolu (2026-10-02)                 |
+| P2-6  | Outillage                                            | Résolu                              |
+| P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
+| P2-8  | Base de données, divers                              | Résolu (2026-10-02)                 |
+| P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
+| P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu                              |
 
 ## Mise en production du 2026-09-25
 
@@ -72,7 +72,7 @@ Statuts :
 - Edge `generate` déployée depuis le repo après `20261001100000` : `sessionKind` (journalise `generation_log.kind`) et prompt de réévaluation « bilan de référence » (#85). Vérifiée en réel (`E2E_AI=all`, 4 appels, 2 crédits).
 - Catalogue vérifié après #57 : un non admin voit 42 tests et 342 sous-tests, un admin 44 et 345, un compte non onboardé rien, `anon` reçoit 42501 ; l'advisor ne signale plus `security_definer_view`.
 - Les 60 migrations historiques sont dans le repo (`npx supabase migration fetch --linked`, #63) ; local et distant identiques.
-- Reste : supprimer les orphelins de P2-2 (`supabase/checks/20261001100100_orphelins.sql`, accord de Titouan), `supabase/schema.sql` (P2-1, exige Docker).
+- Orphelins de P2-2 supprimés par Titouan le 2026-10-02 (0 organisation sans membre, 0 compte sans praticien) ; `supabase/schema.sql` ajouté (P2-1).
 
 ## Observabilité Sentry (2026-09-25)
 
@@ -228,10 +228,10 @@ L'abonnement inopérant est retiré ; les crédits sont rechargés après chaque
 ### P2-1 Schéma, migrations et fonctions hors du repo — Partiel → #63
 
 - Les 60 migrations historiques sont dans le repo depuis le 2026-10-02 (`npx supabase migration fetch --linked`) ; local et distant identiques.
-- **Ouvert** : elles ne contiennent pas la création des tables ; `supabase/schema.sql` (`npx supabase db dump --linked`, exige Docker) reste à faire → #63.
+- **Résolu** : la création des tables, absente des migrations, est dans `supabase/schema.sql` (2026-10-02).
 - `extract-norms` : supprimée (constaté le 2026-09-29).
 
-### P2-2 Création de compte — Résolu (2026-10-02), orphelins → #64
+### P2-2 Création de compte — Résolu (2026-10-02, #64)
 
 `20261001100100_inscription_essai_30j.sql` (#64) :
 
@@ -239,7 +239,7 @@ L'abonnement inopérant est retiré ; les crédits sont rechargés après chaque
 - essai de 30 jours partout (plus de 14 jours) ;
 - `handle_new_user` ne bloque toujours pas l'inscription, mais journalise l'erreur (`RAISE WARNING` avec SQLSTATE) ;
 - `enforce_edge_signup_channel` (vide) et son trigger supprimés : l'inscription passe par `supabase.auth.signUp`, protégée par le CAPTCHA Turnstile et les limites d'Auth ; l'edge `signup` fait l'onboarding ensuite.
-- **Ouvert** : 4 organisations sans membre et 2 comptes Auth sans praticien restent à supprimer (`supabase/checks/20261001100100_orphelins.sql`, en attente de Titouan) → #64.
+- **Résolu** : les 4 organisations sans membre et les 2 comptes Auth sans praticien ont été supprimés par Titouan le 2026-10-02 (`supabase/checks/20261001100100_orphelins.sql`).
 
 ### P2-3 `App.tsx` trop gros — Résolu
 
