@@ -68,7 +68,7 @@ npm run capture -- reeval-export "scenario=initial&etape=5&tests=nepsy-2" --pdf
 
 - Un nom seul vaut `scenario=<nom>`. Chaque argument donne une capture.
 - Le script démarre son propre Vite sur le checkout courant (port 3100) : un worktree est donc capturé tel quel.
-- Il se connecte au compte de test et tape le PIN, puis ouvre chaque scénario et prend une capture dans `.captures/<date>/` (ignoré par git), ou dans `--out`.
+- Il ouvre une session neuve du compte de test et tape le PIN, puis ouvre chaque scénario et prend une capture dans `.captures/<date>/` (ignoré par git), ou dans `--out`.
 - `--tablette` capture en 1024×768 au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
 - `--pdf` télécharge en plus le PDF (bouton « Télécharger PDF ») à côté de la capture : le scénario doit être sur l'étape d'export (`initial&etape=5`, `reeval&etape=4`). Le PDF est produit à part (`@react-pdf`, `PdfDocument.tsx`) et ne ressemble pas toujours à l'aperçu : on le lit lui-même. Un test long (`&tests=nepsy-2`) éprouve la pagination.
 - Les erreurs de la page (console, exceptions) sont affichées avec chaque capture.
@@ -77,11 +77,12 @@ npm run capture -- reeval-export "scenario=initial&etape=5&tests=nepsy-2" --pdf
 **Compte de test.** C'est le même que pour `npm run e2e:ai` ([`AI_PIPELINE.md`](AI_PIPELINE.md) §9). Il faut, dans `.env.e2e.local` du checkout principal :
 
 ```
-E2E_REFRESH_TOKEN=...
+E2E_SECRET=sb_secret_...
+E2E_EMAIL=...
 E2E_PIN=...
 ```
 
-Supabase remplace le refresh token à chaque rafraîchissement, et le déverrouillage par PIN en déclenche un. Le script écrit donc le dernier jeton dans le fichier avant de terminer. Il partage avec `e2e:ai` le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées. Si le jeton est perdu, refaire la connexion décrite au §9.
+Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) : il n'y a pas de jeton à entretenir ni à refaire. Il partage avec `e2e:ai` le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées.
 
 ## Tests de composants
 
