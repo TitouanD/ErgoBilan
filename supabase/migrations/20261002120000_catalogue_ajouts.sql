@@ -183,7 +183,7 @@ commit;
 -- where organization_id is null
 --   and test_id in ('dtvp-3','dtvp-a','pdms-2','tea-ch','profil-sensoriel-2','nepsy-2','barrage-h','spm','mabc-2','vineland-3')
 -- group by 1 order by 1;
--- Attendu : barrage-h 5, dtvp-3 8, dtvp-a 9, mabc-2 36, nepsy-2 51, pdms-2 9,
+-- Attendu : barrage-h 5, dtvp-3 8, dtvp-a 9, mabc-2 36, nepsy-2 50, pdms-2 9,
 -- profil-sensoriel-2 13, spm 9, tea-ch 9, vineland-3 19.
 -- select test_id, display_group_order, input_config ->> 'groupKey', display_order, count(*)
 -- from official_subtests
