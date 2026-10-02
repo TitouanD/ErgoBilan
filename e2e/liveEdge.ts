@@ -2,13 +2,10 @@
  * liveEdge.ts — what the live end-to-end run needs to call the production edge
  * function `generate` from Node, without a manual login:
  *
- * - the session of the dedicated test account, restored from its refresh token
- *   (`.env.e2e.local`, never committed). Refreshing skips Turnstile, which only
- *   guards the password sign-in. Supabase rotates the token on every refresh, so
- *   the new one is written back at once. The file lives in the main checkout,
- *   shared by every worktree: a copy per worktree would reuse a rotated token,
- *   and Supabase then revokes the whole session. A lock file keeps two runs
- *   from refreshing at the same time;
+ * - a fresh session of the dedicated test account for every run
+ *   (e2e/testSession.mjs; keys in `.env.e2e.local` of the main checkout, never
+ *   committed, shared by every worktree). A lock file keeps two live runs from
+ *   spending credits at the same time;
  * - a `fetch` wrapper that counts the HTTP requests sent to `generate` and
  *   refuses any beyond the cap (retries of `services/aiProxy.ts` included), sets
  *   the Origin the edge expects, and keeps each raw answer for the trace.
@@ -17,6 +14,8 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import type { Session } from '@supabase/supabase-js';
+import { mintTestSession } from './testSession.mjs';
 
 /** Root of the main checkout (the parent of the shared `.git`), from any worktree. */
 const mainCheckout = (): string => {
@@ -41,12 +40,6 @@ const readEnvFile = (): Map<string, string> => {
     if (match) values.set(match[1], match[2].replace(/^["']|["']$/g, ''));
   }
   return values;
-};
-
-const writeRefreshToken = (token: string) => {
-  const lines = existsSync(ENV_FILE) ? readFileSync(ENV_FILE, 'utf8').split(/\r?\n/) : [];
-  const kept = lines.filter((line) => line.trim() && !/^\s*E2E_REFRESH_TOKEN\s*=/.test(line));
-  writeFileSync(ENV_FILE, [...kept, `E2E_REFRESH_TOKEN=${token}`, ''].join('\n'), 'utf8');
 };
 
 export interface EdgeExchange {
@@ -87,9 +80,9 @@ export const installEdgeFetch = (maxEdgeCalls: number) => {
  * (`services/db.ts`), so the real transport `callAIProxyTask` works unchanged.
  */
 export const signInTestAccount = async () => {
-  const refreshToken = readEnvFile().get('E2E_REFRESH_TOKEN');
-  if (!refreshToken) {
-    throw new Error(`E2E_REFRESH_TOKEN absent de ${ENV_FILE} : voir docs/AI_PIPELINE.md §9 (connexion du compte de test).`);
+  const env = readEnvFile();
+  if (!env.get('E2E_SECRET') || !env.get('E2E_EMAIL')) {
+    throw new Error(`E2E_SECRET et E2E_EMAIL absents de ${ENV_FILE} : voir docs/AI_PIPELINE.md §9 (compte de test).`);
   }
   try {
     writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
@@ -97,32 +90,37 @@ export const signInTestAccount = async () => {
     throw new Error(`Une autre exécution réelle tourne (${LOCK_FILE}). Sinon, supprimer ce fichier resté après un arrêt brutal.`);
   }
   const unlock = () => rmSync(LOCK_FILE, { force: true });
-  const { supabase } = await import('../services/db');
-  const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
-  if (error || !data.session) {
+  const { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } = await import('../services/db');
+  let session: Session;
+  try {
+    const minted = await mintTestSession({
+      url: SUPABASE_URL,
+      publishableKey: SUPABASE_ANON_KEY,
+      secretKey: env.get('E2E_SECRET'),
+      email: env.get('E2E_EMAIL'),
+    });
+    const result = await supabase.auth.setSession({ access_token: minted.access_token, refresh_token: minted.refresh_token });
+    if (result.error || !result.data.session) throw new Error(result.error?.message ?? 'pas de session');
+    session = result.data.session;
+  } catch (e) {
     unlock();
-    throw new Error(`Session du compte de test non restaurée (${error?.message ?? 'pas de session'}) : refaire la connexion, §9.`);
+    throw e;
   }
-  writeRefreshToken(data.session.refresh_token);
-  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    if (session?.refresh_token) writeRefreshToken(session.refresh_token);
-  });
 
   const readAccount = async () => {
     const { data: row, error: readError } = await supabase
       .from('practitioners')
       .select('credits, ai_style_preferences, is_admin')
-      .eq('id', data.session!.user.id)
+      .eq('id', session.user.id)
       .single();
     if (readError || !row) throw new Error(`Lecture du compte de test impossible (${readError?.message})`);
     return row;
   };
 
   return {
-    email: data.session.user.email ?? '',
+    email: session.user.email ?? '',
     readAccount,
     close: async () => {
-      listener.subscription.unsubscribe();
       await supabase.auth.stopAutoRefresh();
       unlock();
     },

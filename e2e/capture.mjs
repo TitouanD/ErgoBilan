@@ -12,11 +12,10 @@
  * --out <dir> (default .captures/<date>), --port <n> (default 3100).
  *
  * - Starts its own Vite on the current checkout (a worktree is captured as is).
- * - Session: the refresh token of `.env.e2e.local` (main checkout, shared with
- *   `npm run e2e:ai`, docs/AI_PIPELINE.md §9) is exchanged for a session put in
- *   the browser; the PIN (`E2E_PIN`) is typed on the lock screen. Supabase
- *   rotates the token on every refresh: the last one, read back from the
- *   browser, is written to the file before leaving.
+ * - Session: a fresh one for every run (e2e/testSession.mjs, keys in
+ *   `.env.e2e.local` of the main checkout, shared with `npm run e2e:ai`,
+ *   docs/AI_PIPELINE.md §9), put in the browser; the PIN (`E2E_PIN`) is typed
+ *   on the lock screen. Nothing is written back.
  * - The browser has its own profile, emptied on every run: the fictitious
  *   patients never reach the practitioner's browser.
  * - Microsoft Edge (installed with Windows) is driven by playwright-core: no
@@ -28,6 +27,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { mintTestSession } from './testSession.mjs';
 
 const AUTH_KEY = 'ergobilan.auth';
 
@@ -51,7 +51,9 @@ for (let i = 0; i < args.length; i += 1) {
   }
 }
 if (targets.length === 0) {
-  console.error('Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]');
+  console.error(
+    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
+  );
   process.exit(1);
 }
 
@@ -75,12 +77,6 @@ const readEnv = () => {
   }
   return values;
 };
-const writeRefreshToken = (token) => {
-  const lines = existsSync(ENV_FILE) ? readFileSync(ENV_FILE, 'utf8').split(/\r?\n/) : [];
-  const kept = lines.filter((l) => l.trim() && !/^\s*E2E_REFRESH_TOKEN\s*=/.test(l));
-  writeFileSync(ENV_FILE, [...kept, `E2E_REFRESH_TOKEN=${token}`, ''].join('\n'), 'utf8');
-};
-
 /** Dev Supabase project of services/db.ts (the app uses the same in `npm run dev`). */
 const supabaseConfig = () => {
   const source = readFileSync(resolve('services/db.ts'), 'utf8');
@@ -88,20 +84,6 @@ const supabaseConfig = () => {
   const key = process.env.VITE_SUPABASE_ANON_KEY || source.match(/DEV_SUPABASE_PUBLISHABLE_KEY = '([^']+)'/)?.[1];
   if (!url || !key) throw new Error('Configuration Supabase introuvable dans services/db.ts');
   return { url, key };
-};
-
-const refreshSession = async (refreshToken) => {
-  const { url, key } = supabaseConfig();
-  const res = await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
-    method: 'POST',
-    headers: { apikey: key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.refresh_token) {
-    throw new Error(`Session du compte de test non restaurée (${res.status} ${body.error_description ?? body.msg ?? ''}) : refaire la connexion, docs/AI_PIPELINE.md §9.`);
-  }
-  return body;
 };
 
 // ─── Vite ───────────────────────────────────────────────────────────────────
@@ -132,10 +114,9 @@ const killTree = (child) => {
 
 // ─── Run ────────────────────────────────────────────────────────────────────
 const env = readEnv();
-const refreshToken = env.get('E2E_REFRESH_TOKEN');
 const pin = env.get('E2E_PIN');
-if (!refreshToken || !pin) {
-  console.error(`E2E_REFRESH_TOKEN et E2E_PIN requis dans ${ENV_FILE} (docs/VERIFICATION.md).`);
+if (!env.get('E2E_SECRET') || !env.get('E2E_EMAIL') || !pin) {
+  console.error(`E2E_SECRET, E2E_EMAIL et E2E_PIN requis dans ${ENV_FILE} (docs/VERIFICATION.md).`);
   process.exit(1);
 }
 try {
@@ -151,12 +132,10 @@ mkdirSync(outDir, { recursive: true });
 let vite;
 let browser;
 let page;
-let lastToken = refreshToken;
 let failures = 0;
 try {
-  const session = await refreshSession(refreshToken);
-  lastToken = session.refresh_token;
-  writeRefreshToken(lastToken);
+  const { url, key } = supabaseConfig();
+  const session = await mintTestSession({ url, publishableKey: key, secretKey: env.get('E2E_SECRET'), email: env.get('E2E_EMAIL') });
 
   vite = await startVite(opts.port);
   browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -167,7 +146,7 @@ try {
   });
   await context.addInitScript(
     ({ key, value }) => {
-      // Only on the first load: later loads keep the session the app has rotated since.
+      // Only on the first load: later loads keep the session the app has refreshed since.
       if (!localStorage.getItem(key)) localStorage.setItem(key, value);
       sessionStorage.setItem('ergo_backup_reminder_shown', '1');
     },
@@ -216,7 +195,10 @@ try {
     console.log(`✓ ${file}`);
     if (opts.pdf) {
       try {
-        const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.click('button:has-text("Télécharger PDF")', { timeout: 10_000 })]);
+        const [download] = await Promise.all([
+          page.waitForEvent('download', { timeout: 60_000 }),
+          page.click('button:has-text("Télécharger PDF")', { timeout: 10_000 }),
+        ]);
         const pdfFile = file.replace(/\.png$/, '.pdf');
         await download.saveAs(pdfFile);
         console.log(`✓ ${pdfFile}`);
@@ -231,13 +213,6 @@ try {
   failures += 1;
   console.error(e instanceof Error ? e.message : e);
 } finally {
-  try {
-    const stored = page ? await page.evaluate((key) => localStorage.getItem(key), AUTH_KEY) : null;
-    const token = stored ? JSON.parse(stored).refresh_token : null;
-    if (token && token !== lastToken) writeRefreshToken(token);
-  } catch {
-    /* page closed: the token written after the refresh stays valid */
-  }
   await browser?.close();
   vite?.stop();
   rmSync(LOCK_FILE, { force: true });

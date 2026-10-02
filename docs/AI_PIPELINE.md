@@ -268,16 +268,17 @@ Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) 
 ### Compte de test et connexion
 
 - **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
-- Turnstile empêche la connexion par mot de passe depuis un script. Le script restaure la session à partir d'un **refresh token**, dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
+- Turnstile empêche la connexion par mot de passe depuis un script. Le script ouvre donc une **session neuve à chaque exécution** (`e2e/testSession.mjs`) : une **clé secrète Supabase** dédiée demande à l'API d'administration un lien de connexion du compte de test, aussitôt validé avec la clé publique. Aucun e-mail n'est envoyé, Turnstile n'intervient pas, et rien n'est conservé entre deux exécutions : plus de jeton à refaire. Dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
 
   ```
-  E2E_REFRESH_TOKEN=...
+  E2E_SECRET=sb_secret_...      # clé secrète dédiée (Supabase → Project Settings → API Keys), nommée e2e-local
+  E2E_EMAIL=...                 # e-mail du compte de test
+  E2E_PIN=...                   # PIN du compte de test (captures)
   # E2E_ORIGIN=https://test.ergobilan.com   (défaut ; doit figurer dans AI_ALLOWED_ORIGINS de l'edge)
   ```
 
-- Pour obtenir le jeton (une fois, puis à chaque perte) : se connecter avec le compte de test sur `http://localhost:3000`, puis dans la console du navigateur `copy(JSON.parse(localStorage['ergobilan.auth']).refresh_token)`, coller dans `.env.e2e.local`, et **fermer l'onglet sans se déconnecter** (la déconnexion révoque le jeton ; l'onglet resté ouvert le ferait tourner de son côté).
-- Le fichier vit dans le **checkout principal** (`ErgoBilan/`), même quand le test tourne dans un worktree (`../ErgoBilan-<n>`) : le script le retrouve par `git rev-parse --git-common-dir`. Ne jamais le copier dans un worktree : deux copies du même jeton font révoquer la session par Supabase. Un verrou (`.env.e2e.local.lock`) empêche deux exécutions réelles simultanées ; s'il reste après un arrêt brutal, le supprimer.
-- Supabase remplace le refresh token à chaque rafraîchissement : le script réécrit aussitôt le nouveau dans `.env.e2e.local`. Si le fichier est perdu ou le jeton révoqué, refaire l'étape ci-dessus.
+- La clé secrète a tous les droits sur la base (RLS ignorée) : elle ne sert qu'à ouvrir la session du compte de test, ne quitte jamais `.env.e2e.local` et n'arrive ni dans le navigateur ni dans le code de l'app (Supabase refuse d'ailleurs une clé secrète envoyée par un navigateur). En cas de doute, la supprimer dans le tableau de bord et en créer une autre : rien d'autre n'est touché.
+- Le fichier vit dans le **checkout principal** (`ErgoBilan/`), même quand le test tourne dans un worktree (`../ErgoBilan-<n>`) : le script le retrouve par `git rev-parse --git-common-dir`. Un verrou (`.env.e2e.local.lock`) empêche deux exécutions simultanées ; s'il reste après un arrêt brutal, le supprimer.
 - Les workers Vitest tournent avec `--use-system-ca` (`vitest.e2e.config.ts`) : derrière un proxy d'entreprise qui inspecte TLS, Node refuse sinon les certificats (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`).
 - Côté edge, le test ne passe par aucun mode spécial : même authentification, mêmes crédits, même limite de 15 requêtes par heure que l'application.
-- `npm run capture` (captures d'écran des scénarios de dev, [VERIFICATION.md](VERIFICATION.md)) utilise le même compte, le même fichier et le même verrou : les deux ne tournent jamais en même temps, et chacun réécrit le jeton remplacé. Il lit en plus `E2E_PIN=...` (le PIN du compte de test, tapé à l'écran de déverrouillage). Il n'appelle pas l'IA.
+- `npm run capture` (captures d'écran des scénarios de dev, [VERIFICATION.md](VERIFICATION.md)) utilise le même compte, le même fichier, la même session neuve et le même verrou : les deux ne tournent jamais en même temps. Il lit en plus `E2E_PIN` (tapé à l'écran de déverrouillage). Il n'appelle pas l'IA.
