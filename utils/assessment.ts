@@ -8,6 +8,7 @@
 import type { PatientAssessment, PatientAssessmentKind, ReportSection, ScoreResult, TestData } from '../types';
 import { type CatalogIndex, getTestName } from './catalogIndex';
 import { normalizeTestData, pruneEmptyScores } from './scoring';
+import { compareSubtestsForDisplay } from './subtestOrdering';
 
 /**
  * Regroup the flat `results` map of assessments saved by older versions
@@ -36,6 +37,33 @@ export const getAssessmentTests = (assessment: PatientAssessment | null | undefi
 export const getLatestFormalAssessment = (assessments: PatientAssessment[] | undefined): PatientAssessment | null =>
   [...(assessments ?? [])].filter((a) => a.hasFormalReport).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ??
   null;
+
+/**
+ * Tests and subtests picked in the catalogue (`TestCatalogModal`) added with
+ * empty scores; existing scores are kept. `newTestIds`: tests that were not there.
+ */
+export const addCatalogSelection = (
+  tests: TestData,
+  selection: Record<string, string[]>,
+  index: CatalogIndex,
+): { tests: TestData; newTestIds: string[] } => {
+  const next: TestData = { ...tests };
+  const newTestIds: string[] = [];
+  for (const [testId, subtestIds] of Object.entries(selection)) {
+    if (!next[testId]) newTestIds.push(testId);
+    next[testId] = { ...(next[testId] ?? {}) };
+    // New subtests in the catalogue order the picker shows, not in click order (#92);
+    // those already in the table keep their (possibly hand-arranged) order.
+    const defs = new Map((index.testById.get(testId)?.subtests ?? []).map((s) => [s.id, s] as const));
+    const ordered = [...subtestIds].sort((a, b) => {
+      const da = defs.get(a);
+      const db = defs.get(b);
+      return da && db ? compareSubtestsForDisplay(da, db) : 0;
+    });
+    for (const id of ordered) next[testId][id] ??= {};
+  }
+  return { tests: next, newTestIds };
+};
 
 /**
  * Same tests/subtests as the previous assessment, with empty scores.

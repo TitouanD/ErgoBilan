@@ -10,7 +10,7 @@ If you have access to the Supabase MCP, use it to inspect the real schema, RLS p
 - **Local-first**: all patient data — identity, anamnesis, scores, reports, drafts, follow-ups — lives in the browser in IndexedDB via Dexie, one database per practitioner (`ErgoBilanDB_<userId>`, see [services/localDB.ts](../services/localDB.ts)). Nothing patient-related is stored on Supabase.
 - Supabase only holds: auth, the practitioner profile (`practitioners`, including `branding_config` and `ai_style_preferences`), organizations, subscriptions/credits, the test catalogue, and portal questionnaires in transit (AES-GCM encrypted client-side, key in the URL fragment).
 - ⚠️ Local data is currently stored **in plaintext**. The 6-digit PIN is a screen lock: its derived key (PBKDF2) only wraps portal questionnaire keys. Encrypting local data is backlog item P0-1 in `docs/TECH_DEBT.md`. Do not add UI copy claiming data is encrypted.
-- The former "blind backend" (MasterKey → OrgKey → FileKey) no longer exists. `organization_members.encrypted_org_key` is a DB leftover.
+- The former "blind backend" (MasterKey → OrgKey → FileKey) no longer exists. Its leftover column `organization_members.encrypted_org_key` was dropped on 2026-10-02.
 
 ## Architecture & composition
 
@@ -48,7 +48,7 @@ Cross-flow steps live in `components/assessment/pages/` (`ScorePage`, `Validatio
 
 - The client **never** calls Gemini directly and holds no API key. `services/ai.ts` → `services/aiProxy.ts` → Edge Function `supabase/functions/generate` (prompts in `prompts.ts`). The function reads `GEMINI_API_KEY` from its secrets and handles JWT verification, rate limiting, credits (`generation_log`, session lock) and retries.
 - Credits are consumed **server-side** by the edge function, not by the client.
-- Build AI payloads in [utils/aiPayload.ts](../utils/aiPayload.ts), pseudonymize the whole payload with `anonymizeDeep` and rehydrate the answer with `hydrateReport` ([utils/anonymizer.ts](../utils/anonymizer.ts)).
+- Call the AI only through the report generator ([utils/reportGenerator.ts](../utils/reportGenerator.ts)): it builds the payload ([utils/aiPayload.ts](../utils/aiPayload.ts)), anonymizes it and rehydrates the answer (`createAnonymization`, [utils/anonymizer.ts](../utils/anonymizer.ts)).
 
 ## Scoring & catalog
 

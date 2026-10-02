@@ -124,7 +124,7 @@ npm run preview
 ## Qualité & tests
 
 ```bash
-npm run check         # Tout ce que vérifie la CI : lint + typecheck (strict) + tests + build
+npm run check         # Tout ce que vérifie la CI : lint + format + typecheck (strict) + tests + build
 npm run typecheck     # tsc --noEmit
 npm run lint          # ESLint
 npm run format:check  # Prettier (vérification)

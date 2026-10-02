@@ -14,6 +14,8 @@ import { buildDeltaEntries } from '../../../utils/reevaluationHelpers';
 import { htmlToPlainText, plainTextToHtml, sectionToHtml } from '../../../utils/reportContent';
 import { DeltaTable } from '../shared/DeltaTable';
 import { StepNavFooter } from '../shared/StepNavFooter';
+import { SuspectTermsReview, useSuspectTermChoices } from '../../shared/SuspectTermsReview';
+import type { SuspectTermDecisions } from '../../../utils/suspectTerms';
 
 interface Props {
   previousAssessment: PatientAssessment | null;
@@ -21,7 +23,9 @@ interface Props {
   sections: ReportSection[];
   onSetSections: (sections: ReportSection[]) => void;
   /** Runs the AI generation; resolves true on success (sections are then in the context). */
-  onGenerate: () => Promise<boolean>;
+  onGenerate: (decisions: SuspectTermDecisions) => Promise<boolean>;
+  /** Words of the free text that may still identify someone (asked before the generation). */
+  findSuspectTerms: () => string[];
   isGenerating: boolean;
   hasCredits: boolean;
   /** Demo: the generation is simulated and costs nothing. */
@@ -47,6 +51,7 @@ export const Step2Evolution: React.FC<Props> = ({
   sections,
   onSetSections,
   onGenerate,
+  findSuspectTerms,
   isGenerating,
   hasCredits,
   isDemoMode,
@@ -55,15 +60,19 @@ export const Step2Evolution: React.FC<Props> = ({
   onBack,
 }) => {
   const { index } = useCatalog();
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(MANUAL_SECTIONS.map((s) => [s.id, sectionText(sections, s.id)])));
+  /** Suspect words of the confirmation; null while it is closed. */
+  const [confirmTerms, setConfirmTerms] = useState<string[] | null>(null);
+  const termChoices = useSuspectTermChoices(confirmTerms ?? []);
+  const [texts, setTexts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(MANUAL_SECTIONS.map((s) => [s.id, sectionText(sections, s.id)])),
+  );
   const hasAiSections = sections.some((s) => s.isAiGenerated);
 
   const deltas = useMemo(() => buildDeltaEntries(previousAssessment?.tests ?? {}, newTests, index), [previousAssessment, newTests, index]);
 
   const handleGenerate = async () => {
-    setShowConfirm(false);
-    if (await onGenerate()) onNext();
+    setConfirmTerms(null);
+    if (await onGenerate(termChoices.decisions)) onNext();
   };
 
   /** Keep the other sections; replace a manual section only when its text changed. */
@@ -82,7 +91,7 @@ export const Step2Evolution: React.FC<Props> = ({
 
   return (
     <div className="animate-in slide-in-from-right duration-500">
-      {showConfirm && (
+      {confirmTerms && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#3D405B]/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--card-bg)] p-8 rounded-[32px] max-w-md text-center shadow-2xl border border-[var(--border-color)]">
             <div className="w-20 h-20 bg-[#E07A5F]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#E07A5F]">
@@ -90,9 +99,11 @@ export const Step2Evolution: React.FC<Props> = ({
             </div>
             <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Générer la synthèse</h3>
             <p className="text-[var(--text-secondary)] text-sm mb-4 font-medium leading-relaxed">
-              L'IA rédige le rappel du bilan initial, l'évolution commentée, la conclusion et les préconisations à partir de l'évolution des scores.
+              L'IA rédige le rappel du bilan initial, l'évolution commentée, la conclusion et les préconisations à partir de l'évolution des
+              scores.
               {hasAiSections && ' Les sections déjà générées seront remplacées.'}
             </p>
+            <SuspectTermsReview terms={confirmTerms} isMasked={termChoices.isMasked} onToggle={termChoices.toggle} />
             <div className="bg-[var(--card-bg-raised)] p-3 rounded-xl mb-8 border border-[var(--border-color)] flex gap-2 text-left">
               <ShieldCheck size={20} className="text-[#81B29A] shrink-0 mt-0.5" />
               <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
@@ -101,7 +112,7 @@ export const Step2Evolution: React.FC<Props> = ({
             </div>
             <div className="flex gap-4">
               <button
-                onClick={() => setShowConfirm(false)}
+                onClick={() => setConfirmTerms(null)}
                 className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-xs uppercase tracking-wider"
               >
                 Retour
@@ -147,7 +158,7 @@ export const Step2Evolution: React.FC<Props> = ({
       <StepNavFooter onBack={onBack}>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => (hasCredits ? setShowConfirm(true) : onNeedCredits())}
+            onClick={() => (hasCredits ? setConfirmTerms(findSuspectTerms()) : onNeedCredits())}
             disabled={isGenerating}
             className="flex items-center gap-3 px-6 py-4 rounded-2xl font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-gradient-to-r from-[#E07A5F] to-[#d97706] hover:shadow-orange-200 hover:scale-[1.02]"
           >

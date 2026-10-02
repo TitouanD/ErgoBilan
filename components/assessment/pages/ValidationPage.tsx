@@ -50,7 +50,9 @@ const SectionCard: React.FC<{
             <Check size={14} /> Validé
           </div>
         ) : (
-          <div className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500 rounded-full text-xs font-bold uppercase tracking-wider">À relire</div>
+          <div className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500 rounded-full text-xs font-bold uppercase tracking-wider">
+            À relire
+          </div>
         )}
       </div>
 
@@ -58,7 +60,10 @@ const SectionCard: React.FC<{
         <div className="space-y-4">
           <TipTapEditor content={editHtml} onChange={setEditHtml} isPerformance />
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={stopEdit} className="px-5 py-2 text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider hover:text-[var(--text-heading)] transition-colors">
+            <button
+              onClick={stopEdit}
+              className="px-5 py-2 text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider hover:text-[var(--text-heading)] transition-colors"
+            >
               Annuler
             </button>
             <button
@@ -161,7 +166,9 @@ export const ValidationPage: React.FC<Props> = ({ sections, onValidateSection, o
         {displayedSections.length === 0 ? (
           <div className="text-center py-20 text-stone-400 dark:text-[var(--text-disabled)] italic">Aucune section à relire.</div>
         ) : (
-          displayedSections.map((section) => <SectionCard key={section.id} section={section} onValidate={onValidateSection} onDirtyChange={handleDirtyChange} />)
+          displayedSections.map((section) => (
+            <SectionCard key={section.id} section={section} onValidate={onValidateSection} onDirtyChange={handleDirtyChange} />
+          ))
         )}
       </div>
 

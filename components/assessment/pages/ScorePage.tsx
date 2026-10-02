@@ -18,6 +18,7 @@ import { useCatalog } from '../../../contexts/CatalogContext';
 import { useFavoriteTests } from '../../../hooks/useFavoriteTests';
 import { hasScoreValue } from '../../../utils/scoring';
 import { CUSTOM_OBSERVATIONS_TEST_ID, resolveTestDef } from '../../../utils/catalogIndex';
+import { addCatalogSelection } from '../../../utils/assessment';
 import { ScoreTable, subtestDragId } from '../shared/ScoreTable';
 import { StepNavFooter } from '../shared/StepNavFooter';
 import { TestCatalogModal } from './score/TestCatalogModal';
@@ -91,17 +92,11 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
 
   const addTests = useCallback(
     (selection: Record<string, string[]>) => {
-      const next: TestData = { ...tests };
-      const newTestIds: string[] = [];
-      for (const [testId, subtestIds] of Object.entries(selection)) {
-        if (!next[testId]) newTestIds.push(testId);
-        next[testId] = { ...(next[testId] ?? {}) };
-        for (const id of subtestIds) next[testId][id] ??= {};
-      }
+      const { tests: next, newTestIds } = addCatalogSelection(tests, selection, index);
       if (newTestIds.length > 0) pushRecent(newTestIds.filter((id) => id !== CUSTOM_OBSERVATIONS_TEST_ID));
       updateTests(next);
     },
-    [tests, updateTests, pushRecent],
+    [tests, index, updateTests, pushRecent],
   );
 
   const removeTest = useCallback(
@@ -224,7 +219,9 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                               {category && (
                                 <div className="flex items-center gap-1 mb-0.5">
                                   <CatIcon size={10} className="text-[var(--text-secondary)]" />
-                                  <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">{category.name}</span>
+                                  <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-widest">
+                                    {category.name}
+                                  </span>
                                 </div>
                               )}
                               <h4 className="font-bold text-[var(--text-heading)] truncate">{def.name}</h4>
@@ -246,7 +243,10 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                             {subtests.length === 0 ? (
                               <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>
                             ) : (
-                              <SortableContext items={subtests.map((s) => subtestDragId(testId, s.id))} strategy={verticalListSortingStrategy}>
+                              <SortableContext
+                                items={subtests.map((s) => subtestDragId(testId, s.id))}
+                                strategy={verticalListSortingStrategy}
+                              >
                                 <ScoreTable
                                   testId={testId}
                                   subtests={subtests}

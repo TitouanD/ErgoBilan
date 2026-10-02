@@ -19,48 +19,6 @@ export type Database = {
   };
   public: {
     Tables: {
-      admin_audit_log: {
-        Row: {
-          action: string;
-          admin_user_id: string;
-          affected_norm_ids: Json | null;
-          affected_subtest_ids: Json | null;
-          affected_test_ids: Json | null;
-          created_at: string | null;
-          error_message: string | null;
-          id: string;
-          metadata: Json | null;
-          result: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          action: string;
-          admin_user_id: string;
-          affected_norm_ids?: Json | null;
-          affected_subtest_ids?: Json | null;
-          affected_test_ids?: Json | null;
-          created_at?: string | null;
-          error_message?: string | null;
-          id?: string;
-          metadata?: Json | null;
-          result?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          action?: string;
-          admin_user_id?: string;
-          affected_norm_ids?: Json | null;
-          affected_subtest_ids?: Json | null;
-          affected_test_ids?: Json | null;
-          created_at?: string | null;
-          error_message?: string | null;
-          id?: string;
-          metadata?: Json | null;
-          result?: string | null;
-          updated_at?: string | null;
-        };
-        Relationships: [];
-      };
       ai_request_log: {
         Row: { created_at: string; id: number; user_id: string };
         Insert: { created_at?: string; id?: number; user_id: string };
@@ -72,6 +30,7 @@ export type Database = {
           created_at: string;
           error_code: string | null;
           id: string;
+          kind: string | null;
           refunded_at: string | null;
           status: string;
           user_id: string;
@@ -80,6 +39,7 @@ export type Database = {
           created_at?: string;
           error_code?: string | null;
           id?: string;
+          kind?: string | null;
           refunded_at?: string | null;
           status?: string;
           user_id: string;
@@ -88,6 +48,7 @@ export type Database = {
           created_at?: string;
           error_code?: string | null;
           id?: string;
+          kind?: string | null;
           refunded_at?: string | null;
           status?: string;
           user_id?: string;
@@ -192,21 +153,18 @@ export type Database = {
       };
       organization_members: {
         Row: {
-          encrypted_org_key: string | null;
           joined_at: string | null;
           organization_id: string;
           role: string | null;
           user_id: string;
         };
         Insert: {
-          encrypted_org_key?: string | null;
           joined_at?: string | null;
           organization_id: string;
           role?: string | null;
           user_id: string;
         };
         Update: {
-          encrypted_org_key?: string | null;
           joined_at?: string | null;
           organization_id?: string;
           role?: string | null;
@@ -215,9 +173,9 @@ export type Database = {
         Relationships: [];
       };
       organizations: {
-        Row: { created_at: string | null; id: string; name: string; stripe_customer_id: string | null };
-        Insert: { created_at?: string | null; id?: string; name?: string; stripe_customer_id?: string | null };
-        Update: { created_at?: string | null; id?: string; name?: string; stripe_customer_id?: string | null };
+        Row: { created_at: string | null; id: string; name: string };
+        Insert: { created_at?: string | null; id?: string; name?: string };
+        Update: { created_at?: string | null; id?: string; name?: string };
         Relationships: [];
       };
       pending_questionnaires: {

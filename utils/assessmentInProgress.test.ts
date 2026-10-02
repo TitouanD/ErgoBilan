@@ -58,7 +58,9 @@ const makeStore = () => {
       patients.delete(id);
       drafts.delete(id);
     }),
-    syncPatientIdentityPreview: vi.fn(async () => {}),
+    syncPatientIdentityPreview: vi.fn(async (id: string, p: Patient) => {
+      if (patients.has(id)) patients.set(id, { ...p, id });
+    }),
     getDraft: vi.fn(async (id?: string) => drafts.get(id!) ?? null),
     saveDraft: vi.fn(async (d: DraftPayload) => {
       if (failures.saveDraft) throw new Error('IDB_WRITE');
@@ -74,13 +76,16 @@ const makeStore = () => {
     addAssessment: vi.fn(async (p: Patient, a: PatientAssessment) => {
       assessments.set(p.id!, [...(assessments.get(p.id!) ?? []), a]);
     }),
-    loadPatientDetails: vi.fn(async (id: string) => ({
-      patient: patients.get(id)!,
-      assessments: assessments.get(id) ?? [],
-      followup: null,
-      hasMoreAssessments: false,
-      nextAssessmentOffset: 0,
-    })),
+    loadPatientDetails: vi.fn(async (id: string) => {
+      if (!patients.has(id)) throw new Error('Patient introuvable.');
+      return {
+        patient: patients.get(id)!,
+        assessments: assessments.get(id) ?? [],
+        followup: null,
+        hasMoreAssessments: false,
+        nextAssessmentOffset: 0,
+      };
+    }),
     upsertPatientFollowup: vi.fn(async () => {}),
   };
   const addPatient = (p: Patient, list: PatientAssessment[] = []) => {
@@ -183,6 +188,42 @@ describe('assessmentInProgress', () => {
     expect(db.drafts.has('sarah')).toBe(false);
     expect(bilan.getState().reportType).toBe('reevaluation');
     expect(bilan.getState().previousAssessment?.id).toBe('ref-1');
+  });
+
+  it('resumes a draft with the identity corrected in the patient file since (#80)', async () => {
+    const { bilan, db, timers } = ctx;
+    db.addPatient({ ...identity, id: 'sarah', lastName: 'Martin-Durand' });
+    db.drafts.set('sarah', { patient: { ...identity, id: 'sarah' }, reportType: 'initial', step: 3 });
+
+    expect(await bilan.resume('sarah', { stale: false })).toEqual({ ok: true });
+    expect(bilan.getState().patient.lastName).toBe('Martin-Durand');
+    expect(bilan.getState().step).toBe(3);
+    bilan.updateObservations({ anamnese: 'reprise' });
+    await timers.flush();
+    expect(db.patients.get('sarah')?.lastName).toBe('Martin-Durand');
+    expect(db.drafts.get('sarah')?.patient?.lastName).toBe('Martin-Durand');
+  });
+
+  it('resumes with the identity of the draft when the patient file is missing', async () => {
+    const { bilan, db } = ctx;
+    db.drafts.set('perdu', { patient: { ...identity, id: 'perdu' }, reportType: 'initial' });
+
+    expect(await bilan.resume('perdu', { stale: false })).toEqual({ ok: true });
+    expect(bilan.getState().patient.lastName).toBe('Martin');
+  });
+
+  it('writes the identity edited in the assessment into the patient file (#80)', async () => {
+    const { bilan, db, timers } = ctx;
+    db.addPatient({ ...identity, id: 'sarah' });
+    expect(await bilan.start('initial', { ...identity, id: 'sarah' })).toEqual({ ok: true });
+
+    bilan.updatePatient({ lastName: 'Martin-Durand' });
+    await timers.flush();
+    expect(db.patients.get('sarah')?.lastName).toBe('Martin-Durand');
+
+    bilan.updatePatient({ school: 'École Jules Ferry' });
+    expect(await bilan.saveAndClose()).toEqual({ ok: true });
+    expect(db.patients.get('sarah')?.school).toBe('École Jules Ferry');
   });
 
   it('autosaves after an edit, but never re-creates the draft after finalization', async () => {

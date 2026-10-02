@@ -259,9 +259,7 @@ export const StorageService = {
     // carried in the paginated patientFiles list (assessments: [] in list view).
     const existingRows = await db().assessments.where('patientId').equals(file.id).toArray();
     const incomingIds = new Set(file.assessments.map((a) => a.id));
-    const existingAssessments: PatientAssessment[] = existingRows
-      .filter((r) => !incomingIds.has(r.id))
-      .map(rowToAssessment);
+    const existingAssessments: PatientAssessment[] = existingRows.filter((r) => !incomingIds.has(r.id)).map(rowToAssessment);
     const mergedAssessments = [...file.assessments, ...existingAssessments];
 
     const previewMeta = buildPreviewMeta(normalizedPatient, mergedAssessments, file.archived);
@@ -306,9 +304,10 @@ export const StorageService = {
 
   // ── Patient list ──────────────────────────────────────────────────────────
 
-  loadPatientListPage: async (
-    options?: { offset?: number; limit?: number },
-  ): Promise<{ files: PatientFile[]; hasMore: boolean; nextOffset: number }> => {
+  loadPatientListPage: async (options?: {
+    offset?: number;
+    limit?: number;
+  }): Promise<{ files: PatientFile[]; hasMore: boolean; nextOffset: number }> => {
     if (_isDemoMode) {
       const assessments = buildDemoAssessments(DEMO_PATIENTS.SARAH.id);
       const demoFile: PatientFile = {
@@ -330,15 +329,17 @@ export const StorageService = {
     const offset = options?.offset ?? 0;
 
     // One row beyond the page tells whether another page exists.
-    const page = await db().patients.orderBy('lastInteraction').reverse().offset(offset).limit(pageSize + 1).toArray();
+    const page = await db()
+      .patients.orderBy('lastInteraction')
+      .reverse()
+      .offset(offset)
+      .limit(pageSize + 1)
+      .toArray();
     const hasMore = page.length > pageSize;
     const pageRows = page.slice(0, pageSize);
 
     const patientIds = pageRows.map((r) => r.id);
-    const followupRows =
-      patientIds.length > 0
-        ? await db().followups.where('patientId').anyOf(patientIds).toArray()
-        : [];
+    const followupRows = patientIds.length > 0 ? await db().followups.where('patientId').anyOf(patientIds).toArray() : [];
     const followupByPatientId = new Map(followupRows.map((f) => [f.patientId, mapLocalFollowupRow(f)]));
 
     const files: PatientFile[] = pageRows.map((row) => ({
@@ -354,18 +355,12 @@ export const StorageService = {
     // Background repair: fix stale previewMeta for patients where hasInitialReport=false
     // but they actually have formal assessments (caused by old syncPatientIdentityPreview bug).
     // Fire-and-forget — does NOT block the caller.
-    const staleIds = files
-      .filter((f) => !f.previewMeta?.flags?.hasInitialReport)
-      .map((f) => f.id);
+    const staleIds = files.filter((f) => !f.previewMeta?.flags?.hasInitialReport).map((f) => f.id);
     if (staleIds.length > 0) {
       (async () => {
         try {
-          const formalRows = await db().assessments
-            .where('patientId').anyOf(staleIds)
-            .toArray();
-          const patientsWithFormal = new Set(
-            formalRows.filter((r) => r.hasFormalReport).map((r) => r.patientId),
-          );
+          const formalRows = await db().assessments.where('patientId').anyOf(staleIds).toArray();
+          const patientsWithFormal = new Set(formalRows.filter((r) => r.hasFormalReport).map((r) => r.patientId));
           for (const patientId of patientsWithFormal) {
             const allRows = await db().assessments.where('patientId').equals(patientId).toArray();
             const assessments: PatientAssessment[] = allRows.map(rowToAssessment);
@@ -375,7 +370,9 @@ export const StorageService = {
             await db().patients.update(patientId, { previewMeta: repairedMeta, updatedAt: new Date().toISOString() });
             fileToRepair.previewMeta = repairedMeta;
           }
-        } catch (_e) { Logger.warn('DB', 'Background previewMeta repair failed', _e); }
+        } catch (_e) {
+          Logger.warn('DB', 'Background previewMeta repair failed', _e);
+        }
       })();
     }
 
@@ -384,9 +381,7 @@ export const StorageService = {
 
   // ── Single patient preview ────────────────────────────────────────────────
 
-  loadPatientPreviewById: async (
-    patientId: string,
-  ): Promise<PatientFile | null> => {
+  loadPatientPreviewById: async (patientId: string): Promise<PatientFile | null> => {
     if (_isDemoMode) return null;
 
     const row = await db().patients.get(patientId);
@@ -418,9 +413,7 @@ export const StorageService = {
     const assessmentOffset = options?.assessmentOffset ?? 0;
     const assessmentLimit = options?.assessmentLimit ?? ASSESSMENTS_PAGE_SIZE;
 
-    const allRows = (
-      await db().assessments.where('patientId').equals(patientId).sortBy('date')
-    ).reverse();
+    const allRows = (await db().assessments.where('patientId').equals(patientId).sortBy('date')).reverse();
 
     const page = allRows.slice(assessmentOffset, assessmentOffset + assessmentLimit + 1);
     const hasMoreAssessments = page.length > assessmentLimit;
@@ -564,4 +557,3 @@ export const StorageService = {
     });
   },
 };
-

@@ -7,18 +7,23 @@
  * re-measured stays "non mesuré" instead of producing a fake 0 delta.
  * A subtest without previous score was added by mistake and can be removed:
  * it then leaves both sides (see `reevaluationSubtestIds`, #48).
+ * Tests absent from the previous assessment can be added from the catalogue:
+ * they are shown on their own, without comparison (#62).
  */
 
-import React, { useCallback, useMemo } from 'react';
-import { Activity, ArrowRight, Lock, Trash2 } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Activity, ArrowRight, Lock, Plus, Trash2 } from 'lucide-react';
 import type { ScoreResult, TestData } from '../../../types';
 import { useCatalog } from '../../../contexts/CatalogContext';
-import { resolveTestDef } from '../../../utils/catalogIndex';
+import { useFavoriteTests } from '../../../hooks/useFavoriteTests';
+import { addCatalogSelection } from '../../../utils/assessment';
+import { CUSTOM_OBSERVATIONS_TEST_ID, resolveTestDef } from '../../../utils/catalogIndex';
 import { type ScoreMetric, unitToMetric } from '../../../utils/scoring';
 import { compareSubtestsForDisplay } from '../../../utils/subtestOrdering';
 import { canRemoveReevaluationSubtest, reevaluationSubtestIds, removeReevaluationSubtest } from '../../../utils/reevaluationHelpers';
 import { ScoreTable } from '../shared/ScoreTable';
 import { StepNavFooter } from '../shared/StepNavFooter';
+import { TestCatalogModal } from '../pages/score/TestCatalogModal';
 
 interface Props {
   tests: TestData;
@@ -42,9 +47,22 @@ const dominantMetric = (scores: Record<string, ScoreResult>): ScoreMetric => {
 
 export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAssessmentDate, previousTests, onNext, onBack }) => {
   const { index } = useCatalog();
+  const { pushRecent } = useFavoriteTests();
+  const [showCatalog, setShowCatalog] = useState(false);
 
   // Tests still part of this re-evaluation (the practitioner can drop some).
   const testIds = useMemo(() => Object.keys(previousTests).filter((id) => id in tests), [previousTests, tests]);
+  // Tests added during the re-evaluation: nothing to compare them with.
+  const addedTestIds = useMemo(() => Object.keys(tests).filter((id) => !(id in previousTests)), [previousTests, tests]);
+
+  const handleAddTests = useCallback(
+    (selection: Record<string, string[]>) => {
+      const { tests: next, newTestIds } = addCatalogSelection(tests, selection, index);
+      if (newTestIds.length > 0) pushRecent(newTestIds.filter((id) => id !== CUSTOM_OBSERVATIONS_TEST_ID));
+      updateTests(next);
+    },
+    [tests, index, updateTests, pushRecent],
+  );
 
   const formattedDate = previousAssessmentDate
     ? new Date(previousAssessmentDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -85,7 +103,7 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
         )}
       </div>
 
-      {testIds.length === 0 && (
+      {testIds.length === 0 && addedTestIds.length === 0 && (
         <div className="rounded-[30px] border-2 border-dashed border-[var(--border-color)] bg-[var(--card-bg)] p-16 text-center shadow-sm">
           <p className="text-[var(--text-heading)] font-bold text-lg">Aucun test à comparer</p>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">Le bilan précédent ne contient pas de scores de tests.</p>
@@ -148,7 +166,59 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
             </div>
           );
         })}
+
+        {addedTestIds.map((testId) => {
+          const scores = tests[testId] ?? {};
+          const test = resolveTestDef(index, testId, Object.keys(scores));
+          const subtests = test.subtests.filter((st) => st.id in scores).sort(compareSubtestsForDisplay);
+
+          return (
+            <div
+              key={testId}
+              className="overflow-hidden rounded-[28px] border border-[var(--border-color)] bg-[var(--card-bg)] shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
+            >
+              <div className="px-5 py-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)] flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-[var(--text-heading)]">{test.name}</h4>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Nouveau test : pas de comparaison possible avec le bilan précédent
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleDeleteTest(testId)}
+                  className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200 transition-colors shrink-0"
+                  title="Retirer ce test de la réévaluation"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <div className="p-3">
+                {subtests.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Aucune épreuve sélectionnée.</div>
+                ) : (
+                  <ScoreTable
+                    testId={testId}
+                    subtests={subtests}
+                    scores={scores}
+                    onChange={(subId, patch) => handleUpdateSubtest(testId, subId, patch)}
+                    onRemoveSubtest={(subId) => handleRemoveSubtest(testId, subId)}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        <button
+          onClick={() => setShowCatalog(true)}
+          className="w-full flex items-center justify-center gap-2 rounded-[28px] border-2 border-dashed border-[var(--border-color)] p-5 font-bold text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors"
+        >
+          <Plus size={18} />
+          Ajouter un test
+        </button>
       </div>
+
+      <TestCatalogModal isOpen={showCatalog} onClose={() => setShowCatalog(false)} existingTests={tests} onAddTests={handleAddTests} />
 
       <StepNavFooter onBack={onBack}>
         <button

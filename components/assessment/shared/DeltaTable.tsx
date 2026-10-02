@@ -69,8 +69,12 @@ export const DeltaTable: React.FC<{ entries: DeltaEntry[]; compact?: boolean }> 
               <td className={`${px} ${py} ${textSize} text-[var(--text-heading)] max-w-[140px] truncate`} title={entry.subtestName}>
                 {entry.subtestName}
               </td>
-              <td className={`px-3 ${py} text-center ${textSize} font-mono text-[var(--text-secondary)]`}>{formatValue(entry.prevValue, entry.metric)}</td>
-              <td className={`px-3 ${py} text-center ${textSize} font-mono font-bold text-[var(--text-heading)]`}>{formatValue(entry.newValue, entry.metric)}</td>
+              <td className={`px-3 ${py} text-center ${textSize} font-mono text-[var(--text-secondary)]`}>
+                {formatValue(entry.prevValue, entry.metric)}
+              </td>
+              <td className={`px-3 ${py} text-center ${textSize} font-mono font-bold text-[var(--text-heading)]`}>
+                {formatValue(entry.newValue, entry.metric)}
+              </td>
               <td className={`px-3 ${py} text-center`}>
                 <DeltaCell entry={entry} textSize={textSize} />
               </td>

@@ -15,6 +15,7 @@ describe('resolveScaleType', () => {
     expect(resolveScaleType('NS')).toBe('scaled');
     expect(resolveScaleType('Standard')).toBe('standard');
     expect(resolveScaleType('t score')).toBe('t-score');
+    expect(resolveScaleType('v-scale')).toBe('v-scale');
   });
 
   it('never falls back to "standard" for unknown or missing scales', () => {
@@ -29,6 +30,12 @@ describe('conversions', () => {
     const d = deriveDisplayScores({ value: '7', unit: 'NS' }, 'scaled');
     expect(d.zScore).toBe(-1);
     expect(d.percentile).toBe('16');
+  });
+
+  it('converts a Vineland v-scale score (mean 15, sd 3) (#90)', () => {
+    const d = deriveDisplayScores({ value: '9', unit: 'NS' }, 'v-scale');
+    expect(d.zScore).toBe(-2);
+    expect(d.percentile).toBe('2');
   });
 
   it('does not invent a z-score for NS on an unknown scale', () => {

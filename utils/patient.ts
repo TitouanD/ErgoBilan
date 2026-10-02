@@ -8,12 +8,6 @@ interface PatientIdentityRequiredFields {
   dob?: string;
 }
 
-interface PatientIdentityPreviewFields extends PatientIdentityRequiredFields {
-  age?: string;
-  classLevel?: string;
-  gender?: string;
-}
-
 interface PatientAdministrativeRequiredFields extends PatientIdentityRequiredFields {
   parentNames?: string;
   parentPhone?: string;
@@ -93,16 +87,4 @@ export const getPatientAgeForIdentity = (
   const derivedAge = calculateAge(patient.dob || '', referenceDate);
   if (derivedAge) return derivedAge;
   return patient.age?.trim() || '';
-};
-
-export const buildPatientIdentitySignature = (patient: PatientIdentityPreviewFields): string => {
-  const age = getPatientAgeForIdentity(patient);
-  return [
-    patient.firstName?.trim().toLowerCase() || '',
-    patient.lastName?.trim().toLowerCase() || '',
-    patient.dob?.trim() || '',
-    age,
-    patient.classLevel?.trim().toLowerCase() || '',
-    patient.gender?.trim().toLowerCase() || '',
-  ].join('|');
 };

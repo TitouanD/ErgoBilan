@@ -1,16 +1,18 @@
 /**
  * AppHeader — top bar of the signed-in app: credits, account menu (backup
  * export/import, profile, subscription, admin, logout) or, during an
- * assessment, the autosave indicator and "save & quit".
+ * assessment, the autosave indicator and "save & quit". The "Signaler" button
+ * (feedback to Sentry) stays visible in both cases.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Crown, Download, Loader2, LogOut, Save, ShieldAlert, Sparkles, Upload, User } from 'lucide-react';
+import { ChevronDown, Crown, Download, Loader2, LogOut, MessageSquareText, Save, ShieldAlert, Sparkles, Upload, User } from 'lucide-react';
 import type { PractitionerProfile, UserProfile } from '../../types';
 import { ExportService } from '../../services/exportService';
 import { getDaysSinceBackup } from '../../utils/backupTracking';
 import { useToast } from '../../contexts/ToastContext';
 import { ThemeToggle } from '../shared/ThemeToggle';
+import { FeedbackModal } from '../shared/FeedbackModal';
 import { Logger } from '../../utils/logger';
 
 const BACKUP_OVERDUE_DAYS = 30;
@@ -47,6 +49,7 @@ export const AppHeader: React.FC<Props> = ({
 }) => {
   const toast = useToast();
   const [showMenu, setShowMenu] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [backupOverdue, setBackupOverdue] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -132,6 +135,14 @@ export const AppHeader: React.FC<Props> = ({
         <Sparkles size={18} className="text-[#E07A5F]" /> ErgoBilan.
       </button>
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowFeedback(true)}
+          className="flex items-center gap-1.5 h-8 rounded-full px-2 lg:px-3 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--hover-bg)] transition-colors"
+          title="Signaler un problème ou une idée"
+          aria-label="Signaler un problème ou une idée"
+        >
+          <MessageSquareText size={16} /> <span className="hidden lg:inline">Signaler</span>
+        </button>
         <ThemeToggle />
         {isAssessment ? (
           <>
@@ -216,6 +227,7 @@ export const AppHeader: React.FC<Props> = ({
           </>
         )}
       </div>
+      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} source="header" askEmail={isDemoMode} />
     </header>
   );
 };

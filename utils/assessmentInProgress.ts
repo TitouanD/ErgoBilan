@@ -11,20 +11,14 @@
  *   into the new one (or re-creating a draft after finalization).
  * - The patient record is created as soon as the identity is complete, and a
  *   draft is autosaved 3 s after the last change (only when `canPersist`).
+ * - The patient file holds the identity: every draft save writes it there, and
+ *   a resumed draft takes the identity from the file, not from its own copy.
  * - Finalization is acquired once the formal record is saved: the follow-up
  *   and the draft cleanup that follow are best effort.
  */
 
 import type { StorageService } from '../services/storage';
-import type {
-  ClinicalSynthesis,
-  DraftPayload,
-  Observations,
-  Patient,
-  PatientAssessment,
-  ReportSection,
-  TestData,
-} from '../types';
+import type { ClinicalSynthesis, DraftPayload, Observations, Patient, PatientAssessment, ReportSection, TestData } from '../types';
 import { buildAssessmentRecord, buildEmptyTestsFrom, getAssessmentTests, getLatestFormalAssessment } from './assessment';
 import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';
@@ -260,6 +254,8 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
   let createPromise: Promise<string> | null = null;
   let runningAutosaves = 0;
   let finalizing = false;
+  /** The patient as last written to its file, so an unchanged identity is not written again. */
+  let writtenPatient = '';
 
   const emit = () => listeners.forEach((l) => l());
 
@@ -321,7 +317,10 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
     try {
       const patientId = snapshot.patient.id || (await ensurePatientId(snapshot.patient));
       if (!patientId || startedFor !== token) return;
-      await store.saveDraft(buildDraft(snapshot, withRecord(snapshot.patient, patientId), now()));
+      const patient = withRecord(snapshot.patient, patientId);
+      // The draft is still saved if the file cannot be written: the next autosave retries.
+      await writePatientFile(patient).catch((e) => Logger.warn('DB', 'Patient file update failed', e));
+      await store.saveDraft(buildDraft(snapshot, patient, now()));
     } catch (e) {
       Logger.error('DB', 'Autosave draft failed', e, { patientId: snapshot.patient.id ?? null });
     } finally {
@@ -338,6 +337,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
     cancelAutosave = null;
     createPromise = null;
     runningAutosaves = 0;
+    writtenPatient = '';
     state = initialAssessmentState;
     emit();
   };
@@ -363,8 +363,16 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
     if (!id) return { ok: false, reason: 'creation-failed' };
     const patient = withRecord(state.patient, id);
     if (state.patient.id !== id || state.patient.age !== patient.age) change({ patient });
-    if (options?.syncPreview) await store.syncPatientIdentityPreview(id, patient);
+    if (options?.syncPreview) await writePatientFile(patient);
     return { ok: true, patient };
+  };
+
+  /** The patient file holds the identity: the draft copy is only a fallback when the file is missing (#80). */
+  const writePatientFile = async (patient: Patient) => {
+    const key = JSON.stringify(patient);
+    if (key === writtenPatient) return;
+    await store.syncPatientIdentityPreview(patient.id!, patient);
+    writtenPatient = key;
   };
 
   const deleteDraftBestEffort = async (patientId: string) => {
@@ -423,10 +431,13 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
       }
       const draft = await store.getDraft(patientId);
       if (!draft) return { ok: false, reason: 'not-found' };
+      // The identity may have been corrected in the patient file since the draft was saved.
+      const details = await store.loadPatientDetails(patientId).catch(() => null);
       reset();
-      change(stateFromDraft(draft));
+      const restored = stateFromDraft(draft);
+      change(details ? { ...restored, patient: { ...initialPatient, ...details.patient } } : restored);
       if (draft.reportType === 'reevaluation') {
-        const { assessments } = await store.loadPatientDetails(patientId);
+        const { assessments } = details ?? (await store.loadPatientDetails(patientId));
         const reference = assessments.find((a) => a.id === draft.previousAssessmentId) ?? getLatestFormalAssessment(assessments);
         if (reference) await applyReference(reference, Object.keys(draft.tests ?? {}).length === 0);
       }
@@ -489,6 +500,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
     const persisted = await ensurePatient();
     if (!persisted.ok) return persisted;
     try {
+      await writePatientFile(persisted.patient);
       await store.saveDraft(buildDraft(state, persisted.patient, now()));
     } catch (e) {
       Logger.error('DB', 'Save error', e);

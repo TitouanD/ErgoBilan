@@ -13,6 +13,12 @@ export default [
   // ---- Base JS rules ----
   js.configs.recommended,
 
+  // ---- Node scripts (e2e/capture.mjs: Node, plus the code evaluated in the page) ----
+  {
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+
   // ---- TypeScript + React ----
   {
     files: ['**/*.{ts,tsx}'],
@@ -56,5 +62,11 @@ export default [
       'prefer-const': 'off',
       'no-duplicate-imports': 'error',
     },
+  },
+
+  // ---- Node scripts: end-to-end test run from Node (docs/AI_PIPELINE.md §9) ----
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
   },
 ];

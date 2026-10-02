@@ -5,7 +5,7 @@
 
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
-import { generateQuestionnaireKey, encryptData, decryptData } from '../utils/crypto';
+import { generateQuestionnaireKey, encryptToEnvelope, decryptEnvelope } from '../utils/crypto';
 import type { PendingQuestionnaire, PractitionerProfile } from '../types';
 import { Logger } from '../utils/logger';
 
@@ -26,17 +26,14 @@ export const useLinkManager = ({
   setPendingQuestionnaires,
   toast,
 }: UseLinkManagerParams) => {
-  const tryCopyLink = useCallback(
-    async (link: string): Promise<boolean> => {
-      try {
-        await navigator.clipboard.writeText(link);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [],
-  );
+  const tryCopyLink = useCallback(async (link: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(link);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // ------------------------------------------------------------------
   // Generate a new questionnaire link
@@ -45,7 +42,13 @@ export const useLinkManager = ({
     if (isDemoMode) {
       const demoLink = `${window.location.origin}/?q_id=demo-q1#key=demo-key`;
       setPendingQuestionnaires((prev) => [
-        { id: 'demo-new', label: 'Nouveau Dossier (Simulé)', status: 'pending', createdAt: new Date().toISOString(), practitionerEncryptedKey: '' },
+        {
+          id: 'demo-new',
+          label: 'Nouveau Dossier (Simulé)',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          practitionerEncryptedKey: '',
+        },
         ...prev,
       ]);
       const copied = await tryCopyLink(demoLink);
@@ -66,12 +69,14 @@ export const useLinkManager = ({
     }
 
     const { keyString } = await generateQuestionnaireKey();
-    const enc = await encryptData(keyString, sessionKey);
+    const practitionerEncryptedKey = await encryptToEnvelope(keyString, sessionKey);
 
     // Générer un token d'accès pour sécuriser l'accès anonyme
     const accessTokenBytes = new Uint8Array(32);
     crypto.getRandomValues(accessTokenBytes);
-    const accessToken = Array.from(accessTokenBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const accessToken = Array.from(accessTokenBytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
 
     const label = `Dossier #${pendingQuestionnaires.length + 1} (${new Date().toLocaleDateString()})`;
 
@@ -82,7 +87,7 @@ export const useLinkManager = ({
         organization_id: organizationId,
         label,
         status: 'pending',
-        practitioner_encrypted_key: `${enc.iv}:${enc.content}`,
+        practitioner_encrypted_key: practitionerEncryptedKey,
         access_token: accessToken,
       })
       .select()
@@ -122,10 +127,7 @@ export const useLinkManager = ({
 
       if (isDemoMode) return;
 
-      const { error } = await supabase
-        .from('pending_questionnaires')
-        .delete()
-        .eq('id', q.id);
+      const { error } = await supabase.from('pending_questionnaires').delete().eq('id', q.id);
 
       if (error) {
         // Rollback on failure
@@ -154,8 +156,7 @@ export const useLinkManager = ({
       }
 
       try {
-        const [iv, content] = q.practitionerEncryptedKey.split(':');
-        const keyString = await decryptData({ iv, content }, sessionKey);
+        const keyString = await decryptEnvelope(q.practitionerEncryptedKey, sessionKey);
         await navigator.clipboard.writeText(`${window.location.origin}/?q_id=${q.id}&t=${q.accessToken}#key=${keyString}`);
         toast.success('Lien copié');
       } catch (e) {

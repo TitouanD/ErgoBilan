@@ -1,6 +1,6 @@
 # Registre de dette technique
 
-Ce registre recense les bugs, risques et nettoyages connus. L'analyse initiale date du **2026-09-23** (code et base, via le MCP Supabase en lecture seule). Le **2026-09-24**, l'assainissement (branche `refactor/assainissement`, voir [PLAN_ASSAINISSEMENT.md](PLAN_ASSAINISSEMENT.md)) en a traité la plus grande partie. Le **2026-09-25**, la branche a été fusionnée dans `main`, les 4 migrations appliquées et l'edge `generate` déployée (v52). Ce document donne l'état de chaque point après ce travail.
+Ce registre recense les bugs, risques et nettoyages connus. L'analyse initiale date du **2026-09-23** (code et base, via le MCP Supabase en lecture seule). Le **2026-09-24**, l'assainissement (branche `refactor/assainissement`, voir [PLAN_ASSAINISSEMENT.md](PLAN_ASSAINISSEMENT.md)) en a traité la plus grande partie. Le **2026-09-25**, la branche a été fusionnée dans `main`, les 4 migrations appliquées et l'edge `generate` déployée (v52). Le **2026-10-02**, cinq migrations du lot suivant ont été appliquées et `generate` redéployée (voir « Mise en production du 2026-10-02 »). Ce document donne l'état de chaque point après ce travail.
 
 **Depuis le 2026-09-29, ce qui reste à faire est suivi dans les [issues GitHub](https://github.com/TitouanD/ErgoBilan/issues)** (voir [ISSUES.md](ISSUES.md)). Ce registre ne garde que l'historique des points traités ; chaque point encore ouvert renvoie à son issue (« → #n »).
 
@@ -28,7 +28,7 @@ Statuts :
 | P0-5  | La regex d'anonymisation corrompt des mots           | Résolu                              |
 | P0-6  | PIN cassable hors ligne                              | Risque accepté (2026-09-25)         |
 | P0-7  | Durcissement edge functions et portail               | Résolu                              |
-| P0-8  | Hygiène de la base                                   | Résolu, sauf → #57, #58             |
+| P0-8  | Hygiène de la base                                   | Résolu (2026-10-02), sauf → #58     |
 | P1-1  | Création de test personnalisé                        | Résolu                              |
 | P1-2  | Signalement de type de score                         | Résolu (fonction retirée)           |
 | P1-3  | RPC mortes                                           | Résolu                              |
@@ -36,35 +36,43 @@ Statuts :
 | P1-5  | Style IA appris jamais utilisé                       | Résolu                              |
 | P1-6  | Plantage après téléchargement du PDF                 | Résolu                              |
 | P1-7  | Mise en page affichée ≠ exportée                     | Résolu                              |
-| P1-8  | Crédits et sessions de génération                    | Résolu, sauf → #60                  |
+| P1-8  | Crédits et sessions de génération                    | Résolu (2026-10-02)                 |
 | P1-9  | Échelles et interprétation des scores                | Résolu                              |
 | P1-10 | Saisie `raw_only` / `computed_items`                 | Résolu                              |
 | P1-11 | Réévaluation                                         | Résolu                              |
 | P1-12 | Brouillons                                           | Résolu                              |
 | P1-13 | Calcul de l'âge                                      | Résolu                              |
 | P1-14 | Admin : ajout de sous-test                           | Résolu                              |
-| P1-15 | Parcours, divers                                     | Résolu, sauf → #61, #62             |
+| P1-15 | Parcours, divers                                     | Résolu                              |
 | P1-16 | Création du lien famille                             | Résolu                              |
 | P1-17 | Personnalisation du rapport non sauvegardée          | Résolu                              |
 | P1-18 | Realtime des crédits inopérant                       | Résolu (abonnement retiré)          |
 | P1-19 | Migration du validateur PIN en échec silencieux      | Résolu                              |
 | P1-20 | Erreurs TypeScript                                   | Résolu (`strict`, 0 erreur)         |
-| P2-1  | Schéma, migrations, `extract-norms` hors du repo     | → #63                               |
-| P2-2  | Création de compte                                   | → #64                               |
+| P2-1  | Schéma, migrations, `extract-norms` hors du repo     | Résolu (2026-10-02, #63)            |
+| P2-2  | Création de compte                                   | Résolu (2026-10-02, #64)            |
 | P2-3  | `App.tsx` trop gros                                  | Résolu                              |
 | P2-4  | Doublons                                             | Résolu                              |
-| P2-5  | Code mort                                            | Résolu (2 colonnes DB → #65)        |
-| P2-6  | Outillage                                            | Résolu (`.env` suivis → #66)        |
+| P2-5  | Code mort                                            | Résolu (2026-10-02)                 |
+| P2-6  | Outillage                                            | Résolu                              |
 | P2-7  | Composants React recréés, mutations d'état           | Résolu                              |
-| P2-8  | Base de données, divers                              | Partiel → #65                       |
+| P2-8  | Base de données, divers                              | Résolu (2026-10-02)                 |
 | P2-9  | Bugs trouvés au test navigateur du 2026-09-24        | Résolu                              |
 | P2-10 | Points relevés à la relecture de la doc (2026-09-25) | Résolu                              |
 
 ## Mise en production du 2026-09-25
 
-- Migrations `supabase/migrations/20260924*` appliquées (droits des RPC, colonnes du portail, purges pg_cron, RLS des journaux).
+- Migrations `supabase/migrations/2026092508*` appliquées (droits des RPC, colonnes du portail, purges pg_cron, RLS des journaux).
 - Edge `generate` déployée (v52) avec la CLI : `npx supabase functions deploy generate --project-ref hxlsjpkwrqunuqpaukmg --no-verify-jwt --use-api`.
 - L'edge `extract-norms` est supprimée (constaté le 2026-09-29). Protection contre les mots de passe compromis (Auth) à activer à la main → #58.
+
+## Mise en production du 2026-10-02
+
+- Migrations appliquées dans l'ordre par `npx supabase db push --linked` : `20261001100000_generation_log_kind.sql` (#60), `20261001100100_inscription_essai_30j.sql` (#64), `20261001100200_nettoyage_vestiges.sql` (#65), `20261001100300_catalogue_corrections.sql` (#50), `20261001100400_catalog_views_security_invoker.sql` (#57). Détail : [DATA_MODEL.md](DATA_MODEL.md) « Schéma et migrations ».
+- Edge `generate` déployée depuis le repo après `20261001100000` : `sessionKind` (journalise `generation_log.kind`) et prompt de réévaluation « bilan de référence » (#85). Vérifiée en réel (`E2E_AI=all`, 4 appels, 2 crédits).
+- Catalogue vérifié après #57 : un non admin voit 42 tests et 342 sous-tests, un admin 44 et 345, un compte non onboardé rien, `anon` reçoit 42501 ; l'advisor ne signale plus `security_definer_view`.
+- Les 60 migrations historiques sont dans le repo (`npx supabase migration fetch --linked`, #63) ; local et distant identiques.
+- Orphelins de P2-2 supprimés par Titouan le 2026-10-02 (0 organisation sans membre, 0 compte sans praticien) ; `supabase/schema.sql` ajouté (P2-1).
 
 ## Observabilité Sentry (2026-09-25)
 
@@ -93,7 +101,7 @@ Libellés corrigés dans `Step1Admin`, `AuthWizard` et `PinUnlock` (« Privé ·
 
 ### P0-4 Anonymisation incomplète — Résolu
 
-Toute la charge utile est construite par `utils/aiPayload.ts` puis pseudonymisée d'un bloc par `anonymizeDeep` (`utils/anonymizer.ts`) : observations, synthèse, rapport précédent en réévaluation, diffs de style. La table couvre le patient, les deux parents (noms, téléphones, e-mails), la fratrie, les professionnels du suivi, l'école, l'enseignant et les médecins.
+Toute la charge utile est construite par `utils/aiPayload.ts` puis pseudonymisée d'un bloc par `anonymizeDeep` (`utils/anonymizer.ts`) : observations, synthèse, rapport précédent en réévaluation, diffs de style. La table couvre le patient, les deux parents (noms, téléphones, e-mails), la fratrie, les professionnels du suivi, l'école, l'enseignant et les médecins. Depuis #53 et #54, c'est le générateur (`utils/reportGenerator.ts`) qui anonymise : table, mots masqués par le praticien, dates précises (voir AI_PIPELINE §4).
 
 ### P0-5 La regex corrompt des mots — Résolu
 
@@ -110,13 +118,13 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 
 - `generate` : loopback autorisé seulement hors production, CORS qui renvoie l'origine autorisée (plus de `*`), plus de repli « fail-open » sur des RPC absentes.
 - Portail : la clé ne circule plus que dans le fragment `#key=` (repli `?key=` supprimé).
-- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260924100100_portal_family_column_grants.sql`.
+- Colonnes modifiables par la famille : restreintes par GRANT de colonne et `WITH CHECK status = 'completed'` dans `20260925082742_portal_family_column_grants.sql`.
 
-### P0-8 Hygiène de la base — Résolu, sauf → #57, #58
+### P0-8 Hygiène de la base — Résolu (2026-10-02), sauf → #58
 
-- RLS sur `ai_request_log` et `signup_rate_limit_log` : `20260924100300_rls_on_internal_logs.sql`.
-- REVOKE `anon` sur les RPC `admin_*` et `search_path` fixé : `20260924100000_fix_client_rpc_grants.sql`.
-- **Ouvert** : vues `view_unified_*` en `security definer` → #57.
+- RLS sur `ai_request_log` et `signup_rate_limit_log` : `20260925082802_rls_on_internal_logs.sql`.
+- REVOKE `anon` sur les RPC `admin_*` et `search_path` fixé : `20260925082729_fix_client_rpc_grants.sql`.
+- Vues `view_unified_*` en `security_invoker = on`, GRANT SELECT par colonne à `authenticated` sur `official_tests` et `official_subtests`, policy RESTRICTIVE `catalog_read_requires_onboarded` : `20261001100400_catalog_views_security_invoker.sql` (#57, appliquée le 2026-10-02 ; retour arrière dans `supabase/rollback/`).
 - **Manuel** : protection contre les mots de passe compromis → #58.
 
 ## P1 — Bugs fonctionnels
@@ -124,7 +132,7 @@ Frontières Unicode (`\p{L}\p{N}`), placeholders numérotés et réversibles, r�
 ### P1-1 Création de test personnalisé — Résolu
 
 - Côté client : catégorie `autre`, échelle par défaut `none`, `reloadCatalog()` forcé après création (`TestCatalogModal`).
-- GRANT EXECUTE à `authenticated` (migration `20260924100000`, appliquée).
+- GRANT EXECUTE à `authenticated` (migration `20260925082729`, appliquée).
 
 ### P1-2 Signalement de type de score — Résolu
 
@@ -132,11 +140,11 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 ### P1-3 RPC mortes — Résolu
 
-`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) ont été supprimées (migration `20260924100000`).
+`get_contextual_recommendations` et `upsert_recommendation` (table `recommendation_crowd` disparue) ont été supprimées (migration `20260925082729`).
 
 ### P1-4 Purge du portail — Résolu
 
-- `purge_pending_questionnaires` + pg_cron (14 j `pending`, 30 j `completed`) dans `20260924100200_scheduled_cleanups.sql`. L'edge `purge-pending`, jamais déployée, est supprimée du repo.
+- `purge_pending_questionnaires` + pg_cron (14 j `pending`, 30 j `completed`) dans `20260925082801_scheduled_cleanups.sql`. L'edge `purge-pending`, jamais déployée, est supprimée du repo.
 - Import d'un questionnaire (`hooks/usePendingProcessor.ts`) : le patient est créé en local, puis la ligne distante est supprimée ; si la suppression échoue, la création locale est annulée. Plus de doublon possible.
 
 ### P1-5 Style IA appris — Résolu
@@ -155,13 +163,13 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 - La disposition des pages est enregistrée avec le bilan en cours (`reportPages`, donc dans le brouillon) puis avec le rapport finalisé (`report.pages`) ; elle est reprise par `resolvePages` (`utils/reportData.ts`), repli sur la disposition par défaut (#59).
 - La section `objectifs` est masquée partout (`HIDDEN_SECTION_IDS` dans `utils/reportData.ts`).
 
-### P1-8 Crédits et sessions de génération — Résolu, sauf → #60
+### P1-8 Crédits et sessions de génération — Résolu (2026-10-02)
 
 - Un diagnostic en échec libère le verrou de session : le retry fonctionne sans nouveau crédit.
 - Une réponse vide ou un JSON invalide de Gemini compte comme un échec.
 - Les sessions `pending` abandonnées sont remboursées par `sweep_stale_generations` (pg_cron, 30 min).
 - Les 2 lignes bloquées depuis le 22/02/2026 sont remboursées par ce job.
-- **Ouvert** : type de génération non journalisé dans `generation_log` → #60.
+- Type de génération journalisé dans `generation_log.kind` (`report_bio`, `report_reevaluation`) par `consume_credit_for_user(p_user_id, p_kind?)` : `20261001100000_generation_log_kind.sql` (#60) et edge `generate` du 2026-10-02.
 
 ### P1-9 Échelles et interprétation — Résolu
 
@@ -189,16 +197,11 @@ La fonctionnalité avait été retirée volontairement (commit `f579589`) ; le c
 
 ### P1-14 Admin : ajout de sous-test — Résolu
 
-`services/admin.ts` envoie `none` / `numeric_4mode` / `{}` ; la RPC `admin_save_test_detail` reçoit les mêmes défauts dans la migration `20260924100000`.
+`services/admin.ts` envoie `none` / `numeric_4mode` / `{}` ; la RPC `admin_save_test_detail` reçoit les mêmes défauts dans la migration `20260925082729`.
 
-### P1-15 Parcours, divers — Résolu, sauf → #61, #62
+### P1-15 Parcours, divers — Résolu
 
-Résolus : `previousAssessmentId` renseigné, « Réévaluation 1 clic » refusée sans bilan de référence (message explicite), brouillon de réévaluation repris depuis le dashboard, suivi à +6 mois créé pour tous les parcours, « Sauver & quitter » conserve la date du bilan historique, garde du stepper propre à chaque parcours, coquille « Péconisations ».
-
-Ouverts (évolutions plutôt que bugs) :
-
-- deltas absents du PDF → #61 ;
-- ajout d'un nouveau test pendant une réévaluation → #62.
+Résolus : deltas dans l'aperçu et le PDF de réévaluation (#61, colonne « Évolution »), `previousAssessmentId` renseigné, « Réévaluation 1 clic » refusée sans bilan de référence (message explicite), brouillon de réévaluation repris depuis le dashboard, suivi à +6 mois créé pour tous les parcours, « Sauver & quitter » conserve la date du bilan historique, garde du stepper propre à chaque parcours, coquille « Péconisations », ajout d'un test absent du bilan de référence pendant une réévaluation (#62).
 
 ### P1-16 Création du lien famille — Résolu
 
@@ -222,14 +225,21 @@ L'abonnement inopérant est retiré ; les crédits sont rechargés après chaque
 
 ## P2 — Structure, hygiène, performance
 
-### P2-1 Schéma, migrations et fonctions hors du repo — Ouvert → #63
+### P2-1 Schéma, migrations et fonctions hors du repo — Partiel → #63
 
-- Les 60 migrations historiques appliquées en base ne sont pas dans le repo → #63.
+- Les 60 migrations historiques sont dans le repo depuis le 2026-10-02 (`npx supabase migration fetch --linked`) ; local et distant identiques.
+- **Résolu** : la création des tables, absente des migrations, est dans `supabase/schema.sql` (2026-10-02).
 - `extract-norms` : supprimée (constaté le 2026-09-29).
 
-### P2-2 Création de compte — Ouvert → #64
+### P2-2 Création de compte — Résolu (2026-10-02, #64)
 
-Canal d'inscription (`enforce_edge_signup_channel` vide), durée d'essai incohérente (14 ou 30 jours), organisations et comptes orphelins → #64.
+`20261001100100_inscription_essai_30j.sql` (#64) :
+
+- une seule implémentation, `ensure_org_and_subscription` (interne, aucun droit client, verrou consultatif par utilisateur) : `handle_new_user` et `bootstrap_org_for_user` lui délèguent ; organisation « Mon Cabinet » ;
+- essai de 30 jours partout (plus de 14 jours) ;
+- `handle_new_user` ne bloque toujours pas l'inscription, mais journalise l'erreur (`RAISE WARNING` avec SQLSTATE) ;
+- `enforce_edge_signup_channel` (vide) et son trigger supprimés : l'inscription passe par `supabase.auth.signUp`, protégée par le CAPTCHA Turnstile et les limites d'Auth ; l'edge `signup` fait l'onboarding ensuite.
+- **Résolu** : les 4 organisations sans membre et les 2 comptes Auth sans praticien ont été supprimés par Titouan le 2026-10-02 (`supabase/checks/20261001100100_orphelins.sql`).
 
 ### P2-3 `App.tsx` trop gros — Résolu
 
@@ -237,24 +247,24 @@ Canal d'inscription (`enforce_edge_signup_channel` vide), durée d'essai incohé
 
 ### P2-4 Doublons — Résolu
 
-Un seul tableau de scores (`ScoreTable`), une seule finalisation (`useAssessmentFlow.finalize`), un seul chemin de génération (`AIService`), des données de graphiques partagées entre l'aperçu et le PDF (`utils/reportData.ts`), un index du catalogue (`utils/catalogIndex.ts`) au lieu de 7 tables de noms.
+Un seul tableau de scores (`ScoreTable`), une seule finalisation (`useAssessmentFlow.finalize`), un seul chemin de génération (`utils/reportGenerator.ts`, depuis #53 ; `AIService` avant), des données de graphiques partagées entre l'aperçu et le PDF (`utils/reportData.ts`), un index du catalogue (`utils/catalogIndex.ts`) au lieu de 7 tables de noms.
 
 ### P2-5 Code mort — Résolu
 
-Supprimés : environ 580 lignes de `ScorePage`, `scoringEngine`, `subtestMatcher`, `subtestDisplay`, `featureFlags`, `subtestAliases` et son test, `TEST_CATALOG`, les fixtures d'extraction, `services/subscription.ts`, `ReevaluationTableView`, `ScoreTypeReportModal`, `wrapKey` / `unwrapKey`, les types morts. Restent en base : `organization_members.encrypted_org_key` et `organizations.stripe_customer_id` → #65. Les champs legacy de `ScoreResult` restent lus pour les anciens bilans (`normalizeScoreResult`).
+Supprimés : environ 580 lignes de `ScorePage`, `scoringEngine`, `subtestMatcher`, `subtestDisplay`, `featureFlags`, `subtestAliases` et son test, `TEST_CATALOG`, les fixtures d'extraction, `services/subscription.ts`, `ReevaluationTableView`, `ScoreTypeReportModal`, `wrapKey` / `unwrapKey`, les types morts. `organization_members.encrypted_org_key` et `organizations.stripe_customer_id` ont été supprimées en base le 2026-10-02 (`20261001100200_nettoyage_vestiges.sql`, #65). Les champs legacy de `ScoreResult` restent lus pour les anciens bilans (`normalizeScoreResult`).
 
 ### P2-6 Outillage — Résolu
 
-`strict`, scripts `typecheck` et `check`, CI GitHub (`.github/workflows/ci.yml`), règle ESLint `no-unused-vars`, 5 fichiers de tests (42 tests) sur les fonctions pures, `.env.example`, Markdown couvert par Prettier. Reste : `.env` et `.env.production` encore suivis par git → #66.
+`strict`, scripts `typecheck` et `check`, CI GitHub (`.github/workflows/ci.yml`), règle ESLint `no-unused-vars`, 5 fichiers de tests (42 tests) sur les fonctions pures, `.env.example`, Markdown couvert par Prettier. `.env` et `.env.production` ne sont plus suivis par git : variables dans Vercel (#66).
 
 ### P2-7 React — Résolu
 
 Les composants de `ReportView` sont définis au niveau du module ; les mises à jour de `ScorePage` sont immuables.
 
-### P2-8 Base de données, divers — Partiel → #65
+### P2-8 Base de données, divers — Résolu (2026-10-02)
 
-- Purge d'`ai_request_log` : fait (migration `20260924100200`).
-- Ouverts : 4 index inutilisés, `admin_audit_log` jamais alimenté → #65.
+- Purge d'`ai_request_log` : fait (migration `20260925082801`).
+- `20261001100200_nettoyage_vestiges.sql` (#65) : index `signup_rate_limit_created_at_idx` et `idx_pending_questionnaires_practitioner` supprimés ; `idx_official_tests_category` et `generation_log_user_created_at_idx` conservés (seuls index d'une clé étrangère) ; table `admin_audit_log` et fonction `update_admin_audit_log_timestamp` supprimées.
 
 ### P2-9 Bugs trouvés au test navigateur du 2026-09-24 — Résolu
 
@@ -287,7 +297,7 @@ Corrigés :
 - **Import d'un questionnaire** : si l'enregistrement du brouillon échouait, le patient créé restait orphelin. Le retour arrière couvre maintenant le brouillon et la suppression distante.
 - **Section `objectifs`** : encore visible dans les rapports archivés et demandée dans le bilan historique ; masquée partout.
 - **Légendes percentile** : « inférieur à 2 » et « entre 2 et 16 » alors que les seuils réels sont 2,3 et 15,9 ; libellés alignés.
-- **Divers** : message quand l'application est verrouillée au moment de finaliser (échec silencieux avant), garde contre le double clic sur « Terminer », bouton « Générer (simulation) » en démo au lieu de « 1 crédit », texte légal (`LegalModal`) qui parlait d'anonymisation avec « L'enfant » au lieu de pseudonymisation réversible, commentaire inexact dans la migration `20260924100000`.
+- **Divers** : message quand l'application est verrouillée au moment de finaliser (échec silencieux avant), garde contre le double clic sur « Terminer », bouton « Générer (simulation) » en démo au lieu de « 1 crédit », texte légal (`LegalModal`) qui parlait d'anonymisation avec « L'enfant » au lieu de pseudonymisation réversible, commentaire inexact dans la migration `20260925082729`.
 
 À noter :
 

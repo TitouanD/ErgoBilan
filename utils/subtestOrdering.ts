@@ -6,13 +6,14 @@
 import type { ScoreType, SubtestDef } from '../data/testCatalog';
 
 export const SCALE_LABELS: Record<string, string> = {
-  scaled:    'NS (m=10, \u03c3=3)',
-  standard:  'QI (m=100, \u03c3=15)',
+  scaled: 'NS (m=10, \u03c3=3)',
+  standard: 'QI (m=100, \u03c3=15)',
   't-score': 'T (m=50, \u03c3=10)',
-  sten:      'Sten (m=5.5, \u03c3=2)',
-  stanine:   'Stanine (m=5, \u03c3=2)',
+  'v-scale': 'Note v (m=15, \u03c3=3)',
+  sten: 'Sten (m=5.5, \u03c3=2)',
+  stanine: 'Stanine (m=5, \u03c3=2)',
   percentile: 'Rang percentile',
-  none:      '\u00c9chelle non renseign\u00e9e',
+  none: '\u00c9chelle non renseign\u00e9e',
 };
 
 export const getScaleLabel = (scoreType?: ScoreType): string | null => {
@@ -44,25 +45,29 @@ export const parseSubtestOrderFromName = (name: string): number | undefined => {
 export const inferGroupLabelFromName = (name: string): string | undefined => {
   const value = String(name || '').trim();
   if (!value) return undefined;
-  const dashSplit = value.split('—').map((part) => part.trim()).filter(Boolean);
+  const dashSplit = value
+    .split('—')
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (dashSplit.length >= 2) return dashSplit[0];
-  const colonSplit = value.split(':').map((part) => part.trim()).filter(Boolean);
+  const colonSplit = value
+    .split(':')
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (colonSplit.length >= 2) return colonSplit[0];
   return undefined;
 };
 
-export const toGroupKey = (label: string): string => (
+export const toGroupKey = (label: string): string =>
   label
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'default'
-);
+    .replace(/^_+|_+$/g, '') || 'default';
 
-export const getDisplayGroupLabel = (subtest: SubtestDef): string | undefined => (
-  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(subtest.name)
-);
+export const getDisplayGroupLabel = (subtest: SubtestDef): string | undefined =>
+  subtest.inputConfig?.groupHeaderLabel || inferGroupLabelFromName(subtest.name);
 
 export const getDisplayGroupKey = (subtest: SubtestDef): string | undefined => {
   const configured = subtest.inputConfig?.groupKey;

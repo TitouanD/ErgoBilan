@@ -17,7 +17,10 @@ export const DemoConversionModal: React.FC<Props> = ({ action, onClose, onConver
     panelClassName="bg-[var(--card-bg)] max-w-md w-full rounded-[32px] p-8 shadow-2xl text-center"
     panelAnimationClassName=""
   >
-    <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors">
+    <button
+      onClick={onClose}
+      className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
+    >
       <X size={20} />
     </button>
     <div className="w-20 h-20 bg-[var(--primary)]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[var(--primary)]">
@@ -34,10 +37,12 @@ export const DemoConversionModal: React.FC<Props> = ({ action, onClose, onConver
       >
         Créer mon compte gratuit <ArrowRight size={18} />
       </button>
-      <button onClick={onClose} className="w-full py-3 text-[var(--text-secondary)] font-bold hover:text-[var(--text-main)] transition-colors text-xs uppercase tracking-wider">
+      <button
+        onClick={onClose}
+        className="w-full py-3 text-[var(--text-secondary)] font-bold hover:text-[var(--text-main)] transition-colors text-xs uppercase tracking-wider"
+      >
         Continuer à explorer
       </button>
     </div>
   </Modal>
 );
-

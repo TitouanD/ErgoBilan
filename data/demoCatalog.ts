@@ -45,7 +45,7 @@ export const DEMO_CATALOG: CategoryDef[] = [
           numeric('mabc-2__manual-dexterity-total', 'Note totale dextérité manuelle', 'scaled', 1),
           numeric('mabc-2__aiming-catching-total', 'Note totale viser et attraper', 'scaled', 2),
           numeric('mabc-2__balance-composite', 'Note totale Équilibre', 'scaled', 3),
-          numeric('mabc-2__total-score', 'Note totale du test', 'standard', 4),
+          numeric('mabc-2__total-score', 'Note totale du test', 'scaled', 4),
         ],
       },
     ],
@@ -62,8 +62,6 @@ export const DEMO_CATALOG: CategoryDef[] = [
         subtests: [
           numeric('test-cloches__cibles', 'Nombre de cloches repérées (/35)', 'standard', 1),
           numeric('test-cloches__temps-total-secondes', 'Temps total (secondes)', 'none', 2),
-          numeric('test-cloches__omissions-gauche', 'Omissions hémichamp gauche', 'none', 3),
-          numeric('test-cloches__omissions-droite', 'Omissions hémichamp droit', 'none', 4),
         ],
       },
     ],

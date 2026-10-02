@@ -19,13 +19,10 @@ interface UserDraft {
 const PLAN_OPTIONS: PlanId[] = ['free', 'essential', 'performance', 'expert'];
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'trialing', 'canceled', 'past_due', 'inactive'];
 
-const normalizePlan = (value: string): PlanId => (
-  PLAN_OPTIONS.includes(value as PlanId) ? (value as PlanId) : 'free'
-);
+const normalizePlan = (value: string): PlanId => (PLAN_OPTIONS.includes(value as PlanId) ? (value as PlanId) : 'free');
 
-const normalizeStatus = (value: string): SubscriptionStatus => (
-  STATUS_OPTIONS.includes(value as SubscriptionStatus) ? (value as SubscriptionStatus) : 'inactive'
-);
+const normalizeStatus = (value: string): SubscriptionStatus =>
+  STATUS_OPTIONS.includes(value as SubscriptionStatus) ? (value as SubscriptionStatus) : 'inactive';
 
 const toDraft = (row: AdminUserRow): UserDraft => ({
   isAdmin: !!row.is_admin,
@@ -48,10 +45,12 @@ export const AdminUsers: React.FC = () => {
     try {
       const rows = await AdminService.listUsers();
       setUsers(rows);
-      setDrafts(rows.reduce<Record<string, UserDraft>>((acc, row) => {
-        acc[row.user_id] = toDraft(row);
-        return acc;
-      }, {}));
+      setDrafts(
+        rows.reduce<Record<string, UserDraft>>((acc, row) => {
+          acc[row.user_id] = toDraft(row);
+          return acc;
+        }, {}),
+      );
     } catch (e) {
       Logger.error('DB', 'Failed to load admin users', e);
       toast.error('Impossible de charger les utilisateurs.');
@@ -70,10 +69,10 @@ export const AdminUsers: React.FC = () => {
     return users.filter((row) => {
       const fullName = `${row.first_name || ''} ${row.last_name || ''}`.trim().toLowerCase();
       return (
-        row.email.toLowerCase().includes(q)
-        || row.user_id.toLowerCase().includes(q)
-        || fullName.includes(q)
-        || (row.organization_name || '').toLowerCase().includes(q)
+        row.email.toLowerCase().includes(q) ||
+        row.user_id.toLowerCase().includes(q) ||
+        fullName.includes(q) ||
+        (row.organization_name || '').toLowerCase().includes(q)
       );
     });
   }, [users, search]);
@@ -87,11 +86,11 @@ export const AdminUsers: React.FC = () => {
     if (!draft) return false;
     const base = toDraft(row);
     return (
-      draft.isAdmin !== base.isAdmin
-      || draft.credits !== base.credits
-      || draft.planId !== base.planId
-      || draft.status !== base.status
-      || draft.monthlyExtractionQuota !== base.monthlyExtractionQuota
+      draft.isAdmin !== base.isAdmin ||
+      draft.credits !== base.credits ||
+      draft.planId !== base.planId ||
+      draft.status !== base.status ||
+      draft.monthlyExtractionQuota !== base.monthlyExtractionQuota
     );
   };
 
@@ -126,9 +125,7 @@ export const AdminUsers: React.FC = () => {
             <h3 className="text-white text-base font-bold flex items-center gap-2">
               <Users2 size={16} className="text-cyan-300" /> Utilisateurs & abonnements
             </h3>
-            <p className="text-[11px] text-stone-500 mt-1">
-              Gestion admin: droits, crédits, plan et statut de souscription.
-            </p>
+            <p className="text-[11px] text-stone-500 mt-1">Gestion admin: droits, crédits, plan et statut de souscription.</p>
           </div>
           <button
             onClick={() => void loadUsers()}
@@ -173,9 +170,7 @@ export const AdminUsers: React.FC = () => {
                 return (
                   <tr key={row.user_id} className="border-t border-white/5">
                     <td className="px-3 py-2">
-                      <div className="font-bold text-white">
-                        {`${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email}
-                      </div>
+                      <div className="font-bold text-white">{`${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email}</div>
                       <div className="text-[10px] text-stone-500">{row.email}</div>
                       <div className="text-[10px] text-stone-600">{row.user_id}</div>
                     </td>
@@ -210,7 +205,9 @@ export const AdminUsers: React.FC = () => {
                         className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white"
                       >
                         {PLAN_OPTIONS.map((plan) => (
-                          <option key={plan} value={plan} className="bg-[#23252F] text-stone-200">{plan}</option>
+                          <option key={plan} value={plan} className="bg-[#23252F] text-stone-200">
+                            {plan}
+                          </option>
                         ))}
                       </select>
                     </td>
@@ -221,7 +218,9 @@ export const AdminUsers: React.FC = () => {
                         className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white"
                       >
                         {STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status} className="bg-[#23252F] text-stone-200">{status}</option>
+                          <option key={status} value={status} className="bg-[#23252F] text-stone-200">
+                            {status}
+                          </option>
                         ))}
                       </select>
                     </td>

@@ -8,8 +8,10 @@
 
 import type { PatientAssessmentKind, ReportSection, TestData } from '../types';
 import type { CatalogIndex } from './catalogIndex';
-import { type Metric, type ResolvedScore, resolveScores } from './resolvedScore';
-import type { ScoreZone } from './scoring';
+import type { InitialSectionId, ReevaluationSectionId } from './reportSections';
+import { type Trend, TREND_LABEL, trendFromZDelta } from './reevaluationHelpers';
+import { type Metric, type ResolvedScore, describeScore, formatMetricValue, resolveScores } from './resolvedScore';
+import { type ScoreZone, ZONE_META, ZONE_PERCENTILE_THRESHOLDS, formatZ } from './scoring';
 
 export type ChartType = 'radar' | 'bar' | 'percentile';
 export type ScoreDisplayMode = Metric;
@@ -35,27 +37,63 @@ const resolvedEntries = (tests: TestData, index: CatalogIndex): ResolvedScore[] 
 
 // ─── Charts ─────────────────────────────────────────────────────────────────
 
-export interface ZChartItem {
-  key: string;
-  label: string;
-  z: number;
-  zone: ScoreZone;
+export type DotChartScale = 'z' | 'percentile';
+
+/** Horizontal dot chart (z or percentile profile): everything but the drawing. */
+export interface DotChart {
+  title: string;
+  items: Array<{ key: string; label: string; zone: ScoreZone; /** 0..1 on the axis. */ position: number; value: string }>;
+  /** Zone backgrounds, left to right, as 0..1 fractions of the axis. */
+  bands: Array<{ zone: ScoreZone; from: number; to: number }>;
+  centerLine: number;
+  ticks: Array<{ position: number; label: string; bold: boolean }>;
 }
 
-export const computeZChartItems = (tests: TestData, index: CatalogIndex): ZChartItem[] =>
-  resolvedEntries(tests, index).flatMap((r) => (r.z !== null && r.zone ? [{ key: r.key, label: r.label, z: r.z, zone: r.zone }] : []));
+export const computeDotChart = (scale: DotChartScale, tests: TestData, index: CatalogIndex): DotChart => {
+  const entries = resolvedEntries(tests, index);
+  if (scale === 'z') {
+    const [deficitEnd, fragileEnd] = [zToFraction(-2), zToFraction(-1)];
+    return {
+      title: 'Profil des scores (écarts-types)',
+      items: entries.flatMap((r) =>
+        r.z !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: zToFraction(r.z), value: formatZ(r.z, 1) }] : [],
+      ),
+      bands: [
+        { zone: 'deficit', from: 0, to: deficitEnd },
+        { zone: 'fragile', from: deficitEnd, to: fragileEnd },
+        { zone: 'normal', from: fragileEnd, to: 1 },
+      ],
+      centerLine: zToFraction(0),
+      ticks: Z_AXIS.ticks.map((t) => ({ position: zToFraction(t), label: t === 0 ? '0' : `${t > 0 ? '+' : ''}${t} ET`, bold: t === 0 })),
+    };
+  }
+  const [deficitEnd, fragileEnd] = [pctToFraction(ZONE_PERCENTILE_THRESHOLDS.deficit), pctToFraction(ZONE_PERCENTILE_THRESHOLDS.fragile)];
+  return {
+    title: 'Profil des scores (percentiles)',
+    items: entries.flatMap((r) =>
+      r.pct !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: pctToFraction(r.pct), value: `${r.pct}e` }] : [],
+    ),
+    bands: [
+      { zone: 'deficit', from: 0, to: deficitEnd },
+      { zone: 'fragile', from: deficitEnd, to: fragileEnd },
+      { zone: 'normal', from: fragileEnd, to: 1 },
+    ],
+    centerLine: 0.5,
+    ticks: PERCENTILE_TICKS.map((t) => ({ position: pctToFraction(t), label: String(t), bold: t === 50 })),
+  };
+};
 
-export interface PercentileChartItem {
-  key: string;
-  label: string;
-  pct: number;
-  zone: ScoreZone;
-}
-
-export const computePercentileChartItems = (tests: TestData, index: CatalogIndex): PercentileChartItem[] =>
-  resolvedEntries(tests, index).flatMap((r) =>
-    r.pct !== null && r.zone ? [{ key: r.key, label: r.label, pct: r.pct, zone: r.zone }] : [],
-  );
+/** Legend shown under a dot chart. */
+export const readingGuide = (
+  scale: DotChartScale,
+): { title: string; lines: Array<{ zone: ScoreZone; label: string; legend: string }> } => ({
+  title: `Guide de lecture${scale === 'percentile' ? ' (percentiles)' : ''} :`,
+  lines: (['normal', 'fragile', 'deficit'] as const).map((zone) => ({
+    zone,
+    label: ZONE_META[zone].label,
+    legend: scale === 'z' ? ZONE_META[zone].zLegend : ZONE_META[zone].pctLegend,
+  })),
+});
 
 export interface RadarPoint {
   label: string;
@@ -88,7 +126,40 @@ export interface ScoreTableRow {
   display: string;
   zone: ScoreZone | null;
   observation: string;
+  /** Re-evaluation only (see TestScoreBlock.showEvolution). */
+  evolution?: ScoreEvolution;
 }
+
+/** Change since the reference assessment, in the metric shown on the row. */
+export interface ScoreEvolution {
+  /** `+5 NS`, `-0.8 ET`, or `—` when not comparable (new subtest, other scale, not measured). */
+  text: string;
+  trend: Trend | null;
+  /** `amélioration`, `stable`, `régression`, or '' when there is no trend. */
+  trendLabel: string;
+}
+
+/** Trend colors of the evolution column (zone colors: green, neutral, red). */
+export const TREND_COLOR: Record<Trend, string> = {
+  improved: ZONE_META.normal.color,
+  stable: '#78716C',
+  declined: ZONE_META.deficit.color,
+};
+
+const NO_EVOLUTION: ScoreEvolution = { text: '—', trend: null, trendLabel: '' };
+
+const scoreEvolution = (current: ResolvedScore, previous: ResolvedScore, mode: ScoreDisplayMode): ScoreEvolution => {
+  const shown: Metric | null = current.valueIn(mode) !== null ? mode : current.metric;
+  const now = shown && current.valueIn(shown);
+  const before = shown && previous.valueIn(shown);
+  if (!shown || now === null || before === null) return NO_EVOLUTION;
+  const trend = trendFromZDelta(current.z !== null && previous.z !== null ? current.z - previous.z : null);
+  return {
+    text: formatMetricValue(parseFloat((now - before).toFixed(2)), shown, true),
+    trend,
+    trendLabel: trend ? TREND_LABEL[trend] : '',
+  };
+};
 
 export interface QualitativeRow {
   subtestId: string;
@@ -105,6 +176,8 @@ export interface TestScoreBlock {
   isFreeObservations: boolean;
   /** At least one row can be shown as NS/ET/% → show the display-mode selector. */
   hasStandardizedScores: boolean;
+  /** Re-evaluation: score rows carry `evolution` (show an "Évolution" column). */
+  showEvolution: boolean;
   mode: ScoreDisplayMode;
   rows: ScoreTableRow[];
   qualitativeRows: QualitativeRow[];
@@ -115,6 +188,8 @@ export const buildTestScoreBlocks = (
   tests: TestData,
   index: CatalogIndex,
   modes: Record<string, ScoreDisplayMode> = {},
+  /** Scores of the reference assessment (re-evaluation): adds the evolution of each score row. */
+  previousTests?: TestData,
 ): TestScoreBlock[] =>
   resolveScores(tests, index).flatMap((test) => {
     if (test.subtests.length === 0) return [];
@@ -124,6 +199,7 @@ export const buildTestScoreBlocks = (
       testName: test.testName,
       isFreeObservations: test.isFreeObservations,
       hasStandardizedScores: test.subtests.some((r) => r.metric !== null),
+      showEvolution: previousTests !== undefined,
       mode,
       rows: [],
       qualitativeRows: [],
@@ -144,7 +220,12 @@ export const buildTestScoreBlocks = (
           observation,
         });
       } else {
-        block.rows.push({ subtestId: r.subtestId, label: r.label, display: r.display(mode), zone: r.zone, observation });
+        const row: ScoreTableRow = { subtestId: r.subtestId, label: r.label, display: r.display(mode), zone: r.zone, observation };
+        if (previousTests) {
+          const previous = describeScore(index, test.testId, r.subtestId, previousTests[test.testId]?.[r.subtestId]);
+          row.evolution = scoreEvolution(r, previous, mode);
+        }
+        block.rows.push(row);
       }
     }
     return [block];
@@ -164,7 +245,7 @@ export const HIDDEN_SECTION_IDS: ReadonlySet<string> = new Set(['objectifs']);
 
 export const isReportSectionVisible = (section: Pick<ReportSection, 'id'>): boolean => !HIDDEN_SECTION_IDS.has(section.id);
 
-const PAGE_TEMPLATES: Record<'initial' | 'reevaluation', string[][]> = {
+const PAGE_TEMPLATES: { initial: InitialSectionId[][]; reevaluation: ReevaluationSectionId[][] } = {
   initial: [
     ['mandat_ref', 'mandat_eval', 'profil'],
     ['diagnostic', 'project', 'recommandations'],
@@ -183,7 +264,7 @@ const PAGE_TEMPLATES: Record<'initial' | 'reevaluation', string[][]> = {
 export const buildDefaultPages = (reportKind: ReportKind, sections: ReportSection[]): string[][] => {
   const visible = sections.filter(isReportSectionVisible);
   const existing = new Set(visible.map((s) => s.id));
-  const template = PAGE_TEMPLATES[reportKind === 'reevaluation' ? 'reevaluation' : 'initial'];
+  const template: string[][] = PAGE_TEMPLATES[reportKind === 'reevaluation' ? 'reevaluation' : 'initial'];
   const pages = template.map((page) => page.filter((id) => existing.has(id))).filter((page) => page.length > 0);
   const placed = new Set(pages.flat());
   const extra = visible.map((s) => s.id).filter((id) => !placed.has(id));

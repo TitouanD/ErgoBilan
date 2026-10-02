@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment files: variables live in Vercel (and .env.local for local dev); template in .env.example
+.env
+.env.production
+.env.development
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -25,3 +30,10 @@ dist-ssr
 
 # Supabase CLI cache
 supabase/.temp/
+
+# End-to-end AI test: trace of each run (see docs/AI_PIPELINE.md §9)
+.e2e-trace/
+.env.e2e.local.lock
+
+# Screenshots of the dev scenarios (npm run capture, docs/VERIFICATION.md)
+.captures/

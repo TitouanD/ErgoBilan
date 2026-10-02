@@ -1,6 +1,6 @@
 # Catalogue de tests et scoring
 
-Référence technique du catalogue (catégories, tests, sous-tests), de la saisie des scores, des conversions d'échelle, de l'interprétation (écran et PDF) et des deltas de réévaluation. Les références renvoient à des fichiers et des fonctions ; l'état de la base a été relevé le 2026-09-23. L'état des bugs est tenu dans [TECH_DEBT.md](TECH_DEBT.md).
+Référence technique du catalogue (catégories, tests, sous-tests), de la saisie des scores, des conversions d'échelle, de l'interprétation (écran et PDF) et des deltas de réévaluation. Les références renvoient à des fichiers et des fonctions ; l'état de la base a été relevé le 2026-09-23, puis mis à jour après les migrations du 2026-10-02. L'état des bugs est tenu dans [TECH_DEBT.md](TECH_DEBT.md).
 
 Règle générale : un score se lit par le **score résolu** (`utils/resolvedScore.ts`, §6 bis), qui s'appuie sur les calculs et les zones de `utils/scoring.ts` et sur les noms et échelles de l'index du catalogue (`useCatalog().index`, `utils/catalogIndex.ts`). Ordre d'affichage dans `utils/subtestOrdering.ts`, données des graphiques et des tableaux du rapport dans `utils/reportData.ts`.
 
@@ -8,25 +8,27 @@ Règle générale : un score se lit par le **score résolu** (`utils/resolvedSco
 
 Hiérarchie : `official_categories` → `official_tests` → `official_subtests`. Le catalogue vient de Supabase. `data/testCatalog.ts` ne contient que les types (`CategoryDef`, `TestDef`, `SubtestDef`, `ScoreType`, `SubtestInputModel`, `SubtestInputConfig`) et `ICON_MAP` (icône lucide de chaque `icon_key`). En mode démo, sans session, le catalogue est `data/demoCatalog.ts` (voir §2).
 
+**Contenu du catalogue officiel** : une partie a été saisie sans source et contient des sous-tests inventés. La vérification contre les protocoles publiés (2026-09-30, sources à l'appui) est dans [`catalogue/verification-2026-09-30.md`](./catalogue/verification-2026-09-30.md) ; les corrections certaines (7 sous-tests inventés retirés, EViC, Lespargot, DTVP-2, MABC-2, échelles, ordres, catégories) sont appliquées depuis le 2026-10-02 (`20261001100300_catalogue_corrections.sql`, #50) ; les manquants sourcés sont ajoutés depuis le 2026-10-02 (`20261002120000_catalogue_ajouts.sql`, #90) ; restent à trancher les sous-tests douteux, le BOT-2 et les points « à confirmer ». Tout ajout au catalogue cite sa source.
+
 - **Test officiel** : `organization_id IS NULL`. **Test perso** : `organization_id` = organisation du praticien.
-- Les vues `view_unified_catalog` et `view_unified_subtests` filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
-- Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests.
+- Les vues `view_unified_catalog` et `view_unified_subtests` sont en `security_invoker = on` depuis le 2026-10-02 (#57) : la RLS des tables s'applique (policy RESTRICTIVE `catalog_read_requires_onboarded`, GRANT SELECT par colonne à `authenticated`), en plus de leur propre filtre. Elles filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
+- Base au 2026-09-23 : 10 catégories (`motricite-globale`, `ecriture`, `visuo-perceptif`, `sensoriel`, `attention-executif`, `autre`, `motricite-fine`, `avq-fonctionnel`, `cognition`, `lateralite`), 44 tests dont 2 perso, 329 sous-tests. Au 2026-10-02, après #49 (catégorie `lateralite` retirée) et #50 : 9 catégories, 44 tests (42 officiels), 345 sous-tests (342 officiels) ; un non admin voit les 42 tests et 342 sous-tests officiels plus ceux de son organisation.
 - Répartition `score_type` : scaled 147, none 139, standard 24, t-score 17, percentile 2. Répartition `input_model` : numeric_4mode 324, raw_only 5. **Aucun** sous-test n'utilise `qualitative_category`, `custom_text` ou `computed_items` en base.
-- Migration `20260929100000_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé avec sa catégorie `lateralite`, dont c'était le seul test, et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
+- Migration `20260929090606_retrait_harris_brut.sql` (#49) : le Test de Latéralité de Harris, seul utilisateur de `raw_only`, est supprimé avec sa catégorie `lateralite`, dont c'était le seul test, et la contrainte de `input_model` n'accepte plus que `numeric_4mode`, `qualitative_category` et `custom_text`.
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
-| Colonne (vue)                                   | Type / contrainte                                                                      | Mappé vers                                                          |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| catalog.`id`, `label`                           | text                                                                                   | `TestDef.id`, `TestDef.name`                                        |
-| catalog.`category_id`, `category_label`         | FK `official_categories`                                                               | `CategoryDef.id`, `.name`                                           |
-| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                  | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
-| catalog.`subtests_count`                        | calculé                                                                                | non chargé                                                          |
-| subtests.`unit`                                 | text                                                                                   | `unit` (défaut `'pts'`)                                             |
-| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
-| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text               | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
-| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                          | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
-| subtests.`display_group_order`, `display_order` | integer                                                                                | `displayGroupOrder`, `displayOrder`                                 |
+| Colonne (vue)                                   | Type / contrainte                                                                               | Mappé vers                                                          |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| catalog.`id`, `label`                           | text                                                                                            | `TestDef.id`, `TestDef.name`                                        |
+| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                        | `CategoryDef.id`, `.name`                                           |
+| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                           | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
+| catalog.`subtests_count`                        | calculé                                                                                         | non chargé                                                          |
+| subtests.`unit`                                 | text                                                                                            | `unit` (défaut `'pts'`)                                             |
+| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, v-scale, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
+| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text                        | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
+| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                   | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
+| subtests.`display_group_order`, `display_order` | integer                                                                                         | `displayGroupOrder`, `displayOrder`                                 |
 
 ## 2. Chargement côté client
 
@@ -36,7 +38,7 @@ Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogCont
 - **`ensureCatalogLoaded`** ne charge qu'une fois et renvoie l'index à jour (utilisable juste après un `await`). **`reloadCatalog`** force un rechargement. Les appels simultanés sont dédoublonnés (`inFlightRef`).
 - **Sans session** (mode démo) : `DEMO_CATALOG` (`data/demoCatalog.ts`) est chargé à la place. Il reprend les vrais identifiants et échelles de la base pour `bhk`, `mabc-2` et `test-cloches`, les tests utilisés par `data/demoData.ts`. Le catalogue est vidé à la déconnexion (`SIGNED_OUT`) et à la connexion d'un vrai utilisateur s'il s'agissait du catalogue démo.
 - **Requêtes** (en parallèle) : `view_unified_catalog` (triée par `sort_order`, celui de la catégorie : l'ordre des tests dans une catégorie n'est pas garanti) et `view_unified_subtests`. En cas d'erreur, elle est journalisée et le catalogue reste en l'état ; le prochain `ensureCatalogLoaded` réessaiera.
-- **Pas de pagination** : on dépend de la limite `max-rows` de PostgREST (1000 par défaut). 329 sous-tests aujourd'hui.
+- **Pas de pagination** : on dépend de la limite `max-rows` de PostgREST (1000 par défaut). 345 sous-tests au 2026-10-02.
 - **Normalisations** : un `qualitative_category` sans options est rétrogradé en `custom_text`. Un test sans sous-test visible est ignoré. Les catégories sont triées par `sortOrder`.
 - **`searchTests`** : score 4 si préfixe, 3 si début de mot, 2 si sous-chaîne ou nom normalisé (`utils/catalogNames.ts`) ; une correspondance sur un sous-test vaut −0,5.
 - Pas de cache persistant : l'état est en mémoire et perdu au rechargement de la page.
@@ -68,6 +70,7 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 | `scaled`     | 10      | 3   | 1–19            | NS (m=10, σ=3)         | paramétrique                         |
 | `standard`   | 100     | 15  | 40–160          | QI (m=100, σ=15)       | paramétrique                         |
 | `t-score`    | 50      | 10  | 20–80           | T (m=50, σ=10)         | paramétrique                         |
+| `v-scale`    | 15      | 3   | 1–24            | Note v (m=15, σ=3)     | paramétrique (Vineland, #90)         |
 | `sten`       | 5,5     | 2   | 1–10            | Sten (m=5.5, σ=2)      | paramétrique                         |
 | `stanine`    | 5       | 2   | 1–9             | Stanine (m=5, σ=2)     | paramétrique                         |
 | `percentile` | —       | —   | 1–99            | Rang percentile        | la valeur « NS » est un rang centile |
@@ -126,10 +129,11 @@ Les données des annexes sont calculées dans `utils/reportData.ts` ; l'aperçu 
 
 | Élément               | Fonction                                                    | Détail                                                                                                 |
 | --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Barres ET             | `computeZChartItems`                                        | axe `Z_AXIS` de −3,5 à +3,5 (`zToFraction`), zone de chaque sous-test                                  |
-| Percentiles           | `computePercentileChartItems`                               | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), zone du score résolu                               |
+| Barres ET             | `computeDotChart('z')`, `readingGuide`                      | axe `Z_AXIS` de −3,5 à +3,5 (`zToFraction`), bandes de zone, zone de chaque sous-test, légende         |
+| Percentiles           | `computeDotChart('percentile')`, `readingGuide`             | graduations `PERCENTILE_TICKS` (2, 16, 50, 84, 98), bandes de zone, zone du score résolu, légende      |
 | Radar                 | `computeRadarData`                                          | moyenne des z par catégorie, bornée à ±3 (`RADAR_RANGE`) ; vide s'il y a moins de 3 catégories         |
 | Tableaux de scores    | `buildTestScoreBlocks`                                      | lignes standardisées, lignes qualitatives (catégorie + `reportText`), notes des observations libres    |
+| Évolution             | `buildTestScoreBlocks(…, previousTests)`                    | réévaluation : écart au bilan de référence dans la métrique affichée, tendance en z (`TREND_COLOR`)    |
 | Valeur affichée       | `display(mode)` du score résolu                             | mode NS, ET ou % par test ; si la métrique demandée n'est pas calculable, valeur saisie avec son unité |
 | Disposition des pages | `buildDefaultPages`, `reconcilePages`, `moveSectionInPages` | sections masquées : `HIDDEN_SECTION_IDS` (`objectifs`)                                                 |
 
@@ -151,7 +155,7 @@ Le type de graphique (`chartType`, défaut `bar`) et le mode d'affichage par tes
 
 Fonctions de `utils/reevaluationHelpers.ts`, affichage par `components/assessment/shared/DeltaTable.tsx`.
 
-- **Scores de départ** : la réévaluation démarre avec les tests et sous-tests du bilan de référence, **sans valeur** (`buildEmptyTestsFrom`, `utils/assessment.ts`, appelé par `start`, `utils/assessmentInProgress.ts`). Le bilan de référence est le dernier bilan formel (`getLatestFormalAssessment`). Le praticien peut retirer un test, pas en ajouter.
+- **Scores de départ** : la réévaluation démarre avec les tests et sous-tests du bilan de référence, **sans valeur** (`buildEmptyTestsFrom`, `utils/assessment.ts`, appelé par `start`, `utils/assessmentInProgress.ts`). Le bilan de référence est le dernier bilan (`getLatestFormalAssessment`). Le praticien peut retirer un test, pas en ajouter.
 - **Métrique affichée** : `Step1Scores` n'affiche, pour chaque test, qu'une colonne : la métrique la plus utilisée dans le bilan de référence (`dominantMetric`, ET en cas d'égalité).
 - **`buildDeltaEntries`** : pour chaque sous-test, la métrique est celle du score précédent (sinon celle du nouveau). `prevValue` et `newValue` sont exprimés dans cette métrique (`valueIn` du score résolu) : un score saisi dans une autre métrique est converti avec l'échelle du sous-test, ou vaut `null` si l'échelle est inconnue. `delta` est leur différence. Les scores qualitatifs ne sont pas comparés.
 - **Tendance en unités z** : `zDelta` = z(nouveau) − z(précédent), calculé avec l'échelle du sous-test. `trendFromZDelta` classe en amélioration au-delà de +0,5, régression en deçà de −0,5, stable entre les deux (`STABILITY_THRESHOLD_Z` = 0,5 ET, soit 1,5 point en NS scaled et 7,5 points en QI). Sans z calculable (échelle `none` saisie en NS), aucune tendance n'est affichée.
@@ -159,7 +163,7 @@ Fonctions de `utils/reevaluationHelpers.ts`, affichage par `components/assessmen
 - **Textes pour l'IA** : `buildScoresSummaryText` (scores d'un bilan) et `buildEvolutionSummaryText` (delta dans la métrique, delta en ET et tendance).
 - **Affichage** : `DeltaTable` et `buildEvolutionSummaryText` formatent valeurs et écarts avec `formatMetricValue` (`90 NS`, écart signé `+5 NS`) ; l'infobulle du delta donne `zDelta`.
 
-Un score précédent saisi dans une autre métrique que la métrique dominante du test est ressaisi dans la métrique dominante, puis converti pour la comparaison. Les deltas ne figurent pas dans le PDF (P1-15).
+Un score précédent saisi dans une autre métrique que la métrique dominante du test est ressaisi dans la métrique dominante, puis converti pour la comparaison. Dans l'aperçu et le PDF de réévaluation, chaque ligne de score porte une colonne « Évolution » : écart dans la métrique affichée et tendance (amélioration, stable, régression), « — » quand il n'y a rien à comparer (test absent du bilan de référence, autre échelle, non mesuré).
 
 ## 8. Tests personnalisés
 
@@ -167,7 +171,7 @@ Parcours : bouton « Créer un test » du `TestCatalogModal` (`components/assess
 
 Fonction SQL (SECURITY DEFINER, relevée en base) : org = première ligne de `organization_members` ; `category_id` inexistant → repli `'autre'` ; test `version '1.0'`, `author 'practitioner'` ; sous-tests `score_type` défaut `'none'`, `input_model` défaut `'numeric_4mode'`, `unit 'pts'`, `display_order` = index. `abbreviation` et `order_index` du payload sont ignorés.
 
-La fonction est exécutable par `authenticated` depuis la migration `20260924100000_fix_client_rpc_grants.sql` (appliquée le 2026-09-25, P1-1).
+La fonction est exécutable par `authenticated` depuis la migration `20260925082729_fix_client_rpc_grants.sql` (appliquée le 2026-09-25, P1-1).
 
 ## 9. Administration du catalogue
 
@@ -177,7 +181,7 @@ La fonction est exécutable par `authenticated` depuis la migration `20260924100
 | -------------------------- | ------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lister                     | `listTests(scope)`                                            | `admin_list_tests(p_scope)` public, private ou all |                                                                                                                                                       |
 | Détail                     | `loadTestDetail`                                              | `admin_get_test_detail`                            |                                                                                                                                                       |
-| Enregistrer                | `saveTestDetail`                                              | `admin_save_test_detail`                           | Le client envoie `score_type ?? 'none'`, `input_model ?? 'numeric_4mode'`, `input_config ?? {}`. Mêmes défauts côté SQL (migration `20260924100000`). |
+| Enregistrer                | `saveTestDetail`                                              | `admin_save_test_detail`                           | Le client envoie `score_type ?? 'none'`, `input_model ?? 'numeric_4mode'`, `input_config ?? {}`. Mêmes défauts côté SQL (migration `20260925082729`). |
 | Supprimer test / sous-test | `deleteTest`, `deleteSubtest`                                 | `admin_delete_test`, `admin_delete_subtest`        |                                                                                                                                                       |
 | Catégories                 | — (lecture directe `official_categories` dans `AdminLibrary`) | —                                                  |                                                                                                                                                       |
 
@@ -187,6 +191,6 @@ Un nouveau sous-test reçoit `score_type: 'none'` et `input_model: 'numeric_4mod
 
 L'état de chaque point est dans [TECH_DEBT.md](TECH_DEBT.md). Restent notamment, pour ce module :
 
-1. Création de test perso bloquée en production jusqu'à l'application de `20260924100000` (P1-1) ; même migration pour les défauts de `admin_save_test_detail` (P1-14).
+1. Création de test perso bloquée en production jusqu'à l'application de `20260925082729` (P1-1) ; même migration pour les défauts de `admin_save_test_detail` (P1-14).
 2. Deltas absents du PDF, et pas d'ajout de test pendant une réévaluation (P1-15).
 3. Pas de pagination du catalogue (limite PostgREST de 1000 lignes) ni de cache persistant (§2).

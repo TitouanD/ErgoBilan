@@ -11,12 +11,7 @@ interface StepNavFooterProps {
  * Shared navigation footer for all assessment steps.
  * Reference style: initial bilan (text-only Retour, CTA slot on the right).
  */
-export const StepNavFooter: React.FC<StepNavFooterProps> = ({
-  onBack,
-  backLabel = 'Retour',
-  backDisabled,
-  children,
-}) => (
+export const StepNavFooter: React.FC<StepNavFooterProps> = ({ onBack, backLabel = 'Retour', backDisabled, children }) => (
   <div className="mt-10 flex justify-between items-center gap-4">
     <button
       onClick={onBack}

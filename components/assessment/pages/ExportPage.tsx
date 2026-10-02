@@ -21,6 +21,8 @@ interface Props {
   patient: Patient;
   sections: ReportSection[];
   tests: TestData;
+  /** Re-evaluation: scores of the reference assessment (evolution column of the score tables). */
+  previousTests?: TestData;
   reportType?: ReportKind;
   /** Saved page layout (null or absent: default layout). */
   reportPages?: string[][] | null;
@@ -49,6 +51,7 @@ export const ExportPage: React.FC<Props> = ({
   patient,
   sections,
   tests,
+  previousTests,
   reportType = 'initial',
   reportPages,
   onReportPagesChange,
@@ -92,6 +95,7 @@ export const ExportPage: React.FC<Props> = ({
         pages={pages}
         scoreDisplayModes={scoreDisplayModes}
         chartType={chartType}
+        previousTests={previousTests}
       />,
     ).toBlob();
   };
@@ -205,14 +209,24 @@ export const ExportPage: React.FC<Props> = ({
           onUpdateSection={onUpdateSection}
           branding={branding}
           scoreDisplayModes={scoreDisplayModes}
-          onScoreDisplayModeChange={(modes: Record<string, ScoreDisplayMode>) => onUpdateBranding({ ...branding, scoreDisplayModes: modes })}
+          onScoreDisplayModeChange={(modes: Record<string, ScoreDisplayMode>) =>
+            onUpdateBranding({ ...branding, scoreDisplayModes: modes })
+          }
           chartType={chartType}
           onChartTypeChange={(type) => onUpdateBranding({ ...branding, chartType: type })}
+          previousTests={previousTests}
           isPerformance={isPremium}
         />
       </div>
 
-      {showBranding && <BrandingEditor branding={branding} onUpdate={onUpdateBranding} onClose={() => setShowBranding(false)} onOpenProfile={onOpenProfile} />}
+      {showBranding && (
+        <BrandingEditor
+          branding={branding}
+          onUpdate={onUpdateBranding}
+          onClose={() => setShowBranding(false)}
+          onOpenProfile={onOpenProfile}
+        />
+      )}
     </div>
   );
 };

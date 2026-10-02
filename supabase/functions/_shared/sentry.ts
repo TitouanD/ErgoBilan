@@ -32,7 +32,8 @@ type CaptureEdgeOptions = {
   level?: Level;
 };
 
-const sensitiveKeyPattern = /(patient|email|phone|name|nom|prenom|address|siret|content|report|questionnaire|observation|notes?|diagnostic|payload|body|response|key|token|password|pin|salt|validator)/i;
+const sensitiveKeyPattern =
+  /(patient|email|phone|name|nom|prenom|address|siret|content|report|questionnaire|observation|notes?|diagnostic|payload|body|response|key|token|password|pin|salt|validator)/i;
 const sensitiveValuePattern = /([A-Z][a-z]+\s[A-Z][a-z]+)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(?:\+?\d[\d\s().-]{7,}\d)/g;
 
 const parseDsn = (dsn: string): { host: string; projectId: string; publicKey: string } | null => {
@@ -125,14 +126,20 @@ const send = async (event: Record<string, unknown>, options: CaptureEdgeOptions)
     tags: {
       app_surface: 'backend',
       function_name: options.functionName,
-      ...Object.fromEntries(Object.entries(options.tags || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)])),
+      ...Object.fromEntries(
+        Object.entries(options.tags || {})
+          .filter(([, v]) => v !== null && v !== undefined)
+          .map(([k, v]) => [k, String(v)]),
+      ),
     },
     user: options.userId ? { id: options.userId } : undefined,
     request: describeRequest(options.request),
     contexts: { runtime: { name: 'deno', version: Deno.version?.deno } },
     extra: scrubDeep(options.extra || {}),
     breadcrumbs: options.breadcrumbs?.length
-      ? { values: options.breadcrumbs.map((b) => ({ ...b, message: scrubString(b.message), data: b.data ? scrubDeep(b.data) : undefined })) }
+      ? {
+          values: options.breadcrumbs.map((b) => ({ ...b, message: scrubString(b.message), data: b.data ? scrubDeep(b.data) : undefined })),
+        }
       : undefined,
     fingerprint: options.fingerprint,
     ...event,

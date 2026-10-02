@@ -28,6 +28,8 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
 import { PinUnlock } from './components/auth/PinUnlock';
 import { NetworkErrorScreen } from './components/auth/NetworkErrorScreen';
+import { TestAccessScreen, TestBuildBadge } from './components/auth/TestAccessScreen';
+import { IS_TEST_BUILD, TEST_ACCESS_LIST, isEmailAllowed } from './utils/testAccess';
 import { DemoConversionModal } from './components/shared/DemoConversionModal';
 import { GlobalErrorBoundary } from './components/shared/GlobalErrorBoundary';
 import { OfflineIndicator } from './components/shared/OfflineIndicator';
@@ -38,9 +40,13 @@ import { AssessmentWorkspace } from './components/assessment/AssessmentWorkspace
 
 const AdminPanel = React.lazy(() => import('./components/admin/AdminPanel').then((m) => ({ default: m.AdminPanel })));
 const ProfileEditor = React.lazy(() => import('./components/dashboard/ProfileEditor').then((m) => ({ default: m.ProfileEditor })));
-const OnboardingExperience = React.lazy(() => import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })));
+const OnboardingExperience = React.lazy(() =>
+  import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })),
+);
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
+/** Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build. */
+const DevTools = import.meta.env.DEV ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools }))) : null;
 
 type Mode = 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile';
 
@@ -219,7 +225,11 @@ const AppRouter = () => {
       const baseFile = patientFiles.find((f) => f.id === id);
       if (!baseFile) return;
       setSelectedFile({ ...baseFile, assessments: details.assessments, followup: details.followup, patient: details.patient });
-      setDetailPaging({ hasMoreAssessments: details.hasMoreAssessments, nextAssessmentOffset: details.nextAssessmentOffset, isLoadingMore: false });
+      setDetailPaging({
+        hasMoreAssessments: details.hasMoreAssessments,
+        nextAssessmentOffset: details.nextAssessmentOffset,
+        isLoadingMore: false,
+      });
       setMode('detail');
     } catch (e) {
       Logger.error('DB', 'Failed to open patient file', e);
@@ -238,7 +248,11 @@ const AppRouter = () => {
         history.assessments.forEach((a) => byId.set(a.id, a));
         return { ...prev, assessments: [...byId.values()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) };
       });
-      setDetailPaging({ hasMoreAssessments: history.hasMoreAssessments, nextAssessmentOffset: history.nextAssessmentOffset, isLoadingMore: false });
+      setDetailPaging({
+        hasMoreAssessments: history.hasMoreAssessments,
+        nextAssessmentOffset: history.nextAssessmentOffset,
+        isLoadingMore: false,
+      });
     } catch (e) {
       Logger.warn('DB', 'Failed to load more history', e);
       toast.error("Impossible de charger plus d'historique.");
@@ -279,8 +293,14 @@ const AppRouter = () => {
     return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
   }
   if (isLoading || authState === 'authenticating') return <AppLoader />;
+  // Test environment (dev.ergobilan.com): only accounts on its access list get past sign-in.
+  const accountEmail = userProfile?.email || practitioner?.email || tempEmail || '';
+  if (!isDemoMode && authState !== 'unauthenticated' && accountEmail && !isEmailAllowed(accountEmail, TEST_ACCESS_LIST)) {
+    return <TestAccessScreen email={accountEmail} onLogout={() => void logout()} />;
+  }
   if (authState === 'network_error') return <NetworkErrorScreen onRetry={reloadUserFromSession} onLogout={logout} />;
-  if (authState === 'locked' && practitioner && !isDemoMode) return <PinUnlock practitioner={practitioner} onUnlock={unlockSession} onLogout={logout} />;
+  if (authState === 'locked' && practitioner && !isDemoMode)
+    return <PinUnlock practitioner={practitioner} onUnlock={unlockSession} onLogout={logout} />;
 
   if (mode === 'landing') {
     return (
@@ -416,6 +436,12 @@ const AppRouter = () => {
           />
         )}
 
+        {DevTools && authState === 'authenticated' && sessionKey && !isDemoMode && (
+          <Suspense fallback={null}>
+            <DevTools onLoadData={loadData} onResumeDraft={resumeDraft} onShowDashboard={() => setMode('dashboard')} />
+          </Suspense>
+        )}
+
         {demoConversionAction && (
           <DemoConversionModal
             action={demoConversionAction}
@@ -438,6 +464,7 @@ const App = () => (
         <ToastProvider>
           <AssessmentProvider>
             <AppRouter />
+            {IS_TEST_BUILD && <TestBuildBadge />}
           </AssessmentProvider>
         </ToastProvider>
       </CatalogProvider>

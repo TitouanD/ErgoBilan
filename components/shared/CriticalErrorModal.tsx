@@ -24,11 +24,15 @@ export const CriticalErrorModal: React.FC<Props> = ({ error, onRetry, onClose })
     </div>
     <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-2">Interruption IA</h3>
     <p className="text-[var(--text-secondary)] text-sm mb-6 leading-relaxed">
-      Le moteur IA n&apos;a pas pu terminer.<br />
+      Le moteur IA n&apos;a pas pu terminer.
+      <br />
       <span className="font-bold text-rose-500 mt-2 block">{error}</span>
     </p>
     <div className="flex gap-3">
-      <button onClick={onClose} className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm uppercase tracking-wider">
+      <button
+        onClick={onClose}
+        className="flex-1 py-3 text-[var(--text-secondary)] font-bold hover:bg-[var(--hover-bg)] rounded-xl transition-colors text-sm uppercase tracking-wider"
+      >
         Abandonner
       </button>
       <button
@@ -40,4 +44,3 @@ export const CriticalErrorModal: React.FC<Props> = ({ error, onRetry, onClose })
     </div>
   </Modal>
 );
-

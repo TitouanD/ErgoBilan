@@ -30,9 +30,7 @@ export const useFavoriteTests = () => {
 
   const toggleFavorite = useCallback((testId: string) => {
     setFavoritesState((prev) => {
-      const next = prev.includes(testId)
-        ? prev.filter((id) => id !== testId)
-        : [testId, ...prev].slice(0, MAX_FAVORITES);
+      const next = prev.includes(testId) ? prev.filter((id) => id !== testId) : [testId, ...prev].slice(0, MAX_FAVORITES);
       writeIds(STORAGE_KEY, next);
       return next;
     });
