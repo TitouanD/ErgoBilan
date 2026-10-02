@@ -21,7 +21,13 @@ import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';
 import { buildDeltaEntries } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml, sectionToPlainText } from './reportContent';
-import { ADULT_RECOMMENDATIONS_TITLE, type InitialSectionId, type ReevaluationSectionId, sectionTitle } from './reportSections';
+import {
+  ADULT_RECOMMENDATIONS_TITLE,
+  type InitialSectionId,
+  PREVIOUS_REEVALUATION_RECALL_TITLE,
+  type ReevaluationSectionId,
+  sectionTitle,
+} from './reportSections';
 import { findSuspectTerms } from './suspectTerms';
 import { decodeHtmlEntities, sanitizeReportText } from './textSanitizer';
 
@@ -331,7 +337,12 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
     const hydrate = (text: string | undefined) => sanitizeReportText(anonymization.hydrate(text || NOT_GENERATED, { asHtml: true }));
 
     return [
-      makeSection('resume_initial', hydrate(json.resume_initial), 'html'),
+      makeSection(
+        'resume_initial',
+        hydrate(json.resume_initial),
+        'html',
+        input.previousAssessment?.kind === 'reevaluation' ? PREVIOUS_REEVALUATION_RECALL_TITLE : undefined,
+      ),
       makeSection('evolution', hydrate(json.evolution_commentee), 'html'),
       makeSection('conclusion', hydrate(json.conclusion), 'html'),
       makeSection('recommandations_reev', hydrate(json.recommandations), 'html'),

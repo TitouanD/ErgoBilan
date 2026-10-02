@@ -349,6 +349,7 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
     // The previous re-evaluation leaves as context: without it the "Rappel" is written from the scores alone.
     expect(steps[0].request.payload.previousReportContext, 'contexte de la réévaluation précédente absent').toMatch(/tiers-temps/);
     expectHydratedSections(sections, ['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
+    expect(sections?.[0].title, 'titre du rappel (#89)').toBe('Rappel de la réévaluation précédente');
     await expectCreditDelta(before, -1);
   });
 
