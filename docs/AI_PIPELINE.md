@@ -1,8 +1,8 @@
 # Pipeline IA — génération des comptes rendus
 
 > État du code au 29/09/2026 (branche `refactor/generation-rapport`, issues #53 et #54). Les références citent un fichier et une fonction, pas de numéro de ligne.
-> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user`, réécrite par `20261001100000_generation_log_kind.sql`, en attente d'application). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
-> **Déploiement** : l'edge function `generate` décrite ici est en production depuis le 2026-09-25 (v52), et la migration `20260925082801_scheduled_cleanups.sql` est appliquée.
+> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
+> **Déploiement** : l'edge function `generate` décrite ici a été déployée depuis le repo le 2026-09-25 (v52), puis le 2026-10-02 (version qui envoie `p_kind` via `sessionKind` et prompt de réévaluation « bilan de référence », #60 et #85), vérifiée en réel le même jour (`E2E_AI=all`, 4 appels, 2 crédits). Les migrations `20260925082801_scheduled_cleanups.sql` et `20261001100000_generation_log_kind.sql` sont appliquées.
 
 ## 1. Vue d'ensemble
 
@@ -33,7 +33,7 @@ L'edge accepte exactement quatre valeurs de `task` (`AI_TASKS`, `prompts.ts`, di
 | `report_reevaluation`    | `generateReevaluation` (via `useAssessmentFlow.generateReevaluation`) | 1                                     | `resume_initial`, `evolution_commentee`, `recommandations`, `conclusion` (valeurs HTML)                                                       | Les 4 sont conservées : `resume_initial`, `evolution`, `conclusion`, `recommandations_reev`                                 |
 | `extract_style_feedback` | `learnStyle` (via `useAssessmentFlow.finalize`)                       | 0, pas de session                     | `global` + `sections.*` (`FEEDBACK_RESPONSE_SCHEMA`)                                                                                          | Aucune : met à jour `practitioners.ai_style_preferences`                                                                    |
 
-Trois chemins de génération : bilan initial (bio → diagnostic), réévaluation (un appel), feedback de style (un appel). Le parcours « bilan antérieur » (historique) n'appelle pas l'IA. L'edge `extract-norms` (OCR de normes) est déployée mais absente du repo et inutilisée (TECH_DEBT P2-1).
+Trois chemins de génération : bilan initial (bio → diagnostic), réévaluation (un appel), feedback de style (un appel). Le parcours « bilan antérieur » (historique) n'appelle pas l'IA. L'ancienne edge `extract-norms` (OCR de normes) est supprimée (constaté le 2026-09-29, TECH_DEBT P2-1).
 
 ## 3. Construction de la charge utile
 
@@ -62,21 +62,23 @@ Côté edge, `scoresEvidence` est sérialisé tel quel (`JSON.stringify(..., nul
 - `childContext` = `buildChildContext` + classe + dates du bilan initial et de la réévaluation (mois/année, masquées en `{{DATE_n}} (il y a …)`), séparés par `|`.
 - `previousScoresSummary` / `newScoresSummary` = `buildScoresSummaryText` (`utils/reevaluationHelpers.ts`) : une ligne `Sous-test (Test): 85 NS` (format du score résolu), ou le libellé qualitatif.
 - `evolutionSummary` = `buildEvolutionSummaryText` : delta signé, delta en ET si calculable, tendance (seuil `STABILITY_THRESHOLD_Z` = ±0,5 ET).
-- `previousReportContext` = sections du bilan de référence (le dernier bilan formel), en texte brut, **anonymisées** comme le reste : `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` si c'est un bilan initial ; `conclusion` et `recommandations_reev` si c'est déjà une réévaluation (2e réévaluation et suivantes, #70). `childContext` indique alors « Réévaluation précédente réalisée » au lieu de « Bilan initial réalisé ». Le prompt de l'edge appelle encore ce bloc « CONTENU DU BILAN INITIAL ».
+- `previousReportContext` = sections du bilan de référence (le dernier bilan formel), en texte brut, **anonymisées** comme le reste : `profil`, `diagnostic`, `objectifs`, `project`, `recommandations` si c'est un bilan initial ; `conclusion` et `recommandations_reev` si c'est déjà une réévaluation (2e réévaluation et suivantes, #70). `childContext` indique alors « Réévaluation précédente réalisée » au lieu de « Bilan initial réalisé ». Le prompt de l'edge (#85) appelle ce bloc « CONTENU DU BILAN DE REFERENCE (bilan initial ou reevaluation precedente) » et les scores d'avant « SCORES BILAN DE REFERENCE » ; il reconnaît le cas par `isAfterReevaluation(childContext)` (`prompts.ts`). Le titre de la section côté client reste « Rappel du bilan initial » (issue séparée).
 
 `generateReevaluation` ajoute `profile` (`getAiProfile`) et `styleDirectives` (règles globales + `recommandations`, partagées avec le bilan initial).
 
 ### Prompts edge (`supabase/functions/generate/prompts.ts`, résumé)
 
-| Bloc                    | Contenu                                                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SECURITY_INSTRUCTION`  | Ne jamais modifier, supprimer ni inventer de placeholder `{{...}}`.                                                                                    |
-| `PEDIATRIC_SYSTEM`      | 17 règles (pas de score ni de nom de test, pas de diagnostic médical, pas le mot « troubles », anti-invention, format tiret du diagnostic) + exemples. |
-| `ADULT_SYSTEM`          | 16 règles équivalentes, orientées réadaptation adulte.                                                                                                 |
-| `buildBioTask`          | Sécurité → style → contexte → questionnaire → consignes des 3 champs (structure en 3 temps, « observer et d'évaluer », ordre du profil).               |
-| `buildDiagnosticTask`   | Sécurité → style → profil → observations → scores → directives conditionnelles (constat praticien fourni ou non, `isSubstantiveInput`) → 5 champs.     |
-| `buildReevaluationTask` | Sécurité → style → contexte → bilan initial → scores avant/après → deltas → 4 champs HTML ; exception : noms de tests et valeurs chiffrées autorisés.  |
-| `buildFeedbackTask`     | `FEEDBACK_SYSTEM` + diffs original/corrigé par section + préférences existantes à consolider (10 règles max).                                          |
+| Bloc                    | Contenu                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SECURITY_INSTRUCTION`  | Ne jamais modifier, supprimer ni inventer de placeholder `{{...}}`.                                                                                                                                                                                                                                                                                                                                                                       |
+| `PEDIATRIC_SYSTEM`      | 17 règles (pas de score ni de nom de test, pas de diagnostic médical, pas le mot « troubles », anti-invention, format tiret du diagnostic) + exemples.                                                                                                                                                                                                                                                                                    |
+| `ADULT_SYSTEM`          | 16 règles équivalentes, orientées réadaptation adulte.                                                                                                                                                                                                                                                                                                                                                                                    |
+| `buildBioTask`          | Sécurité → style → contexte → questionnaire → consignes des 3 champs (structure en 3 temps, « observer et d'évaluer », ordre du profil).                                                                                                                                                                                                                                                                                                  |
+| `buildDiagnosticTask`   | Sécurité → style → profil → observations → scores → directives conditionnelles (constat praticien fourni ou non, `isSubstantiveInput`) → 5 champs.                                                                                                                                                                                                                                                                                        |
+| `buildReevaluationTask` | Sécurité → style → contexte → bilan de référence → scores avant/après → deltas → 4 champs HTML ; exception : noms de tests et valeurs chiffrées autorisés. Deux variantes de `resume_initial` : après un bilan initial, introduction du bilan initial puis déficits et objectifs ; après une réévaluation, « Lors de la dernière réévaluation, le … » puis constats de la conclusion et préconisations, sans parler de « bilan initial ». |
+| `buildFeedbackTask`     | `FEEDBACK_SYSTEM` + diffs original/corrigé par section + préférences existantes à consolider (10 règles max).                                                                                                                                                                                                                                                                                                                             |
+
+`sessionKind`, `isAfterReevaluation` et les deux variantes du prompt de réévaluation sont couverts par `supabase/functions/generate/prompts.test.ts`, lancé par `npm test`.
 
 ## 4. Anonymisation et réhydratation (`utils/anonymizer.ts`, `utils/suspectTerms.ts`)
 
@@ -150,7 +152,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 4. `extract_style_feedback` : appel Gemini direct, sans crédit ni session (voir §6).
 5. `generation_id` qui n'a pas la forme d'un UUID, ou fourni à `report_bio`/`report_reevaluation` → 400 `INVALID_GENERATION_SESSION`. `report_diagnostic` sans `generation_id` → 400 `MISSING_GENERATION_SESSION`.
 6. Diagnostic : `isSessionReusable` exige une ligne `pending` de l'utilisateur, créée il y a moins de 20 min (sinon 400 `INVALID_GENERATION_SESSION`), puis `claimSession` (RPC `claim_generation_session`) sinon 409 `GENERATION_SESSION_BUSY`. Toute erreur RPC est un refus (plus de repli « fail-open »).
-7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un abonnement `active`/`trialing` ; admin et `expert` actif ne sont pas débités, sinon `credits - 1`. Elle insère une ligne `generation_log (status='pending')` et renvoie son id. `NULL` → 402 `CREDIT_INSUFFICIENT`.
+7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un abonnement `active`/`trialing` ; admin et `expert` actif ne sont pas débités, sinon `credits - 1`. Elle insère une ligne `generation_log (status='pending', kind)` et renvoie son id ; `kind` vient de `sessionKind(task)` (`prompts.ts`) : `report_bio` (bilan initial, session qui couvre aussi le diagnostic) ou `report_reevaluation`. Le paramètre `p_kind` est facultatif (défaut NULL). `NULL` → 402 `CREDIT_INSUFFICIENT`.
 
 ### Verrou de session (`claim_generation_session`)
 
@@ -219,7 +221,7 @@ Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tenta
 
 L'état de chaque point (résolu, ouvert) est tenu dans [TECH_DEBT.md](TECH_DEBT.md). Points qui concernent ce pipeline :
 
-- **P1-8** (résolu) : libération du verrou, validation du JSON, sweep des sessions abandonnées ; type de tâche toujours absent de `generation_log`.
+- **P1-8** (résolu) : libération du verrou, validation du JSON, sweep des sessions abandonnées ; type de tâche journalisé dans `generation_log.kind` depuis le 2026-10-02 (#60).
 - **P0-7** (résolu) : loopback hors production, CORS par origine, suppression des replis sur RPC absentes.
 - **P0-4 / P0-5 / P1-5 / P1-11** : résolus (pseudonymisation complète, frontières Unicode, style appris, réévaluation).
 - Non suivis ailleurs : les observations reformulées sont indexées par `subtestId` seul, ce qui suppose des identifiants uniques entre tests (c'est le cas du catalogue, préfixé par le test, et des observations libres).
