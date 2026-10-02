@@ -13,6 +13,7 @@ import type { SubtestDef } from '../data/testCatalog';
 import type { ScoreResult, TestData } from '../types';
 import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex } from '../utils/catalogIndex';
 import { SCALE_PARAMS, normalCDF, resolveScaleType } from '../utils/scoring';
+import { compareSubtestsForDisplay } from '../utils/subtestOrdering';
 import type { FictiveTest } from './fictivePatients';
 
 /** 'zones': filled scores; 'vide': the tests are added but every score is empty. */
@@ -83,7 +84,8 @@ export const buildFictiveTests = (
       missing.push(testId);
       continue;
     }
-    const ids = subtests ?? def.subtests.map((s) => s.id);
+    // Whole test: the catalogue display order, as the test picker shows it (the base returns rows unordered).
+    const ids = subtests ?? [...def.subtests].sort(compareSubtestsForDisplay).map((s) => s.id);
     const scores: Record<string, ScoreResult> = {};
     for (const id of ids) {
       const subtest = def.subtests.find((s) => s.id === id);
