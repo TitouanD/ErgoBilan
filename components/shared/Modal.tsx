@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   /** Controls mounting — when false, nothing is rendered. */
@@ -28,6 +29,9 @@ interface ModalProps {
  * delegates the outer wrapper markup here — pass overlayClassName/panelClassName
  * to reproduce a specific modal's exact existing appearance (color, blur,
  * rounding, max-width, animation) without any visual change.
+ *
+ * Rendered in document.body: a parent with backdrop-filter or transform (the
+ * app header) would otherwise be the containing block of `position: fixed`.
  */
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -55,7 +59,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className={`fixed inset-0 flex items-center justify-center p-4 ${overlayAnimationClassName} ${overlayClassName}`}
       style={{ zIndex }}
@@ -64,7 +68,8 @@ export const Modal: React.FC<ModalProps> = ({
       <div className={`relative overflow-hidden ${panelAnimationClassName} ${panelClassName}`} onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

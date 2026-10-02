@@ -27,6 +27,9 @@ export const REEVALUATION_SECTIONS = [
 export type InitialSectionId = (typeof INITIAL_SECTIONS)[number]['id'];
 export type ReevaluationSectionId = (typeof REEVALUATION_SECTIONS)[number]['id'];
 
+/** Title of the recall section when the reference report is itself a re-evaluation (#89). */
+export const PREVIOUS_REEVALUATION_RECALL_TITLE = 'Rappel de la réévaluation précédente';
+
 /** Title of the recommendations of an adult (rehabilitation profile). */
 export const ADULT_RECOMMENDATIONS_TITLE = 'Préconisations';
 
