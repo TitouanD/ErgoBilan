@@ -21,7 +21,7 @@ export const ICON_MAP: Record<string, LucideIcon> = {
 };
 
 /** Scale of a subtest's standardized score (`official_subtests.score_type`). 'none' = unknown scale. */
-export type ScoreType = 'standard' | 'scaled' | 't-score' | 'percentile' | 'sten' | 'stanine' | 'none';
+export type ScoreType = 'standard' | 'scaled' | 't-score' | 'v-scale' | 'percentile' | 'sten' | 'stanine' | 'none';
 
 /**
  * How a subtest is entered in the score table:

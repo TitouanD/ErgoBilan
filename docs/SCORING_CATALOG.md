@@ -8,7 +8,7 @@ Règle générale : un score se lit par le **score résolu** (`utils/resolvedSco
 
 Hiérarchie : `official_categories` → `official_tests` → `official_subtests`. Le catalogue vient de Supabase. `data/testCatalog.ts` ne contient que les types (`CategoryDef`, `TestDef`, `SubtestDef`, `ScoreType`, `SubtestInputModel`, `SubtestInputConfig`) et `ICON_MAP` (icône lucide de chaque `icon_key`). En mode démo, sans session, le catalogue est `data/demoCatalog.ts` (voir §2).
 
-**Contenu du catalogue officiel** : une partie a été saisie sans source et contient des sous-tests inventés. La vérification contre les protocoles publiés (2026-09-30, sources à l'appui) est dans [`catalogue/verification-2026-09-30.md`](./catalogue/verification-2026-09-30.md) ; les corrections certaines (7 sous-tests inventés retirés, EViC, Lespargot, DTVP-2, MABC-2, échelles, ordres, catégories) sont appliquées depuis le 2026-10-02 (`20261001100300_catalogue_corrections.sql`, #50) ; restent à trancher les sous-tests douteux, les manquants, le BOT-2 et les points « à confirmer ». Tout ajout au catalogue cite sa source.
+**Contenu du catalogue officiel** : une partie a été saisie sans source et contient des sous-tests inventés. La vérification contre les protocoles publiés (2026-09-30, sources à l'appui) est dans [`catalogue/verification-2026-09-30.md`](./catalogue/verification-2026-09-30.md) ; les corrections certaines (7 sous-tests inventés retirés, EViC, Lespargot, DTVP-2, MABC-2, échelles, ordres, catégories) sont appliquées depuis le 2026-10-02 (`20261001100300_catalogue_corrections.sql`, #50) ; les manquants sourcés sont ajoutés depuis le 2026-10-02 (`20261002120000_catalogue_ajouts.sql`, #90) ; restent à trancher les sous-tests douteux, le BOT-2 et les points « à confirmer ». Tout ajout au catalogue cite sa source.
 
 - **Test officiel** : `organization_id IS NULL`. **Test perso** : `organization_id` = organisation du praticien.
 - Les vues `view_unified_catalog` et `view_unified_subtests` sont en `security_invoker = on` depuis le 2026-10-02 (#57) : la RLS des tables s'applique (policy RESTRICTIVE `catalog_read_requires_onboarded`, GRANT SELECT par colonne à `authenticated`), en plus de leur propre filtre. Elles filtrent sur `is_current_user_onboarded()` et `check_is_member_of(organization_id)`. La vue des sous-tests ne garde en plus que `organization_id = caller_org_id OR organization_id IS NULL` (org de l'appelant = première ligne de `organization_members`).
@@ -18,17 +18,17 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
-| Colonne (vue)                                   | Type / contrainte                                                                      | Mappé vers                                                          |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| catalog.`id`, `label`                           | text                                                                                   | `TestDef.id`, `TestDef.name`                                        |
-| catalog.`category_id`, `category_label`         | FK `official_categories`                                                               | `CategoryDef.id`, `.name`                                           |
-| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                  | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
-| catalog.`subtests_count`                        | calculé                                                                                | non chargé                                                          |
-| subtests.`unit`                                 | text                                                                                   | `unit` (défaut `'pts'`)                                             |
-| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
-| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text               | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
-| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                          | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
-| subtests.`display_group_order`, `display_order` | integer                                                                                | `displayGroupOrder`, `displayOrder`                                 |
+| Colonne (vue)                                   | Type / contrainte                                                                               | Mappé vers                                                          |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| catalog.`id`, `label`                           | text                                                                                            | `TestDef.id`, `TestDef.name`                                        |
+| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                        | `CategoryDef.id`, `.name`                                           |
+| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                           | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
+| catalog.`subtests_count`                        | calculé                                                                                         | non chargé                                                          |
+| subtests.`unit`                                 | text                                                                                            | `unit` (défaut `'pts'`)                                             |
+| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, v-scale, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
+| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text                        | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
+| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                   | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
+| subtests.`display_group_order`, `display_order` | integer                                                                                         | `displayGroupOrder`, `displayOrder`                                 |
 
 ## 2. Chargement côté client
 
@@ -70,6 +70,7 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 | `scaled`     | 10      | 3   | 1–19            | NS (m=10, σ=3)         | paramétrique                         |
 | `standard`   | 100     | 15  | 40–160          | QI (m=100, σ=15)       | paramétrique                         |
 | `t-score`    | 50      | 10  | 20–80           | T (m=50, σ=10)         | paramétrique                         |
+| `v-scale`    | 15      | 3   | 1–24            | Note v (m=15, σ=3)     | paramétrique (Vineland, #90)         |
 | `sten`       | 5,5     | 2   | 1–10            | Sten (m=5.5, σ=2)      | paramétrique                         |
 | `stanine`    | 5       | 2   | 1–9             | Stanine (m=5, σ=2)     | paramétrique                         |
 | `percentile` | —       | —   | 1–99            | Rang percentile        | la valeur « NS » est un rang centile |
