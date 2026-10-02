@@ -13,6 +13,7 @@ export default defineConfig({
     include: [
       'utils/**/*.test.ts',
       'supabase/functions/**/*.test.ts',
+      'supabase/*.test.ts',
       'services/**/*.test.ts',
       'dev/**/*.test.ts',
       'dev/**/*.test.tsx',
