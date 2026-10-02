@@ -255,6 +255,7 @@ Appliquées :
 | `20261001100300_catalogue_corrections.sql`            | #50   | données du catalogue seulement (7 sous-tests inventés retirés, métadonnées, échelles, ordres, catégories)                                                                                           |
 | `20261001100400_catalog_views_security_invoker.sql`   | #57   | GRANT de lecture par colonne, policy `catalog_read_requires_onboarded`, vues en `security_invoker`                                                                                                  |
 | `20261002100000_organization_members_sans_update.sql` | #91   | plus d’UPDATE pour `authenticated` sur `organization_members`, policy `update_own_member_key` supprimée (appliquée par l’éditeur SQL, inscrite dans l’historique)                                   |
+| `20261002110000_consume_credit_row_count.sql`         | #88   | `consume_credit_for_user` lit le nombre de lignes de l'UPDATE du crédit (`GET DIAGNOSTICS`) avant le second `set_config` ; même signature et mêmes droits                                           |
 
 Les index `idx_official_tests_category` et `generation_log_user_created_at_idx`, inutilisés eux aussi, sont conservés : ce sont les seuls index d'une clé étrangère. Les orphelins de P2-2 restent à supprimer (`supabase/checks/20261001100100_orphelins.sql`, en attente de Titouan).
 
