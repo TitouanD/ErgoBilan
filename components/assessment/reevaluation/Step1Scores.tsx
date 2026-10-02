@@ -57,11 +57,11 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
 
   const handleAddTests = useCallback(
     (selection: Record<string, string[]>) => {
-      const { tests: next, newTestIds } = addCatalogSelection(tests, selection);
+      const { tests: next, newTestIds } = addCatalogSelection(tests, selection, index);
       if (newTestIds.length > 0) pushRecent(newTestIds.filter((id) => id !== CUSTOM_OBSERVATIONS_TEST_ID));
       updateTests(next);
     },
-    [tests, updateTests, pushRecent],
+    [tests, index, updateTests, pushRecent],
   );
 
   const formattedDate = previousAssessmentDate
