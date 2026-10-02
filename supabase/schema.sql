@@ -1802,7 +1802,6 @@ CREATE POLICY official_tests_update_access ON public.official_tests AS PERMISSIV
   WHERE (om.user_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY authenticated_requires_onboarded_profile ON public.organization_members AS RESTRICTIVE FOR ALL TO authenticated USING (is_current_user_onboarded()) WITH CHECK (is_current_user_onboarded());
 CREATE POLICY leave_non_owner_membership ON public.organization_members AS PERMISSIVE FOR DELETE TO authenticated USING (((user_id = ( SELECT auth.uid() AS uid)) AND (role <> 'owner'::text)));
-CREATE POLICY update_own_member_key ON public.organization_members AS PERMISSIVE FOR UPDATE TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));
 CREATE POLICY view_own_membership ON public.organization_members AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 CREATE POLICY access_own_orgs ON public.organizations AS PERMISSIVE FOR ALL TO authenticated USING ((id IN ( SELECT om.organization_id
    FROM organization_members om
@@ -1858,7 +1857,7 @@ GRANT SELECT ON TABLE public.official_categories TO authenticated;
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.official_categories TO service_role;
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.official_subtests TO service_role;
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.official_tests TO service_role;
-GRANT SELECT, UPDATE ON TABLE public.organization_members TO authenticated;
+GRANT SELECT ON TABLE public.organization_members TO authenticated;
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.organization_members TO service_role;
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.organizations TO service_role;
 GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.pending_questionnaires TO authenticated;
