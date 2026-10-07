@@ -126,13 +126,29 @@ npm run recette:cible -- --grep @initial --update-snapshots   # accepter un chan
 
 **Tags.** Chaque test porte le tag de son parcours. La vérification ciblée lance les tags que touche la modification :
 
-| Modification                                                                                                                                                 | Tags                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| `components/assessment/initial/`, `hooks/useAssessmentFlow.ts`, génération (`utils/reportGenerator.ts`…)                                                     | `@initial`                                                    |
-| Composants partagés des parcours (`components/assessment/pages/`, `shared/`), `utils/scoring.ts`, `utils/resolvedScore.ts`, `utils/reportData.ts`, catalogue | `@initial` (puis `@reeval`, `@historique` quand ils existent) |
-| Écran seulement visuel                                                                                                                                       | le tag du parcours, plus `@visuel`                            |
+| Modification                                                                                                                                                                                                                | Tags                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `components/assessment/initial/`, génération (`utils/reportGenerator.ts`, `aiPayload`, `anonymizer`, `suspectTerms`)                                                                                                        | `@initial`                           |
+| `components/assessment/reevaluation/`, `DeltaTable`, `utils/reevaluationHelpers.ts`                                                                                                                                         | `@reeval`                            |
+| `components/assessment/historical/`                                                                                                                                                                                         | `@historique`                        |
+| Composants partagés des parcours (`components/assessment/pages/`, `shared/`), `hooks/useAssessmentFlow.ts`, `utils/assessmentInProgress.ts`, `utils/scoring.ts`, `utils/resolvedScore.ts`, `utils/reportData.ts`, catalogue | `@initial`, `@reeval`, `@historique` |
+| `components/dashboard/`, `utils/patientStatus.ts`, `hooks/useDataLoader.ts`, `services/storage.ts`, brouillons                                                                                                              | `@dashboard`, `@brouillons`          |
+| Écran seulement visuel                                                                                                                                                                                                      | le tag du parcours, plus `@visuel`   |
 
-`@visuel` désigne les tests de références visuelles, `@fil-rouge` le parcours complet du bilan initial.
+Tags transverses :
+
+- `@visuel` : les références visuelles ;
+- `@fil-rouge` : le parcours complet du bilan initial ;
+- `@fiche` : la fiche patient (rapport, identité, rappels, archivage, suppression) ;
+- `@brouillons` : reprise, sauvegarde et abandon d'un brouillon.
+
+Couverture actuelle :
+
+- bilan initial : écrans des 5 étapes et fil rouge ;
+- réévaluation : écrans des 4 étapes, « Réévaluation 1 clic » de bout en bout, reprise puis abandon d'un brouillon ;
+- bilan historique : écrans des 3 étapes, parcours complet sans IA ;
+- tableau de bord : statuts des patients, recherche, brouillons (périmé, repris, sauvegardé, abandonné) ;
+- fiche patient : visionneuse, identité, planifier, reporter, compléter, archiver, supprimer.
 
 **Ajouter un test.** Un fichier `*.spec.ts` dans `e2e/recette/<parcours>/`, qui importe `test` et `expect` de `../fixtures`, et porte le tag de son parcours. On part d'un scénario (`app.open('scenario=…')`) pour tester une étape, et on remplit les formulaires dans le test : c'est la seule place où on le fait. Un écran sans scénario reçoit un scénario.
 
