@@ -31,8 +31,9 @@ export default defineConfig({
   timeout: 120_000,
   expect: {
     timeout: 15_000,
-    // Edge updates move a few anti-aliased pixels: tolerated, larger changes are not.
-    toHaveScreenshot: { maxDiffPixelRatio: 0.002, animations: 'disabled', caret: 'hide' },
+    // A changed word is a few hundred pixels: a relative tolerance on a whole page
+    // (0.2 % ≈ 5,000 px) let it through. Anti-aliasing is absorbed per pixel (threshold).
+    toHaveScreenshot: { maxDiffPixels: 30, animations: 'disabled', caret: 'hide' },
   },
   reporter: [['list'], ['html', { outputFolder: `${OUT}/rapport`, open: 'never' }], ['json', { outputFile: `${OUT}/resultats.json` }]],
   use: {

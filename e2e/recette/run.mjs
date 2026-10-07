@@ -114,6 +114,7 @@ const walk = (suite, titles) => {
         title: [...titles.slice(1), spec.title].filter(Boolean).join(' › '),
         tags: spec.tags,
         status: t.status, // expected | unexpected | flaky | skipped
+        step: (last?.steps ?? []).find((st) => st.error)?.title ?? null,
         errors: (last?.errors ?? []).map((e) =>
           stripVTControlCharacters(e.message ?? '')
             .split('\n')
@@ -151,7 +152,7 @@ for (const [parcours, list] of byParcours) {
   lines.push(`### ${parcours}`, '');
   for (const t of list) {
     const kind = t.status === 'flaky' ? 'instable' : visualOnly(t) ? 'différence visuelle' : 'échec fonctionnel';
-    lines.push(`- **${t.title}** (${kind}, \`${t.file}\`)`);
+    lines.push(`- **${t.title}** (${kind}, \`${t.file}\`)${t.step ? ` : étape « ${t.step} »` : ''}`);
     for (const e of t.errors) lines.push('', '  ```', ...e.split('\n').map((l) => `  ${l}`), '  ```');
     for (const p of t.problems) lines.push('', ...p.split('\n').map((l) => `  - ${l}`));
     if (t.attachments.length > 0) lines.push('', ...t.attachments.map((a) => `  - ${a}`));

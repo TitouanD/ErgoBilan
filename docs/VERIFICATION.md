@@ -122,7 +122,7 @@ npm run recette:cible -- --grep @initial --update-snapshots   # accepter un chan
 - une exception, une erreur de la console ou une réponse en erreur fait échouer le test (la console complète est jointe à l'échec) ;
 - l'horloge de la page part du 1er octobre 2026 à 9 h puis avance : les dates et les âges affichés ne changent pas d'un jour à l'autre.
 
-**Références visuelles.** Elles sont dans `e2e/recette/references/`, rendues sous Windows avec Edge. Une différence de plus de 0,2 % des pixels fait échouer le test. On l'accepte (`--update-snapshots`, puis on regarde les nouvelles images avant de les commiter) quand elle est voulue ou qu'elle vient d'une mise à jour d'Edge. Sinon c'est une régression.
+**Références visuelles.** Elles sont dans `e2e/recette/references/`, rendues sous Windows avec Edge. Une différence de plus de 30 pixels fait échouer le test (un mot changé en fait quelques centaines ; le lissage des polices est absorbé pixel par pixel). On l'accepte (`--update-snapshots`, puis on regarde les nouvelles images avant de les commiter) quand elle est voulue ou qu'elle vient d'une mise à jour d'Edge. Sinon c'est une régression.
 
 **Tags.** Chaque test porte le tag de son parcours. La vérification ciblée lance les tags que touche la modification :
 
