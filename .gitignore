@@ -40,3 +40,5 @@ supabase/.temp/
 
 # Recette (npm run recette, docs/VERIFICATION.md): reports, results, build
 .recette/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
