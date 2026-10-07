@@ -1,12 +1,13 @@
 # Vérifier une modification
 
-Vérifier un écran ne doit pas demander de recréer un patient et de remplir le dossier. Trois outils existent pour cela, tous réservés au développement :
+Vérifier un écran ne doit pas demander de recréer un patient et de remplir le dossier. Quatre outils existent pour cela, tous réservés au développement :
 
 - **les scénarios** : un lien ouvre directement un écran avec des patients fictifs ;
 - **la capture** : un script prend la capture d'écran d'un scénario, connecté au compte de test ;
-- **les fixtures** : les mêmes patients fictifs, utilisables dans les tests de composants.
+- **les fixtures** : les mêmes patients fictifs, utilisables dans les tests de composants ;
+- **la recette** : la batterie Playwright des parcours, fonctionnelle et visuelle, qui conditionne le passage dans `main` (voir [Recette](#recette)).
 
-Le code est dans `dev/` (scénarios, patients, scores) et dans `e2e/capture.mjs`. Rien n'en arrive dans le build de production : `App.tsx` ne charge `dev/DevTools.tsx` que sous `import.meta.env.DEV`.
+Le code est dans `dev/` (scénarios, patients, scores) et dans `e2e/` (`capture.mjs`, `recette/`). Rien n'en arrive dans le build déployé : `App.tsx` ne charge `dev/DevTools.tsx` que sous `import.meta.env.DEV`, ou dans le build de la recette (`VITE_SCENARIOS=1`, refusé sur Vercel par `vite.config.ts`).
 
 ## Patients fictifs
 
@@ -82,7 +83,7 @@ E2E_EMAIL=...
 E2E_PIN=...
 ```
 
-Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) : il n'y a pas de jeton à entretenir ni à refaire. Il partage avec `e2e:ai` le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées.
+Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) : il n'y a pas de jeton à entretenir ni à refaire. Il partage avec `e2e:ai` et la recette le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées. Lecture du compte, verrou, session et PIN : `e2e/testAccount.mjs`, commun à la capture et à la recette.
 
 ## Tests de composants
 
@@ -94,6 +95,46 @@ Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) :
 - `renderWithToast(ui)` : un rendu dans le vrai `ToastProvider`.
 
 Les contextes qui touchent Supabase ou IndexedDB restent simulés dans chaque fichier par `vi.mock` (voir `dev/testing.test.tsx` et `components/assessment/shared/ScoreTable.test.tsx`).
+
+## Recette
+
+La recette est la batterie de tests de l'interface qui conditionne la fusion de `dev` dans `main` ([ADR 0001](adr/0001-recette-locale.md)). Elle pilote Edge avec `@playwright/test`, connectée au compte de test.
+
+```bash
+npm run recette                                   # tout, sur origin/dev, statut GitHub « recette »
+npm run recette -- --sur <ref> --sans-statut      # tout, sur un autre commit, sans statut
+npm run recette:cible -- --grep @initial          # vérification ciblée, checkout courant
+npm run recette:cible -- --grep @initial --update-snapshots   # accepter un changement visuel
+```
+
+**Ce qu'elle teste.** Le build de production (`vite build`, avec les scénarios gardés par `VITE_SCENARIOS=1`), servi par `vite preview` sur le port 3200. Pas le serveur de développement : avec plusieurs navigateurs à la fois, il met des dizaines de secondes par module et les scénarios n'aboutissent pas. Le build ajoute 40 s environ.
+
+**`npm run recette`** teste le dernier commit d'`origin/dev`, dans son propre worktree `../ErgoBilan-recette-run` (détaché, remis à zéro à chaque fois). Il publie le statut `recette` (en cours, puis réussi ou en échec) sur ce commit, et écrit dans `.recette/<date>-<sha>/` :
+
+- `rapport/` : le rapport HTML de Playwright (`npx playwright show-report <dossier>`), avec pour chaque échec les étapes, la capture, la vidéo, la trace pas à pas et, pour une différence visuelle, les images attendue, obtenue et la différence ;
+- `resume.md` : les échecs par parcours, avec l'erreur, les problèmes relevés et les chemins des pièces jointes. C'est lui qu'on colle dans la PR hebdomadaire.
+
+**Garde-fous de chaque test** (`e2e/recette/fixtures.ts`) :
+
+- la connexion est réelle (session ouverte une fois par `globalSetup.ts`, puis PIN), comme le catalogue ;
+- **aucune écriture dans Supabase** : toute requête autre qu'une lecture est bloquée et fait échouer le test, sauf le rafraîchissement de session et le rattachement idempotent à l'organisation. Un test qui a besoin d'une écriture la simule (`app.mock`) ;
+- l'edge `generate` est interceptée et répond par le rapport de démo (`data/demoReport.ts`) : aucun appel à l'IA, aucun crédit. Les requêtes sont gardées dans `app.aiRequests` pour vérifier ce qui aurait été envoyé ;
+- une exception, une erreur de la console ou une réponse en erreur fait échouer le test (la console complète est jointe à l'échec) ;
+- l'horloge de la page part du 1er octobre 2026 à 9 h puis avance : les dates et les âges affichés ne changent pas d'un jour à l'autre.
+
+**Références visuelles.** Elles sont dans `e2e/recette/references/`, rendues sous Windows avec Edge. Une différence de plus de 0,2 % des pixels fait échouer le test. On l'accepte (`--update-snapshots`, puis on regarde les nouvelles images avant de les commiter) quand elle est voulue ou qu'elle vient d'une mise à jour d'Edge. Sinon c'est une régression.
+
+**Tags.** Chaque test porte le tag de son parcours. La vérification ciblée lance les tags que touche la modification :
+
+| Modification                                                                                                                                                 | Tags                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `components/assessment/initial/`, `hooks/useAssessmentFlow.ts`, génération (`utils/reportGenerator.ts`…)                                                     | `@initial`                                                    |
+| Composants partagés des parcours (`components/assessment/pages/`, `shared/`), `utils/scoring.ts`, `utils/resolvedScore.ts`, `utils/reportData.ts`, catalogue | `@initial` (puis `@reeval`, `@historique` quand ils existent) |
+| Écran seulement visuel                                                                                                                                       | le tag du parcours, plus `@visuel`                            |
+
+`@visuel` désigne les tests de références visuelles, `@fil-rouge` le parcours complet du bilan initial.
+
+**Ajouter un test.** Un fichier `*.spec.ts` dans `e2e/recette/<parcours>/`, qui importe `test` et `expect` de `../fixtures`, et porte le tag de son parcours. On part d'un scénario (`app.open('scenario=…')`) pour tester une étape, et on remplit les formulaires dans le test : c'est la seule place où on le fait. Un écran sans scénario reçoit un scénario.
 
 ## Qui vérifie quoi
 

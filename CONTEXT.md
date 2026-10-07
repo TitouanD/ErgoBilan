@@ -104,3 +104,17 @@ Remettre les vraies valeurs à la place des marqueurs dans le texte renvoyé par
 **Mot suspect** :
 Mot du texte libre qui pourrait encore identifier quelqu'un après la pseudonymisation (surnom, grand-parent, ville). L'ergothérapeute le masque ou l'autorise avant la génération, et ce choix reste sur le dossier du patient.
 _Éviter_ : fuite, terme sensible
+
+### Développement
+
+**Recette** :
+La batterie complète de tests de l'interface, fonctionnels et visuels, qui conditionne la mise en production (fusion de `dev` dans `main`). Un échec fonctionnel la bloque ; une différence visuelle est soumise à acceptation.
+_Éviter_ : QA, validation, recette manuelle
+
+**Vérification ciblée** :
+La partie de la recette lancée pendant le développement sur les seuls parcours ou écrans qu'une modification touche.
+_Éviter_ : QA locale, test rapide
+
+**Référence visuelle** :
+Capture acceptée d'un écran, à laquelle la recette compare son rendu. L'accepter à nouveau est le seul moyen d'entériner un changement visuel voulu.
+_Éviter_ : baseline, snapshot
