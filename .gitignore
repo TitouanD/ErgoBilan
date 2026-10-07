@@ -37,3 +37,8 @@ supabase/.temp/
 
 # Screenshots of the dev scenarios (npm run capture, docs/VERIFICATION.md)
 .captures/
+
+# Recette (npm run recette, docs/VERIFICATION.md): reports, results, build
+.recette/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

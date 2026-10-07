@@ -30,7 +30,12 @@ interface Params {
   assessment: AssessmentContextType;
   sessionKey: CryptoKey | null;
   isDemoMode: boolean;
-  catalogIndex: CatalogIndex;
+  /**
+   * The catalogue index, loaded if needed. Not the index of the moment: after a
+   * draft resumed at the synthesis step, the catalogue may still be loading, and
+   * the AI received scores without test names nor z.
+   */
+  loadCatalog: () => Promise<CatalogIndex>;
   practitioner: PractitionerProfile | null;
   refreshProfile: () => Promise<void>;
   loadData: () => Promise<void>;
@@ -48,7 +53,7 @@ export const useAssessmentFlow = ({
   assessment,
   sessionKey,
   isDemoMode,
-  catalogIndex,
+  loadCatalog,
   practitioner,
   refreshProfile,
   loadData,
@@ -95,12 +100,13 @@ export const useAssessmentFlow = ({
   );
 
   /** Words of the free text that may still identify someone, to confirm before the generation. */
-  const findSuspectTerms = useCallback((): string[] => {
+  const findSuspectTerms = useCallback(async (): Promise<string[]> => {
+    const index = await loadCatalog();
     const { patient, observations, tests, synthesis, previousAssessment, reportType } = assessment;
     return reportType === 'reevaluation'
-      ? findReevaluationSuspectTerms({ patient, previousAssessment, tests, index: catalogIndex })
-      : findInitialSuspectTerms({ patient, observations, tests, synthesis, index: catalogIndex });
-  }, [assessment, catalogIndex]);
+      ? findReevaluationSuspectTerms({ patient, previousAssessment, tests, index })
+      : findInitialSuspectTerms({ patient, observations, tests, synthesis, index });
+  }, [assessment, loadCatalog]);
 
   /** Initial report: sections + AI-reformulated subtest observations. Moves to the validation step. */
   const generateInitialReport = useCallback(
@@ -110,12 +116,13 @@ export const useAssessmentFlow = ({
         const patient = withDecisions(decisions);
         const ticket = assessment.beginGeneration();
         const { observations, tests, synthesis } = assessment;
+        const index = await loadCatalog();
         const report = await generator.generateInitial({
           patient,
           observations,
           tests,
           synthesis,
-          index: catalogIndex,
+          index,
           stylePreferences: practitioner?.aiStylePreferences,
         });
         applied = assessment.applyGeneratedReport(ticket, report);
@@ -126,7 +133,7 @@ export const useAssessmentFlow = ({
         toast.success(isDemoMode ? 'Rapport généré (simulation)' : 'Rapport généré avec succès');
       }
     },
-    [assessment, catalogIndex, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
+    [assessment, loadCatalog, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
   );
 
   /** Re-evaluation: 4 HTML sections (reminder, evolution, conclusion, recommendations). */
@@ -137,11 +144,12 @@ export const useAssessmentFlow = ({
         const patient = withDecisions(decisions);
         const ticket = assessment.beginGeneration();
         const { previousAssessment, tests } = assessment;
+        const index = await loadCatalog();
         const sections = await generator.generateReevaluation({
           patient,
           previousAssessment,
           tests,
-          index: catalogIndex,
+          index,
           stylePreferences: practitioner?.aiStylePreferences,
         });
         applied = assessment.applyGeneratedReport(ticket, { sections });
@@ -150,7 +158,7 @@ export const useAssessmentFlow = ({
       if (ok && applied) toast.success(isDemoMode ? 'Synthèse générée (simulation)' : 'Synthèse générée — relisez et ajustez si besoin.');
       return ok && applied;
     },
-    [assessment, catalogIndex, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
+    [assessment, loadCatalog, generator, isDemoMode, practitioner, refreshProfile, runGeneration, toast, withDecisions],
   );
 
   /** Writes need the app unlocked and a fresh Supabase session (demo: nothing is written). */
@@ -172,7 +180,8 @@ export const useAssessmentFlow = ({
   const finalize = useCallback(async (): Promise<boolean> => {
     try {
       if (!(await prepareWrite())) return false;
-      const result = await assessment.finalize(catalogIndex);
+      const index = await loadCatalog();
+      const result = await assessment.finalize(index);
       if (!result.ok) {
         if (result.reason !== 'busy') toast.error(FINALIZE_ERRORS[result.reason]);
         return false;
@@ -189,7 +198,7 @@ export const useAssessmentFlow = ({
           .learnStyle({
             patient: result.patient,
             sections: result.sections,
-            index: catalogIndex,
+            index,
             existingPreferences: practitioner?.aiStylePreferences,
           })
           .then((sent) => (sent ? refreshProfile() : undefined))
@@ -204,7 +213,7 @@ export const useAssessmentFlow = ({
       toast.error("Erreur lors de l'enregistrement du bilan.");
       return false;
     }
-  }, [assessment, catalogIndex, generator, loadData, prepareWrite, practitioner, refreshProfile, toast]);
+  }, [assessment, loadCatalog, generator, loadData, prepareWrite, practitioner, refreshProfile, toast]);
 
   /** Save a draft and leave. Returns true when the caller can go back to the dashboard. */
   const saveAndQuit = useCallback(async (): Promise<boolean> => {

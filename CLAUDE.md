@@ -13,7 +13,7 @@ La documentation vérifiée (en français) est dans [`docs/`](docs/). **Lire le 
 - [`docs/SCORING_CATALOG.md`](docs/SCORING_CATALOG.md) : catalogue, modèles de saisie, échelles, zones, deltas, tests personnalisés.
 - [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) : état de chaque point (résolu, ouvert) et historique de mise en production.
 - [`docs/PLAN_ASSAINISSEMENT.md`](docs/PLAN_ASSAINISSEMENT.md) : plan d'assainissement, avancement et recette manuelle.
-- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) : vérifier un écran sans saisie (scénarios par URL, patients fictifs `FICTIF`, `npm run capture`, fixtures des tests de composants).
+- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) : vérifier un écran sans saisie (scénarios par URL, patients fictifs `FICTIF`, `npm run capture`, fixtures des tests de composants) et la recette Playwright avant `main`.
 - [`docs/ISSUES.md`](docs/ISSUES.md) : issues GitHub (labels, qui valide quoi), branches `dev`/`main`, worktrees, PR hebdomadaire. Commande `/issues` pour dérouler le cycle.
 
 Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKey → FileKey rencontrée ailleurs est **obsolète**.
@@ -29,7 +29,8 @@ Toute description de « backend aveugle » ou de hiérarchie MasterKey → OrgKe
 - **Test IA de bout en bout (Gemini PAYANT, coût MINIME)** : si une modification touche la génération (`reportGenerator`, `aiPayload`, `anonymizer`, `suspectTerms`, `reportSections`, `services/ai.ts`, `services/aiProxy.ts`, `supabase/functions/generate/`, génération dans `useAssessmentFlow`), lancer **une** exécution réelle `npm run e2e:ai` quand tout le reste est vert (check, tests à faux transport, mode à blanc). C'est la vérification de la génération : ne pas demander à Titouan de la tester à la main. Jamais hors de ce périmètre, jamais en boucle pour déboguer, 2 exécutions réelles au plus par modification. Détail : [`docs/AI_PIPELINE.md`](docs/AI_PIPELINE.md) §9.
 - **Branches** : tout travail se fait dans un worktree (`git worktree add -b <branche> ../ErgoBilan-<sujet> dev`), jamais par une branche créée dans le dépôt principal. On part de `dev` et on fusionne dans `dev` (jamais directement dans `main`, qui reçoit la PR hebdomadaire `dev` → `main`). Claude fusionne dans `dev` sans demander ; l'accord de Titouan n'est requis que pour `main` et pour la base commune (migration Supabase, edge function) : voir `docs/ISSUES.md`. Chaque bug corrigé reçoit un test qui le reproduit.
 - **Toasts** : `const toast = useToast()` (le hook renvoie directement l'objet).
-- **Vérifier une interface** : ouvrir l'écran par un scénario (`?scenario=…`, `dev/scenarios.ts`) et le capturer avec `npm run capture`, puis regarder la capture. Ne jamais remplir un formulaire ou dérouler un parcours au navigateur : un écran sans scénario reçoit un scénario. Détail : [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+- **Vérifier une interface** : ouvrir l'écran par un scénario (`?scenario=…`, `dev/scenarios.ts`) et le capturer avec `npm run capture`, puis regarder la capture. Pour un parcours couvert par la recette, lancer aussi la vérification ciblée (`npm run recette:cible -- --grep @<tag>`). Ne jamais remplir un formulaire ou dérouler un parcours en pilotant le navigateur à la main : seules les specs de la recette (`e2e/recette/`) remplissent des formulaires. Un écran sans scénario reçoit un scénario. Détail : [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+- **Recette avant `main`** : `npm run recette` teste `origin/dev` et publie le statut GitHub `recette`, exigé par `main` ([ADR 0001](docs/adr/0001-recette-locale.md)). Un échec fonctionnel se corrige ; une différence visuelle s'accepte si elle s'explique, sinon elle se corrige ou se signale à Titouan.
 
 ## Commandes
 
@@ -41,6 +42,8 @@ npm test               # Vitest (utils/, services/, dev/, supabase/functions/ : 
 npm run format:check   # Prettier, *.md compris
 npm run e2e:ai         # génération IA de bout en bout, à blanc ; E2E_AI_LIVE=1 = réel et PAYANT (AI_PIPELINE §9)
 npm run capture -- "scenario=initial&etape=2"   # capture d'un scénario, compte de test (VERIFICATION.md)
+npm run recette        # recette complète sur origin/dev + statut GitHub (VERIFICATION.md § Recette)
+npm run recette:cible -- --grep @initial         # vérification ciblée, checkout courant
 ```
 
 ## Agent skills

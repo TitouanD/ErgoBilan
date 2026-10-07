@@ -55,6 +55,7 @@ Ordre : `urgent`, puis `bug`, `amelioration`, `chantier` ; les plus anciennes d'
 6. Sinon : fusionner dans `dev` (`git checkout dev && git merge --no-ff <branche> && git push`), supprimer le worktree et la branche.
 7. Commenter l'issue : le commit, le test qui couvre le cas, puis fermer.
    - **Interface touchée** : avant la fusion, `npm run capture -- "scenario=…"` depuis le worktree (`docs/VERIFICATION.md`). Si l'écran n'a pas de scénario, en ajouter un. Regarder la capture soi-même : c'est la vérification. Le commentaire donne le lien du scénario (`localhost:3000/?scenario=…`) et ce que montre la capture.
+   - **Parcours couvert par la recette** : vérification ciblée depuis le worktree, `npm run recette:cible -- --grep @<tag>` (table des tags dans `docs/VERIFICATION.md` § Recette). Un changement visuel voulu : accepter les références (`--update-snapshots`), les regarder, les commiter avec la modification.
    - **Vrai doute important** sur le rendu ou l'ergonomie, seulement dans ce cas : passer `titouan` et `testeuse`, avec le lien du scénario et la question précise.
 
 Tout ce que tu relèves en chemin et qui sort de l'issue devient une nouvelle issue (`claude` ou `titouan`), pas un ajout silencieux.
@@ -68,6 +69,13 @@ Si la dernière PR `dev` → `main` fusionnée date de 7 jours ou plus (`gh pr l
 - **En attente de son test** (ne bloque pas) ;
 - **Retenu** : les « pas OK » explicites ; les retirer ou les corriger avant d'ouvrir la PR.
 - **Points sensibles à regarder** : Dexie, `.ergobilan`, anonymisation, auth, PIN, crédits.
+- **Recette** : le résultat de la dernière recette (voir plus bas).
+
+**Recette avant `main`.** Juste avant que Titouan fusionne (quand la PR est prête, puis après chaque nouvelle fusion dans `dev` tant qu'elle est ouverte), lancer `npm run recette` depuis le checkout principal. Elle teste `origin/dev` dans `../ErgoBilan-recette-run` et publie le statut `recette` sur le commit, que `main` exige. Puis :
+
+- **Échec fonctionnel** : c'est une régression. La corriger comme une issue (worktree, test qui la reproduit, fusion dans `dev`), puis relancer la recette.
+- **Différence visuelle** : l'accepter seul si elle s'explique (issue visuelle fusionnée cette semaine, mise à jour d'Edge). Dans un worktree, `npm run recette:cible -- --grep @<tag> --update-snapshots`, regarder les nouvelles références, commiter dans `dev`, relancer. Si elle ne s'explique pas, la traiter en régression ; en dernier recours, la montrer à Titouan dans la PR (capture avant, après et différence).
+- Commenter la PR avec `resume.md` (chemin affiché à la fin) : réussis, échecs par parcours, différences acceptées et pourquoi.
 
 Ne jamais fusionner cette PR : c'est Titouan qui la fusionne.
 

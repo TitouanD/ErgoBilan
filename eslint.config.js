@@ -8,7 +8,7 @@ import globals from 'globals';
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   // ---- Global ignores ----
-  { ignores: ['dist/**', 'node_modules/**', 'supabase/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'supabase/**', '.recette/**'] },
 
   // ---- Base JS rules ----
   js.configs.recommended,
@@ -66,7 +66,13 @@ export default [
 
   // ---- Node scripts: end-to-end test run from Node (docs/AI_PIPELINE.md §9) ----
   {
-    files: ['e2e/**/*.ts'],
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
     languageOptions: { globals: { ...globals.node } },
+  },
+
+  // ---- Recette (Playwright): fixtures take `{}` and call `use`, which is not a React hook ----
+  {
+    files: ['e2e/recette/**/*.ts'],
+    rules: { 'no-empty-pattern': 'off', 'react-hooks/rules-of-hooks': 'off' },
   },
 ];

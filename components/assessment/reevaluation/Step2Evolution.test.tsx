@@ -19,7 +19,7 @@ const renderStep = (terms: string[]) => {
       sections={[]}
       onSetSections={() => {}}
       onGenerate={onGenerate}
-      findSuspectTerms={() => terms}
+      findSuspectTerms={async () => terms}
       isGenerating={false}
       hasCredits
       isDemoMode

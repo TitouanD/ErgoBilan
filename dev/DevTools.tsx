@@ -1,13 +1,13 @@
 /**
- * DevTools — development only (loaded by App behind `import.meta.env.DEV`,
- * absent from the production build).
+ * DevTools — development only (loaded by App behind `import.meta.env.DEV`, or
+ * in the recette build with `VITE_SCENARIOS=1`; absent from the deployed build).
  *
  * - Runs the scenario of the URL (`?scenario=…`, dev/scenarios.ts) once per
  *   page load, then opens its screen. Reloading the page rebuilds it.
  * - « Purger les fictifs »: deletes every FICTIF patient of the local database.
  *
  * The scenario state is exposed on `<html data-scenario="running|ready|error">`
- * for the screenshot script (scripts/capture.mjs).
+ * for the screenshot script (e2e/capture.mjs) and the recette (e2e/recette/).
  */
 
 import React, { useEffect, useState } from 'react';
