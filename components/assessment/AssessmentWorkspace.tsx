@@ -159,7 +159,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
                 updateSynthesis={assessment.updateSynthesis}
                 tests={assessment.tests}
                 patient={assessment.patient}
-                onNext={() => (hasCredits ? setGenerationConfirmTerms(flow.findSuspectTerms()) : onShowPricing('paywall'))}
+                onNext={async () => (hasCredits ? setGenerationConfirmTerms(await flow.findSuspectTerms()) : onShowPricing('paywall'))}
                 onBack={() => setStep(2)}
                 isGenerating={flow.isGenerating}
               />

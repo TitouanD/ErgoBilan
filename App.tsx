@@ -45,8 +45,14 @@ const OnboardingExperience = React.lazy(() =>
 );
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
-/** Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build. */
-const DevTools = import.meta.env.DEV ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools }))) : null;
+/**
+ * Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build,
+ * except the recette build (`VITE_SCENARIOS=1`, never set on Vercel: see vite.config.ts).
+ */
+const DevTools =
+  import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === '1'
+    ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools })))
+    : null;
 
 type Mode = 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile';
 
@@ -85,7 +91,7 @@ const AppRouter = () => {
     verifyAdminAccess,
     isLoading,
   } = useAuth();
-  const { index: catalogIndex, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
+  const { hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
   const assessment = useAssessment();
   const toast = useToast();
 
@@ -112,7 +118,16 @@ const AppRouter = () => {
     loadMorePatients,
   } = useDataLoader({ sessionKey, authState, practitioner, isDemoMode });
 
-  const flow = useAssessmentFlow({ assessment, sessionKey, isDemoMode, catalogIndex, practitioner, refreshProfile, loadData, toast });
+  const flow = useAssessmentFlow({
+    assessment,
+    sessionKey,
+    isDemoMode,
+    loadCatalog: ensureCatalogLoaded,
+    practitioner,
+    refreshProfile,
+    loadData,
+    toast,
+  });
   const launcher = useAssessmentLauncher({ assessment, patientFiles, draftsIndex, toast });
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
