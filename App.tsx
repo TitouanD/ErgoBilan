@@ -403,7 +403,11 @@ const AppRouter = () => {
           {mode === 'detail' && selectedFile && (
             <PatientDetail
               file={selectedFile}
-              onBack={() => setMode('dashboard')}
+              onBack={() => {
+                // The record may have changed (identity, archive): the list is read again.
+                setMode('dashboard');
+                void loadData();
+              }}
               onDelete={removePatientFromLists}
               onNewBilan={(type) => void startAssessment(type, selectedFile)}
               onOpenReport={(reportId) => {

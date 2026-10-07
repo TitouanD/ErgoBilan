@@ -54,9 +54,9 @@ const followupLabel: Record<PatientFollowup['status'], string> = {
   upcoming: 'À venir',
   due: 'À planifier',
   overdue: 'En retard',
-  scheduled: 'Planifie',
+  scheduled: 'Planifié',
   completed: 'Complété',
-  snoozed: 'Reporte',
+  snoozed: 'Reporté',
 };
 
 const followupTone: Record<PatientFollowup['status'], string> = {
@@ -166,10 +166,10 @@ export const PatientDetail: React.FC<Props> = ({
         patientId: file.id,
         status: 'scheduled',
         dueAt: followup?.dueAt || defaultScheduledDueAt(new Date()),
-        note: 'Rappel planifie depuis la fiche patient',
+        note: 'Rappel planifié depuis la fiche patient',
       });
       await refreshFollowup();
-      toast.success('Rappel planifie.');
+      toast.success('Rappel planifié.');
     } catch (e) {
       Logger.error('DB', 'Followup scheduling failed', e, { patientId: file.id });
       toast.error('Impossible de planifier le rappel.');
@@ -190,11 +190,11 @@ export const PatientDetail: React.FC<Props> = ({
           status: 'snoozed',
           dueAt: followup?.dueAt || reminderDueAt(new Date()),
           snoozedUntil,
-          note: 'Rappel reporte depuis la fiche patient',
+          note: 'Rappel reporté depuis la fiche patient',
         });
       }
       await refreshFollowup();
-      toast.success('Rappel reporte d un mois.');
+      toast.success('Rappel reporté d’un mois.');
     } catch (e) {
       Logger.error('DB', 'Followup snooze failed', e, { patientId: file.id });
       toast.error('Impossible de reporter le rappel.');

@@ -224,6 +224,8 @@ export const useAssessmentFlow = ({
         toast.error(SAVE_ERRORS[result.reason]);
         return false;
       }
+      // The dashboard shows « Reprendre » from the drafts list: read it again.
+      loadData().catch((e) => Logger.warn('DB', 'List refresh after saving the draft failed', e));
       if (!isDemoMode) toast.success('Brouillon sauvegardé');
       return true;
     } catch (e) {
@@ -231,7 +233,7 @@ export const useAssessmentFlow = ({
       toast.error('Impossible de sauvegarder le brouillon.');
       return false;
     }
-  }, [assessment, isDemoMode, prepareWrite, toast]);
+  }, [assessment, isDemoMode, loadData, prepareWrite, toast]);
 
   return {
     isGenerating,
