@@ -77,3 +77,16 @@ test.describe('Tableau de bord : statuts et brouillons', { tag: ['@dashboard'] }
     await expect(noah.getByText('En cours', { exact: true })).toBeVisible();
   });
 });
+
+test.describe('Tableau de bord : questionnaires parents', { tag: ['@dashboard'] }, () => {
+  test('un questionnaire reçu porte le nom de l’enfant (#98)', async ({ app, page }) => {
+    // Fictitious questionnaires, encrypted as by the portal and decrypted by the dashboard (memory only).
+    await app.open('scenario=dashboard&questionnaires=oui');
+    const section = page.getByRole('heading', { name: 'Questionnaires' }).locator('xpath=ancestor::section');
+    await expect(section.getByText('Léo FICTIF (22/09/2026)')).toBeVisible();
+    await expect(section.getByText('Adam FICTIF (25/09/2026)')).toBeVisible();
+    // Cannot be decrypted: generic label. Still waiting: generic label.
+    await expect(section.getByText('Dossier #3 (27/09/2026)')).toBeVisible();
+    await expect(section.getByText('Dossier #4 (30/09/2026)')).toBeVisible();
+  });
+});

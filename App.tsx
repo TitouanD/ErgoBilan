@@ -457,7 +457,14 @@ const AppRouter = () => {
 
         {DevTools && authState === 'authenticated' && sessionKey && !isDemoMode && (
           <Suspense fallback={null}>
-            <DevTools onLoadData={loadData} onResumeDraft={resumeDraft} onShowDashboard={() => setMode('dashboard')} />
+            <DevTools
+              onLoadData={loadData}
+              onResumeDraft={resumeDraft}
+              onShowDashboard={() => setMode('dashboard')}
+              onShowQuestionnaires={(rows) =>
+                setPendingQuestionnaires((prev) => [...rows, ...prev.filter((q) => !rows.some((r) => r.id === q.id))])
+              }
+            />
           </Suspense>
         )}
 

@@ -389,6 +389,8 @@ export interface PendingQuestionnaire {
   createdAt: string;
   practitionerEncryptedKey: string;
   familyEncryptedData?: string;
+  /** « Prénom Nom » of the child, decrypted in the browser from `familyEncryptedData` (never stored in Supabase). */
+  childName?: string;
   practitioner_id?: string;
   accessToken?: string;
 }

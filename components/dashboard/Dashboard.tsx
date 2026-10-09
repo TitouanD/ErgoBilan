@@ -30,6 +30,7 @@ import { CommandPalette } from './CommandPalette';
 import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 import { getPatientAgeForIdentity } from '../../utils/patient';
 import { derivePatientStatus } from '../../utils/patientStatus';
+import { questionnaireDisplayLabel } from '../../utils/familyQuestionnaire';
 
 interface Props {
   userProfile: UserProfile;
@@ -300,8 +301,8 @@ export const Dashboard: React.FC<Props> = ({
               <h3 className="font-serif text-xl font-bold text-[var(--text-heading)]">Supprimer ce lien ?</h3>
             </div>
             <p className="text-sm text-[var(--text-main)]">
-              Le questionnaire <span className="font-semibold text-[var(--text-heading)]">{deleteConfirmQ.label}</span> sera supprimé
-              définitivement. La famille ne pourra plus accéder au lien.
+              Le questionnaire <span className="font-semibold text-[var(--text-heading)]">{questionnaireDisplayLabel(deleteConfirmQ)}</span>{' '}
+              sera supprimé définitivement. La famille ne pourra plus accéder au lien.
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
               <button
@@ -436,7 +437,7 @@ export const Dashboard: React.FC<Props> = ({
 
                     {/* Label + date */}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[var(--text-heading)]">{q.label}</p>
+                      <p className="truncate text-sm font-semibold text-[var(--text-heading)]">{questionnaireDisplayLabel(q)}</p>
                       <p className="text-[11px] text-[var(--text-secondary)]">{monthDate(q.createdAt)}</p>
                     </div>
 

@@ -6,8 +6,8 @@
 
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../services/db';
-import { decryptEnvelope, importQuestionnaireKey } from '../utils/crypto';
-import type { PendingQuestionnaire, PatientFile, Patient } from '../types';
+import { decryptFamilySubmission } from '../utils/familyQuestionnaire';
+import type { PendingQuestionnaire, PatientFile } from '../types';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { Logger } from '../utils/logger';
 import type { AssessmentContextType } from '../contexts/AssessmentContext';
@@ -76,17 +76,14 @@ export const usePendingProcessor = ({
           return null;
         }
 
-        const keyStr = (await decryptEnvelope(data.practitioner_encrypted_key, sessionKey)) as string;
-        const qKey = await importQuestionnaireKey(keyStr);
-
-        const payload = (await decryptEnvelope(data.family_encrypted_data, qKey)) as Record<string, unknown> | null;
+        const payload = await decryptFamilySubmission(data.practitioner_encrypted_key, data.family_encrypted_data, sessionKey);
 
         if (payload?.patient) {
           // SECURITY/PRIVACY GUARANTEE: deleting the row isolates the family's submission
           // from later edits (the link becomes invalid; local changes are never written
           // back). `importFamily` rolls the local import back if the deletion fails, so a
           // retry cannot create a duplicate patient.
-          const result = await assessment.importFamily({ patient: payload.patient as Patient }, async () => {
+          const result = await assessment.importFamily({ patient: payload.patient }, async () => {
             const { error: deleteError } = await supabase.from('pending_questionnaires').delete().eq('id', q.id);
             if (deleteError) throw deleteError;
           });

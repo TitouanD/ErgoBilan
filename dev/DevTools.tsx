@@ -11,18 +11,24 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useCatalog } from '../contexts/CatalogContext';
 import { useToast } from '../contexts/ToastContext';
 import { createDemoTransport } from '../data/demoReport';
 import { StorageService } from '../services/storage';
+import type { PendingQuestionnaire } from '../types';
+import { withChildNames } from '../utils/familyQuestionnaire';
 import { createReportGenerator } from '../utils/reportGenerator';
 import { Logger } from '../utils/logger';
+import { buildFictiveQuestionnaires } from './fictiveQuestionnaires';
 import { parseScenario, purgeFictivePatients, runScenario } from './scenarios';
 
 interface Props {
   onLoadData: () => Promise<void>;
   onResumeDraft: (patientId: string) => Promise<void>;
   onShowDashboard: () => void;
+  /** Show fictitious parent questionnaires on the dashboard (memory only). */
+  onShowQuestionnaires: (rows: PendingQuestionnaire[]) => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -36,8 +42,9 @@ const setStatus = (status: 'running' | 'ready' | 'error', error?: string) => {
 /** Ready once the screen opened by the scenario has painted. */
 const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard }) => {
+export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard, onShowQuestionnaires }) => {
   const { ensureCatalogLoaded } = useCatalog();
+  const { sessionKey } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
 
@@ -59,6 +66,10 @@ export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDas
         const generator = createReportGenerator(createDemoTransport(0));
         const result = await runScenario(parsed.scenario, { store: StorageService, index, generator, now: new Date() });
         await onLoadData();
+        if (parsed.scenario.questionnaires && sessionKey) {
+          // Same decryption as the questionnaires loaded from Supabase (useDataLoader → loadPending).
+          onShowQuestionnaires(await withChildNames(await buildFictiveQuestionnaires(sessionKey, new Date()), sessionKey));
+        }
         if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);

@@ -8,6 +8,7 @@
  *   /?scenario=reeval&etape=1                 re-evaluation (its reference is created)
  *   /?scenario=historique&etape=2             historical assessment
  *   &patient=<profile>  &tests=bhk,mabc-2|tout  &scores=vide
+ *   /?scenario=dashboard&questionnaires=oui   plus parent questionnaires (dev/fictiveQuestionnaires.ts)
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -35,6 +36,8 @@ export interface Scenario {
   /** Raw `tests` parameter (null: the profile's tests). */
   tests: string | null;
   fill: ScoreFill;
+  /** Dashboard: show fictitious parent questionnaires (`questionnaires=oui`), kept in memory only. */
+  questionnaires: boolean;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
@@ -80,7 +83,14 @@ export const parseScenario = (search: string): ParsedScenario => {
 
   return {
     ok: true,
-    scenario: { name, step, profile, tests: params.get('tests'), fill: params.get('scores') === 'vide' ? 'vide' : 'zones' },
+    scenario: {
+      name,
+      step,
+      profile,
+      tests: params.get('tests'),
+      fill: params.get('scores') === 'vide' ? 'vide' : 'zones',
+      questionnaires: params.get('questionnaires') === 'oui',
+    },
   };
 };
 

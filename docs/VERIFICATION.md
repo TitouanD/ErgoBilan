@@ -44,6 +44,7 @@ Paramètres :
 - `&patient=<profil>` change de patient. Par défaut : `leo` pour le bilan initial, `lina` pour la réévaluation, `ines` pour l'historique.
 - `&tests=bhk,mabc-2` remplace les tests du profil, avec leurs identifiants du catalogue. `&tests=tout` charge le catalogue entier.
 - `&scores=vide` ajoute les tests sans remplir les scores.
+- `&questionnaires=oui` (tableau de bord) ajoute quatre questionnaires parents fictifs, chiffrés comme par le portail et déchiffrés par le tableau de bord (`dev/fictiveQuestionnaires.ts`) : Léo et Adam `FICTIF` reçus, un reçu indéchiffrable (libellé générique `Dossier #3`) et un en attente. Ils restent en mémoire : rien n'est écrit dans Supabase, « Importer » et « Supprimer » échouent sur eux.
 
 Le tableau de bord contient :
 
