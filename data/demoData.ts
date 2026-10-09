@@ -113,6 +113,12 @@ export const DEMO_PATIENTS = {
         bhk__speed: { value: '10', unit: '%', observation: 'Lenteur avec pauses fréquentes.' },
         bhk__quality: { value: '4', unit: '%', observation: 'Tension de la main, irrégularités.' },
       },
+      custom_observations: {
+        custom_demo_elya: {
+          customLabel: 'Comportement en séance',
+          observation: 'A demandé une pause au bout de 40 minutes.',
+        },
+      },
     } as TestData,
     observations: {
       anamnese: 'Enfant motivee, mais vite decouragee. Tension quand la tache dure.',
