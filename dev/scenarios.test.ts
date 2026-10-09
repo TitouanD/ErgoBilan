@@ -49,6 +49,13 @@ describe('parseScenario', () => {
     });
   });
 
+  it('opens the pricing modal with abonnement or &modale= (#103)', () => {
+    expect(scenarioOf('?scenario=dashboard')).toMatchObject({ modal: null });
+    expect(scenarioOf('?scenario=abonnement')).toMatchObject({ name: 'dashboard', modal: 'plans' });
+    expect(scenarioOf('?scenario=initial&etape=5&modale=paywall')).toMatchObject({ name: 'initial', step: 5, modal: 'paywall' });
+    expect(parseScenario('?scenario=dashboard&modale=nope')).toMatchObject({ ok: false });
+  });
+
   it('rejects an unknown scenario, step or patient', () => {
     expect(parseScenario('?scenario=nope')).toMatchObject({ ok: false });
     expect(parseScenario('?scenario=reeval&etape=5')).toMatchObject({ ok: false });

@@ -464,6 +464,7 @@ const AppRouter = () => {
               onShowQuestionnaires={(rows) =>
                 setPendingQuestionnaires((prev) => [...rows, ...prev.filter((q) => !rows.some((r) => r.id === q.id))])
               }
+              onShowPricing={setPricingModalMode}
             />
           </Suspense>
         )}
