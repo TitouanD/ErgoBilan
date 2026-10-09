@@ -7,7 +7,9 @@
  *   /?scenario=initial&etape=2                initial assessment at step 2
  *   /?scenario=reeval&etape=1                 re-evaluation (its reference is created)
  *   /?scenario=historique&etape=2             historical assessment
+ *   /?scenario=abonnement                     dashboard with the « Votre abonnement » modal
  *   &patient=<profile>  &tests=bhk,mabc-2|tout  &scores=vide
+ *   &modale=abonnement|paywall                 open the pricing modal on top
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -27,6 +29,9 @@ import { buildFictiveTests, parseTestsParam, type ScoreFill } from './fictiveSco
 import type { StorageService } from '../services/storage';
 
 export type ScenarioName = 'dashboard' | 'initial' | 'reeval' | 'historique';
+/** Modal opened on top of the scenario screen (`&modale=`): the pricing modal, plans or paywall. */
+export type ScenarioModal = 'plans' | 'paywall';
+const MODALS: Record<string, ScenarioModal> = { abonnement: 'plans', paywall: 'paywall' };
 
 export interface Scenario {
   name: ScenarioName;
@@ -35,6 +40,7 @@ export interface Scenario {
   /** Raw `tests` parameter (null: the profile's tests). */
   tests: string | null;
   fill: ScoreFill;
+  modal: ScenarioModal | null;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
@@ -46,7 +52,8 @@ const DEFAULTS: Record<ScenarioName, { step: number; profile: string }> = {
   historique: { step: 2, profile: 'ines' },
 };
 /** Shortcut names, e.g. `scenario=initial-scores`. */
-const ALIASES: Record<string, { name: ScenarioName; step: number }> = {
+const ALIASES: Record<string, { name: ScenarioName; step: number; modal?: ScenarioModal }> = {
+  abonnement: { name: 'dashboard', step: 0, modal: 'plans' },
   'initial-dossier': { name: 'initial', step: 1 },
   'initial-scores': { name: 'initial', step: 2 },
   'initial-diagnostic': { name: 'initial', step: 3 },
@@ -77,10 +84,13 @@ export const parseScenario = (search: string): ParsedScenario => {
   const profileId = params.get('patient') ?? DEFAULTS[name].profile;
   const profile = getFictiveProfile(profileId);
   if (!profile) return { ok: false, error: `Patient fictif inconnu : ${profileId} (${FICTIVE_PROFILES.map((p) => p.id).join(', ')})` };
+  const modalParam = params.get('modale');
+  const modal = modalParam ? MODALS[modalParam] : (alias?.modal ?? null);
+  if (modal === undefined) return { ok: false, error: `Modale inconnue : ${modalParam} (${Object.keys(MODALS).join(', ')})` };
 
   return {
     ok: true,
-    scenario: { name, step, profile, tests: params.get('tests'), fill: params.get('scores') === 'vide' ? 'vide' : 'zones' },
+    scenario: { name, step, profile, tests: params.get('tests'), fill: params.get('scores') === 'vide' ? 'vide' : 'zones', modal },
   };
 };
 

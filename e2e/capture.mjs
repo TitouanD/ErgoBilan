@@ -5,7 +5,7 @@
  *   npm run capture -- "scenario=initial&etape=2" dashboard initial-scores
  *   npm run capture -- "scenario=reeval&etape=2" --tablette --plein --clic "text=Ajouter un test"
  *
- * Options: --tablette (1024×768, else 1440×900), --plein (whole page),
+ * Options: --tablette (1024×768), --portable (1366×768), else 1440×900; --plein (whole page),
  * --clic <selector> (repeatable, clicked in order before the screenshot),
  * --pdf (after the screenshot, clicks « Télécharger PDF » and saves the PDF
  * next to it: the scenario must be on the export step),
@@ -34,10 +34,11 @@ import { mintTestSession } from './testSession.mjs';
 const args = process.argv.slice(2);
 const targets = [];
 const clicks = [];
-const opts = { tablet: false, full: false, pdf: false, out: '', port: 3100 };
+const opts = { tablet: false, laptop: false, full: false, pdf: false, out: '', port: 3100 };
 for (let i = 0; i < args.length; i += 1) {
   const a = args[i];
   if (a === '--tablette') opts.tablet = true;
+  else if (a === '--portable') opts.laptop = true;
   else if (a === '--plein') opts.full = true;
   else if (a === '--pdf') opts.pdf = true;
   else if (a === '--clic') clicks.push(args[(i += 1)]);
@@ -51,7 +52,7 @@ for (let i = 0; i < args.length; i += 1) {
 }
 if (targets.length === 0) {
   console.error(
-    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
+    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette|--portable] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
   );
   process.exit(1);
 }
@@ -108,7 +109,7 @@ try {
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   const context = await browser.newContext({
     acceptDownloads: true,
-    viewport: opts.tablet ? { width: 1024, height: 768 } : { width: 1440, height: 900 },
+    viewport: opts.tablet ? { width: 1024, height: 768 } : opts.laptop ? { width: 1366, height: 768 } : { width: 1440, height: 900 },
     locale: 'fr-FR',
   });
   const init = sessionInitScript(session);

@@ -457,7 +457,12 @@ const AppRouter = () => {
 
         {DevTools && authState === 'authenticated' && sessionKey && !isDemoMode && (
           <Suspense fallback={null}>
-            <DevTools onLoadData={loadData} onResumeDraft={resumeDraft} onShowDashboard={() => setMode('dashboard')} />
+            <DevTools
+              onLoadData={loadData}
+              onResumeDraft={resumeDraft}
+              onShowDashboard={() => setMode('dashboard')}
+              onShowPricing={setPricingModalMode}
+            />
           </Suspense>
         )}
 

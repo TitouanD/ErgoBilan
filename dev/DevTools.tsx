@@ -3,7 +3,8 @@
  * in the recette build with `VITE_SCENARIOS=1`; absent from the deployed build).
  *
  * - Runs the scenario of the URL (`?scenario=…`, dev/scenarios.ts) once per
- *   page load, then opens its screen. Reloading the page rebuilds it.
+ *   page load, then opens its screen (and its modal, `&modale=`). Reloading
+ *   the page rebuilds it.
  * - « Purger les fictifs »: deletes every FICTIF patient of the local database.
  *
  * The scenario state is exposed on `<html data-scenario="running|ready|error">`
@@ -23,6 +24,7 @@ interface Props {
   onLoadData: () => Promise<void>;
   onResumeDraft: (patientId: string) => Promise<void>;
   onShowDashboard: () => void;
+  onShowPricing: (mode: 'plans' | 'paywall') => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -36,7 +38,7 @@ const setStatus = (status: 'running' | 'ready' | 'error', error?: string) => {
 /** Ready once the screen opened by the scenario has painted. */
 const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard }) => {
+export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard, onShowPricing }) => {
   const { ensureCatalogLoaded } = useCatalog();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -61,6 +63,7 @@ export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDas
         await onLoadData();
         if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
+        if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal);
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);
         await afterPaint();
         setStatus('ready');
