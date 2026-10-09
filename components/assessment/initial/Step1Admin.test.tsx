@@ -42,7 +42,7 @@ describe('Step1Admin : résumé du Dossier', () => {
     renderStep(patient({ parentNames: 'Marie Test', pcoFollowup: 'oui', pcoFollowupDate: '2026-03-01' }));
     await userEvent.click(screen.getByText('Suivi Médical'));
     expect(screen.getByText('Suivi par la PCO')).toBeInTheDocument();
-    expect(screen.getByText('Oui — 2026-03-01')).toBeInTheDocument();
+    expect(screen.getByText('Oui — depuis le 2026-03-01')).toBeInTheDocument();
   });
 
   it('affiche le libellé des puces de langage, pas leur code (#38)', async () => {
@@ -50,5 +50,22 @@ describe('Step1Admin : résumé du Dossier', () => {
     await userEvent.click(screen.getByText('Développement'));
     expect(screen.getByText('Vocabulaire riche / Manque du mot')).toBeInTheDocument();
     expect(screen.queryByText(/vocabulaire_riche/)).toBeNull();
+  });
+
+  it('affiche le déroulé moteur, le sport et la classe redoublée (#94, #97)', async () => {
+    renderStep(
+      patient({
+        parentNames: 'Marie Test',
+        motorDevelopmentTags: 'developpement_tardif,pas_de_quatre_pattes',
+        extracurricularSport: 'Judo',
+        schoolRepeatYear: 'oui',
+        schoolRepeatClass: 'CE1',
+      }),
+    );
+    await userEvent.click(screen.getByText('Développement'));
+    expect(screen.getByText('Développement tardif / Pas de passage par le 4 pattes')).toBeInTheDocument();
+    expect(screen.getByText('Judo')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Scolarité'));
+    expect(screen.getByText('Oui — CE1')).toBeInTheDocument();
   });
 });

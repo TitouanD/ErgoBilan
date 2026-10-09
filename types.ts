@@ -51,6 +51,8 @@ export interface Patient {
   schoolType?: string;
   schoolTrack?: string;
   schoolRepeatYear?: string;
+  /** Classe redoublée, quand `schoolRepeatYear` vaut « oui » (#94). */
+  schoolRepeatClass?: string;
   teacher: string;
   carePlan: string;
   avs: string;
@@ -72,6 +74,9 @@ export interface Patient {
   crawling?: string;
   crawlingFourPattes?: string;
   crawlingRamper?: string;
+  /** Déroulé du développement moteur, puces séparées par des virgules (#97). Remplace marche, ramper et 4 pattes à la saisie. */
+  motorDevelopmentTags?: string;
+  extracurricularSport?: string;
   cleanliness?: string;
   languageStatus?: string;
   sleep?: string;
@@ -107,6 +112,8 @@ export interface Patient {
   schoolParticipation?: string;
   peerRelations?: string;
   homeworkHabits?: string;
+  /** « Comment se passent les apprentissages ? » (#99). */
+  learningNotes?: string;
   socialBehavior?: string;
   writingIssues: string;
   writingDifficultyTags?: string;

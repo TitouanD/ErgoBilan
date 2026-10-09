@@ -99,6 +99,12 @@ const LABEL_MAP: Record<string, string> = {
   Droitier: 'Droitier',
   Gaucher: 'Gaucher',
   Indeterminé: 'Non latéralisé',
+  // Développement moteur (#97)
+  developpement_precoce: 'Développement précoce',
+  developpement_standard: 'Développement standard',
+  developpement_tardif: 'Développement tardif',
+  absence_marche: 'Absence de marche',
+  pas_de_quatre_pattes: 'Pas de passage par le 4 pattes',
   // Gender
   M: 'Garçon',
   F: 'Fille',
@@ -238,6 +244,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
     data.school ||
     data.medicalDiagnosis ||
     data.developmentMotor ||
+    data.motorDevelopmentTags ||
     data.meals ||
     data.writingIssues
   );
@@ -294,7 +301,10 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'Profession médecin prescripteur', value: data.prescribingDoctorProfession },
           { label: 'Diagnostic', value: data.medicalDiagnosis },
           { label: 'Traitements', value: data.medicalTreatments },
-          { label: 'Suivi par la PCO', value: [humanize(data.pcoFollowup), data.pcoFollowupDate].filter(Boolean).join(' — ') },
+          {
+            label: 'Suivi par la PCO',
+            value: [humanize(data.pcoFollowup), data.pcoFollowupDate && `depuis le ${data.pcoFollowupDate}`].filter(Boolean).join(' — '),
+          },
           {
             label: 'Suivis',
             value: data.medicalTracking?.length
@@ -315,7 +325,7 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'École', value: data.school },
           { label: 'Classe', value: data.classLevel },
           { label: 'Filière', value: data.schoolType },
-          { label: 'Redoublement', value: humanize(data.schoolRepeatYear) },
+          { label: 'Redoublement', value: [humanize(data.schoolRepeatYear), data.schoolRepeatClass].filter(Boolean).join(' — ') },
           { label: 'Dispositifs', value: humanize(data.carePlan) || 'Aucun' },
           {
             label: 'AVS/AESH',
@@ -325,29 +335,32 @@ export const Step1Admin: React.FC<Props> = ({ data, updateData, onQuit, onNext, 
           { label: 'Matières préférées', value: data.schoolFavoriteSubjects },
           { label: 'Matières moins appréciées', value: data.schoolDislikedSubjects },
           { label: 'Comportement en classe', value: data.classroomBehavior },
-          { label: 'Organisation', value: data.schoolOrganization },
-          { label: 'Mémorisation', value: data.schoolMemory },
           { label: 'Attention & participation', value: data.schoolAttention },
           { label: 'Relation avec pairs', value: data.peerRelations || data.socialBehavior },
-          { label: 'Devoirs', value: data.homeworkHabits },
           { label: 'Aménagements', value: data.schoolAccommodations },
           { label: 'Latéralité', value: humanize(data.handDominance) },
           { label: 'Difficultés écriture typiques', value: humanize(data.writingDifficultyTags) },
           { label: 'Difficultés écriture (texte)', value: data.writingIssues },
           { label: 'Douleur écriture', value: humanize(data.writingPain) },
-          { label: 'Utilisation outils scolaires', value: data.toolUsage },
           { label: 'Autres remarques', value: data.writingOther },
+          { label: 'Apprentissages', value: data.learningNotes },
+          { label: 'Mémorisation', value: data.schoolMemory },
+          { label: 'Organisation', value: data.schoolOrganization },
+          { label: 'Devoirs', value: data.homeworkHabits },
+          { label: 'Utilisation outils scolaires', value: data.toolUsage },
         ],
       },
       {
         title: 'Développement',
-        filled: !!(data.walkingAge || data.developmentMotor || data.pregnancyBirth),
+        filled: !!(data.motorDevelopmentTags || data.walkingAge || data.developmentMotor || data.pregnancyBirth),
         fields: [
           { label: 'Grossesse', value: data.pregnancyBirth },
+          { label: 'Développement moteur', value: humanize(data.motorDevelopmentTags) },
           { label: 'Marche', value: data.walkingAge },
           { label: '4 pattes', value: humanize(data.crawlingFourPattes || data.crawling) },
           { label: 'Ramper', value: humanize(data.crawlingRamper) },
           { label: 'Motricité (précisions)', value: data.developmentMotor },
+          { label: 'Sport extra-scolaire', value: data.extracurricularSport },
           { label: 'Langage', value: humanize(data.languageStatus) || data.developmentLanguage },
           { label: 'Langage (précisions)', value: data.developmentLanguage && data.languageStatus ? data.developmentLanguage : undefined },
           { label: 'Sommeil', value: humanize(data.sleepStatus) },

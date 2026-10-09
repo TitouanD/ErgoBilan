@@ -49,8 +49,17 @@ describe('SharedQuestionnaire : Suivi par la PCO (#36)', () => {
     rerender(<SharedQuestionnaire data={patient({ pcoFollowup: 'non' })} onChange={onChange} mode="practitioner" />);
     await userEvent.click(within(pco).getByRole('button', { name: 'Non' }));
     expect(onChange).toHaveBeenLastCalledWith({ pcoFollowup: '' });
+  });
 
-    fireEvent.change(screen.getByLabelText('Date du suivi PCO (optionnelle)'), { target: { value: '2026-03-01' } });
+  it('la date, précédée de « Depuis le », n’apparaît qu’avec Oui (#93)', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SharedQuestionnaire data={patient({ pcoFollowup: 'non' })} onChange={onChange} mode="practitioner" />);
+    await userEvent.click(screen.getByText('Suivi médical'));
+    expect(screen.queryByLabelText('Suivi PCO depuis le (optionnel)')).toBeNull();
+
+    rerender(<SharedQuestionnaire data={patient({ pcoFollowup: 'oui' })} onChange={onChange} mode="practitioner" />);
+    expect(screen.getByText('Depuis le')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Suivi PCO depuis le (optionnel)'), { target: { value: '2026-03-01' } });
     expect(onChange).toHaveBeenLastCalledWith({ pcoFollowupDate: '2026-03-01' });
   });
 });
@@ -95,5 +104,56 @@ describe('SharedQuestionnaire : l’en-tête d’une section ouverte reste visib
   it('ne bouge pas quand l’en-tête est déjà visible', async () => {
     const calls = await openWithHeaderAt(300);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('SharedQuestionnaire : retours de la testeuse sur le questionnaire parents', () => {
+  it('demande la classe redoublée quand le redoublement vaut Oui (#94)', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SharedQuestionnaire data={patient()} onChange={onChange} mode="family" />);
+    await userEvent.click(screen.getByText('Vie scolaire'));
+    expect(screen.queryByLabelText('Si oui, quelle classe ?')).toBeNull();
+
+    rerender(<SharedQuestionnaire data={patient({ schoolRepeatYear: 'oui' })} onChange={onChange} mode="family" />);
+    fireEvent.change(screen.getByLabelText('Si oui, quelle classe ?'), { target: { value: 'CE1' } });
+    expect(onChange).toHaveBeenLastCalledWith({ schoolRepeatClass: 'CE1' });
+  });
+
+  it('pose des questions dans la case Grossesse & Naissance (#95)', async () => {
+    render(<SharedQuestionnaire data={patient()} onChange={() => {}} mode="family" />);
+    await userEvent.click(screen.getByText('Développement'));
+    expect(screen.getByPlaceholderText(/La grossesse et l'accouchement se sont-ils bien passés \?/)).toBeInTheDocument();
+  });
+
+  it('ne propose plus « Réveil très matinal » dans le sommeil (#96)', async () => {
+    render(<SharedQuestionnaire data={patient()} onChange={() => {}} mode="family" />);
+    await userEvent.click(screen.getByText('Développement'));
+    expect(screen.getByText('Terreurs nocturnes')).toBeInTheDocument();
+    expect(screen.queryByText('Réveil très matinal')).toBeNull();
+  });
+
+  it('remplace ramper, 4 pattes et âge de la marche par le déroulé moteur et le sport (#97)', async () => {
+    const onChange = vi.fn();
+    render(<SharedQuestionnaire data={patient()} onChange={onChange} mode="family" />);
+    await userEvent.click(screen.getByText('Développement'));
+    expect(screen.getByText(/Comment s'est déroulé le développement moteur de votre enfant/)).toBeInTheDocument();
+    expect(screen.queryByText('Ramper')).toBeNull();
+    expect(screen.queryByText('4 pattes')).toBeNull();
+    expect(screen.queryByText('Âge de la marche')).toBeNull();
+    expect(screen.getByLabelText('Votre enfant fait-il une activité sportive extra-scolaire ?')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Développement tardif' }));
+    expect(onChange).toHaveBeenLastCalledWith({ motorDevelopmentTags: 'developpement_tardif' });
+  });
+
+  it('regroupe les apprentissages dans un bloc de la vie scolaire (#99)', async () => {
+    render(<SharedQuestionnaire data={patient()} onChange={() => {}} mode="family" />);
+    await userEvent.click(screen.getByText('Vie scolaire'));
+    const block = screen.getByText('Apprentissages').closest('div')!;
+    expect(within(block).getByLabelText('Comment se passent les apprentissages ?')).toBeInTheDocument();
+    for (const label of ['Mémorisation', 'Organisation', 'Devoirs', 'Utilisation des outils scolaires']) {
+      expect(within(block).getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText('Utilisation des outils scolaires')).toHaveLength(1);
   });
 });

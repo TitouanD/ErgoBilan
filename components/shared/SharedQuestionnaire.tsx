@@ -97,6 +97,14 @@ const YES_NO_OPTIONS = [
   { value: 'non', label: 'Non' },
 ];
 
+const MOTOR_DEVELOPMENT_OPTIONS = [
+  { value: 'developpement_precoce', label: 'Développement précoce' },
+  { value: 'developpement_standard', label: 'Développement standard' },
+  { value: 'developpement_tardif', label: 'Développement tardif' },
+  { value: 'absence_marche', label: 'Absence de marche' },
+  { value: 'pas_de_quatre_pattes', label: 'Pas de passage par le 4 pattes' },
+];
+
 // --- UX COMPONENTS ---
 
 const ChipGroup = ({
@@ -202,7 +210,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       if (data.guardMode) filled++;
       if (data.school && data.classLevel) filled++;
       if (data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0) filled++;
-      if (data.walkingAge || data.developmentMotor) filled++;
+      if (data.motorDevelopmentTags || data.walkingAge || data.developmentMotor) filled++;
       if (data.clothingButtons || data.eatingHabits) filled++;
       if (data.reason) filled++;
       if ((data.goals?.length ?? 0) > 0) filled++;
@@ -1113,6 +1121,27 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                               value={data.schoolRepeatYear}
                               onChange={(v) => handleFieldChange('schoolRepeatYear', v)}
                             />
+                            {data.schoolRepeatYear === 'oui' && (
+                              <div className="mt-2 animate-in slide-in-from-top-2">
+                                <label htmlFor="schoolRepeatClass" className={labelClass}>
+                                  Si oui, quelle classe ?
+                                </label>
+                                <select
+                                  id="schoolRepeatClass"
+                                  name="schoolRepeatClass"
+                                  value={data.schoolRepeatClass || ''}
+                                  onChange={handleChange}
+                                  className={inputClass}
+                                >
+                                  <option value="">Sélectionner...</option>
+                                  {SCHOOL_LEVELS.map((level) => (
+                                    <option key={level} value={level}>
+                                      {level}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1231,28 +1260,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             />
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className={labelClass}>Organisation</label>
-                            <DebouncedInput
-                              name="schoolOrganization"
-                              value={data.schoolOrganization || ''}
-                              onChange={(v) => handleFieldChange('schoolOrganization', v)}
-                              className={inputClass}
-                              placeholder="Cartable, matériel, consignes..."
-                            />
-                          </div>
-                          <div>
-                            <label className={labelClass}>Mémorisation</label>
-                            <DebouncedInput
-                              name="schoolMemory"
-                              value={data.schoolMemory || ''}
-                              onChange={(v) => handleFieldChange('schoolMemory', v)}
-                              className={inputClass}
-                              placeholder="Leçons, consignes, automatismes..."
-                            />
-                          </div>
-                        </div>
                         <div>
                           <label className={labelClass}>Relation avec ses pairs</label>
                           <ChipGroup
@@ -1281,6 +1288,48 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             />
                           </div>
                         </div>
+                      </div>
+
+                      <div className="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--border-color)] space-y-4">
+                        <h4 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-2">
+                          <Book size={14} /> Apprentissages
+                        </h4>
+                        <div>
+                          <label htmlFor="learningNotes" className={labelClass}>
+                            Comment se passent les apprentissages ?
+                          </label>
+                          <DebouncedTextarea
+                            id="learningNotes"
+                            name="learningNotes"
+                            value={data.learningNotes || ''}
+                            onChange={(v) => handleFieldChange('learningNotes', v)}
+                            className={inputClass}
+                            placeholder="Lecture, calcul, compréhension des consignes, rythme..."
+                            rows={3}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className={labelClass}>Mémorisation</label>
+                            <DebouncedInput
+                              name="schoolMemory"
+                              value={data.schoolMemory || ''}
+                              onChange={(v) => handleFieldChange('schoolMemory', v)}
+                              className={inputClass}
+                              placeholder="Leçons, consignes, automatismes..."
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Organisation</label>
+                            <DebouncedInput
+                              name="schoolOrganization"
+                              value={data.schoolOrganization || ''}
+                              onChange={(v) => handleFieldChange('schoolOrganization', v)}
+                              className={inputClass}
+                              placeholder="Cartable, matériel, consignes..."
+                            />
+                          </div>
+                        </div>
                         <div>
                           <label className={labelClass}>Devoirs</label>
                           <DebouncedTextarea
@@ -1289,7 +1338,18 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             onChange={(v) => handleFieldChange('homeworkHabits', v)}
                             className={inputClass}
                             placeholder="Autonomie, aide nécessaire, durée, fatigue..."
-                            rows={4}
+                            rows={3}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Utilisation des outils scolaires</label>
+                          <DebouncedTextarea
+                            name="toolUsage"
+                            value={data.toolUsage || ''}
+                            onChange={(v) => handleFieldChange('toolUsage', v)}
+                            className={inputClass}
+                            placeholder="Règle, gomme, compas, ciseaux, trousse..."
+                            rows={2}
                           />
                         </div>
                       </div>
@@ -1343,17 +1403,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             ]}
                             value={data.writingPain}
                             onChange={(v) => handleFieldChange('writingPain', v)}
-                          />
-                        </div>
-                        <div>
-                          <label className={labelClass}>Utilisation des outils scolaires</label>
-                          <DebouncedTextarea
-                            name="toolUsage"
-                            value={data.toolUsage || ''}
-                            onChange={(v) => handleFieldChange('toolUsage', v)}
-                            className={inputClass}
-                            placeholder="Règle, gomme, compas, ciseaux, trousse..."
-                            rows={2}
                           />
                         </div>
                         <div>
@@ -1431,14 +1480,19 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                               value={data.pcoFollowup}
                               onChange={(v) => handleFieldChange('pcoFollowup', v)}
                             />
-                            <input
-                              type="date"
-                              aria-label="Date du suivi PCO (optionnelle)"
-                              title="Date (optionnelle)"
-                              value={data.pcoFollowupDate || ''}
-                              onChange={(e) => handleFieldChange('pcoFollowupDate', e.target.value)}
-                              className={`${inputClass} md:max-w-[200px]`}
-                            />
+                            {data.pcoFollowup === 'oui' && (
+                              <label className="flex items-center gap-2 text-sm font-bold text-[var(--text-secondary)]">
+                                Depuis le
+                                <input
+                                  type="date"
+                                  aria-label="Suivi PCO depuis le (optionnel)"
+                                  title="Date (optionnelle)"
+                                  value={data.pcoFollowupDate || ''}
+                                  onChange={(e) => handleFieldChange('pcoFollowupDate', e.target.value)}
+                                  className={`${inputClass} md:max-w-[200px]`}
+                                />
+                              </label>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1591,7 +1645,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             value={data.pregnancyBirth || ''}
                             onChange={(v) => handleFieldChange('pregnancyBirth', v)}
                             className={inputClass}
-                            placeholder="Naissance à terme, prématuré, complications, césarienne..."
+                            placeholder="La grossesse et l'accouchement se sont-ils bien passés ? Y a-t-il eu des complications ? L'enfant est-il né à terme ?"
                             rows={2}
                           />
                         </div>
@@ -1603,47 +1657,16 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                           🔵 Motricité
                         </h4>
                         <div className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <label className={labelClass}>Ramper</label>
-                              <ChipGroup
-                                options={[
-                                  { value: 'oui', label: 'Oui' },
-                                  { value: 'non', label: 'Non' },
-                                  { value: 'ne_sais_pas', label: 'Je ne sais pas' },
-                                ]}
-                                value={data.crawlingRamper}
-                                onChange={(v) => handleFieldChange('crawlingRamper', v)}
-                              />
-                            </div>
-                            <div>
-                              <label className={labelClass}>4 pattes</label>
-                              <ChipGroup
-                                options={[
-                                  { value: 'oui', label: 'Oui' },
-                                  { value: 'non', label: 'Non' },
-                                  { value: 'ne_sais_pas', label: 'Je ne sais pas' },
-                                ]}
-                                value={data.crawlingFourPattes || data.crawling}
-                                onChange={(v) => {
-                                  handleFieldChange('crawlingFourPattes', v);
-                                  if (!data.crawling) handleFieldChange('crawling', v);
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className={labelClass}>Âge de la marche</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  value={parseInt(data.walkingAge || '0') || ''}
-                                  onChange={(e) => handleFieldChange('walkingAge', e.target.value + ' mois')}
-                                  className="w-20 p-2 bg-[var(--input-bg)] rounded-lg font-bold text-center border border-[var(--input-border)] outline-none focus:border-[var(--primary)] text-[var(--text-heading)]"
-                                  placeholder="Mois"
-                                />
-                                <span className="text-sm font-bold text-[var(--text-secondary)]">mois</span>
-                              </div>
-                            </div>
+                          <div>
+                            <label className={labelClass}>
+                              Comment s'est déroulé le développement moteur de votre enfant (marcher, courir, grimper…) ?
+                            </label>
+                            <ChipGroup
+                              options={MOTOR_DEVELOPMENT_OPTIONS}
+                              value={data.motorDevelopmentTags}
+                              onChange={(v) => handleFieldChange('motorDevelopmentTags', v)}
+                              multi
+                            />
                           </div>
                           <div>
                             <label className={labelClass}>Précisions</label>
@@ -1652,7 +1675,21 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                               value={data.developmentMotor || ''}
                               onChange={(v) => handleFieldChange('developmentMotor', v)}
                               className={inputClass}
-                              placeholder="Marcher, courir, grimper, sauter, pédaler, équilibre..."
+                              placeholder="Équilibre, vélo, chutes, maladresse..."
+                              rows={2}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="extracurricularSport" className={labelClass}>
+                              Votre enfant fait-il une activité sportive extra-scolaire ?
+                            </label>
+                            <DebouncedTextarea
+                              id="extracurricularSport"
+                              name="extracurricularSport"
+                              value={data.extracurricularSport || ''}
+                              onChange={(v) => handleFieldChange('extracurricularSport', v)}
+                              className={inputClass}
+                              placeholder="Laquelle, depuis quand, à quel rythme..."
                               rows={2}
                             />
                           </div>
@@ -1714,7 +1751,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                 { value: 'agitation', label: 'Agitation' },
                                 { value: 'co_dodo', label: 'Co-dodo' },
                                 { value: 'siestes_difficiles', label: 'Siestes difficiles' },
-                                { value: 'reveil_matinal', label: 'Réveil très matinal' },
                                 { value: 'fatigue_journee', label: 'Fatigue en journée' },
                                 { value: 'paisible', label: 'Paisible' },
                                 { value: 'endormissement_long', label: 'Endormissement long' },
