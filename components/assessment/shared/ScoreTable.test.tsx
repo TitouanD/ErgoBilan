@@ -100,3 +100,19 @@ describe('ScoreTable : sous-tests ajoutés au catalogue (#90)', () => {
     expect(screen.getByText('-2')).toBeInTheDocument();
   });
 });
+
+describe('ScoreTable : bloc des observations libres (#102)', () => {
+  const observation: SubtestDef = { id: 'custom_1', name: 'Observation', unit: '', scoreType: 'none', inputModel: 'custom_text' };
+
+  it('n’affiche pas les en-têtes Épreuve / NS, ET, % / Observation', () => {
+    render(<ScoreTable testId="custom_observations" subtests={[observation]} scores={{}} onChange={() => {}} />);
+    expect(screen.queryByRole('columnheader')).toBeNull();
+    expect(screen.getByPlaceholderText(/Titre de l'observation/)).toBeInTheDocument();
+  });
+
+  it('garde les en-têtes pour un vrai test', () => {
+    render(<ScoreTable testId="bhk" subtests={bhk.subtests} scores={{}} onChange={() => {}} />);
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers).toEqual(expect.arrayContaining(['Épreuve', 'NS', 'ET', '%', 'Observation']));
+  });
+});
