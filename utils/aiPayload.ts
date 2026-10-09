@@ -6,7 +6,7 @@
  */
 
 import type { ClinicalSynthesis, Observations, Patient, PatientAssessment, TestData } from '../types';
-import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
+import { type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
 import { type DeltaEntry, buildEvolutionSummaryText, buildScoresSummaryText } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml } from './reportContent';
 import { resolveScores } from './resolvedScore';
@@ -153,8 +153,10 @@ export const buildObservationsText = (patient: Patient, observations: Observatio
     Object.entries(subtests)
       .filter(([, res]) => res.observation?.trim())
       .map(([subId, res]) => {
-        const testName = testId === CUSTOM_OBSERVATIONS_TEST_ID ? 'Observations libres' : getTestName(index, testId);
-        return `[${getSubtestName(index, testId, subId, res.customLabel)} — ${testName}] ${res.observation!.trim()}`;
+        const testName = getTestName(index, testId);
+        const subtestName = getSubtestName(index, testId, subId, res.customLabel);
+        const label = subtestName === testName ? testName : `${subtestName} — ${testName}`;
+        return `[${label}] ${res.observation!.trim()}`;
       }),
   );
   return (
