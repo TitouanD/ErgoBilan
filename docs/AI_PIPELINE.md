@@ -139,6 +139,26 @@ Tout ce qui part vers Gemini passe par le générateur, donc par `createAnonymiz
 - En production depuis le 2026-10-12 (v59, secret `GCP_SA_KEY` posé) ; test réel `npm run e2e:ai` vert sur les trois parcours, mais le bilan initial (bio puis diagnostic) a pris 139 s de bout en bout : surveiller les `GEMINI_TIMEOUT` dans Sentry, et passer en réflexion `medium` s'ils apparaissent.
 - Certification HDS : Google Cloud l'est, et l'IA générative d'Agent Platform est dans son périmètre, mais l'avenant HDS n'est pas encore souscrit (demande à faire à Google). Rien ne doit en être dit dans l'interface (règle de `CLAUDE.md`).
 
+#### Revenir sur AI Studio (incident en production)
+
+Si Agent Platform échoue en production (`GEMINI_AUTH_ERROR`, `GEMINI_TIMEOUT` ou `GEMINI_ERROR` en série dans Sentry), une commande suffit. Elle se lance depuis le dépôt principal, lié au projet Supabase, et ne demande aucun redéploiement :
+
+```bash
+npx supabase secrets unset GCP_SA_KEY
+```
+
+- Sans `GCP_SA_KEY`, `resolveGeminiTarget` prend l'API publique avec `GEMINI_API_KEY` et `gemini-3-flash-preview`. Supabase redémarre l'edge quand un secret change : les requêtes suivantes prennent le nouveau chemin.
+- Conditions : `GEMINI_API_KEY` doit rester dans les secrets (il y est au 2026-10-12, ne pas le supprimer), et `gemini-3-flash-preview` doit encore exister (préversion, Google peut la retirer).
+- Conséquence : le traitement n'est plus garanti dans l'UE. Le signaler à Titouan.
+- Vérifier : un appel réel (`npm run e2e:ai`, §9) ou, en cas d'échec, le champ `provider` des détails Gemini dans Sentry (`gemini-api`).
+- Revenir sur Agent Platform une fois le problème réglé : reposer le secret depuis la clé gardée hors du dépôt (`~/.secrets/ergobilan-generate.json` sur le poste de Titouan) :
+
+  ```bash
+  npx supabase secrets set GCP_SA_KEY="$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))))' ~/.secrets/ergobilan-generate.json)"
+  ```
+
+- Clé perdue ou compromise : en créer une autre (Google Cloud → IAM et administration → Comptes de service → `ergobilan-generate` → Clés), supprimer l'ancienne, puis reposer le secret comme ci-dessus.
+
 ### Configuration (`index.ts`)
 
 | Constante                                     | Valeur par défaut                                            |
