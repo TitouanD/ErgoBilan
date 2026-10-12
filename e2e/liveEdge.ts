@@ -117,9 +117,23 @@ export const signInTestAccount = async () => {
     return row;
   };
 
+  /** Catalogue seen by the test account, built as in the app (contexts/CatalogContext.tsx). */
+  const readCatalog = async () => {
+    const { buildCatalog } = await import('../contexts/CatalogContext');
+    const [tests, subtests] = await Promise.all([
+      supabase.from('view_unified_catalog').select('id, label, category_id, category_label, icon_key, sort_order').order('sort_order'),
+      supabase
+        .from('view_unified_subtests')
+        .select('id, test_id, name, unit, score_type, input_model, input_config, display_group_order, display_order'),
+    ]);
+    if (tests.error || subtests.error) throw new Error(`Lecture du catalogue impossible (${(tests.error ?? subtests.error)?.message})`);
+    return buildCatalog(tests.data ?? [], subtests.data ?? []);
+  };
+
   return {
     email: session.user.email ?? '',
     readAccount,
+    readCatalog,
     close: async () => {
       await supabase.auth.stopAutoRefresh();
       unlock();
