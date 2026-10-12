@@ -17,6 +17,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { captureEdgeException, captureEdgeMessage, createTrail } from '../_shared/sentry.ts';
+import { type GeminiTarget, resolveGeminiTarget } from './geminiTarget.ts';
 import { AI_TASKS, type AITask, type BuildResult, buildTask, sessionKind } from './prompts.ts';
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
@@ -24,13 +25,12 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 };
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+// Agent Platform EU (GCP_SA_KEY) when configured, else the public Gemini API (GEMINI_API_KEY).
+const GEMINI = resolveGeminiTarget({ GCP_SA_KEY: Deno.env.get('GCP_SA_KEY'), GEMINI_API_KEY: Deno.env.get('GEMINI_API_KEY') });
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const GEMINI_MODEL = 'gemini-3-flash-preview';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get('GEMINI_TIMEOUT_MS'), 50_000);
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get('GEMINI_TIMEOUT_MS'), 100_000);
 const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get('AI_MAX_REQUESTS_PER_HOUR'), 15);
 const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get('GEMINI_MAX_RETRIES'), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get('GEMINI_RETRY_BASE_MS'), 2_000);
@@ -195,10 +195,11 @@ const describeUsage = (data: GeminiResponse | null) => ({
 });
 
 /** Call Gemini with retries on 429/503. A missing or unparseable JSON answer is a failure. */
-const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
+const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<GeminiResult> => {
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: built.contents }] }],
     generationConfig: {
+      ...target.generationConfig,
       responseMimeType: built.responseMimeType,
       ...(built.responseSchema ? { responseSchema: built.responseSchema } : {}),
     },
@@ -209,7 +210,8 @@ const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
   const httpStatuses: number[] = [];
   let lastError: GeminiDetail = {};
   const detail = (attempt: number, extra: GeminiDetail = {}): GeminiDetail => ({
-    model: GEMINI_MODEL,
+    provider: target.provider,
+    model: target.model,
     attempts: attempt + 1,
     durationMs: Date.now() - startedAt,
     httpStatuses,
@@ -221,12 +223,19 @@ const callGemini = async (built: BuildResult): Promise<GeminiResult> => {
   let lastStatus = 0;
   for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
     if (attempt > 0) await sleep(GEMINI_RETRY_BASE_MS * 2 ** (attempt - 1));
+    let authHeaders: Record<string, string>;
+    try {
+      authHeaders = await target.authHeaders();
+    } catch (err) {
+      lastError = { exception: err instanceof Error ? err.message.slice(0, 300) : String(err) };
+      return { ok: false, errorCode: 'GEMINI_AUTH_ERROR', retryable: false, status: 502, detail: detail(attempt) };
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
     try {
-      const response = await fetch(GEMINI_API_URL, {
+      const response = await fetch(target.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY! },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body,
         signal: controller.signal,
       });
@@ -345,13 +354,12 @@ Deno.serve(async (req: Request) => {
     userId = user.id;
     trail.add('auth', 'User authenticated');
 
-    if (!SUPABASE_SERVICE_ROLE_KEY || !GEMINI_API_KEY) {
-      await captureEdgeMessage('SERVER_MISCONFIGURED: missing SUPABASE_SERVICE_ROLE_KEY or GEMINI_API_KEY', {
-        ...sentry(),
-        level: 'fatal',
-      });
+    if (!SUPABASE_SERVICE_ROLE_KEY || 'error' in GEMINI) {
+      const reason = !SUPABASE_SERVICE_ROLE_KEY ? 'missing SUPABASE_SERVICE_ROLE_KEY' : GEMINI.error;
+      await captureEdgeMessage(`SERVER_MISCONFIGURED: ${reason}`, { ...sentry(), level: 'fatal' });
       return json(origin, 500, { error: 'SERVER_MISCONFIGURED' });
     }
+    const gemini = GEMINI.target;
     admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (!(await checkRateLimit(admin, userId)))
@@ -377,7 +385,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Style feedback: no credit, no generation session ──
     if (task === 'extract_style_feedback') {
-      const result = await callGemini(buildTask(task, payload));
+      const result = await callGemini(gemini, buildTask(task, payload));
       trail.add('gemini', result.ok ? 'Gemini answered' : `Gemini failed: ${result.errorCode}`, result.detail);
       if (!result.ok) {
         await captureEdgeMessage(`Gemini ${result.errorCode} (${task})`, {
@@ -422,7 +430,7 @@ Deno.serve(async (req: Request) => {
     }
     generationId = sessionId; // for the catch block
 
-    const result = await callGemini(buildTask(task, payload));
+    const result = await callGemini(gemini, buildTask(task, payload));
     trail.add('gemini', result.ok ? 'Gemini answered' : `Gemini failed: ${result.errorCode}`, result.detail);
 
     if (!result.ok) {
