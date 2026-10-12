@@ -246,10 +246,10 @@ Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tenta
 
 ## 7. Coûts, quotas et crédits côté UI
 
-- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/monthly_credits/is_admin` et `subscriptions.plan_id/status/trial_ends_at/current_period_end/billing_source` ; `credits` du profil = crédits du mois + crédits achetés (détail dans `monthlyCredits` et `purchasedCredits`) ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
+- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/monthly_credits/trial_denied/is_admin` et `subscriptions.plan_id/status/trial_ends_at/current_period_end/billing_source` ; `credits` du profil = crédits du mois + crédits achetés (détail dans `monthlyCredits` et `purchasedCredits`) ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
 - Rafraîchissement : plus d'abonnement temps réel (TECH_DEBT P1-18) ; `refreshProfile()` recharge le solde après chaque génération et après le feedback de style.
 - Affichage : badge « N Crédits » (total) dans `components/app/AppHeader.tsx`.
-- Garde avant génération : `hasCredits = isDemoMode || isAdmin || credits > 0` (`AssessmentWorkspace`, même règle que `consume_credit_for_user`), transmise à `Step2Evolution` pour la réévaluation. Sans crédit : paywall direct (formule ou achat à l'unité, voir [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement »).
+- Garde avant génération : `hasCredits = isDemoMode || isAdmin || credits > 0` (`AssessmentWorkspace`, même règle que `consume_credit_for_user`), transmise à `Step2Evolution` pour la réévaluation. Sans crédit : paywall direct (formule Solo ou achat à l'unité sans formule ; « Limite du mois atteinte » avec une formule active, voir [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement »).
 - `CREDIT_INSUFFICIENT` renvoyé par l'edge → paywall (`onShowPricing('paywall')`) ; autres erreurs → `CriticalErrorModal`. Si le diagnostic a échoué, « Réessayer » reprend au diagnostic avec le résultat « bio » gardé en mémoire (15 min, même session, pas de nouveau crédit) ; si le serveur refuse la session, la génération repart de zéro.
 - Les deux modales (bilan initial, réévaluation) affichent « Générer (1 crédit) » ; en démo, « Générer » (bilan initial) ou « Générer (simulation) » (réévaluation).
 - Coût réel : 1 crédit par bilan initial (bio + diagnostic), 1 par réévaluation, 0 pour le feedback. Quota : 15 requêtes edge par heure et par utilisateur, tous types et retries confondus.
