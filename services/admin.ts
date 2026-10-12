@@ -68,10 +68,15 @@ export const AdminService = {
   },
 
   // ── Users & subscriptions ──────────────────────────────────────────
+  /** Users, with the trial flags (#107: one trial per real e-mail address) when available. */
   listUsers: async (): Promise<AdminUserRow[]> => {
-    const { data, error } = await supabase.rpc('admin_list_users');
+    const [{ data, error }, flags] = await Promise.all([supabase.rpc('admin_list_users'), supabase.rpc('admin_list_trial_flags')]);
     if (error) throw error;
-    return (data || []) as AdminUserRow[];
+    const byUser = new Map((flags.data || []).map((f) => [f.user_id, f]));
+    return ((data || []) as AdminUserRow[]).map((row) => {
+      const flag = byUser.get(row.user_id);
+      return flag ? { ...row, trial_denied: flag.trial_denied, accounts_with_same_key: flag.accounts_with_same_key } : row;
+    });
   },
 
   updateUser: async (payload: AdminUserUpdatePayload): Promise<{ ok: boolean; user_id: string }> => {

@@ -3,20 +3,23 @@
  * edge functions (#107, ADR 0002). Pure: no Stripe SDK, no Deno API, tested by Vitest.
  *
  * Prices are found by lookup key, never by id: the same keys exist in test and live mode.
- *   formule_<plan> : monthly subscription of a plan
- *   unite_<plan>   : one purchased credit at the plan's price (unite_essential without a plan)
+ *   formule_solo       : the monthly Solo plan, the only one sold since 2026-10-12
+ *   unite_sans_formule : one purchased credit, sold only to accounts without a plan
+ * Essential, Performance and Expert (formule_<plan>) are no longer sold but still recognized.
  */
 
-export type PlanId = 'essential' | 'performance' | 'expert';
+export type PlanId = 'solo' | 'essential' | 'performance' | 'expert';
 
-export const PLANS: readonly PlanId[] = ['essential', 'performance', 'expert'];
+export const PLANS: readonly PlanId[] = ['solo', 'essential', 'performance', 'expert'];
+
+/** The plan a new subscription can be taken on. */
+export const SOLD_PLAN: PlanId = 'solo';
 
 export const isPlan = (value: unknown): value is PlanId => PLANS.includes(value as PlanId);
 
 export const planLookupKey = (plan: PlanId): string => `formule_${plan}`;
 
-/** Unit price of the practitioner's plan; without an active plan, the highest one (Essential's). */
-export const unitLookupKey = (plan: string | null | undefined): string => `unite_${isPlan(plan) ? plan : 'essential'}`;
+export const UNIT_LOOKUP_KEY = 'unite_sans_formule';
 
 export const planFromLookupKey = (key: string | null | undefined): PlanId | null => {
   const plan = key?.startsWith('formule_') ? key.slice('formule_'.length) : null;

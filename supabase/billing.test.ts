@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Démarrer Postgres (WASM) prend plusieurs secondes quand toute la suite tourne en parallèle.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const MIGRATION = readFileSync(join(__dirname, 'migrations', '20261012100000_abonnement_stripe.sql'), 'utf8');
+const MIGRATIONS = ['20261012100000_abonnement_stripe.sql', '20261012200000_formule_solo_essai_unique.sql'].map((file) =>
+  readFileSync(join(__dirname, 'migrations', file), 'utf8'),
+);
 
 const FIXTURE = `
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
@@ -96,10 +98,12 @@ const build = async (seed = ''): Promise<PGliteInterface> => {
   const pg = new PGlite();
   await pg.exec(FIXTURE);
   if (seed) await pg.exec(seed);
-  await pg.exec(MIGRATION);
+  for (const migration of MIGRATIONS) await pg.exec(migration);
   await pg.exec(TRIGGERS);
   return pg;
 };
+
+const migrateWith = (seed: string) => migrate(seed);
 
 const migrate = async (seed = '') => {
   if (seed) {
@@ -123,9 +127,9 @@ describe('migration abonnement Stripe : comptes existants', () => {
     // Essai expiré : sans formule, ses crédits (achetés) restent.
     expect(await balances(ALICE)).toEqual({ credits: 4, monthly_credits: 0 });
     expect(await sub(ALICE)).toMatchObject({ plan_id: 'free', status: 'inactive', billing_source: null });
-    // Expert attribué à la main : formule offerte, 20 crédits du mois, échéance dans un mois.
-    expect(await balances(BOB)).toEqual({ credits: 10, monthly_credits: 20 });
-    expect(await sub(BOB)).toMatchObject({ plan_id: 'expert', status: 'active', billing_source: 'offerte' });
+    // Expert attribué à la main : Solo offerte, 30 crédits du mois, échéance dans un mois.
+    expect(await balances(BOB)).toEqual({ credits: 10, monthly_credits: 30 });
+    expect(await sub(BOB)).toMatchObject({ plan_id: 'solo', status: 'active', billing_source: 'offerte' });
     expect(new Date((await sub(BOB)).current_period_end!).getTime()).toBeGreaterThan(Date.now() + 27 * 86_400_000);
     // Essai en cours : inchangé.
     expect(await sub(ADMIN)).toMatchObject({ status: 'trialing' });
@@ -313,5 +317,61 @@ describe('fin d’essai et formules offertes', () => {
     await db.query(`SELECT admin_update_user($1, p_plan_id => 'free', p_status => 'inactive', p_monthly_credits => 0)`, [ALICE]);
     expect(await sub(ALICE)).toMatchObject({ billing_source: null, status: 'inactive' });
     expect((await balances(ALICE)).monthly_credits).toBe(0);
+  });
+});
+
+describe('formule Solo et essai unique (#107)', () => {
+  beforeEach(() => migrate());
+
+  it('donne 30 crédits du mois à la formule Solo, sans report', async () => {
+    await signUp(ALICE, 'cus_a');
+    expect(await applySub('evt_1', 'cus_a', 'solo', 'active')).toBe('applied');
+    await renew('evt_2', 'cus_a', 'solo');
+    await consume(ALICE);
+    await renew('evt_3', 'cus_a', 'solo');
+    expect(await balances(ALICE)).toEqual({ credits: 3, monthly_credits: 30 });
+    expect(await sub(ALICE)).toMatchObject({ plan_id: 'solo', billing_source: 'stripe' });
+  });
+
+  it('refuse un second essai à la même adresse réelle (+étiquette, points Gmail, majuscules)', async () => {
+    const trial = async (id: string, email: string) => {
+      await db.query('INSERT INTO practitioners (id, email) VALUES ($1, $2)', [id, email]);
+      return (
+        await db.query<{ monthly_credits: number; trial_denied: boolean }>(
+          'SELECT monthly_credits, trial_denied FROM practitioners WHERE id = $1',
+          [id],
+        )
+      ).rows[0];
+    };
+    expect(await trial(ALICE, 'marie.dupont@gmail.com')).toEqual({ monthly_credits: 3, trial_denied: false });
+    expect(await trial(BOB, 'Marie.Dupont+essai2@googlemail.com')).toEqual({ monthly_credits: 0, trial_denied: true });
+    expect(await trial(ADMIN, 'marie.dupont@cabinet.fr')).toEqual({ monthly_credits: 3, trial_denied: false });
+    // Hors Gmail, les points comptent : une autre personne du même domaine garde son essai.
+    expect(await scalar<string>("SELECT email_trial_key('Jean.Martin+x@Cabinet.fr')")).toBe('jean.martin@cabinet.fr');
+  });
+
+  it("garde l'essai refusé même si le compte d'origine est supprimé", async () => {
+    await db.query("INSERT INTO practitioners (id, email) VALUES ($1, 'a@test.fr')", [ALICE]);
+    await db.query('DELETE FROM practitioners WHERE id = $1', [ALICE]);
+    await db.query("INSERT INTO practitioners (id, email) VALUES ($1, 'a+bis@test.fr')", [BOB]);
+    expect((await balances(BOB)).monthly_credits).toBe(0);
+  });
+
+  it("inscrit les adresses des comptes existants : un nouveau compte à la même adresse n'a pas d'essai", async () => {
+    await migrateWith(`INSERT INTO practitioners (id, email, credits) VALUES ('${ALICE}', 'ancienne@gmail.com', 2);`);
+    await db.query("INSERT INTO practitioners (id, email) VALUES ($1, 'an.cienne@gmail.com')", [BOB]);
+    expect(await balances(BOB)).toEqual({ credits: 0, monthly_credits: 0 });
+  });
+
+  it("signale à l'admin les comptes qui partagent une adresse réelle", async () => {
+    await db.query("INSERT INTO practitioners (id, email) VALUES ($1, 'x@gmail.com'), ($2, 'x+2@gmail.com')", [ALICE, BOB]);
+    await db.exec(`SET test.is_admin = 'true'`);
+    const { rows } = await db.query<{ trial_denied: boolean; accounts_with_same_key: number }>(
+      'SELECT trial_denied, accounts_with_same_key FROM admin_list_trial_flags() ORDER BY trial_denied',
+    );
+    expect(rows).toEqual([
+      { trial_denied: false, accounts_with_same_key: 2 },
+      { trial_denied: true, accounts_with_same_key: 2 },
+    ]);
   });
 });

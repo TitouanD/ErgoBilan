@@ -126,6 +126,7 @@ const INITIAL_PROFILE: UserProfile = {
   status: 'active',
   billingSource: null,
   currentPeriodEnd: null,
+  trialDenied: false,
   totalBilansGenerated: 0,
   hasAcceptedResponsibility: false,
   isAdmin: false,
@@ -147,17 +148,18 @@ const DEMO_PRACTITIONER: PractitionerProfile = {
   organizationRole: 'owner',
 };
 
-/** Demo profile: "Expert" plan with a customized branding so every feature is visible. */
+/** Demo profile: Solo plan with a customized branding so every feature is visible. */
 const DEMO_PROFILE: UserProfile = {
   id: 'demo-practitioner',
   email: 'demo@ergobilan.com',
   credits: 99,
-  monthlyCredits: 20,
-  purchasedCredits: 79,
-  subscriptionPlan: 'expert',
+  monthlyCredits: 30,
+  purchasedCredits: 69,
+  subscriptionPlan: 'solo',
   status: 'active',
   billingSource: null,
   currentPeriodEnd: null,
+  trialDenied: false,
   isAdmin: false,
   isTrial: true,
   trialDaysRemaining: 30,

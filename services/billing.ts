@@ -9,9 +9,14 @@
 import { supabase } from './db';
 import type { UserProfile } from '../types';
 
-export type PaidPlan = Exclude<UserProfile['subscriptionPlan'], 'free'>;
+/** The only plan sold since 2026-10-12. Mirrors the Stripe price `formule_solo`. */
+export const SOLO_PRICE_EUR = 21.99;
+/** « Illimité* » : fair-use limit of the Solo plan, in monthly credits (plan_monthly_credits). */
+export const SOLO_FAIR_USE_PER_MONTH = 30;
+/** Price of a purchased credit, sold only without an active plan. Mirrors `unite_sans_formule`. */
+export const UNIT_PRICE_EUR = 9;
 
-type BillingRequest = { action: 'subscribe'; plan: PaidPlan } | { action: 'buy_credits' } | { action: 'portal' };
+type BillingRequest = { action: 'subscribe'; plan: 'solo' } | { action: 'buy_credits' } | { action: 'portal' };
 
 const openStripe = async (request: BillingRequest): Promise<void> => {
   const { data, error } = await supabase.functions.invoke<{ url?: string }>('billing', { body: request });
@@ -20,25 +25,20 @@ const openStripe = async (request: BillingRequest): Promise<void> => {
 };
 
 export const BillingService = {
-  /** Checkout of a plan; the portal instead when a paid plan already exists. */
-  subscribe: (plan: PaidPlan) => openStripe({ action: 'subscribe', plan }),
-  /** Checkout of purchased credits at the plan's unit price. */
+  /** Checkout of the Solo plan; the portal instead when a paid plan already exists. */
+  subscribe: () => openStripe({ action: 'subscribe', plan: 'solo' }),
+  /** Checkout of purchased credits (accounts without an active plan). */
   buyCredits: () => openStripe({ action: 'buy_credits' }),
-  /** Stripe customer portal: invoices, card, plan change, cancellation. */
+  /** Stripe customer portal: invoices, card, cancellation. */
   openPortal: () => openStripe({ action: 'portal' }),
 };
 
-/** Unit price of a purchased credit, by plan (Essential's without a plan). Mirrors the Stripe prices. */
-export const UNIT_PRICE_EUR: Record<UserProfile['subscriptionPlan'], number> = {
-  free: 15,
-  essential: 15,
-  performance: 8,
-  expert: 5,
-};
-
-/** Plan whose prices apply to the practitioner: none unless the plan is active (or awaiting a payment retry). */
+/** Plan whose rights apply: none unless the plan is active (or awaiting a payment retry). */
 export const effectivePlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 'status'>): UserProfile['subscriptionPlan'] =>
   profile.status === 'active' || profile.status === 'past_due' ? profile.subscriptionPlan : 'free';
+
+/** A plan (paid or offered) is active: its monthly credits replace unit purchases. */
+export const hasActivePlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 'status'>): boolean => effectivePlan(profile) !== 'free';
 
 /** Return from a Stripe page: reads and removes `?paiement=` from the address bar. */
 export const readPaymentReturn = (): 'ok' | 'annule' | null => {
@@ -50,6 +50,6 @@ export const readPaymentReturn = (): 'ok' | 'annule' | null => {
   return value;
 };
 
-/** Report branding (logo, colours) is part of the Performance and Expert plans, as the pricing grid says. */
+/** Report branding (logo, colours) comes with any active plan (Solo; formerly Performance and Expert). */
 export const hasBrandingPlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 'status' | 'isAdmin'>): boolean =>
-  profile.isAdmin || ['performance', 'expert'].includes(effectivePlan(profile));
+  profile.isAdmin || ['solo', 'performance', 'expert'].includes(effectivePlan(profile));

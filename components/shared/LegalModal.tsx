@@ -210,7 +210,7 @@ const CGVContent: React.FC = () => (
           renouvellement, leur nombre est remis à celui prévu par la formule.
         </li>
         <li>
-          <strong>Crédits achetés</strong> : achetés à l'unité. Ils n'expirent pas tant que le compte existe.
+          <strong>Crédits achetés</strong> : achetés à l'unité sans formule. Ils n'expirent pas tant que le compte existe.
         </li>
       </ul>
       <p className="mt-2">Les crédits du mois sont utilisés en premier. Les crédits ne sont ni cessibles ni convertibles en argent.</p>
@@ -220,53 +220,22 @@ const CGVContent: React.FC = () => (
       <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">3. Essai gratuit</h2>
       <p>
         L'inscription ouvre un essai gratuit de 30 jours avec 3 crédits, sans moyen de paiement. Les crédits d'essai non utilisés sont
-        conservés si le Client souscrit une formule pendant l'essai ; ils sont perdus à la fin de l'essai sinon.
+        conservés si le Client souscrit une formule pendant l'essai ; ils sont perdus à la fin de l'essai sinon. L'essai est accordé une
+        seule fois par adresse e-mail.
       </p>
     </section>
 
     <section>
-      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">4. Formules et prix</h2>
-      <div className="overflow-x-auto mt-2">
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="bg-[var(--card-bg-raised)]">
-              <th className="border border-[var(--border-color)] p-2 text-left">Formule</th>
-              <th className="border border-[var(--border-color)] p-2 text-left">Prix mensuel</th>
-              <th className="border border-[var(--border-color)] p-2 text-left">Crédits du mois</th>
-              <th className="border border-[var(--border-color)] p-2 text-left">Crédit acheté à l'unité</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="border border-[var(--border-color)] p-2 font-medium">Essentiel</td>
-              <td className="border border-[var(--border-color)] p-2">19 €</td>
-              <td className="border border-[var(--border-color)] p-2">2</td>
-              <td className="border border-[var(--border-color)] p-2">15 €</td>
-            </tr>
-            <tr className="bg-[var(--card-bg-raised)]/50">
-              <td className="border border-[var(--border-color)] p-2 font-medium">Performance</td>
-              <td className="border border-[var(--border-color)] p-2">34 €</td>
-              <td className="border border-[var(--border-color)] p-2">6</td>
-              <td className="border border-[var(--border-color)] p-2">8 €</td>
-            </tr>
-            <tr>
-              <td className="border border-[var(--border-color)] p-2 font-medium">Expert</td>
-              <td className="border border-[var(--border-color)] p-2">89 €</td>
-              <td className="border border-[var(--border-color)] p-2">20</td>
-              <td className="border border-[var(--border-color)] p-2">5 €</td>
-            </tr>
-            <tr className="bg-[var(--card-bg-raised)]/50">
-              <td className="border border-[var(--border-color)] p-2 font-medium">Sans formule</td>
-              <td className="border border-[var(--border-color)] p-2">—</td>
-              <td className="border border-[var(--border-color)] p-2">—</td>
-              <td className="border border-[var(--border-color)] p-2">15 €</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-2">
-        Les prix sont exprimés en euros. TVA non applicable, article 293 B du Code général des impôts. Aucune formule n'est illimitée.
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">4. Formule et prix</h2>
+      <p>
+        La formule <strong>Solo</strong> coûte <strong>21,99 € par mois</strong>. Elle comprend la rédaction illimitée de bilans par l'IA,
+        dans la limite d'un usage raisonnable de <strong>30 bilans par mois</strong> (30 crédits du mois), ainsi que la personnalisation du
+        rapport. Le Client qui a besoin de davantage contacte le Vendeur.
       </p>
+      <p className="mt-2">
+        Sans formule, un crédit acheté à l'unité coûte <strong>9 €</strong>. L'achat à l'unité n'est pas proposé pendant une formule active.
+      </p>
+      <p className="mt-2">Les prix sont exprimés en euros. TVA non applicable, article 293 B du Code général des impôts.</p>
       <p className="mt-2">
         Le Vendeur peut modifier ses prix. Toute hausse est notifiée par e-mail au moins 30 jours avant son application à une formule en
         cours ; le Client peut résilier avant cette date.
@@ -292,16 +261,7 @@ const CGVContent: React.FC = () => (
     </section>
 
     <section>
-      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">6. Changement de formule</h2>
-      <p>
-        Le Client change de formule depuis l'espace de gestion de son abonnement. Le passage à une formule supérieure est immédiat : la
-        différence de prix pour le mois en cours est facturée au prorata et la différence de crédits du mois est ajoutée aussitôt. Le
-        passage à une formule inférieure prend effet au renouvellement suivant.
-      </p>
-    </section>
-
-    <section>
-      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">7. Durée et résiliation</h2>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">6. Durée et résiliation</h2>
       <p>
         Les formules sont sans engagement de durée. Le Client résilie à tout moment depuis l'espace de gestion de son abonnement ; la
         résiliation prend effet à la fin du mois déjà payé, sans remboursement au prorata. Jusque-là, les crédits du mois restent
@@ -315,7 +275,7 @@ const CGVContent: React.FC = () => (
     </section>
 
     <section>
-      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">8. Responsabilité</h2>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">7. Responsabilité</h2>
       <p>
         Les textes rédigés par l'IA sont des propositions que le Client relit, corrige et valide sous sa seule responsabilité
         professionnelle. La responsabilité du Vendeur, toutes causes confondues, est limitée aux sommes payées par le Client au cours des
@@ -324,7 +284,7 @@ const CGVContent: React.FC = () => (
     </section>
 
     <section>
-      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">9. Droit applicable et litiges</h2>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">8. Droit applicable et litiges</h2>
       <p>
         Les présentes CGV sont soumises au droit français. En cas de litige, les parties recherchent d'abord une solution amiable ; à
         défaut, les tribunaux du ressort de Brest sont seuls compétents.

@@ -231,6 +231,7 @@ export type Database = {
           monthly_credits: number;
           phone_pro: string | null;
           siret: string | null;
+          trial_denied: boolean;
         };
         Insert: {
           address_pro?: string | null;
@@ -248,6 +249,7 @@ export type Database = {
           monthly_credits?: number;
           phone_pro?: string | null;
           siret?: string | null;
+          trial_denied?: boolean;
         };
         Update: {
           address_pro?: string | null;
@@ -265,6 +267,7 @@ export type Database = {
           monthly_credits?: number;
           phone_pro?: string | null;
           siret?: string | null;
+          trial_denied?: boolean;
         };
         Relationships: [];
       };
@@ -384,6 +387,10 @@ export type Database = {
           trial_ends_at: string;
           user_id: string;
         }[];
+      };
+      admin_list_trial_flags: {
+        Args: Record<PropertyKey, never>;
+        Returns: { accounts_with_same_key: number; email_key: string; trial_denied: boolean; user_id: string }[];
       };
       admin_save_test_detail: {
         Args: {

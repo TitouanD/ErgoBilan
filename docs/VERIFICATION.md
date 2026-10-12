@@ -46,7 +46,7 @@ Paramètres :
 - `&tests=bhk,mabc-2` remplace les tests du profil, avec leurs identifiants du catalogue. `&tests=tout` charge le catalogue entier.
 - `&scores=vide` ajoute les tests sans remplir les scores.
 - `&questionnaires=oui` (tableau de bord) ajoute quatre questionnaires parents fictifs, chiffrés comme par le portail et déchiffrés par le tableau de bord (`dev/fictiveQuestionnaires.ts`) : Léo et Adam `FICTIF` reçus, un reçu indéchiffrable (libellé générique `Dossier #3`) et un en attente. Ils restent en mémoire : rien n'est écrit dans Supabase, « Importer » et « Supprimer » échouent sur eux.
-- `&modale=abonnement` ou `&modale=paywall` ouvre la modale des offres (plans ou « Plus de crédits ») par-dessus l'écran du scénario ; `&modale=cgv` ouvre les Conditions Générales de Vente (aussi publiques à l'adresse `/?legal=cgv`, avant toute connexion).
+- `&modale=abonnement` ou `&modale=paywall` ouvre la modale des offres (formule Solo, ou « Plus de crédits ») par-dessus l'écran du scénario ; `&modale=cgv` ouvre les Conditions Générales de Vente (aussi publiques à l'adresse `/?legal=cgv`, avant toute connexion).
 
 Le tableau de bord contient :
 
@@ -161,7 +161,7 @@ Couverture actuelle :
 - fiche patient : visionneuse, identité, planifier, reporter, compléter, archiver, supprimer ;
 - portail famille : lien généré, questionnaire rempli et envoyé chiffré par la famille, importé par la praticienne ; lien collé sans clé refusé ;
 - test personnalisé : créé depuis le catalogue puis ajouté au bilan ;
-- profil et image de marque : profil du cabinet, préférences de rédaction, Studio Design (formule Performance ou Expert) ou abonnement proposé (sans formule), impression, modale d'abonnement et mur de crédits ;
+- profil et image de marque : profil du cabinet, préférences de rédaction, Studio Design (formule active) ou abonnement proposé (sans formule), impression, modale d'abonnement et mur de crédits ;
 - sauvegarde : export `.ergobilan` puis réimport d'un patient supprimé, fichier invalide refusé ;
 - administration : catalogue officiel, utilisateurs, supervision, accès refusé par le serveur ;
 - accueil et démo : page d'accueil, connexion, mentions légales, démo et import d'un questionnaire **sans aucune requête vers Supabase** ;

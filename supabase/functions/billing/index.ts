@@ -1,11 +1,11 @@
 /**
  * billing — opens Stripe pages for the signed-in practitioner (#107, ADR 0002).
  *
- * POST { action: 'subscribe', plan }  -> Checkout (subscription) for a plan, or the customer
- *                                      portal when a paid plan already exists (plan changes
- *                                      and cancellation go through the portal).
- * POST { action: 'buy_credits' }      -> Checkout (one-off payment) of purchased credits at the
- *                                      plan's unit price (quantity chosen on the Stripe page).
+ * POST { action: 'subscribe', plan }  -> Checkout (subscription) of the Solo plan, or the customer
+ *                                      portal when a paid plan already exists (cancellation
+ *                                      goes through the portal).
+ * POST { action: 'buy_credits' }      -> Checkout (one-off payment) of purchased credits, only
+ *                                      without an active plan (quantity chosen on the Stripe page).
  * POST { action: 'portal' }           -> customer portal (invoices, card, plan, cancellation).
  * Answer: { url } to redirect to. Credits are granted by `stripe-webhook`, never here.
  *
@@ -17,7 +17,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@23.0.0';
 import { captureEdgeException, captureEdgeMessage } from '../_shared/sentry.ts';
-import { isAllowedOrigin, isPlan, planLookupKey, unitLookupKey } from '../_shared/billing.ts';
+import { isAllowedOrigin, planLookupKey, SOLD_PLAN, UNIT_LOOKUP_KEY } from '../_shared/billing.ts';
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -176,26 +176,29 @@ Deno.serve(async (req: Request) => {
     if (body.action === 'portal') return json(origin, 200, { url: await portalUrl(customer, origin) });
 
     if (body.action === 'subscribe') {
-      if (!isPlan(body.plan)) return json(origin, 400, { error: 'INVALID_PLAN' });
+      if (body.plan !== SOLD_PLAN) return json(origin, 400, { error: 'INVALID_PLAN' });
       // A paid plan is changed or cancelled in the portal, never by a second subscription.
       if (account.billingSource === 'stripe') return json(origin, 200, { url: await portalUrl(customer, origin) });
       const session = await stripe.checkout.sessions.create({
         ...checkoutBase(customer, userId, origin),
         mode: 'subscription',
-        line_items: [{ price: await priceId(planLookupKey(body.plan)), quantity: 1 }],
+        line_items: [{ price: await priceId(planLookupKey(SOLD_PLAN)), quantity: 1 }],
         subscription_data: { metadata: { user_id: userId } },
       });
       return json(origin, 200, { url: session.url });
     }
 
     if (body.action === 'buy_credits') {
-      const plan = account.status === 'active' || account.status === 'past_due' ? account.planId : null;
+      // A plan already includes its monthly credits (« illimité* »): unit purchases are for accounts without one.
+      if ((account.status === 'active' || account.status === 'past_due') && account.planId !== 'free') {
+        return json(origin, 409, { error: 'PLAN_ACTIVE' });
+      }
       const session = await stripe.checkout.sessions.create({
         ...checkoutBase(customer, userId, origin),
         mode: 'payment',
         line_items: [
           {
-            price: await priceId(unitLookupKey(plan)),
+            price: await priceId(UNIT_LOOKUP_KEY),
             quantity: 1,
             adjustable_quantity: { enabled: true, minimum: 1, maximum: MAX_UNITS_PER_PURCHASE },
           },

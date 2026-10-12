@@ -15,7 +15,7 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
-import { BillingService, effectivePlan, readPaymentReturn, type PaidPlan } from './services/billing';
+import { BillingService, hasActivePlan, readPaymentReturn } from './services/billing';
 import { readLegalTabFromUrl } from './utils/legalLink';
 import { Logger } from './utils/logger';
 import { setAppTag, setAppUser } from './services/sentryService';
@@ -487,10 +487,11 @@ const AppRouter = () => {
             <PricingModal
               isPaywallMode={pricingModalMode === 'paywall'}
               onClose={() => setPricingModalMode(null)}
-              currentPlan={effectivePlan(userProfile)}
+              hasActivePlan={hasActivePlan(userProfile)}
               hasPaidPlan={userProfile.billingSource === 'stripe'}
+              renewalDate={userProfile.currentPeriodEnd}
               isBusy={isOpeningStripe}
-              onSelectPlan={(plan: PaidPlan) => openStripe(() => BillingService.subscribe(plan))}
+              onSubscribe={() => openStripe(BillingService.subscribe)}
               onBuyCredits={() => openStripe(BillingService.buyCredits)}
               onManageSubscription={() => openStripe(BillingService.openPortal)}
             />
