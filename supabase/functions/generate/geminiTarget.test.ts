@@ -95,6 +95,7 @@ describe('resolveGeminiTarget', () => {
     if (!('target' in result)) throw new Error(result.error);
     expect(result.target.provider).toBe('agent-platform-eu');
     expect(result.target.model).toBe(AGENT_PLATFORM_MODEL);
+    expect(result.target.generationConfig).toEqual({ thinkingConfig: { thinkingLevel: 'high' } });
     expect(result.target.url).toBe(
       `https://aiplatform.eu.rep.googleapis.com/v1/projects/ergobilan-test/locations/eu/publishers/google/models/${AGENT_PLATFORM_MODEL}:generateContent`,
     );
@@ -109,6 +110,7 @@ describe('resolveGeminiTarget', () => {
     const result = resolveGeminiTarget({ GEMINI_API_KEY: 'ai-studio' });
     if (!('target' in result)) throw new Error(result.error);
     expect(result.target.provider).toBe('gemini-api');
+    expect(result.target.generationConfig).toEqual({});
     expect(result.target.url).toMatch(/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/.+:generateContent$/);
     expect(await result.target.authHeaders()).toEqual({ 'x-goog-api-key': 'ai-studio' });
   });

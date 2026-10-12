@@ -30,7 +30,7 @@ const GEMINI = resolveGeminiTarget({ GCP_SA_KEY: Deno.env.get('GCP_SA_KEY'), GEM
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get('GEMINI_TIMEOUT_MS'), 50_000);
+const GEMINI_TIMEOUT_MS = parsePositiveInt(Deno.env.get('GEMINI_TIMEOUT_MS'), 100_000);
 const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get('AI_MAX_REQUESTS_PER_HOUR'), 15);
 const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get('GEMINI_MAX_RETRIES'), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get('GEMINI_RETRY_BASE_MS'), 2_000);
@@ -199,6 +199,7 @@ const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<Gem
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: built.contents }] }],
     generationConfig: {
+      ...target.generationConfig,
       responseMimeType: built.responseMimeType,
       ...(built.responseSchema ? { responseSchema: built.responseSchema } : {}),
     },

@@ -12,6 +12,12 @@
  */
 
 export const AGENT_PLATFORM_MODEL = 'gemini-3.8-flash';
+/**
+ * Quality first. On the fictive e2e bilan (2026-10-12), per initial report: high 4.8 US cents,
+ * medium 3.9, low 2.1; low misplaces details, the Flash-Lite models make clinical errors.
+ * A call with reasoning can take 20 to 50 s: GEMINI_TIMEOUT_MS must leave room for it.
+ */
+export const AGENT_PLATFORM_THINKING_LEVEL = 'high';
 export const AGENT_PLATFORM_LOCATION = 'eu';
 export const GEMINI_API_MODEL = 'gemini-3-flash-preview';
 
@@ -26,6 +32,8 @@ export interface GeminiTarget {
   provider: GeminiProvider;
   model: string;
   url: string;
+  /** Merged into the generationConfig of every request. */
+  generationConfig: Record<string, unknown>;
   /** Auth headers of a request; rejects when the OAuth token cannot be obtained. */
   authHeaders: () => Promise<Record<string, string>>;
 }
@@ -137,6 +145,7 @@ export const resolveGeminiTarget = (
       target: {
         provider: 'agent-platform-eu',
         model: AGENT_PLATFORM_MODEL,
+        generationConfig: { thinkingConfig: { thinkingLevel: AGENT_PLATFORM_THINKING_LEVEL } },
         url: agentPlatformUrl(key.project_id),
         authHeaders: async () => ({ Authorization: `Bearer ${await token()}` }),
       },
@@ -148,6 +157,7 @@ export const resolveGeminiTarget = (
       target: {
         provider: 'gemini-api',
         model: GEMINI_API_MODEL,
+        generationConfig: {},
         url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_API_MODEL}:generateContent`,
         authHeaders: async () => ({ 'x-goog-api-key': apiKey }),
       },
