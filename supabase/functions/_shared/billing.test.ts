@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupKey, describeSubscription, planFromLookupKey, routeEvent, unitLookupKey } from './billing';
+import { dedupKey, describeSubscription, planFromLookupKey, routeEvent } from './billing';
 
 const subscription = (status: string, lookupKey: string | null = 'formule_performance') => ({
   id: 'sub_1',
@@ -18,10 +18,9 @@ describe('prix Stripe', () => {
     expect(planFromLookupKey(null)).toBeNull();
   });
 
-  it('vend le crédit au prix de la formule, et au prix Essential sans formule', () => {
-    expect(unitLookupKey('expert')).toBe('unite_expert');
-    expect(unitLookupKey('free')).toBe('unite_essential');
-    expect(unitLookupKey(null)).toBe('unite_essential');
+  it('reconnaît la formule Solo et les anciennes formules', () => {
+    expect(planFromLookupKey('formule_solo')).toBe('solo');
+    expect(planFromLookupKey('formule_performance')).toBe('performance');
   });
 });
 

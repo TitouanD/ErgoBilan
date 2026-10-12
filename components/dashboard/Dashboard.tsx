@@ -332,7 +332,10 @@ export const Dashboard: React.FC<Props> = ({
         <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[var(--secondary)] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="animate-pulse text-[var(--primary)] motion-reduce:animate-none" />
-            {userProfile.isTrial ? (
+            {userProfile.trialDenied && userProfile.credits === 0 ? (
+              // One trial per real e-mail address (#107): never a block, only no free credits.
+              <span className="font-medium">L'essai gratuit a déjà été utilisé avec cette adresse e-mail.</span>
+            ) : userProfile.isTrial ? (
               <>
                 <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
                 <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>

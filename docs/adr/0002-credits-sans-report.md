@@ -6,7 +6,7 @@ Pourquoi :
 
 - **Pas de report.** L'ancienne grille promettait un report, plafonné à 6 pour Essential. Un report plafonné multiplie les cas limites (changement de formule, résiliation, plafond par formule) et les questions des clientes sur leur solde. Sans report, le renouvellement se réduit à « remettre le solde du mois à N ».
 - **Deux soldes.** Un crédit acheté a été payé à l'unité : le faire disparaître au renouvellement reviendrait à encaisser sans contrepartie. Un solde unique remis à N effacerait ces crédits.
-- **Aucune formule illimitée.** Chaque génération a un coût Gemini : Expert donne 20 crédits par mois, pas un accès illimité.
+- **Aucune formule illimitée.** Chaque génération a un coût Gemini. Depuis le 2026-10-12, la seule formule vendue, Solo, est présentée comme « illimitée\* » face à la concurrence, mais l'astérisque renvoie à un usage raisonnable de 30 bilans par mois : ce sont 30 crédits du mois, rien de plus.
 
 ## Considered Options
 

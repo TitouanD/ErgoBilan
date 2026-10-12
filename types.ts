@@ -295,12 +295,14 @@ export interface UserProfile {
   /** Crédits achetés: never expire. */
   purchasedCredits: number;
   isAdmin: boolean;
-  subscriptionPlan: 'free' | 'essential' | 'performance' | 'expert';
+  subscriptionPlan: 'free' | 'solo' | 'essential' | 'performance' | 'expert';
   status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
   /** 'stripe' = paid plan (managed in the Stripe portal), 'offerte' = granted by the admin, null = none. */
   billingSource: 'stripe' | 'offerte' | null;
   /** Next renewal of a plan (ISO), or end of the last one. */
   currentPeriodEnd: string | null;
+  /** The trial was refused: this real e-mail address already had one (#107). */
+  trialDenied: boolean;
   isTrial: boolean;
   trialDaysRemaining: number;
   totalBilansGenerated: number;
@@ -478,10 +480,14 @@ export interface AdminUserRow {
   /** Crédits du mois */
   monthly_credits: number;
   billing_source: 'stripe' | 'offerte' | null;
+  /** Trial refused: the real e-mail address already had one (admin_list_trial_flags). */
+  trial_denied?: boolean;
+  /** Accounts sharing this real e-mail address (+tags and Gmail dots removed). */
+  accounts_with_same_key?: number;
   organization_id: string | null;
   organization_name: string | null;
   organization_role: string | null;
-  subscription_plan: 'free' | 'essential' | 'performance' | 'expert' | string;
+  subscription_plan: 'free' | 'solo' | 'essential' | 'performance' | 'expert' | string;
   subscription_status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive' | string;
   trial_ends_at: string | null;
   current_period_end: string | null;
@@ -495,7 +501,7 @@ export interface AdminUserUpdatePayload {
   isAdmin?: boolean;
   credits?: number;
   monthlyCredits?: number;
-  planId?: 'free' | 'essential' | 'performance' | 'expert';
+  planId?: 'free' | 'solo' | 'essential' | 'performance' | 'expert';
   status?: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
   trialEndsAt?: string | null;
   currentPeriodEnd?: string | null;

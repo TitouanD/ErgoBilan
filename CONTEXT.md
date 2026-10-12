@@ -120,11 +120,11 @@ Crédit payé à l'unité, ou crédit d'essai conservé à la souscription. Il n
 _Éviter_ : crédit hors forfait, crédit supplémentaire
 
 **Achat à l'unité** :
-Paiement unique d'un crédit acheté, au prix fixé par la formule, ou au prix le plus haut sans formule.
+Paiement unique de crédits achetés, réservé aux comptes sans formule.
 _Éviter_ : hors forfait, déblocage, one-off
 
 **Formule** :
-Abonnement mensuel payant (Essentiel, Performance ou Expert) qui donne chaque mois un nombre fixe de crédits du mois. Aucune formule n'est illimitée.
+Abonnement mensuel payant ; la seule vendue est Solo, qui donne 30 crédits du mois. Elle est présentée comme illimitée, dans la limite de cet usage raisonnable : aucune formule ne l'est vraiment.
 _Éviter_ : plan, offre, forfait
 
 **Formule offerte** :
@@ -132,7 +132,7 @@ Formule attribuée gratuitement par l'administrateur, hors paiement (testeuse, p
 _Éviter_ : compte gratuit, accès illimité
 
 **Essai** :
-Période gratuite de 30 jours qui suit l'inscription, avec quelques crédits offerts. Sans formule ni crédit, seule la génération IA est bloquée ; le reste de l'application et les dossiers patients restent accessibles.
+Période gratuite de 30 jours qui suit l'inscription, avec quelques crédits offerts, une seule fois par adresse e-mail. Sans formule ni crédit, seule la génération IA est bloquée ; le reste de l'application et les dossiers patients restent accessibles.
 _Éviter_ : période d'essai gratuite, trial
 
 ### Développement

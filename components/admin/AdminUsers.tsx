@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
 import type { AdminUserRow } from '../../types';
 
-type PlanId = 'free' | 'essential' | 'performance' | 'expert';
+type PlanId = 'free' | 'solo' | 'essential' | 'performance' | 'expert';
 type SubscriptionStatus = 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
 
 interface UserDraft {
@@ -18,7 +18,7 @@ interface UserDraft {
   status: SubscriptionStatus;
 }
 
-const PLAN_OPTIONS: PlanId[] = ['free', 'essential', 'performance', 'expert'];
+const PLAN_OPTIONS: PlanId[] = ['free', 'solo', 'essential', 'performance', 'expert'];
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'trialing', 'canceled', 'past_due', 'inactive'];
 
 const normalizePlan = (value: string): PlanId => (PLAN_OPTIONS.includes(value as PlanId) ? (value as PlanId) : 'free');
@@ -183,6 +183,13 @@ export const AdminUsers: React.FC = () => {
                     <td className="px-3 py-2">
                       <div className="font-bold text-white">{`${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email}</div>
                       <div className="text-[10px] text-stone-500">{row.email}</div>
+                      {(row.trial_denied || (row.accounts_with_same_key ?? 1) > 1) && (
+                        <div className="text-[10px] font-bold text-amber-400">
+                          {row.trial_denied ? 'Essai refusé (adresse déjà utilisée)' : ''}
+                          {row.trial_denied && (row.accounts_with_same_key ?? 1) > 1 ? ' · ' : ''}
+                          {(row.accounts_with_same_key ?? 1) > 1 ? `${row.accounts_with_same_key} comptes, même adresse réelle` : ''}
+                        </div>
+                      )}
                       <div className="text-[10px] text-stone-600">{row.user_id}</div>
                     </td>
                     <td className="px-3 py-2">

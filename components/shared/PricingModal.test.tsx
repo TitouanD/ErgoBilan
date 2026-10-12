@@ -4,60 +4,56 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PricingModal } from './PricingModal';
 
-const handlers = () => ({ onClose: vi.fn(), onSelectPlan: vi.fn(), onBuyCredits: vi.fn(), onManageSubscription: vi.fn() });
+const handlers = () => ({ onClose: vi.fn(), onSubscribe: vi.fn(), onBuyCredits: vi.fn(), onManageSubscription: vi.fn() });
 
-describe('PricingModal : plans sur un écran de portable (#103)', () => {
-  it('borne la modale à la hauteur visible, sans carte agrandie qui déborderait', () => {
+describe('PricingModal : écran de portable (#103)', () => {
+  it('borne la modale à la hauteur visible', () => {
     render(<PricingModal {...handlers()} />);
-    const modal = screen.getByTestId('pricing-plans');
-    expect(modal.className).toContain('max-h-[calc(100dvh-2rem)]');
-    // La carte Performance n'est plus agrandie (lg:scale-105 la faisait sortir de la modale).
-    expect(modal.querySelector('[class*="scale-105"]')).toBeNull();
-    // Les trois cartes ont la même hauteur : les boutons sont alignés en bas.
-    expect(screen.getByText('Activer Performance').closest('.lg\\:items-stretch')).not.toBeNull();
+    expect(screen.getByTestId('pricing-plans').className).toContain('max-h-[calc(100dvh-2rem)]');
   });
 });
 
-describe('PricingModal : paiement Stripe (#107)', () => {
-  it('ne promet ni réduction ni report de crédits, ni bilans illimités', () => {
+describe('PricingModal : formule Solo (#107)', () => {
+  it('présente une seule formule, illimitée avec la limite d’usage raisonnable en note', () => {
     render(<PricingModal {...handlers()} />);
-    expect(document.body.textContent).not.toMatch(/-50|reports? de crédits|illimit|prioritaire/i);
-    expect(screen.getByText(/bilans inclus se renouvellent chaque mois, sans report/)).toBeTruthy();
+    expect(screen.getByText('Solo')).toBeTruthy();
+    expect(screen.getByText('21,99 €')).toBeTruthy();
+    expect(screen.getByText(/illimités\*/)).toBeTruthy();
+    expect(screen.getByText(/\*Dans la limite d'un usage raisonnable de 30 bilans par mois/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/-50|Essentiel|Performance|Expert|report/i);
   });
 
-  it('souscrit à la formule choisie', () => {
+  it('souscrit à Solo, ou propose le bilan à 9 € sans abonnement', () => {
     const h = handlers();
     render(<PricingModal {...h} />);
-    fireEvent.click(screen.getByText('Choisir Expert'));
-    expect(h.onSelectPlan).toHaveBeenCalledWith('expert');
-  });
-
-  it("propose l'achat à l'unité au prix de la formule, et 15 € sans formule", () => {
-    const { unmount } = render(<PricingModal {...handlers()} isPaywallMode />);
-    expect(screen.getByText('15 € le bilan, sans engagement')).toBeTruthy();
-    expect(screen.queryByText(/Offre Spéciale/)).toBeNull();
-    unmount();
-
-    const h = handlers();
-    render(<PricingModal {...h} isPaywallMode currentPlan="performance" hasPaidPlan />);
-    fireEvent.click(screen.getByText("Acheter des bilans à l'unité"));
+    fireEvent.click(screen.getByText('Choisir Solo'));
+    expect(h.onSubscribe).toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Sans abonnement : 9 € le bilan/));
     expect(h.onBuyCredits).toHaveBeenCalled();
-    expect(screen.getByText('8 € le bilan, sans engagement')).toBeTruthy();
-    expect(screen.getByText('Changer de formule')).toBeTruthy();
   });
 
-  it('avec une formule payée : formule actuelle désactivée, changement et factures par le portail', () => {
+  it("avec une formule payée : formule actuelle, pas d'achat à l'unité, factures par le portail", () => {
     const h = handlers();
-    render(<PricingModal {...h} currentPlan="performance" hasPaidPlan />);
+    render(<PricingModal {...h} hasActivePlan hasPaidPlan />);
     expect((screen.getByText('Formule actuelle') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByText('Passer à Expert'));
-    expect(h.onSelectPlan).toHaveBeenCalledWith('expert');
+    expect(screen.queryByText(/le bilan/)).toBeNull();
     fireEvent.click(screen.getByText(/Factures, carte bancaire et résiliation/));
     expect(h.onManageSubscription).toHaveBeenCalled();
   });
 
-  it("sans formule payée, n'affiche pas l'accès au portail", () => {
-    render(<PricingModal {...handlers()} currentPlan="expert" />);
-    expect(screen.queryByText(/Factures, carte bancaire/)).toBeNull();
+  it('sans formule, le mur de crédits propose Solo et le bilan à l’unité', () => {
+    const h = handlers();
+    render(<PricingModal {...h} isPaywallMode />);
+    expect(screen.getByText('Plus de crédits disponibles.')).toBeTruthy();
+    expect(screen.getByText('9 € le bilan, sans engagement')).toBeTruthy();
+    fireEvent.click(screen.getByText("Acheter des bilans à l'unité"));
+    expect(h.onBuyCredits).toHaveBeenCalled();
+  });
+
+  it('avec une formule dont les 30 bilans du mois sont utilisés, annonce leur retour sans proposer d’achat', () => {
+    render(<PricingModal {...handlers()} isPaywallMode hasActivePlan renewalDate="2026-11-12T20:09:41Z" />);
+    expect(screen.getByText('Limite du mois atteinte.')).toBeTruthy();
+    expect(screen.getByText(/Ils reviennent le 12 novembre/)).toBeTruthy();
+    expect(screen.queryByText(/le bilan/)).toBeNull();
   });
 });

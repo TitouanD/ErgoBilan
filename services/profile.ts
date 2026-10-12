@@ -8,7 +8,7 @@ import type { Json } from '../types/supabase';
 import { DEFAULT_BRANDING, PROFILE_BRANDING_FIELDS } from '../data/brandingDefaults';
 import { Logger } from '../utils/logger';
 
-const PLANS: ReadonlyArray<UserProfile['subscriptionPlan']> = ['free', 'essential', 'performance', 'expert'];
+const PLANS: ReadonlyArray<UserProfile['subscriptionPlan']> = ['free', 'solo', 'essential', 'performance', 'expert'];
 const STATUSES: ReadonlyArray<UserProfile['status']> = ['active', 'trialing', 'canceled', 'past_due', 'inactive'];
 
 const asPlan = (value: string | null | undefined): UserProfile['subscriptionPlan'] =>
@@ -31,7 +31,9 @@ export const ProfileService = {
     try {
       const { data: prac, error: pracError } = await supabase
         .from('practitioners')
-        .select('email, credits, monthly_credits, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config')
+        .select(
+          'email, credits, monthly_credits, trial_denied, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config',
+        )
         .eq('id', userId)
         .single();
       if (pracError || !prac) throw pracError ?? new Error('Practitioner not found');
@@ -63,6 +65,7 @@ export const ProfileService = {
         status: sub ? asStatus(sub.status) : 'inactive',
         billingSource: sub?.billing_source === 'stripe' || sub?.billing_source === 'offerte' ? sub.billing_source : null,
         currentPeriodEnd: sub?.current_period_end ?? null,
+        trialDenied: prac.trial_denied ?? false,
         isTrial,
         trialDaysRemaining,
         totalBilansGenerated: 0,
