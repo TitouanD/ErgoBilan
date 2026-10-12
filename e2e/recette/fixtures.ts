@@ -2,7 +2,8 @@
  * fixtures.ts — what every recette test gets (docs/VERIFICATION.md § Recette).
  *
  * - The session of the test account opened by globalSetup, put in the browser; `app.open`
- *   loads a URL, types the PIN and waits for the scenario, if any.
+ *   loads a URL, types the PIN and waits for the scenario, if any. `test.use({ connecte: false })`
+ *   starts without a session (landing page, demo).
  * - Supabase is read for real (auth, PIN, catalogue). Any other write is blocked
  *   and fails the test: the recette never writes to the production database.
  *   A test that needs a write simulates it with `app.mock`.
@@ -44,11 +45,16 @@ export interface AIRequestSeen {
 }
 
 export interface App {
-  /** Loads `/?<query>`, types the PIN and, for a scenario, waits until it is ready. */
-  open: (query?: string) => Promise<void>;
+  /**
+   * Loads `/?<query>`, types the PIN and, for a scenario, waits until it is ready.
+   * `pin: false` stays on the lock screen.
+   */
+  open: (query?: string, options?: { pin?: boolean }) => Promise<void>;
   /** Answers a Supabase request the app writes (portal, branding…) instead of the database. */
   mock: (url: RegExp, answer: (route: Route) => Promise<void>) => Promise<void>;
   aiRequests: AIRequestSeen[];
+  /** Every request sent to Supabase (`METHOD /path`), e.g. to check that the demo sends none. */
+  supabaseRequests: string[];
   /** Console errors expected by the test (e.g. a validation it provokes). */
   expectConsoleError: (pattern: RegExp) => void;
 }
@@ -59,7 +65,9 @@ export const RECETTE_DATE = new Date('2026-10-01T09:00:00+02:00');
 const { url: SUPABASE_URL } = supabaseConfig();
 const demoAnswer = createDemoTransport(0);
 
-export const test = base.extend<{ app: App }, { session: Session }>({
+export const test = base.extend<{ app: App; connecte: boolean }, { session: Session }>({
+  connecte: [true, { option: true }],
+
   session: [
     async ({}, use) => {
       await use(JSON.parse(readFileSync(SESSION_FILE, 'utf8')) as Session);
@@ -67,10 +75,12 @@ export const test = base.extend<{ app: App }, { session: Session }>({
     { scope: 'worker' },
   ],
 
-  app: async ({ page, session }, use, testInfo) => {
+  app: async ({ page, session, connecte }, use, testInfo) => {
     const { pin } = readTestAccount();
-    const init = sessionInitScript(session);
-    await page.context().addInitScript(init.script, init.arg);
+    if (connecte) {
+      const init = sessionInitScript(session);
+      await page.context().addInitScript(init.script, init.arg);
+    }
     await page.clock.install({ time: RECETTE_DATE });
 
     const problems: string[] = [];
@@ -93,12 +103,15 @@ export const test = base.extend<{ app: App }, { session: Session }>({
     });
 
     const aiRequests: AIRequestSeen[] = [];
+    const supabaseRequests: string[] = [];
     const mocks: Array<{ url: RegExp; answer: (route: Route) => Promise<void> }> = [];
 
     await page.route(`${SUPABASE_URL}/**`, async (route) => {
       const request = route.request();
       const target = request.url();
-      const mock = mocks.find((m) => m.url.test(target));
+      supabaseRequests.push(`${request.method()} ${target.replace(SUPABASE_URL, '')}`);
+      // The last mock registered for a URL wins, so a test can override a shared one.
+      const mock = [...mocks].reverse().find((m) => m.url.test(target));
       if (mock) return mock.answer(route);
       if (target.includes('/functions/v1/generate')) {
         const body = request.postDataJSON() as { task: AIRequestSeen['task']; payload: unknown };
@@ -116,12 +129,14 @@ export const test = base.extend<{ app: App }, { session: Session }>({
 
     const app: App = {
       aiRequests,
+      supabaseRequests,
       expectConsoleError: (pattern) => expectedConsole.push(pattern),
       mock: async (url, answer) => {
         mocks.push({ url, answer });
       },
-      open: async (query = '') => {
+      open: async (query = '', options = {}) => {
         await page.goto(query ? `/?${query}` : '/');
+        if (options.pin === false || !connecte) return;
         await typePin(page, pin);
         if (!query.includes('scenario=')) return;
         const html = page.locator('html');
