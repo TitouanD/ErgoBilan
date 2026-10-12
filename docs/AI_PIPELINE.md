@@ -1,7 +1,7 @@
 # Pipeline IA — génération des comptes rendus
 
 > État du code au 29/09/2026 (branche `refactor/generation-rapport`, issues #53 et #54). Les références citent un fichier et une fonction, pas de numéro de ligne.
-> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02, puis avec `finalize_generation_internal` par `20261012100000_abonnement_stripe.sql`, #107, à appliquer avec l'accord de Titouan). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
+> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02, puis avec `finalize_generation_internal` par `20261012100000_abonnement_stripe.sql`, #107, appliquée le 2026-10-12). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
 > **Déploiement** : l'edge function `generate` décrite ici a été déployée depuis le repo le 2026-09-25 (v52), puis le 2026-10-02 (version qui envoie `p_kind` via `sessionKind` et prompt de réévaluation « bilan de référence », #60 et #85), vérifiée en réel le même jour (`E2E_AI=all`, 4 appels, 2 crédits). Les migrations `20260925082801_scheduled_cleanups.sql` et `20261001100000_generation_log_kind.sql` sont appliquées.
 
 ## 1. Vue d'ensemble
@@ -122,17 +122,54 @@ Tout ce qui part vers Gemini passe par le générateur, donc par `createAnonymiz
 
 ## 5. Edge function `generate`
 
+### Fournisseur (`geminiTarget.ts`)
+
+`resolveGeminiTarget` choisit le point d'accès au démarrage de l'edge, d'après ses secrets :
+
+| Secret présent   | Fournisseur (`provider`)                                                                       | Modèle                   | Point d'accès                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `GCP_SA_KEY`     | `agent-platform-eu` : Gemini Enterprise Agent Platform (ex-Vertex AI), conditions Google Cloud | `gemini-3.8-flash`       | multi-région UE : `aiplatform.eu.rep.googleapis.com/v1/projects/<projet>/locations/eu/…:generateContent` |
+| `GEMINI_API_KEY` | `gemini-api` : API Gemini publique (AI Studio), sans garantie de lieu de traitement            | `gemini-3-flash-preview` | `generativelanguage.googleapis.com/v1beta/…:generateContent`                                             |
+
+- `GCP_SA_KEY` est la clé JSON du compte de service `ergobilan-generate` (seul rôle : `roles/aiplatform.user`) du projet Google Cloud `gen-lang-client-0871976100`. Elle prime sur `GEMINI_API_KEY`. Une clé invalide donne `SERVER_MISCONFIGURED`, jamais un repli silencieux vers l'API publique. Le repli `gemini-api` ne sert qu'à revenir en arrière en supprimant `GCP_SA_KEY`.
+- Le jeton OAuth est signé dans l'edge (JWT RS256, `crypto.subtle`), échangé contre un jeton d'accès d'une heure, gardé par l'instance et renouvelé 5 min avant expiration. Un refus de Google donne `GEMINI_AUTH_ERROR` (502, non relançable).
+- `gemini-3-flash-preview` n'existe pas sur le point d'accès UE : la bascule change donc aussi de modèle. Les modèles `gemini-3.5-flash` à `gemini-3.8-flash` y répondent (vérifié le 2026-10-12).
+- Choix du modèle (2026-10-12, bilan fictif de §9 rejoué sur le point d'accès UE, prix UE par bilan initial) : `gemini-3.8-flash` en réflexion `high` 4,8 cents de dollar (20 à 40 s par appel), `medium` 3,9, `low` 2,1 (détails mal placés) ; `gemini-3.5-flash-lite` 1,0 (accents perdus, section manquante) ; `gemini-3.1-flash-lite` 0,7 (contresens clinique). La qualité prime : `high` (`AGENT_PLATFORM_THINKING_LEVEL`). Tarif de lancement 0,825 / 4,125 $ par million de jetons (entrée / sortie, réflexion comprise) jusqu'au 31/12/2026, double ensuite. `gemini-3.5-flash` coûte plus cher (1,65 / 9,90 $) ; les modèles Pro n'ont pas de point d'accès UE.
+- Le corps de la requête est le même pour les deux. Le `provider` et le `model` figurent dans les détails envoyés à Sentry.
+- En production depuis le 2026-10-12 (v59, secret `GCP_SA_KEY` posé) ; test réel `npm run e2e:ai` vert sur les trois parcours, mais le bilan initial (bio puis diagnostic) a pris 139 s de bout en bout : surveiller les `GEMINI_TIMEOUT` dans Sentry, et passer en réflexion `medium` s'ils apparaissent.
+- Certification HDS : Google Cloud l'est, et l'IA générative d'Agent Platform est dans son périmètre, mais l'avenant HDS n'est pas encore souscrit (demande à faire à Google). Rien ne doit en être dit dans l'interface (règle de `CLAUDE.md`).
+
+#### Revenir sur AI Studio (incident en production)
+
+Si Agent Platform échoue en production (`GEMINI_AUTH_ERROR`, `GEMINI_TIMEOUT` ou `GEMINI_ERROR` en série dans Sentry), une commande suffit. Elle se lance depuis le dépôt principal, lié au projet Supabase, et ne demande aucun redéploiement :
+
+```bash
+npx supabase secrets unset GCP_SA_KEY
+```
+
+- Sans `GCP_SA_KEY`, `resolveGeminiTarget` prend l'API publique avec `GEMINI_API_KEY` et `gemini-3-flash-preview`. Supabase redémarre l'edge quand un secret change : les requêtes suivantes prennent le nouveau chemin.
+- Conditions : `GEMINI_API_KEY` doit rester dans les secrets (il y est au 2026-10-12, ne pas le supprimer), et `gemini-3-flash-preview` doit encore exister (préversion, Google peut la retirer).
+- Conséquence : le traitement n'est plus garanti dans l'UE. Le signaler à Titouan.
+- Vérifier : un appel réel (`npm run e2e:ai`, §9) ou, en cas d'échec, le champ `provider` des détails Gemini dans Sentry (`gemini-api`).
+- Revenir sur Agent Platform une fois le problème réglé : reposer le secret depuis la clé gardée hors du dépôt (`~/.secrets/ergobilan-generate.json` sur le poste de Titouan) :
+
+  ```bash
+  npx supabase secrets set GCP_SA_KEY="$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))))' ~/.secrets/ergobilan-generate.json)"
+  ```
+
+- Clé perdue ou compromise : en créer une autre (Google Cloud → IAM et administration → Comptes de service → `ergobilan-generate` → Clés), supprimer l'ancienne, puis reposer le secret comme ci-dessus.
+
 ### Configuration (`index.ts`)
 
-| Constante                                     | Valeur par défaut                                       |
-| --------------------------------------------- | ------------------------------------------------------- |
-| Modèle                                        | `gemini-3-flash-preview` (API `v1beta generateContent`) |
-| `GEMINI_TIMEOUT_MS`                           | 50 000                                                  |
-| `AI_MAX_REQUESTS_PER_HOUR`                    | 15                                                      |
-| `GEMINI_MAX_RETRIES` / `GEMINI_RETRY_BASE_MS` | 1 / 2 000                                               |
-| `GENERATION_REUSE_WINDOW_MINUTES`             | 20                                                      |
-| `GENERATION_LOCK_TTL_SECONDS`                 | 120                                                     |
-| `GENERATE_MAX_PAYLOAD_BYTES`                  | 220 000                                                 |
+| Constante                                     | Valeur par défaut                                            |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| Modèle                                        | selon le fournisseur (ci-dessus)                             |
+| `GEMINI_TIMEOUT_MS`                           | 100 000 (secret de production réglé à 100 000 le 2026-10-12) |
+| `AI_MAX_REQUESTS_PER_HOUR`                    | 15                                                           |
+| `GEMINI_MAX_RETRIES` / `GEMINI_RETRY_BASE_MS` | 1 / 2 000                                                    |
+| `GENERATION_REUSE_WINDOW_MINUTES`             | 20                                                           |
+| `GENERATION_LOCK_TTL_SECONDS`                 | 120                                                          |
+| `GENERATE_MAX_PAYLOAD_BYTES`                  | 220 000                                                      |
 
 Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contient que `responseMimeType: application/json` et `responseSchema` → valeurs par défaut de Gemini. Le prompt système passe par `system_instruction`.
 
@@ -142,7 +179,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 2. Origine (`isAllowedOrigin`) : les origines loopback (`localhost`, `127.0.0.1`, `::1`) ne sont acceptées **qu'hors production**, sauf si `AI_ALLOW_LOOPBACK_ORIGINS=true`. La production est détectée par `APP_ENV`/`ENV` (`production`, `prod`) ou la présence de `DENO_DEPLOYMENT_ID`. Sinon liste `AI_ALLOWED_ORIGINS` ; si elle est vide, tout est refusé en production sauf `AI_DEV_MODE`. Rejet : 403 `FORBIDDEN_ORIGIN` (preflight : 403 `forbidden`). Valeur en production (30/09/2026) : `https://app.ergobilan.com,https://dev.ergobilan.com,https://test.ergobilan.com`. `test.ergobilan.com` n'héberge aucun site : c'est l'origine envoyée par le test de bout en bout (§9), pour reconnaître ses appels dans Sentry (en-tête Origin). La liste ne bloque que les navigateurs ; un script peut envoyer n'importe quelle origine.
 3. `corsHeaders` renvoie l'origine appelante dans `Access-Control-Allow-Origin` seulement si elle est autorisée (plus de `*`), avec `Vary: Origin`.
 4. JWT : en-tête `Authorization` obligatoire (401 `Missing authorization`), puis `auth.getUser()` avec le client anon (401 `Unauthorized`).
-5. Clé service role et clé Gemini requises (500 `SERVER_MISCONFIGURED`).
+5. Clé service role et un fournisseur valide (`GCP_SA_KEY` ou `GEMINI_API_KEY`) requis (500 `SERVER_MISCONFIGURED`).
 
 ### Rate limit, payload, session
 
@@ -182,8 +219,8 @@ stateDiagram-v2
 
 ### Appel Gemini (`callGemini`)
 
-1. Jusqu'à `GEMINI_MAX_RETRIES + 1` essais (2), délai `2 s × 2^(n-1)`, uniquement sur HTTP 429/503. Autre statut non-OK → `GEMINI_ERROR` (502, non relançable).
-2. Timeout (abort à 50 s) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur.
+1. Jusqu'à `GEMINI_MAX_RETRIES + 1` essais (2), délai `2 s × 2^(n-1)`, uniquement sur HTTP 429/503. Autre statut non-OK → `GEMINI_ERROR` (502, non relançable). Jeton OAuth refusé (Agent Platform) → `GEMINI_AUTH_ERROR` (502, non relançable).
+2. Timeout (abort à 100 s) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur.
 3. Exception réseau au dernier essai → `GEMINI_EXCEPTION` (502, relançable). 429/503 persistants → `GEMINI_RETRYABLE_ERROR`.
 4. Réponse : `text = candidates[0].content.parts[0].text`. Texte vide → `GEMINI_EMPTY_RESPONSE` ; JSON invalide ou objet vide → `GEMINI_INVALID_JSON` (502, relançables). Une réponse vide n'est donc plus finalisée `completed`.
 5. Échec → réponse `{ error: 'AI generation failed', code, retryable }` avec le statut du résultat, après finalize ou release selon le tableau ci-dessus.
