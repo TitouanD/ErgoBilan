@@ -137,6 +137,13 @@ npm run recette:cible -- --grep @initial --update-snapshots   # accepter un chan
 | Composants partagés des parcours (`components/assessment/pages/`, `shared/`), `hooks/useAssessmentFlow.ts`, `utils/assessmentInProgress.ts`, `utils/scoring.ts`, `utils/resolvedScore.ts`, `utils/reportData.ts`, catalogue | `@initial`, `@reeval`, `@historique` |
 | `components/dashboard/`, `utils/patientStatus.ts`, `hooks/useDataLoader.ts`, `services/storage.ts`, brouillons                                                                                                              | `@dashboard`, `@brouillons`          |
 | Écran seulement visuel                                                                                                                                                                                                      | le tag du parcours, plus `@visuel`   |
+| Portail famille (`components/portal/`, `SharedQuestionnaire`, `hooks/useLinkManager.ts`, `hooks/usePendingProcessor.ts`)                                                                                                    | `@portail`                           |
+| Tests personnalisés (`CustomTestEditor`, `TestCatalogModal`, `contexts/CatalogContext.tsx`)                                                                                                                                 | `@test-perso`                        |
+| Profil, image de marque, abonnement, impression (`ProfileEditor`, `BrandingEditor`, `PricingModal`, `ExportPage`, `services/profile.ts`)                                                                                    | `@profil`                            |
+| Sauvegarde `.ergobilan` (`services/exportService.ts`, `AppHeader`)                                                                                                                                                          | `@sauvegarde`                        |
+| Administration (`components/admin/`, `services/admin.ts`)                                                                                                                                                                   | `@admin`                             |
+| Page d'accueil, mode démo (`LandingPage`, `data/demo*.ts`, `isDemoMode`)                                                                                                                                                    | `@demo`                              |
+| Écran de verrouillage (`PinUnlock`, `contexts/AuthContext.tsx`)                                                                                                                                                             | `@pin`                               |
 
 Tags transverses :
 
@@ -151,7 +158,18 @@ Couverture actuelle :
 - réévaluation : écrans des 4 étapes, « Réévaluation 1 clic » de bout en bout, reprise puis abandon d'un brouillon ;
 - bilan historique : écrans des 3 étapes, parcours complet sans IA ;
 - tableau de bord : statuts des patients, recherche, brouillons (périmé, repris, sauvegardé, abandonné) ;
-- fiche patient : visionneuse, identité, planifier, reporter, compléter, archiver, supprimer.
+- fiche patient : visionneuse, identité, planifier, reporter, compléter, archiver, supprimer ;
+- portail famille : lien généré, questionnaire rempli et envoyé chiffré par la famille, importé par la praticienne ; lien collé sans clé refusé ;
+- test personnalisé : créé depuis le catalogue puis ajouté au bilan ;
+- profil et image de marque : profil du cabinet, préférences de rédaction, Studio Design (offre payante) ou abonnement proposé (offre gratuite), impression, modale d'abonnement et mur de crédits ;
+- sauvegarde : export `.ergobilan` puis réimport d'un patient supprimé, fichier invalide refusé ;
+- administration : catalogue officiel, utilisateurs, supervision, accès refusé par le serveur ;
+- accueil et démo : page d'accueil, connexion, mentions légales, démo et import d'un questionnaire **sans aucune requête vers Supabase** ;
+- code PIN : code faux, verrouillage après cinq essais, verrouillage après 15 minutes d'inactivité.
+
+Ce qui reste hors recette : la création de compte et la connexion par mot de passe (le compte de test ouvre sa session par `globalSetup`), le paiement (non branché), l'envoi d'un signalement (Sentry).
+
+**Écritures simulées.** Une écriture voulue par un test passe par `app.mock(url, réponse)` ; le dernier mock enregistré pour une URL l'emporte. Les tests vérifient le corps envoyé (profil, image de marque, test personnalisé, RPC d'administration) et le portail simule la table `pending_questionnaires` par une ligne gardée en mémoire. Les droits d'administration sont simulés (`is_admin`, `admin_check`) : la recette ne lit aucune donnée d'un autre compte. `test.use({ connecte: false })` ouvre l'application sans session (accueil, démo, portail sans compte) ; `app.supabaseRequests` liste les requêtes envoyées à Supabase ; `app.open(query, { pin: false })` reste sur l'écran de verrouillage.
 
 **Ajouter un test.** Un fichier `*.spec.ts` dans `e2e/recette/<parcours>/`, qui importe `test` et `expect` de `../fixtures`, et porte le tag de son parcours. On part d'un scénario (`app.open('scenario=…')`) pour tester une étape, et on remplit les formulaires dans le test : c'est la seule place où on le fait. Un écran sans scénario reçoit un scénario.
 
