@@ -2,8 +2,11 @@ import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AGENT_PLATFORM_MODEL,
+  GEMINI_BUDGET_MS,
   agentPlatformUrl,
+  attemptTimeoutMs,
   createAccessTokenSource,
+  generationConfigFor,
   parseServiceAccountKey,
   resolveGeminiTarget,
   signAssertion,
@@ -123,5 +126,38 @@ describe('resolveGeminiTarget', () => {
     expect(agentPlatformUrl('p', 'm', 'eu')).toContain(
       'aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/m:',
     );
+  });
+});
+
+describe('generationConfigFor', () => {
+  const agentPlatform = { provider: 'agent-platform-eu' as const, generationConfig: { thinkingConfig: { thinkingLevel: 'high' } } };
+
+  it('runs the long writing tasks in medium on Agent Platform (diagnostic past 100 s in high, 2026-10-12)', () => {
+    expect(generationConfigFor(agentPlatform, 'report_diagnostic')).toEqual({ thinkingConfig: { thinkingLevel: 'medium' } });
+    expect(generationConfigFor(agentPlatform, 'report_reevaluation')).toEqual({ thinkingConfig: { thinkingLevel: 'medium' } });
+  });
+
+  it('keeps the target level for the other tasks and the public API config as is', () => {
+    expect(generationConfigFor(agentPlatform, 'report_bio')).toEqual({ thinkingConfig: { thinkingLevel: 'high' } });
+    expect(generationConfigFor(agentPlatform, 'extract_style_feedback')).toEqual({ thinkingConfig: { thinkingLevel: 'high' } });
+    expect(generationConfigFor({ provider: 'gemini-api', generationConfig: {} }, 'report_diagnostic')).toEqual({});
+  });
+});
+
+describe('attemptTimeoutMs', () => {
+  const start = 1_000_000;
+
+  it('gives the first attempt the per-attempt cap', () => {
+    expect(attemptTimeoutMs(start, start + 1_000, 100_000)).toBe(100_000);
+  });
+
+  it('cuts a retry to what remains before Supabase answers 504 (150 s per request)', () => {
+    // 429 after 60 s: a full 100 s retry would end at 160 s, past the gateway limit.
+    expect(attemptTimeoutMs(start, start + 60_000, 100_000)).toBe(GEMINI_BUDGET_MS - 60_000);
+    expect(GEMINI_BUDGET_MS).toBeLessThan(150_000);
+  });
+
+  it('starts no attempt when less than 30 s remain', () => {
+    expect(attemptTimeoutMs(start, start + GEMINI_BUDGET_MS - 29_000, 100_000)).toBe(0);
   });
 });
