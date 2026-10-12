@@ -17,7 +17,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { captureEdgeException, captureEdgeMessage, createTrail } from '../_shared/sentry.ts';
-import { type GeminiTarget, resolveGeminiTarget } from './geminiTarget.ts';
+import { type GeminiTarget, attemptTimeoutMs, generationConfigFor, resolveGeminiTarget } from './geminiTarget.ts';
 import { AI_TASKS, type AITask, type BuildResult, buildTask, sessionKind } from './prompts.ts';
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
@@ -35,7 +35,8 @@ const MAX_REQUESTS_PER_HOUR = parsePositiveInt(Deno.env.get('AI_MAX_REQUESTS_PER
 const GEMINI_MAX_RETRIES = parsePositiveInt(Deno.env.get('GEMINI_MAX_RETRIES'), 1);
 const GEMINI_RETRY_BASE_MS = parsePositiveInt(Deno.env.get('GEMINI_RETRY_BASE_MS'), 2_000);
 const GENERATION_REUSE_WINDOW_MINUTES = parsePositiveInt(Deno.env.get('GENERATION_REUSE_WINDOW_MINUTES'), 20);
-const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get('GENERATION_LOCK_TTL_SECONDS'), 120);
+// Longer than a whole request (150 s at most): the lock never expires during a diagnostic call.
+const GENERATION_LOCK_TTL_SECONDS = parsePositiveInt(Deno.env.get('GENERATION_LOCK_TTL_SECONDS'), 160);
 const MAX_PAYLOAD_BYTES = parsePositiveInt(Deno.env.get('GENERATE_MAX_PAYLOAD_BYTES'), 220_000);
 
 const APP_ENV = (Deno.env.get('APP_ENV') || Deno.env.get('ENV') || '').toLowerCase();
@@ -194,12 +195,15 @@ const describeUsage = (data: GeminiResponse | null) => ({
   thoughtsTokens: data?.usageMetadata?.thoughtsTokenCount ?? null,
 });
 
-/** Call Gemini with retries on 429/503. A missing or unparseable JSON answer is a failure. */
-const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<GeminiResult> => {
+/**
+ * Call Gemini with retries on 429/503, within the time budget of the request (attemptTimeoutMs).
+ * A missing or unparseable JSON answer is a failure.
+ */
+const callGemini = async (target: GeminiTarget, built: BuildResult, task: AITask, requestStartedAt: number): Promise<GeminiResult> => {
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: built.contents }] }],
     generationConfig: {
-      ...target.generationConfig,
+      ...generationConfigFor(target, task),
       responseMimeType: built.responseMimeType,
       ...(built.responseSchema ? { responseSchema: built.responseSchema } : {}),
     },
@@ -223,6 +227,8 @@ const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<Gem
   let lastStatus = 0;
   for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
     if (attempt > 0) await sleep(GEMINI_RETRY_BASE_MS * 2 ** (attempt - 1));
+    const timeoutMs = attemptTimeoutMs(requestStartedAt, Date.now(), GEMINI_TIMEOUT_MS);
+    if (timeoutMs === 0) break; // a retry could not finish before Supabase answers 504
     let authHeaders: Record<string, string>;
     try {
       authHeaders = await target.authHeaders();
@@ -231,7 +237,7 @@ const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<Gem
       return { ok: false, errorCode: 'GEMINI_AUTH_ERROR', retryable: false, status: 502, detail: detail(attempt) };
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(target.url, {
         method: 'POST',
@@ -277,7 +283,7 @@ const callGemini = async (target: GeminiTarget, built: BuildResult): Promise<Gem
           errorCode: 'GEMINI_TIMEOUT',
           retryable: true,
           status: 504,
-          detail: detail(attempt, { timeoutMs: GEMINI_TIMEOUT_MS }),
+          detail: detail(attempt, { timeoutMs }),
         };
       }
       lastStatus = 0;
@@ -319,6 +325,7 @@ const storeStylePreferences = async (admin: SupabaseClient, userId: string, text
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  const requestStartedAt = Date.now();
   const origin = (req.headers.get('origin') || '').trim();
   if (req.method === 'OPTIONS') {
     return isAllowedOrigin(origin) ? new Response('ok', { headers: corsHeaders(origin) }) : new Response('forbidden', { status: 403 });
@@ -385,7 +392,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Style feedback: no credit, no generation session ──
     if (task === 'extract_style_feedback') {
-      const result = await callGemini(gemini, buildTask(task, payload));
+      const result = await callGemini(gemini, buildTask(task, payload), task, requestStartedAt);
       trail.add('gemini', result.ok ? 'Gemini answered' : `Gemini failed: ${result.errorCode}`, result.detail);
       if (!result.ok) {
         await captureEdgeMessage(`Gemini ${result.errorCode} (${task})`, {
@@ -430,7 +437,7 @@ Deno.serve(async (req: Request) => {
     }
     generationId = sessionId; // for the catch block
 
-    const result = await callGemini(gemini, buildTask(task, payload));
+    const result = await callGemini(gemini, buildTask(task, payload), task, requestStartedAt);
     trail.add('gemini', result.ok ? 'Gemini answered' : `Gemini failed: ${result.errorCode}`, result.detail);
 
     if (!result.ok) {

@@ -137,6 +137,7 @@ Tout ce qui part vers Gemini passe par le générateur, donc par `createAnonymiz
 - Choix du modèle (2026-10-12, bilan fictif de §9 rejoué sur le point d'accès UE, prix UE par bilan initial) : `gemini-3.8-flash` en réflexion `high` 4,8 cents de dollar (20 à 40 s par appel), `medium` 3,9, `low` 2,1 (détails mal placés) ; `gemini-3.5-flash-lite` 1,0 (accents perdus, section manquante) ; `gemini-3.1-flash-lite` 0,7 (contresens clinique). La qualité prime : `high` (`AGENT_PLATFORM_THINKING_LEVEL`). Tarif de lancement 0,825 / 4,125 $ par million de jetons (entrée / sortie, réflexion comprise) jusqu'au 31/12/2026, double ensuite. `gemini-3.5-flash` coûte plus cher (1,65 / 9,90 $) ; les modèles Pro n'ont pas de point d'accès UE.
 - Le corps de la requête est le même pour les deux. Le `provider` et le `model` figurent dans les détails envoyés à Sentry.
 - En production depuis le 2026-10-12 (v59, secret `GCP_SA_KEY` posé) ; test réel `npm run e2e:ai` vert sur les trois parcours, mais le bilan initial (bio puis diagnostic) a pris 139 s de bout en bout : surveiller les `GEMINI_TIMEOUT` dans Sentry, et passer en réflexion `medium` s'ils apparaissent.
+- 2026-10-12, sur un vrai bilan initial (`E2E_AI_DOSSIER`, identité inventée) : le diagnostic a dépassé 100 s en `high` (`GEMINI_TIMEOUT`). Les tâches de rédaction longue (`report_diagnostic`, `report_reevaluation`) passent en `medium` (`LONG_TASK_THINKING_LEVEL`, `generationConfigFor`) ; le bio et l'extraction du style restent en `high`.
 - Certification HDS : Google Cloud l'est, et l'IA générative d'Agent Platform est dans son périmètre, mais l'avenant HDS n'est pas encore souscrit (demande à faire à Google). Rien ne doit en être dit dans l'interface (règle de `CLAUDE.md`).
 
 #### Revenir sur AI Studio (incident en production)
@@ -168,7 +169,7 @@ npx supabase secrets unset GCP_SA_KEY
 | `AI_MAX_REQUESTS_PER_HOUR`                    | 15                                                           |
 | `GEMINI_MAX_RETRIES` / `GEMINI_RETRY_BASE_MS` | 1 / 2 000                                                    |
 | `GENERATION_REUSE_WINDOW_MINUTES`             | 20                                                           |
-| `GENERATION_LOCK_TTL_SECONDS`                 | 120                                                          |
+| `GENERATION_LOCK_TTL_SECONDS`                 | 160 (plus qu'une requête entière)                            |
 | `GENERATE_MAX_PAYLOAD_BYTES`                  | 220 000                                                      |
 
 Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contient que `responseMimeType: application/json` et `responseSchema` → valeurs par défaut de Gemini. Le prompt système passe par `system_instruction`.
@@ -220,7 +221,7 @@ stateDiagram-v2
 ### Appel Gemini (`callGemini`)
 
 1. Jusqu'à `GEMINI_MAX_RETRIES + 1` essais (2), délai `2 s × 2^(n-1)`, uniquement sur HTTP 429/503. Autre statut non-OK → `GEMINI_ERROR` (502, non relançable). Jeton OAuth refusé (Agent Platform) → `GEMINI_AUTH_ERROR` (502, non relançable).
-2. Timeout (abort à 100 s) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur.
+2. Timeout (abort à 100 s, `GEMINI_TIMEOUT_MS`) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur. Supabase répond 504 de lui-même si l'edge n'a pas répondu en 150 s (toutes offres) : toutes les tentatives d'une requête partagent donc un budget de 135 s compté depuis son arrivée (`GEMINI_BUDGET_MS`, `attemptTimeoutMs`). Chaque tentative est bornée au temps restant, et aucune n'est lancée s'il reste moins de 30 s. Le bio et le diagnostic sont deux requêtes : chacune a son budget.
 3. Exception réseau au dernier essai → `GEMINI_EXCEPTION` (502, relançable). 429/503 persistants → `GEMINI_RETRYABLE_ERROR`.
 4. Réponse : `text = candidates[0].content.parts[0].text`. Texte vide → `GEMINI_EMPTY_RESPONSE` ; JSON invalide ou objet vide → `GEMINI_INVALID_JSON` (502, relançables). Une réponse vide n'est donc plus finalisée `completed`.
 5. Échec → réponse `{ error: 'AI generation failed', code, retryable }` avec le statut du résultat, après finalize ou release selon le tableau ci-dessus.

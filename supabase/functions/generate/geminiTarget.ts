@@ -18,6 +18,33 @@ export const AGENT_PLATFORM_MODEL = 'gemini-3.8-flash';
  * A call with reasoning can take 20 to 50 s: GEMINI_TIMEOUT_MS must leave room for it.
  */
 export const AGENT_PLATFORM_THINKING_LEVEL = 'high';
+/**
+ * Long writing tasks in medium: on a real initial assessment (2026-10-12) the diagnostic ran
+ * past 100 s in high and timed out. The bio and the style extraction stay in high.
+ */
+export const LONG_TASK_THINKING_LEVEL = 'medium';
+const LONG_TASKS: ReadonlySet<string> = new Set(['report_diagnostic', 'report_reevaluation']);
+
+/** generationConfig of a task: the target's, with the reasoning level of the task on Agent Platform. */
+export const generationConfigFor = (target: Pick<GeminiTarget, 'provider' | 'generationConfig'>, task: string) =>
+  target.provider === 'agent-platform-eu' && LONG_TASKS.has(task)
+    ? { ...target.generationConfig, thinkingConfig: { thinkingLevel: LONG_TASK_THINKING_LEVEL } }
+    : target.generationConfig;
+
+/**
+ * Supabase answers 504 when an edge function has not responded within 150 s (request idle
+ * timeout, every plan). All the Gemini attempts of a request, retries included, share this
+ * budget, counted from the request arrival; the margin covers auth, credit and finalization.
+ */
+export const GEMINI_BUDGET_MS = 135_000;
+/** No attempt is started with less time left than this. */
+export const MIN_ATTEMPT_MS = 30_000;
+
+/** Timeout of the next attempt: the per-attempt cap within the remaining budget; 0 = no time left for one. */
+export const attemptTimeoutMs = (requestStartedAt: number, now: number, perAttemptMs: number, budgetMs = GEMINI_BUDGET_MS): number => {
+  const remaining = budgetMs - (now - requestStartedAt);
+  return remaining < MIN_ATTEMPT_MS ? 0 : Math.min(perAttemptMs, remaining);
+};
 export const AGENT_PLATFORM_LOCATION = 'eu';
 export const GEMINI_API_MODEL = 'gemini-3-flash-preview';
 
