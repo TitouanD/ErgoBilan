@@ -1,7 +1,7 @@
 # Pipeline IA — génération des comptes rendus
 
 > État du code au 29/09/2026 (branche `refactor/generation-rapport`, issues #53 et #54). Les références citent un fichier et une fonction, pas de numéro de ligne.
-> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
+> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02, puis avec `finalize_generation_internal` par `20261012100000_abonnement_stripe.sql`, #107, à appliquer avec l'accord de Titouan). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
 > **Déploiement** : l'edge function `generate` décrite ici a été déployée depuis le repo le 2026-09-25 (v52), puis le 2026-10-02 (version qui envoie `p_kind` via `sessionKind` et prompt de réévaluation « bilan de référence », #60 et #85), vérifiée en réel le même jour (`E2E_AI=all`, 4 appels, 2 crédits). Les migrations `20260925082801_scheduled_cleanups.sql` et `20261001100000_generation_log_kind.sql` sont appliquées.
 
 ## 1. Vue d'ensemble
@@ -152,7 +152,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 4. `extract_style_feedback` : appel Gemini direct, sans crédit ni session (voir §6).
 5. `generation_id` qui n'a pas la forme d'un UUID, ou fourni à `report_bio`/`report_reevaluation` → 400 `INVALID_GENERATION_SESSION`. `report_diagnostic` sans `generation_id` → 400 `MISSING_GENERATION_SESSION`.
 6. Diagnostic : `isSessionReusable` exige une ligne `pending` de l'utilisateur, créée il y a moins de 20 min (sinon 400 `INVALID_GENERATION_SESSION`), puis `claimSession` (RPC `claim_generation_session`) sinon 409 `GENERATION_SESSION_BUSY`. Toute erreur RPC est un refus (plus de repli « fail-open »).
-7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un abonnement `active`/`trialing` ; admin et `expert` actif ne sont pas débités, sinon `credits - 1`. Elle insère une ligne `generation_log (status='pending', kind)` et renvoie son id ; `kind` vient de `sessionKind(task)` (`prompts.ts`) : `report_bio` (bilan initial, session qui couvre aussi le diagnostic) ou `report_reevaluation`. Le paramètre `p_kind` est facultatif (défaut NULL). `NULL` → 402 `CREDIT_INSUFFICIENT`.
+7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un crédit ; l'admin n'est pas débité, sinon elle prend d'abord un crédit du mois (`monthly_credits - 1`), puis un crédit acheté (`credits - 1`). Depuis #107 ([ADR 0002](adr/0002-credits-sans-report.md)), le statut de l'abonnement n'est plus vérifié (sans formule, les crédits restants restent utilisables) et Expert actif n'est plus illimité. Elle insère une ligne `generation_log (status='pending', kind, credit_source)` et renvoie son id ; `kind` vient de `sessionKind(task)` (`prompts.ts`) : `report_bio` (bilan initial, session qui couvre aussi le diagnostic) ou `report_reevaluation`. Le paramètre `p_kind` est facultatif (défaut NULL). `NULL` → 402 `CREDIT_INSUFFICIENT`.
 
 ### Verrou de session (`claim_generation_session`)
 
@@ -166,7 +166,7 @@ stateDiagram-v2
     pending --> pending: claim_generation_session (diagnostic, LOCK) / releaseSession (échec diagnostic)
     pending --> completed: finalize(success) — diagnostic ou réévaluation
     pending --> failed: finalize(échec) — bio, réévaluation, ou sweep (ABANDONED_SESSION)
-    failed --> refunded: même transaction ; +1 crédit sauf admin / expert actif
+    failed --> refunded: même transaction ; +1 crédit sur le solde de credit_source
 ```
 
 | Tâche                 | Succès                                 | Échec Gemini                       | Exception (`catch` global)            |
@@ -177,7 +177,7 @@ stateDiagram-v2
 
 - `finalize_generation_internal` ne fait rien si la ligne n'est plus `pending` (retourne `FALSE`). `finalizeSession` journalise ses erreurs dans la console sans les propager.
 - **Sessions abandonnées** : `sweep_stale_generations` (migration `20260925082801_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min.
-- Colonnes : `id, user_id, status, created_at, refunded_at, error_code` ; le type de tâche n'est pas journalisé (TECH_DEBT P1-8).
+- Colonnes : `id, user_id, status, created_at, refunded_at, error_code`, `kind` (#60) et `credit_source` (#107 : `monthly`, `purchased` ou `none` pour l'admin). Le remboursement rend le crédit au solde débité ; une session ouverte avant la migration #107 (`credit_source` NULL) suit l'ancienne règle (rien pour l'admin et Expert actif, sinon un crédit acheté).
 - Données au 23/09/2026 : 24 `completed`, 7 `refunded` (`GEMINI_RETRYABLE_ERROR` ×3, `GEMINI_TIMEOUT` ×2, `STUCK_PENDING_ADMIN_FIX` ×2), 2 `pending` bloquées depuis le 22/02/2026 (remboursées au premier passage du sweep).
 
 ### Appel Gemini (`callGemini`)
@@ -209,10 +209,10 @@ Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tenta
 
 ## 7. Coûts, quotas et crédits côté UI
 
-- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/is_admin` et `subscriptions.plan_id/status/trial_ends_at` ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
+- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/monthly_credits/is_admin` et `subscriptions.plan_id/status/trial_ends_at/current_period_end/billing_source` ; `credits` du profil = crédits du mois + crédits achetés (détail dans `monthlyCredits` et `purchasedCredits`) ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
 - Rafraîchissement : plus d'abonnement temps réel (TECH_DEBT P1-18) ; `refreshProfile()` recharge le solde après chaque génération et après le feedback de style.
-- Affichage : badge « N Crédits » dans `components/app/AppHeader.tsx`.
-- Garde avant génération : `hasCredits = isDemoMode || credits > 0 || (plan === 'expert' && status === 'active')` (`AssessmentWorkspace`), transmise à `Step2Evolution` pour la réévaluation. Sans crédit : paywall direct.
+- Affichage : badge « N Crédits » (total) dans `components/app/AppHeader.tsx`.
+- Garde avant génération : `hasCredits = isDemoMode || isAdmin || credits > 0` (`AssessmentWorkspace`, même règle que `consume_credit_for_user`), transmise à `Step2Evolution` pour la réévaluation. Sans crédit : paywall direct (formule ou achat à l'unité, voir [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement »).
 - `CREDIT_INSUFFICIENT` renvoyé par l'edge → paywall (`onShowPricing('paywall')`) ; autres erreurs → `CriticalErrorModal`. Si le diagnostic a échoué, « Réessayer » reprend au diagnostic avec le résultat « bio » gardé en mémoire (15 min, même session, pas de nouveau crédit) ; si le serveur refuse la session, la génération repart de zéro.
 - Les deux modales (bilan initial, réévaluation) affichent « Générer (1 crédit) » ; en démo, « Générer » (bilan initial) ou « Générer (simulation) » (réévaluation).
 - Coût réel : 1 crédit par bilan initial (bio + diagnostic), 1 par réévaluation, 0 pour le feedback. Quota : 15 requêtes edge par heure et par utilisateur, tous types et retries confondus.
@@ -267,7 +267,7 @@ Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) 
 
 ### Compte de test et connexion
 
-- **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
+- **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense. Le solde lu est la somme des crédits du mois et des crédits achetés (`e2e/liveEdge.ts`, #107).
 - Turnstile empêche la connexion par mot de passe depuis un script. Le script ouvre donc une **session neuve à chaque exécution** (`e2e/testSession.mjs`) : une **clé secrète Supabase** dédiée demande à l'API d'administration un lien de connexion du compte de test, aussitôt validé avec la clé publique. Aucun e-mail n'est envoyé, Turnstile n'intervient pas, et rien n'est conservé entre deux exécutions : plus de jeton à refaire. Dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
 
   ```

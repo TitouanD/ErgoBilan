@@ -10,7 +10,7 @@
  *   /?scenario=abonnement                     dashboard with the « Votre abonnement » modal
  *   &patient=<profile>  &tests=bhk,mabc-2|tout  &scores=vide
  *   /?scenario=dashboard&questionnaires=oui   plus parent questionnaires (dev/fictiveQuestionnaires.ts)
- *   &modale=abonnement|paywall                 open the pricing modal on top
+ *   &modale=abonnement|paywall|cgv             open the pricing modal (or the terms of sale) on top
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -30,9 +30,9 @@ import { buildFictiveTests, parseTestsParam, type ScoreFill } from './fictiveSco
 import type { StorageService } from '../services/storage';
 
 export type ScenarioName = 'dashboard' | 'initial' | 'reeval' | 'historique';
-/** Modal opened on top of the scenario screen (`&modale=`): the pricing modal, plans or paywall. */
-export type ScenarioModal = 'plans' | 'paywall';
-const MODALS: Record<string, ScenarioModal> = { abonnement: 'plans', paywall: 'paywall' };
+/** Modal opened on top of the scenario screen (`&modale=`): the pricing modal (plans or paywall) or the terms of sale. */
+export type ScenarioModal = 'plans' | 'paywall' | 'cgv';
+const MODALS: Record<string, ScenarioModal> = { abonnement: 'plans', paywall: 'paywall', cgv: 'cgv' };
 
 export interface Scenario {
   name: ScenarioName;

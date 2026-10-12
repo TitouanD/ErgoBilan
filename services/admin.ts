@@ -80,6 +80,7 @@ export const AdminService = {
       // Omitted parameters default to NULL server-side = "keep the current value".
       p_is_admin: payload.isAdmin,
       p_credits: payload.credits,
+      p_monthly_credits: payload.monthlyCredits,
       p_plan_id: payload.planId,
       p_status: payload.status,
       p_trial_ends_at: payload.trialEndsAt ?? undefined,

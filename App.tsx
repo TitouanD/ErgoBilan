@@ -6,7 +6,7 @@
  * link (`?q_id=...#key=...`) is detected before authentication.
  */
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Info, Loader2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment, type ReportType } from './contexts/AssessmentContext';
@@ -15,6 +15,8 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
+import { BillingService, effectivePlan, readPaymentReturn, type PaidPlan } from './services/billing';
+import { readLegalTabFromUrl } from './utils/legalLink';
 import { Logger } from './utils/logger';
 import { setAppTag, setAppUser } from './services/sentryService';
 import { getDaysSinceBackup } from './utils/backupTracking';
@@ -44,6 +46,7 @@ const OnboardingExperience = React.lazy(() =>
   import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })),
 );
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
+const LegalModal = React.lazy(() => import('./components/shared/LegalModal').then((m) => ({ default: m.LegalModal })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
 /**
  * Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build,
@@ -100,6 +103,12 @@ const AppRouter = () => {
   const [previousMode, setPreviousMode] = useState<Mode>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
+  const [isOpeningStripe, setIsOpeningStripe] = useState(false);
+  // Legal document opened by its public address (/?legal=cgv, linked from Stripe Checkout).
+  const [legalTabFromUrl, setLegalTabFromUrl] = useState(readLegalTabFromUrl);
+  // Return from a Stripe page (?paiement=ok|annule), read once before any redirect cleans the URL.
+  const [paymentReturnAtLoad] = useState(readPaymentReturn);
+  const paymentReturn = useRef(paymentReturnAtLoad);
   const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
   const [viewingReport, setViewingReport] = useState<PatientAssessment | null>(null);
   const [detailPaging, setDetailPaging] = useState({ hasMoreAssessments: false, nextAssessmentOffset: 0, isLoadingMore: false });
@@ -152,11 +161,39 @@ const AppRouter = () => {
     if (authState === 'unauthenticated' && !portalInitialUrl) setMode('landing');
     else if (authState === 'authenticated') setMode((prev) => (prev === 'landing' ? 'dashboard' : prev));
     else if (authState === 'registering') setMode('landing');
-    else if (authState === 'subscription_locked') {
-      setMode('dashboard');
-      setPricingModalMode('paywall');
-    } else if (authState === 'error') toast.error('Problème de connexion.');
+    else if (authState === 'error') toast.error('Problème de connexion.');
   }, [authState]);
+
+  // ─── Return from Stripe: credits arrive by webhook, possibly a few seconds later ─
+  useEffect(() => {
+    if (authState !== 'authenticated' || !paymentReturn.current) return;
+    const result = paymentReturn.current;
+    paymentReturn.current = null;
+    if (result === 'annule') {
+      toast.info('Paiement annulé : rien ne vous a été facturé.');
+      return;
+    }
+    toast.success('Paiement reçu, merci ! Vos crédits sont mis à jour.');
+    void refreshProfile();
+    const timer = window.setTimeout(() => void refreshProfile(), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [authState]);
+
+  /** Opens a Stripe page (Checkout or portal); the browser leaves the app on success. */
+  const openStripe = async (open: () => Promise<void>) => {
+    if (isDemoMode) {
+      toast.info("Le paiement n'est pas disponible en mode démo.");
+      return;
+    }
+    setIsOpeningStripe(true);
+    try {
+      await open();
+    } catch (e) {
+      Logger.error('SYSTEM', 'Stripe page could not be opened', e);
+      toast.error("La page de paiement n'a pas pu s'ouvrir. Réessayez dans un instant.");
+      setIsOpeningStripe(false);
+    }
+  };
 
   // ─── Sentry: who (pseudonymous id) and where, attached to every event ─────
   useEffect(() => {
@@ -307,6 +344,16 @@ const AppRouter = () => {
     };
     return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
   }
+  // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
+  if (legalTabFromUrl) {
+    return (
+      <div className="min-h-screen bg-[var(--app-bg)]">
+        <Suspense fallback={<AppLoader />}>
+          <LegalModal initialTab={legalTabFromUrl} onClose={() => setLegalTabFromUrl(null)} />
+        </Suspense>
+      </div>
+    );
+  }
   if (isLoading || authState === 'authenticating') return <AppLoader />;
   // Test environment (dev.ergobilan.com): only accounts on its access list get past sign-in.
   const accountEmail = userProfile?.email || practitioner?.email || tempEmail || '';
@@ -440,9 +487,12 @@ const AppRouter = () => {
             <PricingModal
               isPaywallMode={pricingModalMode === 'paywall'}
               onClose={() => setPricingModalMode(null)}
-              // No online payment yet: plan changes are handled manually by the team.
-              onSelectPlan={() => toast.info("Le paiement en ligne n'est pas encore disponible : contactez-nous pour changer d'offre.")}
-              onUnlockOneOff={() => toast.info("L'achat à l'unité n'est pas encore disponible : contactez-nous pour obtenir des crédits.")}
+              currentPlan={effectivePlan(userProfile)}
+              hasPaidPlan={userProfile.billingSource === 'stripe'}
+              isBusy={isOpeningStripe}
+              onSelectPlan={(plan: PaidPlan) => openStripe(() => BillingService.subscribe(plan))}
+              onBuyCredits={() => openStripe(BillingService.buyCredits)}
+              onManageSubscription={() => openStripe(BillingService.openPortal)}
             />
           )}
         </Suspense>
@@ -465,6 +515,7 @@ const AppRouter = () => {
                 setPendingQuestionnaires((prev) => [...rows, ...prev.filter((q) => !rows.some((r) => r.id === q.id))])
               }
               onShowPricing={setPricingModalMode}
+              onShowTermsOfSale={() => setLegalTabFromUrl('cgv')}
             />
           </Suspense>
         )}

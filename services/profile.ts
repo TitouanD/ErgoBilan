@@ -31,14 +31,14 @@ export const ProfileService = {
     try {
       const { data: prac, error: pracError } = await supabase
         .from('practitioners')
-        .select('email, credits, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config')
+        .select('email, credits, monthly_credits, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config')
         .eq('id', userId)
         .single();
       if (pracError || !prac) throw pracError ?? new Error('Practitioner not found');
 
       const { data: sub } = await supabase
         .from('subscriptions')
-        .select('plan_id, status, trial_ends_at')
+        .select('plan_id, status, trial_ends_at, current_period_end, billing_source')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -55,11 +55,14 @@ export const ProfileService = {
       return {
         id: userId,
         email: prac.email,
-        credits: prac.credits || 0,
+        credits: (prac.credits || 0) + (prac.monthly_credits || 0),
+        monthlyCredits: prac.monthly_credits || 0,
+        purchasedCredits: prac.credits || 0,
         isAdmin: prac.is_admin || false,
         subscriptionPlan: asPlan(sub?.plan_id),
-        // No subscription row => no access (paywall)
         status: sub ? asStatus(sub.status) : 'inactive',
+        billingSource: sub?.billing_source === 'stripe' || sub?.billing_source === 'offerte' ? sub.billing_source : null,
+        currentPeriodEnd: sub?.current_period_end ?? null,
         isTrial,
         trialDaysRemaining,
         totalBilansGenerated: 0,

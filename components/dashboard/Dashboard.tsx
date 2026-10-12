@@ -31,6 +31,7 @@ import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 import { getPatientAgeForIdentity } from '../../utils/patient';
 import { derivePatientStatus } from '../../utils/patientStatus';
 import { questionnaireDisplayLabel } from '../../utils/familyQuestionnaire';
+import { effectivePlan } from '../../services/billing';
 
 interface Props {
   userProfile: UserProfile;
@@ -327,18 +328,29 @@ export const Dashboard: React.FC<Props> = ({
         </div>
       )}
 
-      {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
+      {!isDemoMode && (userProfile.isTrial || effectivePlan(userProfile) === 'free') && (
         <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[var(--secondary)] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="animate-pulse text-[var(--primary)] motion-reduce:animate-none" />
-            <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
-            <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
+            {userProfile.isTrial ? (
+              <>
+                <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
+                <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
+              </>
+            ) : (
+              <>
+                <span className="hidden font-medium md:inline">Aucune formule active.</span>
+                <span className="font-bold text-stone-200">
+                  {userProfile.credits} {userProfile.credits > 1 ? 'crédits restants' : 'crédit restant'}
+                </span>
+              </>
+            )}
           </div>
           <button
             onClick={onShowPricing}
             className="flex items-center gap-2 rounded-full bg-[var(--primary)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white hover:text-[var(--primary)] motion-reduce:transition-none"
           >
-            <Crown size={14} /> Passer en premium
+            <Crown size={14} /> Choisir une formule
           </button>
         </div>
       )}

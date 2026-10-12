@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
-import { X, Check, Zap, Crown, Lock, ArrowRight, Sparkles, Coins, Info, Rocket, Palette } from 'lucide-react';
+import { X, Check, Zap, Crown, Lock, ArrowRight, Coins, Info, Rocket, Palette, Receipt } from 'lucide-react';
+import { UNIT_PRICE_EUR, type PaidPlan } from '../../services/billing';
+import type { UserProfile } from '../../types';
 
 interface Props {
   onClose: () => void;
-  onSelectPlan: (plan: string) => void;
-  onUnlockOneOff: () => void;
+  /** Checkout of a plan (or, with a paid plan, the Stripe portal to change it). */
+  onSelectPlan: (plan: PaidPlan) => void;
+  /** Checkout of purchased credits at the current plan's unit price. */
+  onBuyCredits: () => void;
+  /** Stripe portal (invoices, card, cancellation); only with a paid plan. */
+  onManageSubscription?: () => void;
   isPaywallMode?: boolean;
+  /** Plan whose prices apply ('free' without an active plan). */
+  currentPlan?: UserProfile['subscriptionPlan'];
+  /** The current plan is paid through Stripe (changes go through the portal). */
+  hasPaidPlan?: boolean;
+  /** A Stripe page is being opened: buttons are disabled. */
+  isBusy?: boolean;
 }
+
+const PLAN_LABELS: Record<PaidPlan, string> = { essential: 'Essentiel', performance: 'Performance', expert: 'Expert' };
 
 // Composant Helper pour les Tooltips
 const FeatureWithTooltip: React.FC<{
@@ -37,8 +51,22 @@ const FeatureWithTooltip: React.FC<{
   );
 };
 
-export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockOneOff, isPaywallMode = false }) => {
+export const PricingModal: React.FC<Props> = ({
+  onClose,
+  onSelectPlan,
+  onBuyCredits,
+  onManageSubscription,
+  isPaywallMode = false,
+  currentPlan = 'free',
+  hasPaidPlan = false,
+  isBusy = false,
+}) => {
   const [view, setView] = useState<'paywall' | 'plans'>(isPaywallMode ? 'paywall' : 'plans');
+  const unitPrice = UNIT_PRICE_EUR[currentPlan];
+
+  /** Label of a plan's button: current plan, change of a paid plan (portal), or a new subscription. */
+  const planButton = (plan: PaidPlan, label: string) =>
+    plan === currentPlan ? 'Formule actuelle' : hasPaidPlan ? `Passer à ${PLAN_LABELS[plan]}` : label;
 
   // --- VUE 1 : LE PAYWALL (COMPARATEUR CHOC) ---
   if (view === 'paywall') {
@@ -54,37 +82,41 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
               <Lock size={32} />
             </div>
             <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Plus de crédits disponibles.</h2>
-            <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour exporter ce bilan, choisissez une option.</p>
+            <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour rédiger ce bilan avec l'IA, choisissez une option.</p>
           </div>
 
           {/* Options d'Action */}
           <div className="grid grid-cols-1 gap-4 mb-6">
-            {/* Option A : Upgrade (Promo) */}
-            <div
+            {/* Option A : formule (ou changement de formule) */}
+            <button
+              type="button"
               onClick={() => setView('plans')}
-              className="bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
+              className="w-full text-left bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
             >
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--primary)] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase whitespace-nowrap shadow-sm">
-                Offre Spéciale -50%
-              </div>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-[var(--primary)] text-white rounded-lg">
                     <Zap size={20} fill="currentColor" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-[var(--secondary)] text-sm">Passer en Abonnement</h3>
-                    <p className="text-xs text-[var(--primary)] font-bold">Dès 19€ / mois</p>
+                    <h3 className="font-bold text-[var(--secondary)] text-sm">
+                      {hasPaidPlan ? 'Changer de formule' : 'Passer en abonnement'}
+                    </h3>
+                    <p className="text-xs text-[var(--primary)] font-bold">
+                      {hasPaidPlan ? 'Plus de bilans chaque mois' : 'Dès 19 € / mois'}
+                    </p>
                   </div>
                 </div>
                 <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform" />
               </div>
-            </div>
+            </button>
 
-            {/* Option B : One-Off */}
-            <div
-              onClick={onUnlockOneOff}
-              className="bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group"
+            {/* Option B : achat à l'unité */}
+            <button
+              type="button"
+              onClick={onBuyCredits}
+              disabled={isBusy}
+              className="w-full text-left bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group disabled:cursor-wait disabled:opacity-60"
             >
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -92,18 +124,16 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                     <Coins size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-[var(--text-heading)] text-sm">Achat unique (Hors-forfait)</h3>
-                    <p className="text-xs text-[var(--text-secondary)] font-medium">Débloquer ce bilan pour 15€</p>
+                    <h3 className="font-bold text-[var(--text-heading)] text-sm">Acheter des bilans à l'unité</h3>
+                    <p className="text-xs text-[var(--text-secondary)] font-medium">{unitPrice} € le bilan, sans engagement</p>
                   </div>
                 </div>
                 <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform" />
               </div>
-            </div>
+            </button>
           </div>
 
-          <p className="text-center text-[10px] text-[var(--text-disabled)]">
-            Paiement sécurisé via Stripe. Facture disponible immédiatement.
-          </p>
+          <p className="text-center text-[10px] text-[var(--text-disabled)]">Paiement sécurisé par Stripe. Facture envoyée par e-mail.</p>
         </div>
       </div>
     );
@@ -121,7 +151,9 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
         <div className="p-6 pb-2 md:px-8 md:pt-6 flex justify-between items-start shrink-0 border-b border-[var(--border-color)] md:border-none">
           <div>
             <h2 className="font-serif text-2xl md:text-3xl font-bold text-[var(--text-heading)]">Votre abonnement</h2>
-            <p className="text-sm text-[var(--text-secondary)] hidden md:block">Changez de plan à tout moment. Sans engagement.</p>
+            <p className="text-sm text-[var(--text-secondary)] hidden md:block">
+              Sans engagement, résiliable à tout moment. Les bilans inclus se renouvellent chaque mois, sans report.
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -151,20 +183,10 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                   </span>
                 </FeatureWithTooltip>
 
-                <FeatureWithTooltip
-                  icon={Sparkles}
-                  highlightColor="text-amber-500"
-                  bgColor="bg-amber-50"
-                  borderColor="border-amber-100"
-                  tooltip="Vos crédits non utilisés ne sont jamais perdus ! Ils sont stockés pour le mois suivant (limite de 6)."
-                >
-                  <span className="text-xs text-amber-800 font-bold leading-tight">Reports crédits inclus</span>
-                </FeatureWithTooltip>
-
                 <li className="flex gap-3">
                   <Coins size={18} className="text-[var(--text-secondary)] shrink-0" />{' '}
                   <span>
-                    Hors-forfait : <strong>15€</strong> / bilan
+                    Bilan supplémentaire : <strong>15 €</strong>
                   </span>
                 </li>
 
@@ -192,9 +214,10 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
               </ul>
               <button
                 onClick={() => onSelectPlan('essential')}
-                className="mt-auto w-full py-3 border-2 border-[var(--text-heading)] text-[var(--text-heading)] font-bold rounded-xl hover:bg-[var(--text-heading)] hover:text-white transition-all text-sm"
+                disabled={isBusy || currentPlan === 'essential'}
+                className="mt-auto w-full py-3 border-2 border-[var(--text-heading)] text-[var(--text-heading)] font-bold rounded-xl hover:bg-[var(--text-heading)] hover:text-white transition-all text-sm disabled:pointer-events-none disabled:opacity-50"
               >
-                Choisir Essentiel
+                {planButton('essential', 'Choisir Essentiel')}
               </button>
             </div>
 
@@ -228,25 +251,10 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                   </span>
                 </FeatureWithTooltip>
 
-                <FeatureWithTooltip
-                  icon={Sparkles}
-                  highlightColor="text-[var(--primary)]"
-                  bgColor="bg-white/60"
-                  borderColor="border-[var(--primary)]/20"
-                  tooltip={
-                    <span>
-                      <strong>Droit à la flexibilité :</strong> Vos crédits non utilisés sont reportés. Vacances, maladie, mois creux...
-                      vous ne perdez rien.
-                    </span>
-                  }
-                >
-                  <span className="font-bold text-[var(--primary)]">Reports de crédits inclus</span>
-                </FeatureWithTooltip>
-
                 <li className="flex gap-3">
                   <Coins size={20} className="text-[var(--primary)] shrink-0" />{' '}
                   <span>
-                    Hors-forfait : <strong>8€</strong> / bilan
+                    Bilan supplémentaire : <strong>8 €</strong>
                   </span>
                 </li>
 
@@ -281,13 +289,14 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
               </ul>
               <button
                 onClick={() => onSelectPlan('performance')}
-                className="mt-auto w-full py-3.5 bg-[var(--primary)] text-white font-bold text-base rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02]"
+                disabled={isBusy || currentPlan === 'performance'}
+                className="mt-auto w-full py-3.5 bg-[var(--primary)] text-white font-bold text-base rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50"
               >
-                Activer Performance
+                {planButton('performance', 'Activer Performance')}
               </button>
             </div>
 
-            {/* COLONNE 3: EXPERT (Ex-Premium Illimité, maintenant 20 crédits) */}
+            {/* COLONNE 3: EXPERT (20 bilans par mois, aucune formule illimitée : ADR 0002) */}
             <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-5 rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] flex flex-col items-center text-center hover:border-[var(--text-secondary)] transition-colors shadow-sm order-3">
               <div className="mb-1 p-1.5 bg-[var(--hover-bg)] text-[var(--text-secondary)] rounded-xl">
                 <Crown size={18} />
@@ -302,9 +311,11 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                 <FeatureWithTooltip
                   icon={Check}
                   highlightColor="text-[#81B29A]"
-                  tooltip="Un volume énorme pour les spécialistes. Coût par bilan : 4,45€. Le tarif le plus bas du marché."
+                  tooltip="Pour une activité soutenue. Coût par bilan inclus : 4,45 €."
                 >
-                  <span className="text-base font-bold text-[var(--text-heading)]">20 bilans / mois</span>
+                  <span className="text-base text-[var(--text-heading)]">
+                    <strong>20 bilans</strong> inclus / mois
+                  </span>
                 </FeatureWithTooltip>
 
                 <li className="flex gap-3">
@@ -316,22 +327,41 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
                 </FeatureWithTooltip>
 
                 <li className="flex gap-3">
-                  <Sparkles size={18} className="text-[#81B29A] shrink-0" /> <span>Accès Prioritaire IA</span>
-                </li>
-                <li className="flex gap-3">
                   <Coins size={18} className="text-[#81B29A] shrink-0" />{' '}
                   <span>
-                    Hors-forfait : <strong>5€</strong> / bilan
+                    Bilan supplémentaire : <strong>5 €</strong>
                   </span>
                 </li>
               </ul>
               <button
                 onClick={() => onSelectPlan('expert')}
-                className="mt-auto w-full py-3 border-2 border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:border-[var(--text-heading)] hover:text-[var(--text-heading)] transition-all text-sm"
+                disabled={isBusy || currentPlan === 'expert'}
+                className="mt-auto w-full py-3 border-2 border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:border-[var(--text-heading)] hover:text-[var(--text-heading)] transition-all text-sm disabled:pointer-events-none disabled:opacity-50"
               >
-                Choisir Expert
+                {planButton('expert', 'Choisir Expert')}
               </button>
             </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
+            <button
+              type="button"
+              onClick={onBuyCredits}
+              disabled={isBusy}
+              className="flex items-center gap-2 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] disabled:opacity-50"
+            >
+              <Coins size={16} /> Acheter des bilans à l'unité ({unitPrice} € le bilan)
+            </button>
+            {hasPaidPlan && onManageSubscription && (
+              <button
+                type="button"
+                onClick={onManageSubscription}
+                disabled={isBusy}
+                className="flex items-center gap-2 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] disabled:opacity-50"
+              >
+                <Receipt size={16} /> Factures, carte bancaire et résiliation
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -74,6 +74,21 @@ Statuts :
 - Les 60 migrations historiques sont dans le repo (`npx supabase migration fetch --linked`, #63) ; local et distant identiques.
 - Orphelins de P2-2 supprimés par Titouan le 2026-10-02 (0 organisation sans membre, 0 compte sans praticien) ; `supabase/schema.sql` ajouté (P2-1).
 
+## Abonnement Stripe (#107) : en attente de mise en production
+
+Paiement des formules et des crédits par Stripe, deux soldes de crédits ([ADR 0002](adr/0002-credits-sans-report.md)), plus d'état `subscription_locked` ni de formule illimitée. Code écrit et testé (migration rejouée sur PGlite par `supabase/billing.test.ts`, `supabase/functions/_shared/billing.test.ts`, `components/shared/PricingModal.test.tsx`). Détail : [DATA_MODEL.md](DATA_MODEL.md), [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement ».
+
+En attente de l'accord de Titouan :
+
+- appliquer `20261012100000_abonnement_stripe.sql` juste avant la fusion dans `main` (une inscription faite entre les deux verrait 0 crédit sur `main`), puis régénérer `supabase/schema.sql` ;
+- déployer `billing` et `stripe-webhook` (`--no-verify-jwt`), avec les secrets `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET` ;
+- passage de Stripe du mode test (bac à sable) à la production : prix aux mêmes clés de recherche (`formule_<plan>`, `unite_<plan>`), point de terminaison du webhook, portail client, clés de production.
+
+Points ouverts :
+
+- politique « réservé aux professionnels » (CGU, CGV : pas de droit de rétractation) et article L221-3 du Code de la consommation à faire valider juridiquement ;
+- moyens de paiement à restreindre à la carte (avec Apple Pay et Google Pay) dans le tableau de bord Stripe : la version de l'API utilisée ne prend plus `payment_method_types`.
+
 ## Observabilité Sentry (2026-09-25)
 
 Instrumentation complète front et edge (voir [ARCHITECTURE.md](ARCHITECTURE.md), section Sentry). `generate` (v53) et `signup` (v28) ont été redéployées le 2026-09-25. Vérification du secret `SENTRY_DSN_BACKEND` et du jeton Vercel `SENTRY_AUTH_TOKEN` → #58. `VITE_SENTRY_ENVIRONMENT` est optionnel (sinon `VERCEL_ENV` est utilisé).

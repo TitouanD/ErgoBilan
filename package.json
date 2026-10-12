@@ -51,6 +51,7 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
     "@eslint/js": "^9.28.0",
     "@playwright/test": "1.63",
     "@sentry/vite-plugin": "^5.4.0",

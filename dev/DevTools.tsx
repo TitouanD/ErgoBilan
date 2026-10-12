@@ -31,6 +31,8 @@ interface Props {
   /** Show fictitious parent questionnaires on the dashboard (memory only). */
   onShowQuestionnaires: (rows: PendingQuestionnaire[]) => void;
   onShowPricing: (mode: 'plans' | 'paywall') => void;
+  /** Terms of sale (`&modale=cgv`), also reachable at the public address /?legal=cgv. */
+  onShowTermsOfSale: () => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -44,7 +46,14 @@ const setStatus = (status: 'running' | 'ready' | 'error', error?: string) => {
 /** Ready once the screen opened by the scenario has painted. */
 const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard, onShowQuestionnaires, onShowPricing }) => {
+export const DevTools: React.FC<Props> = ({
+  onLoadData,
+  onResumeDraft,
+  onShowDashboard,
+  onShowQuestionnaires,
+  onShowPricing,
+  onShowTermsOfSale,
+}) => {
   const { ensureCatalogLoaded } = useCatalog();
   const { sessionKey } = useAuth();
   const toast = useToast();
@@ -74,7 +83,8 @@ export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDas
         }
         if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
-        if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal);
+        if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
+        else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal);
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);
         await afterPaint();
         setStatus('ready');
