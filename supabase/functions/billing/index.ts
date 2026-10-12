@@ -1,12 +1,12 @@
 /**
  * billing — opens Stripe pages for the signed-in practitioner (#107, ADR 0002).
  *
- * POST { action: 'subscribe', plan }  → Checkout (subscription) for a plan, or the customer
+ * POST { action: 'subscribe', plan }  -> Checkout (subscription) for a plan, or the customer
  *                                      portal when a paid plan already exists (plan changes
  *                                      and cancellation go through the portal).
- * POST { action: 'buy_credits' }      → Checkout (one-off payment) of purchased credits at the
+ * POST { action: 'buy_credits' }      -> Checkout (one-off payment) of purchased credits at the
  *                                      plan's unit price (quantity chosen on the Stripe page).
- * POST { action: 'portal' }           → customer portal (invoices, card, plan, cancellation).
+ * POST { action: 'portal' }           -> customer portal (invoices, card, plan, cancellation).
  * Answer: { url } to redirect to. Credits are granted by `stripe-webhook`, never here.
  *
  * `verify_jwt` is disabled at the gateway: the JWT is verified here (same as `generate`).
@@ -108,17 +108,16 @@ const portalUrl = async (customer: string, origin: string) =>
  * Payment methods (card only, with Apple Pay / Google Pay) are those enabled in the Stripe
  * account settings: this API version no longer takes payment_method_types.
  */
-const checkoutBase = (customer: string, userId: string, origin: string) =>
-  ({
-    customer,
-    client_reference_id: userId,
-    locale: 'fr',
-    billing_address_collection: 'required',
-    customer_update: { address: 'auto', name: 'auto' },
-    consent_collection: { terms_of_service: 'required' },
-    success_url: `${origin}/?paiement=ok`,
-    cancel_url: `${origin}/?paiement=annule`,
-  }) satisfies Partial<Stripe.Checkout.SessionCreateParams>;
+const checkoutBase = (customer: string, userId: string, origin: string): Stripe.Checkout.SessionCreateParams => ({
+  customer,
+  client_reference_id: userId,
+  locale: 'fr',
+  billing_address_collection: 'required',
+  customer_update: { address: 'auto', name: 'auto' },
+  consent_collection: { terms_of_service: 'required' },
+  success_url: `${origin}/?paiement=ok`,
+  cancel_url: `${origin}/?paiement=annule`,
+});
 
 Deno.serve(async (req: Request) => {
   const origin = (req.headers.get('origin') || '').trim();
