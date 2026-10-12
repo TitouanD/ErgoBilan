@@ -20,6 +20,7 @@ import { GenerationLoader } from '../shared/GenerationLoader';
 import { CriticalErrorModal } from '../shared/CriticalErrorModal';
 import { ConfirmModal } from '../shared/ConfirmModal';
 import { SuspectTermsReview, useSuspectTermChoices } from '../shared/SuspectTermsReview';
+import { hasBrandingPlan } from '../../services/billing';
 
 const ScorePage = React.lazy(() => import('./pages/ScorePage').then((m) => ({ default: m.ScorePage })));
 const ValidationPage = React.lazy(() => import('./pages/ValidationPage').then((m) => ({ default: m.ValidationPage })));
@@ -59,8 +60,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
   const [loaderDismissed, setLoaderDismissed] = useState(false);
 
   const { reportType, step, setStep } = assessment;
-  const hasCredits =
-    isDemoMode || userProfile.credits > 0 || (userProfile.subscriptionPlan === 'expert' && userProfile.status === 'active');
+  // Same rule as consume_credit_for_user: monthly + purchased credits, the admin generates without credit.
+  const hasCredits = isDemoMode || userProfile.isAdmin || userProfile.credits > 0;
 
   useEffect(() => {
     if (!flow.isGenerating) setLoaderDismissed(false);
@@ -120,7 +121,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
       onUpdateSection={assessment.updateSection}
       branding={userProfile.branding}
       onUpdateBranding={updateBranding}
-      isPremium={userProfile.subscriptionPlan !== 'free'}
+      isPremium={hasBrandingPlan(userProfile)}
       onShowPricing={() => onShowPricing('plans')}
       onBack={() => setStep(backStep)}
       isDemoMode={isDemoMode}

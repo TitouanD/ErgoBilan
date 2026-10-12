@@ -2,7 +2,7 @@
  * AuthContext — authentication state machine.
  *
  * unauthenticated → authenticating → registering (PIN not set up yet, wizard)
- *                                  → locked (PIN screen) → authenticated | subscription_locked
+ *                                  → locked (PIN screen) → authenticated
  *
  * Phase 1 (`loadUser`, "fast-lock") only reads the practitioner row so the PIN
  * screen shows after one round-trip. Phase 2 (`hydrateProfile`) runs after the
@@ -83,15 +83,7 @@ const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number): Promise<{ t
   }
 };
 
-export type AuthState =
-  | 'unauthenticated'
-  | 'registering'
-  | 'authenticating'
-  | 'locked'
-  | 'authenticated'
-  | 'subscription_locked'
-  | 'network_error'
-  | 'error';
+export type AuthState = 'unauthenticated' | 'registering' | 'authenticating' | 'locked' | 'authenticated' | 'network_error' | 'error';
 
 interface AuthContextType {
   userProfile: UserProfile;
@@ -101,7 +93,6 @@ interface AuthContextType {
    * as the idle-lock gate. It does NOT encrypt local patient data (docs/TECH_DEBT.md P0-1).
    */
   sessionKey: CryptoKey | null;
-  /** 'subscription_locked' = signed in but without a valid subscription (paywall). */
   authState: AuthState;
   isLoading: boolean;
   tempEmail: string | null;
@@ -129,8 +120,12 @@ const INITIAL_PROFILE: UserProfile = {
   id: '',
   email: '',
   credits: 0,
+  monthlyCredits: 0,
+  purchasedCredits: 0,
   subscriptionPlan: 'free',
   status: 'active',
+  billingSource: null,
+  currentPeriodEnd: null,
   totalBilansGenerated: 0,
   hasAcceptedResponsibility: false,
   isAdmin: false,
@@ -157,8 +152,12 @@ const DEMO_PROFILE: UserProfile = {
   id: 'demo-practitioner',
   email: 'demo@ergobilan.com',
   credits: 99,
+  monthlyCredits: 20,
+  purchasedCredits: 79,
   subscriptionPlan: 'expert',
   status: 'active',
+  billingSource: null,
+  currentPeriodEnd: null,
   isAdmin: false,
   isTrial: true,
   trialDaysRemaining: 30,
@@ -330,10 +329,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const fullProfile = profile.value.value ?? null;
       if (!fullProfile) return 'authenticated';
 
+      // No plan never locks the app: only AI generation needs a credit (ADR 0002).
       setUserProfile(fullProfile);
-      const hasValidAccess = fullProfile.status === 'active' || fullProfile.status === 'trialing';
-      if (!hasValidAccess) Logger.warn('AUTH', 'Subscription invalid — showing paywall');
-      return hasValidAccess ? 'authenticated' : 'subscription_locked';
+      return 'authenticated';
     } catch (e) {
       Logger.error('AUTH', 'Hydration error', e);
       return 'authenticated';

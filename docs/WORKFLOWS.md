@@ -8,20 +8,21 @@ Voir aussi : [ARCHITECTURE.md](./ARCHITECTURE.md) (routeur, auth), [AI_PIPELINE.
 
 Il n'y a pas de routeur d'URL : l'état `mode` de `AppRouter` (`App.tsx`) pilote l'affichage. L'état et le cycle de vie du bilan en cours vivent dans le module du bilan en cours, `utils/assessmentInProgress.ts` (intentions `start`, `resume`, `importFamily`, `saveAndClose`, `discard`, `finalize`, `applyGeneratedReport`, testées dans `assessmentInProgress.test.ts`), exposée par `AssessmentProvider` (`contexts/AssessmentContext.tsx`). Les hooks n'en sont que les adaptateurs (toasts, verrou, IA, rafraîchissement des listes) : démarrage et reprise dans `hooks/useAssessmentLauncher.ts` ; génération, finalisation et « Sauver & quitter » dans `hooks/useAssessmentFlow.ts`.
 
-| Condition / `mode`             | Composant                                       | Quand                                                                       |
-| ------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------- |
-| URL avec `?q_id=` et `#key=`   | `PatientPortal` seul (hors garde auth)          | Lien famille, détecté au premier rendu (`detectPortalUrl`)                  |
-| `isLoading` / `authenticating` | `AppLoader`                                     | Chargement de la session                                                    |
-| `network_error`                | `NetworkErrorScreen`                            | Timeout de chargement du praticien ou de sécurité                           |
-| `locked` (hors démo)           | `PinUnlock`                                     | Session ouverte, PIN à saisir                                               |
-| `landing`                      | `components/app/LandingPage.tsx`                | Non authentifié ; connexion, `AuthWizard`, « Espace Famille », démo         |
-| `admin`                        | `AdminPanel` (plein écran)                      | Après `verifyAdminAccess()` côté serveur                                    |
-| `dashboard`                    | `Dashboard`                                     | Par défaut une fois authentifié                                             |
-| `detail`                       | `PatientDetail`                                 | `openPatient` → `StorageService.loadPatientDetails`                         |
-| `portal`                       | `PatientPortal` seul                            | Saisie manuelle du lien depuis l'accueil                                    |
-| `profile`                      | `ProfileEditor`                                 | Menu compte ou lien depuis l'éditeur de design ; retour vers `previousMode` |
-| `assessment`                   | `components/assessment/AssessmentWorkspace.tsx` | Nouveau bilan, reprise de brouillon, import famille, réévaluation           |
-| overlay `viewingReport`        | `components/app/ReportViewerOverlay.tsx`        | Lecture seule d'un bilan archivé, depuis `PatientDetail`                    |
+| Condition / `mode`             | Composant                                       | Quand                                                                        |
+| ------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| URL avec `?q_id=` et `#key=`   | `PatientPortal` seul (hors garde auth)          | Lien famille, détecté au premier rendu (`detectPortalUrl`)                   |
+| URL avec `?legal=cgv`          | `LegalModal` seul (hors garde auth)             | Lien public des CGV (depuis Stripe Checkout) ; la fermer ouvre l'application |
+| `isLoading` / `authenticating` | `AppLoader`                                     | Chargement de la session                                                     |
+| `network_error`                | `NetworkErrorScreen`                            | Timeout de chargement du praticien ou de sécurité                            |
+| `locked` (hors démo)           | `PinUnlock`                                     | Session ouverte, PIN à saisir                                                |
+| `landing`                      | `components/app/LandingPage.tsx`                | Non authentifié ; connexion, `AuthWizard`, « Espace Famille », démo          |
+| `admin`                        | `AdminPanel` (plein écran)                      | Après `verifyAdminAccess()` côté serveur                                     |
+| `dashboard`                    | `Dashboard`                                     | Par défaut une fois authentifié                                              |
+| `detail`                       | `PatientDetail`                                 | `openPatient` → `StorageService.loadPatientDetails`                          |
+| `portal`                       | `PatientPortal` seul                            | Saisie manuelle du lien depuis l'accueil                                     |
+| `profile`                      | `ProfileEditor`                                 | Menu compte ou lien depuis l'éditeur de design ; retour vers `previousMode`  |
+| `assessment`                   | `components/assessment/AssessmentWorkspace.tsx` | Nouveau bilan, reprise de brouillon, import famille, réévaluation            |
+| overlay `viewingReport`        | `components/app/ReportViewerOverlay.tsx`        | Lecture seule d'un bilan archivé, depuis `PatientDetail`                     |
 
 Points d'entrée vers `assessment` :
 
@@ -59,7 +60,7 @@ Composants du dashboard impliqués :
 
 **Étape 2.** `ScorePage` : choix des tests dans `pages/score/TestCatalogModal.tsx`, saisie dans un `ScoreTable` par test, réordonnancement par glisser-déposer (l'ordre des clés de `tests` est l'ordre du rapport), moyenne z par test dans `ScoreSummaryPanel`. Détails de saisie : [SCORING_CATALOG.md](./SCORING_CATALOG.md). `updateTests` remplace l'objet complet.
 
-**Étape 3.** Trois champs de synthèse ; le diagnostic est obligatoire. « Générer » vérifie crédits ou abonnement expert actif (sinon paywall), puis ouvre la modale de confirmation de `AssessmentWorkspace`, qui lance `flow.generateInitialReport`.
+**Étape 3.** Trois champs de synthèse ; le diagnostic est obligatoire. « Générer » vérifie les crédits, l'admin n'en a pas besoin (sinon paywall, §10), puis ouvre la modale de confirmation de `AssessmentWorkspace`, qui lance `flow.generateInitialReport`.
 
 **Génération** (`useAssessmentFlow` → `generateInitialReport`, détail dans [AI_PIPELINE.md](./AI_PIPELINE.md)) : la modale liste d'abord les mots suspects du texte libre (masqués par défaut, choix gardés sur la fiche). Le générateur (`utils/reportGenerator.ts`) construit la charge utile (`buildInitialReportPayload`), l'anonymise d'un bloc (identifiants, mots masqués, dates) avec les préférences de style du praticien, puis renvoie les sections et les observations reformulées, qui remplacent celles des subtests. Les crédits sont rechargés (`refreshProfile`) et le bilan passe à l'étape 4. Un double clic est ignoré. Erreur `CREDIT_INSUFFICIENT` → paywall ; autres erreurs → `CriticalErrorModal` avec « réessayer » (qui reprend au diagnostic si seul celui-ci a échoué). Le `GenerationLoader` peut être masqué sans annuler la génération.
 
@@ -162,16 +163,16 @@ Statuts : `pending` (créé) → `completed` (envoyé par la famille) → ligne 
 
 ## 8. Export PDF, impression, sauvegarde `.ergobilan`
 
-| Action                  | Code                                                          | Comportement                                                                                                                                                                       |
-| ----------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aperçu                  | `pages/ExportPage.tsx` → `ReportView`                         | Aperçu HTML éditable : texte des sections, titres, déplacement entre pages, page vierge, « Page École » ; type de graphique et unité des scores par test                           |
-| Mise en page            | `ExportPage` (`pages`), `utils/reportData.ts`                 | `resolvePages` : disposition enregistrée (`reportPages` du bilan en cours, donc du brouillon) passée par `reconcilePages`, sinon `buildDefaultPages` ; reprise en quittant l'étape |
-| Télécharger PDF         | `ExportPage` → `renderPdfBlob`                                | `@react-pdf/renderer` chargé à la demande, `PdfDocument` avec `pages` (chaque page de l'aperçu commence une page du PDF) ; fichier `Bilan_Nom_Prenom_date.pdf`                     |
-| Imprimer                | `ExportPage` → `handlePrint`                                  | Même PDF ouvert dans un nouvel onglet (pas de `window.print`)                                                                                                                      |
-| Design                  | `export/BrandingEditor.tsx`, `export/ReportToolbar.tsx`       | Réservé aux plans payants ; `updateBranding` enregistre le branding (y compris `chartType` et `scoreDisplayModes`) dans `practitioners.branding_config` (`ProfileService`)         |
-| Sauvegarde `.ergobilan` | `services/exportService.ts` → `exportAll`                     | JSON **non chiffré** des 4 tables Dexie, marque la date de backup                                                                                                                  |
-| Import `.ergobilan`     | `exportService.ts` → `importFromFile`, aperçu `peekBundle`    | Vérification de version (v1), `bulkPut` par UUID (écrase), brouillons remplacés par patient                                                                                        |
-| Points d'entrée backup  | `components/app/AppHeader.tsx` (menu compte), `ProfileEditor` | Rappel toast si aucun backup ou > 180 jours (`App.tsx`), pastille dans le menu au-delà de 30 jours (`AppHeader`)                                                                   |
+| Action                  | Code                                                          | Comportement                                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Aperçu                  | `pages/ExportPage.tsx` → `ReportView`                         | Aperçu HTML éditable : texte des sections, titres, déplacement entre pages, page vierge, « Page École » ; type de graphique et unité des scores par test                                                                                                           |
+| Mise en page            | `ExportPage` (`pages`), `utils/reportData.ts`                 | `resolvePages` : disposition enregistrée (`reportPages` du bilan en cours, donc du brouillon) passée par `reconcilePages`, sinon `buildDefaultPages` ; reprise en quittant l'étape                                                                                 |
+| Télécharger PDF         | `ExportPage` → `renderPdfBlob`                                | `@react-pdf/renderer` chargé à la demande, `PdfDocument` avec `pages` (chaque page de l'aperçu commence une page du PDF) ; fichier `Bilan_Nom_Prenom_date.pdf`                                                                                                     |
+| Imprimer                | `ExportPage` → `handlePrint`                                  | Même PDF ouvert dans un nouvel onglet (pas de `window.print`)                                                                                                                                                                                                      |
+| Design                  | `export/BrandingEditor.tsx`, `export/ReportToolbar.tsx`       | Réservé aux formules Performance et Expert actives, et à l'admin (`hasBrandingPlan`, `services/billing.ts`, #107) ; `updateBranding` enregistre le branding (y compris `chartType` et `scoreDisplayModes`) dans `practitioners.branding_config` (`ProfileService`) |
+| Sauvegarde `.ergobilan` | `services/exportService.ts` → `exportAll`                     | JSON **non chiffré** des 4 tables Dexie, marque la date de backup                                                                                                                                                                                                  |
+| Import `.ergobilan`     | `exportService.ts` → `importFromFile`, aperçu `peekBundle`    | Vérification de version (v1), `bulkPut` par UUID (écrase), brouillons remplacés par patient                                                                                                                                                                        |
+| Points d'entrée backup  | `components/app/AppHeader.tsx` (menu compte), `ProfileEditor` | Rappel toast si aucun backup ou > 180 jours (`App.tsx`), pastille dans le menu au-delà de 30 jours (`AppHeader`)                                                                                                                                                   |
 
 L'aperçu et le PDF lisent les mêmes données (`utils/reportData.ts` pour les graphiques, zones et tableaux ; `utils/reportContent.ts` pour le HTML des sections ; `utils/reportTheme.ts` pour le thème). Le PDF reprend la mise en page : chaque page de l'aperçu commence une nouvelle page du PDF, et une page trop longue continue sur la suivante.
 
@@ -184,11 +185,30 @@ L'aperçu et le PDF lisent les mêmes données (`utils/reportData.ts` pour les g
 - Générations simulées sans appel réseau ni crédit : le transport démo (`demoTransport`, `data/demoReport.ts`) renvoie après 2,5 s des réponses au format de l'edge, analysées et réhydratées comme en réel. La réévaluation démo part des scores de `SARAH`.
 - Conversion : « Télécharger PDF » (après téléchargement) et « Terminer & Archiver » ouvrent `DemoConversionModal` ; « convertir » déconnecte. « Sauver & quitter » ne fait que réinitialiser. En historique, « Enregistrer » passe par la branche démo de `finalize` (rien n'est enregistré).
 
-## 10. Renvois
+## 10. Abonnement et paiement
+
+Règles ([ADR 0002](./adr/0002-credits-sans-report.md), `CONTEXT.md` § Abonnement) : seule la génération IA demande un crédit ; sans formule ni crédit, le reste de l'application reste accessible (plus d'état `subscription_locked`). Les crédits du mois (2, 6 ou 20 selon la formule, sans report) sont consommés avant les crédits achetés, qui n'expirent pas. Paiement par Stripe (#107) : la migration `20261012100000_abonnement_stripe.sql` et les edge `billing` et `stripe-webhook` attendent l'accord de Titouan ; Stripe est en mode test.
+
+| Étape           | Code                                                                                                       | Comportement                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Offres          | `components/shared/PricingModal.tsx` ; bandeau du `Dashboard` (essai ou sans formule), paywall sans crédit | Grille des formules, ou « Plus de crédits » (formule ou achat à l'unité) ; prix unitaire selon la formule active (`effectivePlan`, `UNIT_PRICE_EUR`)                                               |
+| Souscription    | `BillingService.subscribe` → edge `billing` (`subscribe`)                                                  | Stripe Checkout (adresse de facturation, CGV à accepter) ; avec une formule déjà payée, le portail client à la place. Pendant l'essai, les crédits d'essai restants deviennent des crédits achetés |
+| Retour          | `readPaymentReturn` (`App.tsx`)                                                                            | `/?paiement=ok` : toast et rechargement du profil, puis encore 5 s après (les crédits arrivent par le webhook) ; `/?paiement=annule` : toast « rien ne vous a été facturé »                        |
+| Renouvellement  | edge `stripe-webhook`                                                                                      | Facture payée : crédits du mois remis au quota ; formule supérieure : la différence est donnée aussitôt                                                                                            |
+| Gestion         | `BillingService.openPortal` (formule payée)                                                                | Portail client Stripe : factures, carte, changement de formule, résiliation. Fin de l'abonnement : plus de formule, crédits du mois à 0, crédits achetés gardés                                    |
+| Achat à l'unité | `BillingService.buyCredits` → edge `billing` (`buy_credits`)                                               | Checkout de 1 à 20 crédits achetés (15 € sans formule ou en Essentiel, 8 € en Performance, 5 € en Expert)                                                                                          |
+| Fin d'essai     | cron `billing_renew_and_expire`                                                                            | Après 30 jours sans formule : crédits d'essai perdus, statut `inactive` ; le bandeau affiche « Aucune formule active »                                                                             |
+| Formule offerte | `components/admin/AdminUsers.tsx`                                                                          | Formule active donnée par l'admin : crédits du mois aussitôt, renouvelés chaque mois par le même cron                                                                                              |
+| CGV             | `components/shared/LegalModal.tsx` (onglet CGV)                                                            | Lien sur l'accueil, et adresse publique `/?legal=cgv` (`utils/legalLink.ts`) liée depuis Checkout                                                                                                  |
+
+En mode démo, les boutons de paiement affichent seulement « Le paiement n'est pas disponible en mode démo ».
+
+## 11. Renvois
 
 | Sujet                                                     | Document                                   |
 | --------------------------------------------------------- | ------------------------------------------ |
 | Prompts, anonymisation, edge function `generate`, crédits | [AI_PIPELINE.md](./AI_PIPELINE.md)         |
+| Tables, RPC et edge functions de l'abonnement             | [DATA_MODEL.md](./DATA_MODEL.md)           |
 | Saisie des scores, unités, catalogue, zones, deltas       | [SCORING_CATALOG.md](./SCORING_CATALOG.md) |
 | Tables Dexie, `pending_questionnaires`, types             | [DATA_MODEL.md](./DATA_MODEL.md)           |
 | État des bugs et actions en attente sur la production     | [TECH_DEBT.md](./TECH_DEBT.md)             |

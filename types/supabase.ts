@@ -228,6 +228,7 @@ export type Database = {
           id: string;
           is_admin: boolean;
           last_name: string | null;
+          monthly_credits: number;
           phone_pro: string | null;
           siret: string | null;
         };
@@ -244,6 +245,7 @@ export type Database = {
           id: string;
           is_admin?: boolean;
           last_name?: string | null;
+          monthly_credits?: number;
           phone_pro?: string | null;
           siret?: string | null;
         };
@@ -260,6 +262,7 @@ export type Database = {
           id?: string;
           is_admin?: boolean;
           last_name?: string | null;
+          monthly_credits?: number;
           phone_pro?: string | null;
           siret?: string | null;
         };
@@ -273,32 +276,41 @@ export type Database = {
       };
       subscriptions: {
         Row: {
+          billing_source: string | null;
           created_at: string | null;
           current_period_end: string | null;
           id: string;
           monthly_extraction_quota: number;
           plan_id: string;
           status: string;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
           trial_ends_at: string | null;
           user_id: string;
         };
         Insert: {
+          billing_source?: string | null;
           created_at?: string | null;
           current_period_end?: string | null;
           id?: string;
           monthly_extraction_quota?: number;
           plan_id?: string;
           status?: string;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
           trial_ends_at?: string | null;
           user_id: string;
         };
         Update: {
+          billing_source?: string | null;
           created_at?: string | null;
           current_period_end?: string | null;
           id?: string;
           monthly_extraction_quota?: number;
           plan_id?: string;
           status?: string;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
           trial_ends_at?: string | null;
           user_id?: string;
         };
@@ -360,7 +372,9 @@ export type Database = {
           email: string;
           first_name: string;
           is_admin: boolean;
+          billing_source: string;
           last_name: string;
+          monthly_credits: number;
           monthly_extraction_quota: number;
           organization_id: string;
           organization_name: string;
@@ -385,6 +399,7 @@ export type Database = {
           p_credits?: number;
           p_current_period_end?: string;
           p_is_admin?: boolean;
+          p_monthly_credits?: number;
           p_monthly_extraction_quota?: number;
           p_plan_id?: string;
           p_status?: string;

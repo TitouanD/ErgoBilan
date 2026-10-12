@@ -107,14 +107,12 @@ export const signInTestAccount = async () => {
     throw e;
   }
 
+  /** credits = crédits du mois + crédits achetés (monthly_credits absent avant la migration #107). */
   const readAccount = async () => {
-    const { data: row, error: readError } = await supabase
-      .from('practitioners')
-      .select('credits, ai_style_preferences, is_admin')
-      .eq('id', session.user.id)
-      .single();
+    const { data: row, error: readError } = await supabase.from('practitioners').select('*').eq('id', session.user.id).single();
     if (readError || !row) throw new Error(`Lecture du compte de test impossible (${readError?.message})`);
-    return row;
+    const monthly = (row as { monthly_credits?: number }).monthly_credits ?? 0;
+    return { credits: row.credits + monthly, ai_style_preferences: row.ai_style_preferences, is_admin: row.is_admin };
   };
 
   return {

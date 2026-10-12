@@ -288,10 +288,19 @@ export interface BrandingConfig {
 export interface UserProfile {
   id: string;
   email: string;
+  /** Credits available for an AI generation: monthly + purchased (CONTEXT.md § Abonnement). */
   credits: number;
+  /** Crédits du mois: reset to the plan's quota at each renewal. */
+  monthlyCredits: number;
+  /** Crédits achetés: never expire. */
+  purchasedCredits: number;
   isAdmin: boolean;
   subscriptionPlan: 'free' | 'essential' | 'performance' | 'expert';
   status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
+  /** 'stripe' = paid plan (managed in the Stripe portal), 'offerte' = granted by the admin, null = none. */
+  billingSource: 'stripe' | 'offerte' | null;
+  /** Next renewal of a plan (ISO), or end of the last one. */
+  currentPeriodEnd: string | null;
   isTrial: boolean;
   trialDaysRemaining: number;
   totalBilansGenerated: number;
@@ -464,7 +473,11 @@ export interface AdminUserRow {
   first_name: string | null;
   last_name: string | null;
   is_admin: boolean;
+  /** Crédits achetés */
   credits: number;
+  /** Crédits du mois */
+  monthly_credits: number;
+  billing_source: 'stripe' | 'offerte' | null;
   organization_id: string | null;
   organization_name: string | null;
   organization_role: string | null;
@@ -481,6 +494,7 @@ export interface AdminUserUpdatePayload {
   userId: string;
   isAdmin?: boolean;
   credits?: number;
+  monthlyCredits?: number;
   planId?: 'free' | 'essential' | 'performance' | 'expert';
   status?: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
   trialEndsAt?: string | null;

@@ -10,10 +10,12 @@ type SubscriptionStatus = 'active' | 'trialing' | 'canceled' | 'past_due' | 'ina
 
 interface UserDraft {
   isAdmin: boolean;
+  /** Crédits achetés */
   credits: number;
+  /** Crédits du mois */
+  monthlyCredits: number;
   planId: PlanId;
   status: SubscriptionStatus;
-  monthlyExtractionQuota: number;
 }
 
 const PLAN_OPTIONS: PlanId[] = ['free', 'essential', 'performance', 'expert'];
@@ -27,10 +29,13 @@ const normalizeStatus = (value: string): SubscriptionStatus =>
 const toDraft = (row: AdminUserRow): UserDraft => ({
   isAdmin: !!row.is_admin,
   credits: Number.isFinite(row.credits) ? row.credits : 0,
+  monthlyCredits: Number.isFinite(row.monthly_credits) ? row.monthly_credits : 0,
   planId: normalizePlan(row.subscription_plan || 'free'),
   status: normalizeStatus(row.subscription_status || 'inactive'),
-  monthlyExtractionQuota: Number.isFinite(row.monthly_extraction_quota) ? row.monthly_extraction_quota : 0,
 });
+
+/** Who pays the plan: Stripe (changed by the practitioner in the portal) or nobody (granted here). */
+const SOURCE_LABELS: Record<string, string> = { stripe: 'payée (Stripe)', offerte: 'offerte' };
 
 export const AdminUsers: React.FC = () => {
   const toast = useToast();
@@ -88,24 +93,27 @@ export const AdminUsers: React.FC = () => {
     return (
       draft.isAdmin !== base.isAdmin ||
       draft.credits !== base.credits ||
+      draft.monthlyCredits !== base.monthlyCredits ||
       draft.planId !== base.planId ||
-      draft.status !== base.status ||
-      draft.monthlyExtractionQuota !== base.monthlyExtractionQuota
+      draft.status !== base.status
     );
   };
 
   const handleSaveUser = async (row: AdminUserRow) => {
     const draft = drafts[row.user_id];
     if (!draft) return;
+    const base = toDraft(row);
     setSavingUserId(row.user_id);
     try {
+      // Only the changed fields: an active paid plan given here becomes an « offerte » plan,
+      // with its monthly credits granted at once unless they were edited too.
       await AdminService.updateUser({
         userId: row.user_id,
         isAdmin: draft.isAdmin,
         credits: Math.max(0, Math.trunc(draft.credits)),
-        planId: draft.planId,
-        status: draft.status,
-        monthlyExtractionQuota: Math.max(0, Math.trunc(draft.monthlyExtractionQuota)),
+        ...(draft.monthlyCredits !== base.monthlyCredits ? { monthlyCredits: Math.max(0, Math.trunc(draft.monthlyCredits)) } : {}),
+        ...(draft.planId !== base.planId ? { planId: draft.planId } : {}),
+        ...(draft.status !== base.status ? { status: draft.status } : {}),
       });
       toast.success('Utilisateur mis à jour.');
       await loadUsers();
@@ -125,7 +133,10 @@ export const AdminUsers: React.FC = () => {
             <h3 className="text-white text-base font-bold flex items-center gap-2">
               <Users2 size={16} className="text-cyan-300" /> Utilisateurs & abonnements
             </h3>
-            <p className="text-[11px] text-stone-500 mt-1">Gestion admin: droits, crédits, plan et statut de souscription.</p>
+            <p className="text-[11px] text-stone-500 mt-1">
+              Droits, crédits et formule. Une formule active donnée ici est offerte : ses crédits du mois se renouvellent chaque mois. Une
+              formule payée se change par la cliente dans son espace Stripe.
+            </p>
           </div>
           <button
             onClick={() => void loadUsers()}
@@ -156,10 +167,10 @@ export const AdminUsers: React.FC = () => {
                 <th className="text-left px-3 py-2">Utilisateur</th>
                 <th className="text-left px-3 py-2">Organisation</th>
                 <th className="text-center px-3 py-2">Admin</th>
-                <th className="text-center px-3 py-2">Crédits</th>
-                <th className="text-center px-3 py-2">Plan</th>
+                <th className="text-center px-3 py-2">Crédits achetés</th>
+                <th className="text-center px-3 py-2">Crédits du mois</th>
+                <th className="text-center px-3 py-2">Formule</th>
                 <th className="text-center px-3 py-2">Statut</th>
-                <th className="text-center px-3 py-2">Quota OCR</th>
                 <th className="text-right px-3 py-2">Action</th>
               </tr>
             </thead>
@@ -199,6 +210,16 @@ export const AdminUsers: React.FC = () => {
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
+                      <input
+                        type="number"
+                        min={0}
+                        aria-label="Crédits du mois"
+                        value={draft.monthlyCredits}
+                        onChange={(e) => updateDraft(row.user_id, { monthlyCredits: Number(e.target.value || 0) })}
+                        className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-center text-white"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
                       <select
                         value={draft.planId}
                         onChange={(e) => updateDraft(row.user_id, { planId: normalizePlan(e.target.value) })}
@@ -210,6 +231,9 @@ export const AdminUsers: React.FC = () => {
                           </option>
                         ))}
                       </select>
+                      {row.billing_source && (
+                        <div className="mt-1 text-[10px] text-stone-500">{SOURCE_LABELS[row.billing_source] ?? row.billing_source}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       <select
@@ -223,15 +247,6 @@ export const AdminUsers: React.FC = () => {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <input
-                        type="number"
-                        min={0}
-                        value={draft.monthlyExtractionQuota}
-                        onChange={(e) => updateDraft(row.user_id, { monthlyExtractionQuota: Number(e.target.value || 0) })}
-                        className="w-24 bg-white/5 border border-white/10 rounded px-2 py-1 text-center text-white"
-                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
