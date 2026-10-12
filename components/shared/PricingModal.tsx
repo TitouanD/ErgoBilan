@@ -15,6 +15,8 @@ interface Props {
   hasActivePlan?: boolean;
   /** The plan is paid through Stripe (managed in the portal). */
   hasPaidPlan?: boolean;
+  /** The last payment of the plan failed (Stripe retries): no monthly credits until it is paid. */
+  isPaymentPending?: boolean;
   /** Next renewal of the monthly credits (ISO), shown when the fair-use limit is reached. */
   renewalDate?: string | null;
   /** A Stripe page is being opened: buttons are disabled. */
@@ -41,6 +43,7 @@ export const PricingModal: React.FC<Props> = ({
   hasActivePlan = false,
   hasPaidPlan = false,
   renewalDate = null,
+  isPaymentPending = false,
   isBusy = false,
 }) => {
   const [view, setView] = useState<'paywall' | 'plans'>(isPaywallMode ? 'paywall' : 'plans');
@@ -55,7 +58,28 @@ export const PricingModal: React.FC<Props> = ({
             <X size={24} />
           </button>
 
-          {hasActivePlan ? (
+          {hasActivePlan && isPaymentPending ? (
+            // Failed renewal: the monthly credits come back once the invoice is paid.
+            <div className="text-center">
+              <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
+                <Receipt size={32} />
+              </div>
+              <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Paiement en attente.</h2>
+              <p className="text-[var(--text-secondary)] mt-3 text-sm leading-relaxed">
+                Le dernier paiement de votre formule n'a pas abouti. Vos bilans du mois seront renouvelés dès qu'il sera réglé.
+              </p>
+              {onManageSubscription && (
+                <button
+                  type="button"
+                  onClick={onManageSubscription}
+                  disabled={isBusy}
+                  className="mt-5 w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[#d0694e] transition-all disabled:opacity-50"
+                >
+                  Mettre à jour ma carte bancaire
+                </button>
+              )}
+            </div>
+          ) : hasActivePlan ? (
             // Fair-use limit of the plan reached: no unit purchase, the credits come back at renewal.
             <div className="text-center">
               <div className="w-16 h-16 bg-[var(--primary)]/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[var(--primary)]">

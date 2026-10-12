@@ -490,6 +490,7 @@ const AppRouter = () => {
               hasActivePlan={hasActivePlan(userProfile)}
               hasPaidPlan={userProfile.billingSource === 'stripe'}
               renewalDate={userProfile.currentPeriodEnd}
+              isPaymentPending={userProfile.status === 'past_due'}
               isBusy={isOpeningStripe}
               onSubscribe={() => openStripe(BillingService.subscribe)}
               onBuyCredits={() => openStripe(BillingService.buyCredits)}

@@ -50,6 +50,14 @@ describe('PricingModal : formule Solo (#107)', () => {
     expect(h.onBuyCredits).toHaveBeenCalled();
   });
 
+  it('pendant un paiement en attente, invite à mettre à jour la carte plutôt qu’à attendre', () => {
+    const h = handlers();
+    render(<PricingModal {...h} isPaywallMode hasActivePlan hasPaidPlan isPaymentPending />);
+    expect(screen.getByText('Paiement en attente.')).toBeTruthy();
+    fireEvent.click(screen.getByText('Mettre à jour ma carte bancaire'));
+    expect(h.onManageSubscription).toHaveBeenCalled();
+  });
+
   it('avec une formule dont les 30 bilans du mois sont utilisés, annonce leur retour sans proposer d’achat', () => {
     render(<PricingModal {...handlers()} isPaywallMode hasActivePlan renewalDate="2026-11-12T20:09:41Z" />);
     expect(screen.getByText('Limite du mois atteinte.')).toBeTruthy();
