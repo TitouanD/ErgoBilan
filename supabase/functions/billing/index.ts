@@ -122,6 +122,14 @@ const checkoutBase = (customer: string, userId: string, origin: string): Stripe.
   locale: 'fr',
   billing_address_collection: 'required',
   customer_update: { address: 'auto', name: 'auto' },
+  // App theme (index.css: --app-bg, --primary); Nunito is Stripe's closest font to Quicksand.
+  branding_settings: {
+    display_name: 'ErgoBilan',
+    background_color: '#faf8f4',
+    button_color: '#e07a5f',
+    border_style: 'rounded',
+    font_family: 'nunito',
+  },
   ...(IS_TEST_MODE
     ? { custom_text: { submit: { message: `En payant, vous acceptez les Conditions Générales de Vente : ${TERMS_URL}` } } }
     : { consent_collection: { terms_of_service: 'required' } }),
