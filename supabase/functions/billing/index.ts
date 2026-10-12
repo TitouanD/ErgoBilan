@@ -104,6 +104,14 @@ const portalUrl = async (customer: string, origin: string) =>
   (await stripe!.billingPortal.sessions.create({ customer, return_url: `${origin}/`, locale: 'fr' })).url;
 
 /**
+ * Terms of sale: a required checkbox in live mode, which needs the terms URL in the account's
+ * public details (Stripe refuses the session otherwise). The test sandbox cannot set it: there,
+ * a line under the pay button states the terms instead.
+ */
+const IS_TEST_MODE = (STRIPE_SECRET_KEY ?? '').startsWith('sk_test_');
+const TERMS_URL = 'https://app.ergobilan.com/?legal=cgv';
+
+/**
  * Settings shared by both kinds of Checkout: invoice identity, terms of sale accepted.
  * Payment methods (card only, with Apple Pay / Google Pay) are those enabled in the Stripe
  * account settings: this API version no longer takes payment_method_types.
@@ -114,7 +122,9 @@ const checkoutBase = (customer: string, userId: string, origin: string): Stripe.
   locale: 'fr',
   billing_address_collection: 'required',
   customer_update: { address: 'auto', name: 'auto' },
-  consent_collection: { terms_of_service: 'required' },
+  ...(IS_TEST_MODE
+    ? { custom_text: { submit: { message: `En payant, vous acceptez les Conditions Générales de Vente : ${TERMS_URL}` } } }
+    : { consent_collection: { terms_of_service: 'required' } }),
   success_url: `${origin}/?paiement=ok`,
   cancel_url: `${origin}/?paiement=annule`,
 });
