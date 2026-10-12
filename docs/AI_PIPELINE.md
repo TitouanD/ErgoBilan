@@ -291,6 +291,12 @@ PowerShell : `$env:E2E_AI_LIVE='1'; $env:E2E_AI='style'; npm run e2e:ai` (puis `
 
 `E2E_AI` : `initial` (défaut), `reevaluation`, `style`, `all`, ou une liste séparée par des virgules.
 
+### Dossier fourni (`E2E_AI_DOSSIER`)
+
+Pour juger la qualité sur un cas réaliste (changement de modèle, par exemple), le bilan initial peut porter sur un dossier fourni au lieu d'Elya : `E2E_AI_DOSSIER=.e2e-dossiers/<cas>.json` (dossier ignoré par git). Le fichier contient `patient`, `observations`, `tests` (clés `testId` → `subtestId` du catalogue), `synthesis` et, au besoin, `stylePreferences`. Le catalogue est alors lu sur Supabase avec le compte de test, même à blanc (lecture gratuite), et toute clé de test inconnue arrête l'exécution avant l'appel. Contrôles inchangés (fuite, mots suspects). Le rapport lisible est écrit dans `initial/4-rapport.md`. Mêmes règles de coût : à blanc d'abord, puis une exécution réelle.
+
+Un dossier réel transite par la conversation avec Claude : y mettre une identité inventée (nom, école, médecins, adresse) ; la qualité clinique n'en dépend pas, ces champs étant de toute façon remplacés par des pseudonymes.
+
 ### Ce qui est vérifié
 
 - Avant l'envoi de chaque requête : aucun identifiant du patient fictif (nom, prénom, parents, enseignant, médecins, école, adresse, téléphone, courriel, date de naissance, fratrie). La liste est construite dans le test, indépendamment de `anonymizer.ts`. Une fuite arrête l'exécution **avant** l'appel payant. Aucun mot suspect sur les dossiers utilisés.
@@ -300,7 +306,7 @@ PowerShell : `$env:E2E_AI_LIVE='1'; $env:E2E_AI='style'; npm run e2e:ai` (puis `
 
 ### Trace
 
-Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) : par tâche, la requête pseudonymisée et la réponse ; par parcours, le rapport réhydraté ; en réel, les échanges HTTP bruts avec l'edge (`http-edge.json`) ; `resume.json` (appels, crédits avant et après). Le dossier est fictif : la trace ne contient aucune donnée réelle.
+Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) : par tâche, la requête pseudonymisée et la réponse ; par parcours, le rapport réhydraté ; en réel, les échanges HTTP bruts avec l'edge (`http-edge.json`) ; `resume.json` (appels, crédits avant et après). Le dossier est fictif (sauf `E2E_AI_DOSSIER`) : la trace ne contient alors aucune donnée réelle.
 
 ### Compte de test et connexion
 

@@ -42,3 +42,6 @@ supabase/.temp/
 .recette/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# Supplied records for E2E_AI_DOSSIER (real patient data: never committed)
+.e2e-dossiers/
