@@ -58,6 +58,7 @@ const asAdmin = async (app: App) => {
     json({ test: { id: TEST_ID, name: 'Test recette FICTIF', category_id: 'graphisme', version: '1' }, subtests: [subtest] }),
   );
   await app.mock(/\/rpc\/admin_list_users\b/, json([user]));
+  await app.mock(/\/rpc\/admin_list_trial_flags\b/, json([]));
   await app.mock(
     /\/rpc\/admin_get_ai_health_stats\b/,
     json({ daily: [{ date: '2026-09-30', requests: 40, errors: 2 }], total_requests: 40, total_errors: 2, error_rate_pct: 5 }),
