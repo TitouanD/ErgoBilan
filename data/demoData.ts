@@ -64,6 +64,8 @@ export const DEMO_PATIENTS = {
       developmentMotor: 'Bon developpement global. Besoin de bouger, pratique gymnastique et boxe.',
       developmentLanguage: 'Debut tardif vers 3 ans, inversions de syllabes.',
       walkingAge: '14 mois',
+      motorDevelopmentTags: 'developpement_standard',
+      extracurricularSport: 'Gymnastique et boxe',
       crawling: '4 pattes vers 9 mois',
       cleanliness: 'Acquise avant 2 ans',
       languageStatus: 'Tardif',
@@ -78,6 +80,7 @@ export const DEMO_PATIENTS = {
       clothingZippers: 'Acquis',
       continence: 'Ok',
       timeSpace: "Difficulte a se reperer dans le temps, besoin d'un timer.",
+      learningNotes: 'Lecture lente, relit plusieurs fois les consignes.',
       schoolAttention: "Calme mais lente, se perd quand l'environnement est bruyant.",
       socialBehavior: 'Relations difficiles, tendance a se devaloriser.',
       writingIssues: 'Ecriture lente, prise du crayon couteuse, lisibilite variable.',
@@ -109,6 +112,12 @@ export const DEMO_PATIENTS = {
       bhk: {
         bhk__speed: { value: '10', unit: '%', observation: 'Lenteur avec pauses fréquentes.' },
         bhk__quality: { value: '4', unit: '%', observation: 'Tension de la main, irrégularités.' },
+      },
+      custom_observations: {
+        custom_demo_elya: {
+          customLabel: 'Comportement en séance',
+          observation: 'A demandé une pause au bout de 40 minutes.',
+        },
       },
     } as TestData,
     observations: {

@@ -95,12 +95,19 @@ const isInvalidJwtError = (err: any): boolean => {
 };
 
 const isRetryable = (edgeBody: any, error: any): boolean => {
+  // The edge knows better than the HTTP status: a revoked key or a refused request fails again (#109).
+  if (edgeBody?.retryable === false || edgeBody?.error === 'SERVER_MISCONFIGURED') return false;
   if (edgeBody?.retryable === true) return true;
   const status =
     typeof error?.status === 'number' ? error.status : typeof error?.context?.status === 'number' ? error.context.status : undefined;
   if (status && status >= 500) return true;
   return /fetch failed|network|econnreset|socket|timeout_ai/i.test(String(error?.message ?? ''));
 };
+
+/** Timeout at Gemini or on the way: another try rarely ends sooner, and every try is billed. */
+const isTimeout = (edgeBody: any, error: any): boolean =>
+  edgeBody?.code === 'GEMINI_TIMEOUT' || /timeout_ai/i.test(String(error?.message ?? ''));
+const MAX_TIMEOUT_RETRIES = 1;
 
 /** HTTP transport of the report generator: the edge function `generate` (JWT, retries, error codes). */
 export const callAIProxyTask: AITransport = async (params: AIRequest): Promise<AIAnswer> => {
@@ -115,6 +122,7 @@ export const callAIProxyTask: AITransport = async (params: AIRequest): Promise<A
 
   let accessToken = initialToken.token;
   let lastError: Error | null = null;
+  let timeouts = 0;
 
   for (let attempt = 0; attempt <= CLIENT_MAX_RETRIES; attempt++) {
     if (attempt > 0) {
@@ -175,7 +183,9 @@ export const callAIProxyTask: AITransport = async (params: AIRequest): Promise<A
     if (edgeError === 'GENERATION_SESSION_BUSY') throw new Error('GENERATION_SESSION_BUSY');
     if (edgeError === 'Missing authorization' || edgeError === 'Unauthorized') throw new Error('SESSION_EXPIRED');
 
-    const retryable = isRetryable(edgeBody, error);
+    const timedOut = (error || edgeError) && isTimeout(edgeBody, error);
+    if (timedOut) timeouts++;
+    const retryable = isRetryable(edgeBody, error) && !(timedOut && timeouts > MAX_TIMEOUT_RETRIES);
     if ((error || edgeError) && !retryable) {
       throw new Error(`AI proxy error: ${edgeError || error?.message}`);
     }

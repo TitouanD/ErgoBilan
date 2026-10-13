@@ -1,12 +1,13 @@
 # Vérifier une modification
 
-Vérifier un écran ne doit pas demander de recréer un patient et de remplir le dossier. Trois outils existent pour cela, tous réservés au développement :
+Vérifier un écran ne doit pas demander de recréer un patient et de remplir le dossier. Quatre outils existent pour cela, tous réservés au développement :
 
 - **les scénarios** : un lien ouvre directement un écran avec des patients fictifs ;
 - **la capture** : un script prend la capture d'écran d'un scénario, connecté au compte de test ;
-- **les fixtures** : les mêmes patients fictifs, utilisables dans les tests de composants.
+- **les fixtures** : les mêmes patients fictifs, utilisables dans les tests de composants ;
+- **la recette** : la batterie Playwright des parcours, fonctionnelle et visuelle, qui conditionne le passage dans `main` (voir [Recette](#recette)).
 
-Le code est dans `dev/` (scénarios, patients, scores) et dans `e2e/capture.mjs`. Rien n'en arrive dans le build de production : `App.tsx` ne charge `dev/DevTools.tsx` que sous `import.meta.env.DEV`.
+Le code est dans `dev/` (scénarios, patients, scores) et dans `e2e/` (`capture.mjs`, `recette/`). Rien n'en arrive dans le build déployé : `App.tsx` ne charge `dev/DevTools.tsx` que sous `import.meta.env.DEV`, ou dans le build de la recette (`VITE_SCENARIOS=1`, refusé sur Vercel par `vite.config.ts`).
 
 ## Patients fictifs
 
@@ -35,6 +36,7 @@ Avec `npm run dev`, connecté et déverrouillé, on ouvre `http://localhost:3000
 | `?scenario=initial&etape=1` à `5`    | Bilan initial : Dossier, Tests, Diagnostic, Validation, Visualisation                              |
 | `?scenario=reeval&etape=1` à `4`     | Réévaluation (le bilan de référence est créé, 6 mois avant) : Tests, Évolution, Validation, Export |
 | `?scenario=historique&etape=1` à `3` | Import d'un bilan antérieur : Dossier, Scores, Rapport                                             |
+| `?scenario=abonnement`               | Tableau de bord avec la modale « Votre abonnement » ouverte                                        |
 
 Les raccourcis `initial-dossier`, `initial-scores`, `initial-diagnostic`, `initial-validation`, `initial-visualisation`, `reeval-scores`, `reeval-evolution`, `reeval-validation` et `reeval-export` sont aussi acceptés.
 
@@ -43,6 +45,8 @@ Paramètres :
 - `&patient=<profil>` change de patient. Par défaut : `leo` pour le bilan initial, `lina` pour la réévaluation, `ines` pour l'historique.
 - `&tests=bhk,mabc-2` remplace les tests du profil, avec leurs identifiants du catalogue. `&tests=tout` charge le catalogue entier.
 - `&scores=vide` ajoute les tests sans remplir les scores.
+- `&questionnaires=oui` (tableau de bord) ajoute quatre questionnaires parents fictifs, chiffrés comme par le portail et déchiffrés par le tableau de bord (`dev/fictiveQuestionnaires.ts`) : Léo et Adam `FICTIF` reçus, un reçu indéchiffrable (libellé générique `Dossier #3`) et un en attente. Ils restent en mémoire : rien n'est écrit dans Supabase, « Importer » et « Supprimer » échouent sur eux.
+- `&modale=abonnement` ou `&modale=paywall` ouvre la modale des offres (formule Solo, ou « Plus de crédits ») par-dessus l'écran du scénario ; `&modale=cgv` ouvre les Conditions Générales de Vente (aussi publiques à l'adresse `/?legal=cgv`, avant toute connexion). `&vente=fermee` montre la modale comme en production tant que Stripe est en mode test : « Paiement bientôt disponible » à la place des boutons (#110).
 
 Le tableau de bord contient :
 
@@ -69,7 +73,7 @@ npm run capture -- reeval-export "scenario=initial&etape=5&tests=nepsy-2" --pdf
 - Un nom seul vaut `scenario=<nom>`. Chaque argument donne une capture.
 - Le script démarre son propre Vite sur le checkout courant (port 3100) : un worktree est donc capturé tel quel.
 - Il ouvre une session neuve du compte de test et tape le PIN, puis ouvre chaque scénario et prend une capture dans `.captures/<date>/` (ignoré par git), ou dans `--out`.
-- `--tablette` capture en 1024×768 au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
+- `--tablette` capture en 1024×768 et `--portable` en 1366×768 (PC portable courant), au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
 - `--pdf` télécharge en plus le PDF (bouton « Télécharger PDF ») à côté de la capture : le scénario doit être sur l'étape d'export (`initial&etape=5`, `reeval&etape=4`). Le PDF est produit à part (`@react-pdf`, `PdfDocument.tsx`) et ne ressemble pas toujours à l'aperçu : on le lit lui-même. Un test long (`&tests=nepsy-2`) éprouve la pagination.
 - Les erreurs de la page (console, exceptions) sont affichées avec chaque capture.
 - Le navigateur est Microsoft Edge, déjà installé avec Windows, piloté par `playwright-core` : aucun téléchargement. Son profil est vidé à chaque exécution, donc les patients fictifs n'arrivent jamais dans le navigateur de Titouan.
@@ -82,7 +86,7 @@ E2E_EMAIL=...
 E2E_PIN=...
 ```
 
-Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) : il n'y a pas de jeton à entretenir ni à refaire. Il partage avec `e2e:ai` le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées.
+Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) : il n'y a pas de jeton à entretenir ni à refaire. Il partage avec `e2e:ai` et la recette le verrou `.env.e2e.local.lock`, ce qui empêche deux exécutions simultanées. Lecture du compte, verrou, session et PIN : `e2e/testAccount.mjs`, commun à la capture et à la recette.
 
 ## Tests de composants
 
@@ -94,6 +98,80 @@ Le script ouvre une session neuve à chaque exécution (`e2e/testSession.mjs`) :
 - `renderWithToast(ui)` : un rendu dans le vrai `ToastProvider`.
 
 Les contextes qui touchent Supabase ou IndexedDB restent simulés dans chaque fichier par `vi.mock` (voir `dev/testing.test.tsx` et `components/assessment/shared/ScoreTable.test.tsx`).
+
+## Recette
+
+La recette est la batterie de tests de l'interface qui conditionne la fusion de `dev` dans `main` ([ADR 0001](adr/0001-recette-locale.md)). Elle pilote Edge avec `@playwright/test`, connectée au compte de test.
+
+```bash
+npm run recette                                   # tout, sur origin/dev, statut GitHub « recette »
+npm run recette -- --sur <ref> --sans-statut      # tout, sur un autre commit, sans statut
+npm run recette:cible -- --grep @initial          # vérification ciblée, checkout courant
+npm run recette:cible -- --grep @initial --update-snapshots   # accepter un changement visuel
+```
+
+**Ce qu'elle teste.** Le build de production (`vite build`, avec les scénarios gardés par `VITE_SCENARIOS=1`), servi par `vite preview` sur le port 3200. Pas le serveur de développement : avec plusieurs navigateurs à la fois, il met des dizaines de secondes par module et les scénarios n'aboutissent pas. Le build ajoute 40 s environ.
+
+**`npm run recette`** teste le dernier commit d'`origin/dev`, dans son propre worktree `../ErgoBilan-recette-run` (détaché, remis à zéro à chaque fois). Il publie le statut `recette` (en cours, puis réussi ou en échec) sur ce commit, et écrit dans `.recette/<date>-<sha>/` :
+
+- `rapport/` : le rapport HTML de Playwright (`npx playwright show-report <dossier>`), avec pour chaque échec les étapes, la capture, la vidéo, la trace pas à pas et, pour une différence visuelle, les images attendue, obtenue et la différence ;
+- `resume.md` : les échecs par parcours, avec l'erreur, les problèmes relevés et les chemins des pièces jointes. C'est lui qu'on colle dans la PR hebdomadaire.
+
+**Garde-fous de chaque test** (`e2e/recette/fixtures.ts`) :
+
+- la connexion est réelle (session ouverte une fois par `globalSetup.ts`, puis PIN), comme le catalogue ;
+- **aucune écriture dans Supabase** : toute requête autre qu'une lecture est bloquée et fait échouer le test, sauf le rafraîchissement de session et le rattachement idempotent à l'organisation. Un test qui a besoin d'une écriture la simule (`app.mock`) ;
+- l'edge `generate` est interceptée et répond par le rapport de démo (`data/demoReport.ts`) : aucun appel à l'IA, aucun crédit. Les requêtes sont gardées dans `app.aiRequests` pour vérifier ce qui aurait été envoyé ;
+- une exception, une erreur de la console ou une réponse en erreur fait échouer le test (la console complète est jointe à l'échec) ;
+- l'horloge de la page part du 1er octobre 2026 à 9 h puis avance : les dates et les âges affichés ne changent pas d'un jour à l'autre.
+
+**Références visuelles.** Elles sont dans `e2e/recette/references/`, rendues sous Windows avec Edge. Une différence de plus de 30 pixels fait échouer le test (un mot changé en fait quelques centaines ; le lissage des polices est absorbé pixel par pixel). On l'accepte (`--update-snapshots`, puis on regarde les nouvelles images avant de les commiter) quand elle est voulue ou qu'elle vient d'une mise à jour d'Edge. Sinon c'est une régression.
+
+**Tags.** Chaque test porte le tag de son parcours. La vérification ciblée lance les tags que touche la modification :
+
+| Modification                                                                                                                                                                                                                | Tags                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `components/assessment/initial/`, génération (`utils/reportGenerator.ts`, `aiPayload`, `anonymizer`, `suspectTerms`)                                                                                                        | `@initial`                           |
+| `components/assessment/reevaluation/`, `DeltaTable`, `utils/reevaluationHelpers.ts`                                                                                                                                         | `@reeval`                            |
+| `components/assessment/historical/`                                                                                                                                                                                         | `@historique`                        |
+| Composants partagés des parcours (`components/assessment/pages/`, `shared/`), `hooks/useAssessmentFlow.ts`, `utils/assessmentInProgress.ts`, `utils/scoring.ts`, `utils/resolvedScore.ts`, `utils/reportData.ts`, catalogue | `@initial`, `@reeval`, `@historique` |
+| `components/dashboard/`, `utils/patientStatus.ts`, `hooks/useDataLoader.ts`, `services/storage.ts`, brouillons                                                                                                              | `@dashboard`, `@brouillons`          |
+| Écran seulement visuel                                                                                                                                                                                                      | le tag du parcours, plus `@visuel`   |
+| Portail famille (`components/portal/`, `SharedQuestionnaire`, `hooks/useLinkManager.ts`, `hooks/usePendingProcessor.ts`)                                                                                                    | `@portail`                           |
+| Tests personnalisés (`CustomTestEditor`, `TestCatalogModal`, `contexts/CatalogContext.tsx`)                                                                                                                                 | `@test-perso`                        |
+| Profil, image de marque, abonnement, impression (`ProfileEditor`, `BrandingEditor`, `PricingModal`, `ExportPage`, `services/profile.ts`)                                                                                    | `@profil`                            |
+| Sauvegarde `.ergobilan` (`services/exportService.ts`, `AppHeader`)                                                                                                                                                          | `@sauvegarde`                        |
+| Administration (`components/admin/`, `services/admin.ts`)                                                                                                                                                                   | `@admin`                             |
+| Page d'accueil, mode démo (`LandingPage`, `data/demo*.ts`, `isDemoMode`)                                                                                                                                                    | `@demo`                              |
+| Écran de verrouillage (`PinUnlock`, `contexts/AuthContext.tsx`)                                                                                                                                                             | `@pin`                               |
+
+Tags transverses :
+
+- `@visuel` : les références visuelles ;
+- `@fil-rouge` : le parcours complet du bilan initial ;
+- `@fiche` : la fiche patient (rapport, identité, rappels, archivage, suppression) ;
+- `@brouillons` : reprise, sauvegarde et abandon d'un brouillon.
+
+Couverture actuelle :
+
+- bilan initial : écrans des 5 étapes et fil rouge ;
+- réévaluation : écrans des 4 étapes, « Réévaluation 1 clic » de bout en bout, reprise puis abandon d'un brouillon ;
+- bilan historique : écrans des 3 étapes, parcours complet sans IA ;
+- tableau de bord : statuts des patients, recherche, brouillons (périmé, repris, sauvegardé, abandonné) ;
+- fiche patient : visionneuse, identité, planifier, reporter, compléter, archiver, supprimer ;
+- portail famille : lien généré, questionnaire rempli et envoyé chiffré par la famille, importé par la praticienne ; lien collé sans clé refusé ;
+- test personnalisé : créé depuis le catalogue puis ajouté au bilan ;
+- profil et image de marque : profil du cabinet, préférences de rédaction, Studio Design (formule active) ou abonnement proposé (sans formule), impression, modale d'abonnement et mur de crédits ;
+- sauvegarde : export `.ergobilan` puis réimport d'un patient supprimé, fichier invalide refusé ;
+- administration : catalogue officiel, utilisateurs, supervision, accès refusé par le serveur ;
+- accueil et démo : page d'accueil, connexion, mentions légales, démo et import d'un questionnaire **sans aucune requête vers Supabase** ;
+- code PIN : code faux, verrouillage après cinq essais, verrouillage après 15 minutes d'inactivité.
+
+Ce qui reste hors recette : la création de compte et la connexion par mot de passe (le compte de test ouvre sa session par `globalSetup`), les pages Stripe elles-mêmes (Checkout, portail client) et le webhook : le paiement est branché (#107), mais la recette s'arrête à la modale des offres, ouverte par `?scenario=abonnement` ou `&modale=paywall` ; l'envoi d'un signalement (Sentry).
+
+**Écritures simulées.** Une écriture voulue par un test passe par `app.mock(url, réponse)` ; le dernier mock enregistré pour une URL l'emporte. Les tests vérifient le corps envoyé (profil, image de marque, test personnalisé, RPC d'administration) et le portail simule la table `pending_questionnaires` par une ligne gardée en mémoire. Les droits d'administration sont simulés (`is_admin`, `admin_check`) : la recette ne lit aucune donnée d'un autre compte. `test.use({ connecte: false })` ouvre l'application sans session (accueil, démo, portail sans compte) ; `app.supabaseRequests` liste les requêtes envoyées à Supabase ; `app.open(query, { pin: false })` reste sur l'écran de verrouillage.
+
+**Ajouter un test.** Un fichier `*.spec.ts` dans `e2e/recette/<parcours>/`, qui importe `test` et `expect` de `../fixtures`, et porte le tag de son parcours. On part d'un scénario (`app.open('scenario=…')`) pour tester une étape, et on remplit les formulaires dans le test : c'est la seule place où on le fait. Un écran sans scénario reçoit un scénario.
 
 ## Qui vérifie quoi
 

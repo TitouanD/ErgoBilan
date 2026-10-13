@@ -56,7 +56,7 @@ export const getSubtestDef = (index: CatalogIndex, testId: string, subtestId: st
 export const getTestName = (index: CatalogIndex, testId: string): string => {
   const test = index.testById.get(testId);
   if (test) return test.name;
-  if (testId === CUSTOM_OBSERVATIONS_TEST_ID) return 'Observations personnalisées';
+  if (testId === CUSTOM_OBSERVATIONS_TEST_ID) return 'Observation libre';
   return 'Test personnalisé';
 };
 

@@ -104,3 +104,47 @@ Remettre les vraies valeurs à la place des marqueurs dans le texte renvoyé par
 **Mot suspect** :
 Mot du texte libre qui pourrait encore identifier quelqu'un après la pseudonymisation (surnom, grand-parent, ville). L'ergothérapeute le masque ou l'autorise avant la génération, et ce choix reste sur le dossier du patient.
 _Éviter_ : fuite, terme sensible
+
+### Abonnement
+
+**Crédit** :
+Droit à une génération IA : un crédit paie la rédaction d'un bilan initial ou d'une réévaluation. Tout le reste de l'application (saisie, scores, aperçu, PDF, parcours historique) est gratuit. Une génération qui échoue rend son crédit. Un crédit est soit un crédit du mois, soit un crédit acheté ; les crédits du mois sont consommés en premier.
+_Éviter_ : jeton, token, quota
+
+**Crédit du mois** :
+Crédit donné par la formule à chaque renouvellement. Il ne se reporte pas : le solde est remis au nombre prévu par la formule.
+_Éviter_ : crédit inclus, crédit d'abonnement
+
+**Crédit acheté** :
+Crédit payé à l'unité, ou crédit d'essai conservé à la souscription. Il n'expire pas.
+_Éviter_ : crédit hors forfait, crédit supplémentaire
+
+**Achat à l'unité** :
+Paiement unique de crédits achetés, réservé aux comptes sans formule.
+_Éviter_ : hors forfait, déblocage, one-off
+
+**Formule** :
+Abonnement mensuel payant ; la seule vendue est Solo, qui donne 30 crédits du mois. Elle est présentée comme illimitée, dans la limite de cet usage raisonnable : aucune formule ne l'est vraiment.
+_Éviter_ : plan, offre, forfait
+
+**Formule offerte** :
+Formule attribuée gratuitement par l'administrateur, hors paiement (testeuse, partenaire). Ses crédits du mois se renouvellent comme ceux d'une formule payée.
+_Éviter_ : compte gratuit, accès illimité
+
+**Essai** :
+Période gratuite de 30 jours qui suit l'inscription, avec quelques crédits offerts, une seule fois par adresse e-mail. Sans formule ni crédit, seule la génération IA est bloquée ; le reste de l'application et les dossiers patients restent accessibles.
+_Éviter_ : période d'essai gratuite, trial
+
+### Développement
+
+**Recette** :
+La batterie complète de tests de l'interface, fonctionnels et visuels, qui conditionne la mise en production (fusion de `dev` dans `main`). Un échec fonctionnel la bloque ; une différence visuelle est soumise à acceptation.
+_Éviter_ : QA, validation, recette manuelle
+
+**Vérification ciblée** :
+La partie de la recette lancée pendant le développement sur les seuls parcours ou écrans qu'une modification touche.
+_Éviter_ : QA locale, test rapide
+
+**Référence visuelle** :
+Capture acceptée d'un écran, à laquelle la recette compare son rendu. L'accepter à nouveau est le seul moyen d'entériner un changement visuel voulu.
+_Éviter_ : baseline, snapshot

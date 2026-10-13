@@ -1,14 +1,14 @@
 # Pipeline IA — génération des comptes rendus
 
 > État du code au 29/09/2026 (branche `refactor/generation-rapport`, issues #53 et #54). Les références citent un fichier et une fonction, pas de numéro de ligne.
-> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
+> Les fonctions SQL (`consume_credit_for_user`, `finalize_generation_internal`, `claim_generation_session`, `check_rate_limit_for_user`) ne sont pas dans le repo, sauf celles des migrations `supabase/migrations/` (dont `consume_credit_for_user(p_user_id, p_kind?)`, réécrite par `20261001100000_generation_log_kind.sql`, appliquée le 2026-10-02, puis avec `finalize_generation_internal` par `20261012100000_abonnement_stripe.sql`, #107, appliquée le 2026-10-12). Leur comportement a été lu en base le 23/09/2026 (`pg_get_functiondef`, MCP en lecture seule).
 > **Déploiement** : l'edge function `generate` décrite ici a été déployée depuis le repo le 2026-09-25 (v52), puis le 2026-10-02 (version qui envoie `p_kind` via `sessionKind` et prompt de réévaluation « bilan de référence », #60 et #85), vérifiée en réel le même jour (`E2E_AI=all`, 4 appels, 2 crédits). Les migrations `20260925082801_scheduled_cleanups.sql` et `20261001100000_generation_log_kind.sql` sont appliquées.
 
 ## 1. Vue d'ensemble
 
 Séquence d'un bilan initial :
 
-1. À l'étape Diagnostic, `AssessmentWorkspace` vérifie les crédits (`hasCredits`) puis ouvre la modale « Vérification avant analyse » (« Générer (1 crédit) »), qui liste les mots suspects du texte libre (§4).
+1. À l'étape Diagnostic, `AssessmentWorkspace` vérifie les crédits (`ensureCredits`) puis ouvre la modale « Vérification avant analyse » (« Générer (1 crédit) »), qui liste les mots suspects du texte libre (§4).
 2. `useAssessmentFlow.generateInitialReport(decisions)` (`hooks/useAssessmentFlow.ts`) enregistre les choix sur la fiche du patient, puis appelle `generateInitial` du générateur (`getReportGenerator(isDemoMode)`, `services/ai.ts`) avec les données du bilan.
 3. Le générateur (`createReportGenerator`, `utils/reportGenerator.ts`) construit la charge utile (`buildInitialReportPayload`, `utils/aiPayload.ts`), l'anonymise d'un bloc (`createAnonymization(patient).deep`, `utils/anonymizer.ts`), puis enchaîne `report_bio` et `report_diagnostic` sur son transport, ce dernier avec le `generationId` renvoyé par le premier (même session, même crédit). Aucun autre module n'appelle l'IA.
 4. Transport réel : `callAIProxyTask` (`services/aiProxy.ts`) obtient un JWT vérifié (`getVerifiedAccessToken`, `services/db.ts`) puis fait un `fetch` POST vers `${SUPABASE_URL}/functions/v1/generate`.
@@ -122,17 +122,55 @@ Tout ce qui part vers Gemini passe par le générateur, donc par `createAnonymiz
 
 ## 5. Edge function `generate`
 
+### Fournisseur (`geminiTarget.ts`)
+
+`resolveGeminiTarget` choisit le point d'accès au démarrage de l'edge, d'après ses secrets :
+
+| Secret présent   | Fournisseur (`provider`)                                                                       | Modèle                   | Point d'accès                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `GCP_SA_KEY`     | `agent-platform-eu` : Gemini Enterprise Agent Platform (ex-Vertex AI), conditions Google Cloud | `gemini-3.8-flash`       | multi-région UE : `aiplatform.eu.rep.googleapis.com/v1/projects/<projet>/locations/eu/…:generateContent` |
+| `GEMINI_API_KEY` | `gemini-api` : API Gemini publique (AI Studio), sans garantie de lieu de traitement            | `gemini-3-flash-preview` | `generativelanguage.googleapis.com/v1beta/…:generateContent`                                             |
+
+- `GCP_SA_KEY` est la clé JSON du compte de service `ergobilan-generate` (seul rôle : `roles/aiplatform.user`) du projet Google Cloud `gen-lang-client-0871976100`. Elle prime sur `GEMINI_API_KEY`. Une clé invalide donne `SERVER_MISCONFIGURED`, jamais un repli silencieux vers l'API publique. Le repli `gemini-api` ne sert qu'à revenir en arrière en supprimant `GCP_SA_KEY`.
+- Le jeton OAuth est signé dans l'edge (JWT RS256, `crypto.subtle`), échangé contre un jeton d'accès d'une heure, gardé par l'instance et renouvelé 5 min avant expiration. Un refus de Google donne `GEMINI_AUTH_ERROR` (502, non relançable).
+- `gemini-3-flash-preview` n'existe pas sur le point d'accès UE : la bascule change donc aussi de modèle. Les modèles `gemini-3.5-flash` à `gemini-3.8-flash` y répondent (vérifié le 2026-10-12).
+- Choix du modèle (2026-10-12, bilan fictif de §9 rejoué sur le point d'accès UE, prix UE par bilan initial) : `gemini-3.8-flash` en réflexion `high` 4,8 cents de dollar (20 à 40 s par appel), `medium` 3,9, `low` 2,1 (détails mal placés) ; `gemini-3.5-flash-lite` 1,0 (accents perdus, section manquante) ; `gemini-3.1-flash-lite` 0,7 (contresens clinique). La qualité prime : `high` (`AGENT_PLATFORM_THINKING_LEVEL`). Tarif de lancement 0,825 / 4,125 $ par million de jetons (entrée / sortie, réflexion comprise) jusqu'au 31/12/2026, double ensuite. `gemini-3.5-flash` coûte plus cher (1,65 / 9,90 $) ; les modèles Pro n'ont pas de point d'accès UE.
+- Le corps de la requête est le même pour les deux. Le `provider` et le `model` figurent dans les détails envoyés à Sentry.
+- En production depuis le 2026-10-12 (v59, secret `GCP_SA_KEY` posé) ; test réel `npm run e2e:ai` vert sur les trois parcours, mais le bilan initial (bio puis diagnostic) a pris 139 s de bout en bout : surveiller les `GEMINI_TIMEOUT` dans Sentry, et passer en réflexion `medium` s'ils apparaissent.
+- 2026-10-12, sur un vrai bilan initial (`E2E_AI_DOSSIER`, identité inventée) : le diagnostic a dépassé 100 s en `high` (`GEMINI_TIMEOUT`). Les tâches de rédaction longue (`report_diagnostic`, `report_reevaluation`) passent en `medium` (`LONG_TASK_THINKING_LEVEL`, `generationConfigFor`) ; le bio et l'extraction du style restent en `high`. Déployé le 2026-10-12 ; exécution réelle sur ce même dossier verte : bio puis diagnostic en 103 s de bout en bout, un crédit.
+- Certification HDS : Google Cloud l'est, et l'IA générative d'Agent Platform est dans son périmètre, mais l'avenant HDS n'est pas encore souscrit (demande à faire à Google). Rien ne doit en être dit dans l'interface (règle de `CLAUDE.md`).
+
+#### Revenir sur AI Studio (incident en production)
+
+Si Agent Platform échoue en production (`GEMINI_AUTH_ERROR`, `GEMINI_TIMEOUT` ou `GEMINI_ERROR` en série dans Sentry), une commande suffit. Elle se lance depuis le dépôt principal, lié au projet Supabase, et ne demande aucun redéploiement :
+
+```bash
+npx supabase secrets unset GCP_SA_KEY
+```
+
+- Sans `GCP_SA_KEY`, `resolveGeminiTarget` prend l'API publique avec `GEMINI_API_KEY` et `gemini-3-flash-preview`. Supabase redémarre l'edge quand un secret change : les requêtes suivantes prennent le nouveau chemin.
+- Conditions : `GEMINI_API_KEY` doit rester dans les secrets (il y est au 2026-10-12, ne pas le supprimer), et `gemini-3-flash-preview` doit encore exister (préversion, Google peut la retirer).
+- Conséquence : le traitement n'est plus garanti dans l'UE. Le signaler à Titouan.
+- Vérifier : un appel réel (`npm run e2e:ai`, §9) ou, en cas d'échec, le champ `provider` des détails Gemini dans Sentry (`gemini-api`).
+- Revenir sur Agent Platform une fois le problème réglé : reposer le secret depuis la clé gardée hors du dépôt (`~/.secrets/ergobilan-generate.json` sur le poste de Titouan) :
+
+  ```bash
+  npx supabase secrets set GCP_SA_KEY="$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))))' ~/.secrets/ergobilan-generate.json)"
+  ```
+
+- Clé perdue ou compromise : en créer une autre (Google Cloud → IAM et administration → Comptes de service → `ergobilan-generate` → Clés), supprimer l'ancienne, puis reposer le secret comme ci-dessus.
+
 ### Configuration (`index.ts`)
 
-| Constante                                     | Valeur par défaut                                       |
-| --------------------------------------------- | ------------------------------------------------------- |
-| Modèle                                        | `gemini-3-flash-preview` (API `v1beta generateContent`) |
-| `GEMINI_TIMEOUT_MS`                           | 50 000                                                  |
-| `AI_MAX_REQUESTS_PER_HOUR`                    | 15                                                      |
-| `GEMINI_MAX_RETRIES` / `GEMINI_RETRY_BASE_MS` | 1 / 2 000                                               |
-| `GENERATION_REUSE_WINDOW_MINUTES`             | 20                                                      |
-| `GENERATION_LOCK_TTL_SECONDS`                 | 120                                                     |
-| `GENERATE_MAX_PAYLOAD_BYTES`                  | 220 000                                                 |
+| Constante                                     | Valeur par défaut                                            |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| Modèle                                        | selon le fournisseur (ci-dessus)                             |
+| `GEMINI_TIMEOUT_MS`                           | 100 000 (secret de production réglé à 100 000 le 2026-10-12) |
+| `AI_MAX_REQUESTS_PER_HOUR`                    | 15                                                           |
+| `GEMINI_MAX_RETRIES` / `GEMINI_RETRY_BASE_MS` | 1 / 2 000                                                    |
+| `GENERATION_REUSE_WINDOW_MINUTES`             | 20                                                           |
+| `GENERATION_LOCK_TTL_SECONDS`                 | 160 (plus qu'une requête entière)                            |
+| `GENERATE_MAX_PAYLOAD_BYTES`                  | 220 000                                                      |
 
 Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contient que `responseMimeType: application/json` et `responseSchema` → valeurs par défaut de Gemini. Le prompt système passe par `system_instruction`.
 
@@ -142,7 +180,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 2. Origine (`isAllowedOrigin`) : les origines loopback (`localhost`, `127.0.0.1`, `::1`) ne sont acceptées **qu'hors production**, sauf si `AI_ALLOW_LOOPBACK_ORIGINS=true`. La production est détectée par `APP_ENV`/`ENV` (`production`, `prod`) ou la présence de `DENO_DEPLOYMENT_ID`. Sinon liste `AI_ALLOWED_ORIGINS` ; si elle est vide, tout est refusé en production sauf `AI_DEV_MODE`. Rejet : 403 `FORBIDDEN_ORIGIN` (preflight : 403 `forbidden`). Valeur en production (30/09/2026) : `https://app.ergobilan.com,https://dev.ergobilan.com,https://test.ergobilan.com`. `test.ergobilan.com` n'héberge aucun site : c'est l'origine envoyée par le test de bout en bout (§9), pour reconnaître ses appels dans Sentry (en-tête Origin). La liste ne bloque que les navigateurs ; un script peut envoyer n'importe quelle origine.
 3. `corsHeaders` renvoie l'origine appelante dans `Access-Control-Allow-Origin` seulement si elle est autorisée (plus de `*`), avec `Vary: Origin`.
 4. JWT : en-tête `Authorization` obligatoire (401 `Missing authorization`), puis `auth.getUser()` avec le client anon (401 `Unauthorized`).
-5. Clé service role et clé Gemini requises (500 `SERVER_MISCONFIGURED`).
+5. Clé service role et un fournisseur valide (`GCP_SA_KEY` ou `GEMINI_API_KEY`) requis (500 `SERVER_MISCONFIGURED`).
 
 ### Rate limit, payload, session
 
@@ -152,7 +190,7 @@ Ni `temperature`, ni `topP`, ni `maxOutputTokens` : `generationConfig` ne contie
 4. `extract_style_feedback` : appel Gemini direct, sans crédit ni session (voir §6).
 5. `generation_id` qui n'a pas la forme d'un UUID, ou fourni à `report_bio`/`report_reevaluation` → 400 `INVALID_GENERATION_SESSION`. `report_diagnostic` sans `generation_id` → 400 `MISSING_GENERATION_SESSION`.
 6. Diagnostic : `isSessionReusable` exige une ligne `pending` de l'utilisateur, créée il y a moins de 20 min (sinon 400 `INVALID_GENERATION_SESSION`), puis `claimSession` (RPC `claim_generation_session`) sinon 409 `GENERATION_SESSION_BUSY`. Toute erreur RPC est un refus (plus de repli « fail-open »).
-7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un abonnement `active`/`trialing` ; admin et `expert` actif ne sont pas débités, sinon `credits - 1`. Elle insère une ligne `generation_log (status='pending', kind)` et renvoie son id ; `kind` vient de `sessionKind(task)` (`prompts.ts`) : `report_bio` (bilan initial, session qui couvre aussi le diagnostic) ou `report_reevaluation`. Le paramètre `p_kind` est facultatif (défaut NULL). `NULL` → 402 `CREDIT_INSUFFICIENT`.
+7. Bio et réévaluation : `openGenerationSession` → RPC `consume_credit_for_user`, sans repli. La RPC exige un PIN configuré et un crédit ; l'admin n'est pas débité, sinon elle prend d'abord un crédit du mois (`monthly_credits - 1`), puis un crédit acheté (`credits - 1`). Depuis #107 ([ADR 0002](adr/0002-credits-sans-report.md)), le statut de l'abonnement n'est plus vérifié (sans formule, les crédits restants restent utilisables) et Expert actif n'est plus illimité. Elle insère une ligne `generation_log (status='pending', kind, credit_source)` et renvoie son id ; `kind` vient de `sessionKind(task)` (`prompts.ts`) : `report_bio` (bilan initial, session qui couvre aussi le diagnostic) ou `report_reevaluation`. Le paramètre `p_kind` est facultatif (défaut NULL). `NULL` → 402 `CREDIT_INSUFFICIENT`.
 
 ### Verrou de session (`claim_generation_session`)
 
@@ -166,7 +204,7 @@ stateDiagram-v2
     pending --> pending: claim_generation_session (diagnostic, LOCK) / releaseSession (échec diagnostic)
     pending --> completed: finalize(success) — diagnostic ou réévaluation
     pending --> failed: finalize(échec) — bio, réévaluation, ou sweep (ABANDONED_SESSION)
-    failed --> refunded: même transaction ; +1 crédit sauf admin / expert actif
+    failed --> refunded: même transaction ; +1 crédit sur le solde de credit_source
 ```
 
 | Tâche                 | Succès                                 | Échec Gemini                       | Exception (`catch` global)            |
@@ -177,19 +215,19 @@ stateDiagram-v2
 
 - `finalize_generation_internal` ne fait rien si la ligne n'est plus `pending` (retourne `FALSE`). `finalizeSession` journalise ses erreurs dans la console sans les propager.
 - **Sessions abandonnées** : `sweep_stale_generations` (migration `20260925082801_scheduled_cleanups.sql`, pg_cron toutes les 15 min) finalise en échec (`ABANDONED_SESSION`, donc remboursé) toute ligne `pending` de plus de 30 min.
-- Colonnes : `id, user_id, status, created_at, refunded_at, error_code` ; le type de tâche n'est pas journalisé (TECH_DEBT P1-8).
+- Colonnes : `id, user_id, status, created_at, refunded_at, error_code`, `kind` (#60) et `credit_source` (#107 : `monthly`, `purchased` ou `none` pour l'admin). Le remboursement rend le crédit au solde débité ; une session ouverte avant la migration #107 (`credit_source` NULL) suit l'ancienne règle (rien pour l'admin et Expert actif, sinon un crédit acheté).
 - Données au 23/09/2026 : 24 `completed`, 7 `refunded` (`GEMINI_RETRYABLE_ERROR` ×3, `GEMINI_TIMEOUT` ×2, `STUCK_PENDING_ADMIN_FIX` ×2), 2 `pending` bloquées depuis le 22/02/2026 (remboursées au premier passage du sweep).
 
 ### Appel Gemini (`callGemini`)
 
-1. Jusqu'à `GEMINI_MAX_RETRIES + 1` essais (2), délai `2 s × 2^(n-1)`, uniquement sur HTTP 429/503. Autre statut non-OK → `GEMINI_ERROR` (502, non relançable).
-2. Timeout (abort à 50 s) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur.
+1. Jusqu'à `GEMINI_MAX_RETRIES + 1` essais (2), délai `2 s × 2^(n-1)`, uniquement sur HTTP 429/503. 401 d'Agent Platform : le jeton OAuth en cache est oublié et l'essai suivant en obtient un neuf. Autre statut non-OK → `GEMINI_ERROR` (502, non relançable). Jeton OAuth refusé (Agent Platform) → `GEMINI_AUTH_ERROR` (502, non relançable) ; l'échange du jeton est abandonné après 10 s (`TOKEN_TIMEOUT_MS`) et son temps est déduit du budget de la tentative.
+2. Timeout (abort à 100 s, `GEMINI_TIMEOUT_MS`) → `GEMINI_TIMEOUT` (504, relançable), sans retry serveur. Supabase répond 504 de lui-même si l'edge n'a pas répondu en 150 s (toutes offres) : toutes les tentatives d'une requête partagent donc un budget de 135 s compté depuis son arrivée (`GEMINI_BUDGET_MS`, `attemptTimeoutMs`). Chaque tentative est bornée au temps restant, et aucune n'est lancée s'il reste moins de 60 s (`MIN_ATTEMPT_MS`, #109 : un diagnostic n'aboutit pas en moins, et l'essai coupé est facturé). Le bio et le diagnostic sont deux requêtes : chacune a son budget.
 3. Exception réseau au dernier essai → `GEMINI_EXCEPTION` (502, relançable). 429/503 persistants → `GEMINI_RETRYABLE_ERROR`.
-4. Réponse : `text = candidates[0].content.parts[0].text`. Texte vide → `GEMINI_EMPTY_RESPONSE` ; JSON invalide ou objet vide → `GEMINI_INVALID_JSON` (502, relançables). Une réponse vide n'est donc plus finalisée `completed`.
+4. Réponse (`readGeminiAnswer`) : les parts texte de `candidates[0]` mises bout à bout, parts de réflexion (`thought`) écartées. `finishReason` `MAX_TOKENS` → `GEMINI_MAX_TOKENS` ; autre `finishReason` que `STOP`, ou `blockReason` → `GEMINI_BLOCKED` (502, non relançables). Texte vide → `GEMINI_EMPTY_RESPONSE` ; JSON invalide ou objet vide → `GEMINI_INVALID_JSON` (502, relançables). Une réponse vide n'est donc plus finalisée `completed`.
 5. Échec → réponse `{ error: 'AI generation failed', code, retryable }` avec le statut du résultat, après finalize ou release selon le tableau ci-dessus.
 6. `catch` global : Sentry (`captureEdgeException`, pile analysée, utilisateur, tags `task` et `generation_id`, étapes de la requête en breadcrumbs, nettoyage dans `supabase/functions/_shared/sentry.ts`), puis finalize ou release si la session n'est pas déjà réglée, 500. Les échecs Gemini gérés remontent en warning (`captureEdgeMessage`, empreinte `gemini / code / tâche`) avec leurs détails de diagnostic (statuts HTTP, message d'erreur Gemini tronqué, `finishReason`, `blockReason`, jetons, durée, tentatives), sans prompt ni réponse ; les erreurs des RPC de crédits et de session remontent en error.
 
-Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tentatives avec backoff 3 s / 6 s, un refresh forcé du JWT sur 401. Erreurs levées telles quelles : `CREDIT_INSUFFICIENT`, `RATE_LIMITED`, `MISSING_/INVALID_GENERATION_SESSION`, `GENERATION_SESSION_BUSY`, `SESSION_EXPIRED`. Retry si `retryable === true`, statut ≥ 500 ou erreur réseau / `TIMEOUT_AI`. Un diagnostic en échec est donc relancé automatiquement sur la même session ; un bio ou une réévaluation en échec est remboursé, puis la relance rouvre une session (un crédit net). Libellés UI : `describeGenerationError` (`utils/reportGenerator.ts`, réexporté par `services/ai.ts`).
+Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tentatives avec backoff 3 s / 6 s, un refresh forcé du JWT sur 401. Erreurs levées telles quelles : `CREDIT_INSUFFICIENT`, `RATE_LIMITED`, `MISSING_/INVALID_GENERATION_SESSION`, `GENERATION_SESSION_BUSY`, `SESSION_EXPIRED`. Pas de retry si l'edge répond `retryable: false` ou `SERVER_MISCONFIGURED`, quel que soit le statut (#109 : une clé révoquée coûtait 3 débits, 3 remboursements et 3 des 15 requêtes de l'heure). Sinon retry si `retryable === true`, statut ≥ 500 ou erreur réseau / `TIMEOUT_AI`. Un délai dépassé (`GEMINI_TIMEOUT` ou `TIMEOUT_AI`) n'est relancé qu'une fois : chaque tentative est facturée. Un diagnostic en échec est donc relancé automatiquement sur la même session ; un bio ou une réévaluation en échec est remboursé, puis la relance rouvre une session (un crédit net). Libellés UI : `describeGenerationError` (`utils/reportGenerator.ts`, réexporté par `services/ai.ts`).
 
 ## 6. Style appris (`ai_style_preferences`)
 
@@ -209,10 +247,10 @@ Côté client (`callAIProxyTask`) : timeout 180 s par requête, jusqu'à 3 tenta
 
 ## 7. Coûts, quotas et crédits côté UI
 
-- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/is_admin` et `subscriptions.plan_id/status/trial_ends_at` ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
+- Profil : `ProfileService.getUserProfile` (`services/profile.ts`) lit `practitioners.credits/monthly_credits/trial_denied/is_admin` et `subscriptions.plan_id/status/trial_ends_at/current_period_end/billing_source` ; `credits` du profil = crédits du mois + crédits achetés (détail dans `monthlyCredits` et `purchasedCredits`) ; plan par défaut `free`, statut `inactive` sans ligne d'abonnement.
 - Rafraîchissement : plus d'abonnement temps réel (TECH_DEBT P1-18) ; `refreshProfile()` recharge le solde après chaque génération et après le feedback de style.
-- Affichage : badge « N Crédits » dans `components/app/AppHeader.tsx`.
-- Garde avant génération : `hasCredits = isDemoMode || credits > 0 || (plan === 'expert' && status === 'active')` (`AssessmentWorkspace`), transmise à `Step2Evolution` pour la réévaluation. Sans crédit : paywall direct.
+- Affichage : badge « N Crédits » (total) dans `components/app/AppHeader.tsx`.
+- Garde avant génération : `ensureCredits` (`AssessmentWorkspace`, transmise à `Step2Evolution` pour la réévaluation). Démo, admin ou `credits > 0` (`canGenerate`, `utils/generationCredits.ts`, même règle que `consume_credit_for_user`) ; à 0 crédit en mémoire, le profil est relu (`refreshProfile`) avant le mur, pour qu'un renouvellement, un ajout de l'admin ou un achat dans un autre onglet soit pris en compte (#112). Sans crédit : paywall direct (formule Solo ou achat à l'unité sans formule ; « Limite du mois atteinte » avec une formule active, voir [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement »).
 - `CREDIT_INSUFFICIENT` renvoyé par l'edge → paywall (`onShowPricing('paywall')`) ; autres erreurs → `CriticalErrorModal`. Si le diagnostic a échoué, « Réessayer » reprend au diagnostic avec le résultat « bio » gardé en mémoire (15 min, même session, pas de nouveau crédit) ; si le serveur refuse la session, la génération repart de zéro.
 - Les deux modales (bilan initial, réévaluation) affichent « Générer (1 crédit) » ; en démo, « Générer » (bilan initial) ou « Générer (simulation) » (réévaluation).
 - Coût réel : 1 crédit par bilan initial (bio + diagnostic), 1 par réévaluation, 0 pour le feedback. Quota : 15 requêtes edge par heure et par utilisateur, tous types et retries confondus.
@@ -254,6 +292,12 @@ PowerShell : `$env:E2E_AI_LIVE='1'; $env:E2E_AI='style'; npm run e2e:ai` (puis `
 
 `E2E_AI` : `initial` (défaut), `reevaluation`, `style`, `all`, ou une liste séparée par des virgules.
 
+### Dossier fourni (`E2E_AI_DOSSIER`)
+
+Pour juger la qualité sur un cas réaliste (changement de modèle, par exemple), le bilan initial peut porter sur un dossier fourni au lieu d'Elya : `E2E_AI_DOSSIER=.e2e-dossiers/<cas>.json` (dossier ignoré par git). Le fichier contient `patient`, `observations`, `tests` (clés `testId` → `subtestId` du catalogue), `synthesis` et, au besoin, `stylePreferences`. Le catalogue est alors lu sur Supabase avec le compte de test, même à blanc (lecture gratuite), et toute clé de test inconnue arrête l'exécution avant l'appel. Contrôles inchangés (fuite, mots suspects). Le rapport lisible est écrit dans `initial/4-rapport.md`. Mêmes règles de coût : à blanc d'abord, puis une exécution réelle.
+
+Un dossier réel transite par la conversation avec Claude : y mettre une identité inventée (nom, école, médecins, adresse) ; la qualité clinique n'en dépend pas, ces champs étant de toute façon remplacés par des pseudonymes.
+
 ### Ce qui est vérifié
 
 - Avant l'envoi de chaque requête : aucun identifiant du patient fictif (nom, prénom, parents, enseignant, médecins, école, adresse, téléphone, courriel, date de naissance, fratrie). La liste est construite dans le test, indépendamment de `anonymizer.ts`. Une fuite arrête l'exécution **avant** l'appel payant. Aucun mot suspect sur les dossiers utilisés.
@@ -263,11 +307,11 @@ PowerShell : `$env:E2E_AI_LIVE='1'; $env:E2E_AI='style'; npm run e2e:ai` (puis `
 
 ### Trace
 
-Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) : par tâche, la requête pseudonymisée et la réponse ; par parcours, le rapport réhydraté ; en réel, les échanges HTTP bruts avec l'edge (`http-edge.json`) ; `resume.json` (appels, crédits avant et après). Le dossier est fictif : la trace ne contient aucune donnée réelle.
+Chaque exécution écrit dans `.e2e-trace/<date>-<dry|live>/` (ignoré par git) : par tâche, la requête pseudonymisée et la réponse ; par parcours, le rapport réhydraté ; en réel, les échanges HTTP bruts avec l'edge (`http-edge.json`) ; `resume.json` (appels, crédits avant et après). Le dossier est fictif (sauf `E2E_AI_DOSSIER`) : la trace ne contient alors aucune donnée réelle.
 
 ### Compte de test et connexion
 
-- **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense.
+- **Compte dédié** (`titouan.dhalluinusa@gmail.com`, offre `free` en essai), jamais celui d'un praticien réel : `extract_style_feedback` écrit `ai_style_preferences` sur le compte appelant. Le script refuse un compte admin. Compte ordinaire avec quelques crédits (10 au départ) : le débit est vérifié, et un solde nul bloque toute dépense. Le solde lu est la somme des crédits du mois et des crédits achetés (`e2e/liveEdge.ts`, #107).
 - Turnstile empêche la connexion par mot de passe depuis un script. Le script ouvre donc une **session neuve à chaque exécution** (`e2e/testSession.mjs`) : une **clé secrète Supabase** dédiée demande à l'API d'administration un lien de connexion du compte de test, aussitôt validé avec la clé publique. Aucun e-mail n'est envoyé, Turnstile n'intervient pas, et rien n'est conservé entre deux exécutions : plus de jeton à refaire. Dans `.env.e2e.local` à la racine (ignoré par git, motif `*.local`) :
 
   ```

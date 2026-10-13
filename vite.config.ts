@@ -11,6 +11,8 @@ const appRelease = env.VERCEL_GIT_COMMIT_SHA || env.GITHUB_SHA || env.COMMIT_SHA
 const appEnv = env.VERCEL_ENV || '';
 // Source maps are only built when they can be uploaded to Sentry, then deleted from dist (never served).
 const uploadSourceMaps = Boolean(env.SENTRY_AUTH_TOKEN);
+// The recette build keeps the dev scenarios (docs/VERIFICATION.md): never on a deployed site.
+if (env.VITE_SCENARIOS && env.VERCEL) throw new Error('VITE_SCENARIOS est réservé à la recette locale, jamais sur Vercel.');
 
 export default defineConfig({
   server: {

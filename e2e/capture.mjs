@@ -5,7 +5,7 @@
  *   npm run capture -- "scenario=initial&etape=2" dashboard initial-scores
  *   npm run capture -- "scenario=reeval&etape=2" --tablette --plein --clic "text=Ajouter un test"
  *
- * Options: --tablette (1024×768, else 1440×900), --plein (whole page),
+ * Options: --tablette (1024×768), --portable (1366×768), else 1440×900; --plein (whole page),
  * --clic <selector> (repeatable, clicked in order before the screenshot),
  * --pdf (after the screenshot, clicks « Télécharger PDF » and saves the PDF
  * next to it: the scenario must be on the export step),
@@ -23,22 +23,22 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { lockTestAccount, readTestAccount, sessionInitScript, supabaseConfig, typePin, unlockTestAccount } from './testAccount.mjs';
 import { mintTestSession } from './testSession.mjs';
-
-const AUTH_KEY = 'ergobilan.auth';
 
 // ─── Arguments ──────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
 const targets = [];
 const clicks = [];
-const opts = { tablet: false, full: false, pdf: false, out: '', port: 3100 };
+const opts = { tablet: false, laptop: false, full: false, pdf: false, out: '', port: 3100 };
 for (let i = 0; i < args.length; i += 1) {
   const a = args[i];
   if (a === '--tablette') opts.tablet = true;
+  else if (a === '--portable') opts.laptop = true;
   else if (a === '--plein') opts.full = true;
   else if (a === '--pdf') opts.pdf = true;
   else if (a === '--clic') clicks.push(args[(i += 1)]);
@@ -52,39 +52,10 @@ for (let i = 0; i < args.length; i += 1) {
 }
 if (targets.length === 0) {
   console.error(
-    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
+    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette|--portable] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
   );
   process.exit(1);
 }
-
-// ─── Test account (same file and lock as e2e/liveEdge.ts) ───────────────────
-const mainCheckout = () => {
-  try {
-    return dirname(execSync('git rev-parse --path-format=absolute --git-common-dir', { encoding: 'utf8' }).trim());
-  } catch {
-    return process.cwd();
-  }
-};
-const ENV_FILE = resolve(mainCheckout(), '.env.e2e.local');
-const LOCK_FILE = `${ENV_FILE}.lock`;
-
-const readEnv = () => {
-  const values = new Map();
-  if (!existsSync(ENV_FILE)) return values;
-  for (const line of readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m) values.set(m[1], m[2].replace(/^["']|["']$/g, ''));
-  }
-  return values;
-};
-/** Dev Supabase project of services/db.ts (the app uses the same in `npm run dev`). */
-const supabaseConfig = () => {
-  const source = readFileSync(resolve('services/db.ts'), 'utf8');
-  const url = process.env.VITE_SUPABASE_URL || source.match(/DEV_SUPABASE_URL = '([^']+)'/)?.[1];
-  const key = process.env.VITE_SUPABASE_ANON_KEY || source.match(/DEV_SUPABASE_PUBLISHABLE_KEY = '([^']+)'/)?.[1];
-  if (!url || !key) throw new Error('Configuration Supabase introuvable dans services/db.ts');
-  return { url, key };
-};
 
 // ─── Vite ───────────────────────────────────────────────────────────────────
 const startVite = async (port) => {
@@ -113,18 +84,15 @@ const killTree = (child) => {
 };
 
 // ─── Run ────────────────────────────────────────────────────────────────────
-const env = readEnv();
-const pin = env.get('E2E_PIN');
-if (!env.get('E2E_SECRET') || !env.get('E2E_EMAIL') || !pin) {
-  console.error(`E2E_SECRET, E2E_EMAIL et E2E_PIN requis dans ${ENV_FILE} (docs/VERIFICATION.md).`);
-  process.exit(1);
-}
+let account;
 try {
-  writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
-} catch {
-  console.error(`Une autre exécution utilise le compte de test (${LOCK_FILE}). Sinon, supprimer ce fichier resté après un arrêt brutal.`);
+  account = readTestAccount();
+  lockTestAccount();
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e);
   process.exit(1);
 }
+const { pin } = account;
 
 const outDir = resolve(opts.out || join('.captures', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)));
 mkdirSync(outDir, { recursive: true });
@@ -135,23 +103,17 @@ let page;
 let failures = 0;
 try {
   const { url, key } = supabaseConfig();
-  const session = await mintTestSession({ url, publishableKey: key, secretKey: env.get('E2E_SECRET'), email: env.get('E2E_EMAIL') });
+  const session = await mintTestSession({ url, publishableKey: key, secretKey: account.secretKey, email: account.email });
 
   vite = await startVite(opts.port);
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   const context = await browser.newContext({
     acceptDownloads: true,
-    viewport: opts.tablet ? { width: 1024, height: 768 } : { width: 1440, height: 900 },
+    viewport: opts.tablet ? { width: 1024, height: 768 } : opts.laptop ? { width: 1366, height: 768 } : { width: 1440, height: 900 },
     locale: 'fr-FR',
   });
-  await context.addInitScript(
-    ({ key, value }) => {
-      // Only on the first load: later loads keep the session the app has refreshed since.
-      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
-      sessionStorage.setItem('ergo_backup_reminder_shown', '1');
-    },
-    { key: AUTH_KEY, value: JSON.stringify(session) },
-  );
+  const init = sessionInitScript(session);
+  await context.addInitScript(init.script, init.arg);
   page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
@@ -162,10 +124,7 @@ try {
     const url = `${vite.base}/?${target}`;
     await page.goto(url);
     // Every page load starts locked: the PIN key only lives in memory.
-    const pinInput = page.locator('input[type="password"][inputmode="numeric"]');
-    await pinInput.waitFor({ timeout: 60_000 });
-    await pinInput.focus();
-    await page.keyboard.type(pin);
+    await typePin(page, pin);
     if (target.includes('scenario=')) {
       await page.waitForSelector('html[data-scenario="ready"], html[data-scenario="error"]', { timeout: 90_000 });
       const status = await page.evaluate(() => [document.documentElement.dataset.scenario, document.documentElement.dataset.scenarioError]);
@@ -215,6 +174,6 @@ try {
 } finally {
   await browser?.close();
   vite?.stop();
-  rmSync(LOCK_FILE, { force: true });
+  unlockTestAccount();
 }
 process.exit(failures > 0 ? 1 : 0);

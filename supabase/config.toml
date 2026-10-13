@@ -4,3 +4,10 @@ verify_jwt = false
 
 [functions.generate]
 verify_jwt = false
+
+[functions.billing]
+verify_jwt = false
+
+# Authenticated by the Stripe signature (STRIPE_WEBHOOK_SECRET).
+[functions.stripe-webhook]
+verify_jwt = false

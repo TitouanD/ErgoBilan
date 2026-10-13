@@ -1,28 +1,40 @@
 import React, { useState } from 'react';
-import { X, FileText, ShieldCheck } from 'lucide-react';
+import { X, FileText, ShieldCheck, Receipt } from 'lucide-react';
+import type { LegalTab } from '../../utils/legalLink';
 
 interface LegalModalProps {
-  initialTab?: 'cgu' | 'privacy';
+  initialTab?: LegalTab;
   onClose: () => void;
 }
+
+// ─── Identité de l'éditeur (factures, CGU, CGV, confidentialité) ──────────────
+
+const Publisher: React.FC = () => (
+  <>
+    <strong>TD Corp</strong>, nom commercial de <strong>Titouan D'Halluin EI</strong> (entrepreneur individuel), 420 rue Eugène Berest,
+    29200 Brest, SIRET <strong>929 224 459 00024</strong>
+  </>
+);
+
+const Mail: React.FC<{ to: 'contact' | 'privacy' }> = ({ to }) => (
+  <a href={`mailto:${to}@ergobilan.com`} className="text-[var(--primary)] underline">
+    {to}@ergobilan.com
+  </a>
+);
 
 // ─── Contenu CGU ──────────────────────────────────────────────────────────────
 
 const CGUContent: React.FC = () => (
   <div className="prose prose-sm max-w-none text-[var(--text-main)] space-y-6">
-    <p className="text-xs text-[var(--text-secondary)]">Version en vigueur au 15 juin 2026</p>
+    <p className="text-xs text-[var(--text-secondary)]">Version en vigueur au 12 octobre 2026</p>
 
     <section>
       <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">1. Éditeur du service</h2>
       <p>
-        ErgoBilan est édité par <strong>[NOM DE LA SOCIÉTÉ / NOM DU MICRO-ENTREPRENEUR]</strong>, dont le siège social est situé à{' '}
-        <strong>[ADRESSE]</strong>, immatriculé sous le numéro SIRET <strong>[SIRET]</strong>.
+        ErgoBilan est édité par <Publisher />.
       </p>
       <p className="mt-2">
-        Contact :{' '}
-        <a href="mailto:contact@ergobilan.fr" className="text-[var(--primary)] underline">
-          contact@ergobilan.fr
-        </a>
+        Contact : <Mail to="contact" />
       </p>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
         Hébergeur des données de compte : Supabase Inc., 970 Toa Payoh North, Singapour 318992 — infrastructure serveurs : AWS eu-west-1
@@ -53,8 +65,9 @@ const CGUContent: React.FC = () => (
         réaliser des bilans ergothérapiques). En créant un compte, l'utilisateur déclare exercer à titre professionnel.
       </p>
       <p className="mt-2">
-        Un essai gratuit de <strong>3 générations</strong> est offert à l'inscription, valable 30 jours. Au-delà, l'accès aux
-        fonctionnalités de génération IA est conditionné à l'achat de crédits ou à la souscription d'un abonnement.
+        Un essai gratuit de <strong>3 générations</strong> est offert à l'inscription, valable 30 jours, une seule fois par adresse e-mail.
+        Au-delà, la rédaction par l'IA est conditionnée à la souscription d'une formule ou à l'achat de crédits, selon les Conditions
+        Générales de Vente. Le reste du service (saisie, calcul des scores, aperçu et export des bilans) reste accessible sans formule.
       </p>
     </section>
 
@@ -104,20 +117,15 @@ const CGUContent: React.FC = () => (
         {'{{PATIENT_PRENOM}}'}&nbsp;»), puis réinsérés localement dans le texte reçu.
       </p>
       <p className="mt-2">
-        Chaque génération consomme un crédit. Les crédits ne sont pas remboursables en cas d'erreur technique imputable à l'API tiers, sous
-        réserve d'un remboursement gracieux apprécié au cas par cas.
+        Chaque génération consomme un crédit. Une génération qui échoue ne consomme rien : son crédit est rendu automatiquement.
       </p>
     </section>
 
     <section>
       <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">7. Abonnement et facturation</h2>
       <p>
-        Les tarifs en vigueur sont affichés sur la page de tarification au sein de l'application. ErgoBilan se réserve le droit de modifier
-        ses tarifs avec un préavis de 30 jours notifié par email.
-      </p>
-      <p className="mt-2">
-        L'abonnement est sans engagement et résiliable à tout moment depuis le tableau de bord. La résiliation prend effet à la fin de la
-        période de facturation en cours.
+        Les formules, les crédits, leurs prix, le paiement et la résiliation sont régis par les Conditions Générales de Vente, accessibles
+        depuis la page d'accueil et à chaque paiement.
       </p>
     </section>
 
@@ -170,22 +178,134 @@ const CGUContent: React.FC = () => (
   </div>
 );
 
+// ─── Contenu CGV ──────────────────────────────────────────────────────────────
+
+const CGVContent: React.FC = () => (
+  <div className="prose prose-sm max-w-none text-[var(--text-main)] space-y-6">
+    <p className="text-xs text-[var(--text-secondary)]">Version en vigueur au 12 octobre 2026</p>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">1. Vendeur et champ d'application</h2>
+      <p>
+        Les présentes Conditions Générales de Vente (CGV) régissent la vente des formules et des crédits du service ErgoBilan par{' '}
+        <Publisher /> (le « Vendeur »). Contact : <Mail to="contact" />.
+      </p>
+      <p className="mt-2">
+        Elles s'adressent exclusivement à des professionnels (le « Client ») qui achètent le service pour l'exercice de leur activité. En
+        validant un paiement, le Client déclare agir à titre professionnel et accepte les présentes CGV, qui complètent les Conditions
+        Générales d'Utilisation.
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">2. Crédits</h2>
+      <p>
+        Un crédit permet une génération par l'IA : la rédaction d'un bilan initial ou d'une réévaluation. Le reste du service (saisie,
+        calcul des scores, aperçu, export PDF, saisie de bilans historiques) ne consomme aucun crédit. Une génération qui échoue ne consomme
+        rien : son crédit est rendu automatiquement.
+      </p>
+      <ul className="list-disc ml-5 mt-2 space-y-1">
+        <li>
+          <strong>Crédits du mois</strong> : donnés par la formule à chaque renouvellement. Ils ne se reportent pas : à chaque
+          renouvellement, leur nombre est remis à celui prévu par la formule.
+        </li>
+        <li>
+          <strong>Crédits achetés</strong> : achetés à l'unité sans formule. Ils n'expirent pas tant que le compte existe.
+        </li>
+      </ul>
+      <p className="mt-2">Les crédits du mois sont utilisés en premier. Les crédits ne sont ni cessibles ni convertibles en argent.</p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">3. Essai gratuit</h2>
+      <p>
+        L'inscription ouvre un essai gratuit de 30 jours avec 3 crédits, sans moyen de paiement. Les crédits d'essai non utilisés sont
+        conservés si le Client souscrit une formule pendant l'essai ; ils sont perdus à la fin de l'essai sinon. L'essai est accordé une
+        seule fois par adresse e-mail.
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">4. Formule et prix</h2>
+      <p>
+        La formule <strong>Solo</strong> coûte <strong>21,99 € par mois</strong>. Elle comprend la rédaction illimitée de bilans par l'IA,
+        dans la limite d'un usage raisonnable de <strong>30 bilans par mois</strong> (30 crédits du mois), ainsi que la personnalisation du
+        rapport. Le Client qui a besoin de davantage contacte le Vendeur.
+      </p>
+      <p className="mt-2">
+        Sans formule, un crédit acheté à l'unité coûte <strong>9 €</strong>. L'achat à l'unité n'est pas proposé pendant une formule active.
+      </p>
+      <p className="mt-2">Les prix sont exprimés en euros. TVA non applicable, article 293 B du Code général des impôts.</p>
+      <p className="mt-2">
+        Le Vendeur peut modifier ses prix. Toute hausse est notifiée par e-mail au moins 30 jours avant son application à une formule en
+        cours ; le Client peut résilier avant cette date.
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">5. Commande et paiement</h2>
+      <p>
+        Le paiement se fait par carte bancaire sur la page sécurisée de Stripe, prestataire de paiement du Vendeur ; ErgoBilan n'a jamais
+        accès aux données de la carte. Une formule est payable d'avance chaque mois, à la date anniversaire de la souscription, par
+        prélèvement automatique sur la carte enregistrée. Un achat à l'unité est payé à la commande. Chaque paiement donne lieu à une
+        facture envoyée par e-mail et consultable dans l'espace de gestion de l'abonnement.
+      </p>
+      <p className="mt-2">
+        En cas d'échec d'un paiement, Stripe procède à de nouvelles tentatives. Tant que le paiement n'a pas abouti, les crédits du mois ne
+        sont pas renouvelés ; les crédits restants restent utilisables. Si les tentatives échouent, la formule est résiliée.
+      </p>
+      <p className="mt-2 text-xs text-[var(--text-secondary)]">
+        Toute somme non payée à l'échéance porte intérêt au taux de trois fois le taux d'intérêt légal, et donne lieu à une indemnité
+        forfaitaire pour frais de recouvrement de 40 € (article L441-10 du Code de commerce).
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">6. Durée et résiliation</h2>
+      <p>
+        Les formules sont sans engagement de durée. Le Client résilie à tout moment depuis l'espace de gestion de son abonnement ; la
+        résiliation prend effet à la fin du mois déjà payé, sans remboursement au prorata. Jusque-là, les crédits du mois restent
+        utilisables. Les crédits achetés sont conservés après la résiliation.
+      </p>
+      <p className="mt-2">
+        Les sommes versées ne sont pas remboursables, sauf erreur de facturation. Le service étant acheté pour l'exercice d'une activité
+        professionnelle, les dispositions du Code de la consommation relatives au droit de rétractation ne s'appliquent pas. La suppression
+        du compte met fin à la formule et entraîne la perte des crédits restants.
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">7. Responsabilité</h2>
+      <p>
+        Les textes rédigés par l'IA sont des propositions que le Client relit, corrige et valide sous sa seule responsabilité
+        professionnelle. La responsabilité du Vendeur, toutes causes confondues, est limitée aux sommes payées par le Client au cours des
+        douze mois précédant le fait générateur.
+      </p>
+    </section>
+
+    <section>
+      <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">8. Droit applicable et litiges</h2>
+      <p>
+        Les présentes CGV sont soumises au droit français. En cas de litige, les parties recherchent d'abord une solution amiable ; à
+        défaut, les tribunaux du ressort de Brest sont seuls compétents.
+      </p>
+    </section>
+  </div>
+);
+
 // ─── Contenu Politique de Confidentialité ─────────────────────────────────────
 
 const PrivacyContent: React.FC = () => (
   <div className="prose prose-sm max-w-none text-[var(--text-main)] space-y-6">
-    <p className="text-xs text-[var(--text-secondary)]">Version en vigueur au 15 juin 2026 — conforme au RGPD (UE) 2016/679</p>
+    <p className="text-xs text-[var(--text-secondary)]">Version en vigueur au 12 octobre 2026 — conforme au RGPD (UE) 2016/679</p>
 
     <section>
       <h2 className="text-base font-bold text-[var(--text-heading)] mb-2">1. Responsable de traitement</h2>
       <p>
-        <strong>[NOM DE LA SOCIÉTÉ / NOM DU MICRO-ENTREPRENEUR]</strong>, <strong>[ADRESSE]</strong>, SIRET <strong>[SIRET]</strong>.
+        <Publisher />.
       </p>
       <p className="mt-2">
-        Contact DPO / Délégué à la Protection des Données :{' '}
-        <a href="mailto:privacy@ergobilan.fr" className="text-[var(--primary)] underline">
-          privacy@ergobilan.fr
-        </a>
+        Contact pour vos données personnelles : <Mail to="privacy" />
       </p>
       <p className="mt-2 text-xs text-[var(--text-secondary)] bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
         <strong>Important :</strong> ErgoBilan est responsable de traitement uniquement pour les données de compte des praticiens (email,
@@ -216,7 +336,9 @@ const PrivacyContent: React.FC = () => (
             </tr>
             <tr className="bg-[var(--card-bg-raised)]/50">
               <td className="border border-[var(--border-color)] p-2 font-medium">Abonnement</td>
-              <td className="border border-[var(--border-color)] p-2">Plan, crédits, log de génération IA (sans contenu)</td>
+              <td className="border border-[var(--border-color)] p-2">
+                Formule, crédits, log de génération IA (sans contenu), identifiants client et abonnement Stripe
+              </td>
               <td className="border border-[var(--border-color)] p-2">Facturation, anti-abus, statistiques agrégées</td>
               <td className="border border-[var(--border-color)] p-2">5 ans (obligation comptable)</td>
             </tr>
@@ -299,6 +421,14 @@ const PrivacyContent: React.FC = () => (
               <td className="border border-[var(--border-color)] p-2">DPA Google, SCCs</td>
             </tr>
             <tr>
+              <td className="border border-[var(--border-color)] p-2 font-medium">Stripe Payments Europe Ltd.</td>
+              <td className="border border-[var(--border-color)] p-2">UE (Irlande)</td>
+              <td className="border border-[var(--border-color)] p-2">
+                E-mail, nom et adresse de facturation, carte bancaire (saisie chez Stripe, jamais transmise à ErgoBilan), factures
+              </td>
+              <td className="border border-[var(--border-color)] p-2">DPA Stripe, RGPD</td>
+            </tr>
+            <tr className="bg-[var(--card-bg-raised)]/50">
               <td className="border border-[var(--border-color)] p-2 font-medium">Sentry (Functional Software)</td>
               <td className="border border-[var(--border-color)] p-2">UE (ingest.de.sentry.io)</td>
               <td className="border border-[var(--border-color)] p-2">Journaux d'erreurs pseudonymisés, relecture de session masquée</td>
@@ -334,11 +464,7 @@ const PrivacyContent: React.FC = () => (
         </li>
       </ul>
       <p className="mt-3">
-        Pour exercer ces droits :{' '}
-        <a href="mailto:privacy@ergobilan.fr" className="text-[var(--primary)] underline">
-          privacy@ergobilan.fr
-        </a>
-        . Nous nous engageons à répondre dans un délai d'un mois (art. 12 RGPD).
+        Pour exercer ces droits : <Mail to="privacy" />. Nous nous engageons à répondre dans un délai d'un mois (art. 12 RGPD).
       </p>
       <p className="mt-2">
         Vous pouvez également introduire une réclamation auprès de la <strong>CNIL</strong> (
@@ -396,7 +522,7 @@ const PrivacyContent: React.FC = () => (
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 export const LegalModal: React.FC<LegalModalProps> = ({ initialTab = 'cgu', onClose }) => {
-  const [activeTab, setActiveTab] = useState<'cgu' | 'privacy'>(initialTab);
+  const [activeTab, setActiveTab] = useState<LegalTab>(initialTab);
 
   return (
     <div className="fixed inset-0 z-[300] bg-[#3D405B]/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -413,6 +539,16 @@ export const LegalModal: React.FC<LegalModalProps> = ({ initialTab = 'cgu', onCl
               }`}
             >
               <FileText size={14} /> Conditions Générales
+            </button>
+            <button
+              onClick={() => setActiveTab('cgv')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'cgv'
+                  ? 'bg-[var(--secondary)] text-white shadow-md'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'
+              }`}
+            >
+              <Receipt size={14} /> Conditions de Vente
             </button>
             <button
               onClick={() => setActiveTab('privacy')}
@@ -434,7 +570,9 @@ export const LegalModal: React.FC<LegalModalProps> = ({ initialTab = 'cgu', onCl
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-8 py-6">{activeTab === 'cgu' ? <CGUContent /> : <PrivacyContent />}</div>
+        <div className="overflow-y-auto flex-1 px-8 py-6">
+          {activeTab === 'cgu' ? <CGUContent /> : activeTab === 'cgv' ? <CGVContent /> : <PrivacyContent />}
+        </div>
 
         {/* Footer */}
         <div className="px-8 py-4 border-t border-[var(--border-color)] shrink-0 text-center">

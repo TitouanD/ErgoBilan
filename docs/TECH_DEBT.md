@@ -74,6 +74,30 @@ Statuts :
 - Les 60 migrations historiques sont dans le repo (`npx supabase migration fetch --linked`, #63) ; local et distant identiques.
 - Orphelins de P2-2 supprimés par Titouan le 2026-10-02 (0 organisation sans membre, 0 compte sans praticien) ; `supabase/schema.sql` ajouté (P2-1).
 
+## Abonnement Stripe (#107) : en test, passage en production à faire
+
+Paiement des formules et des crédits par Stripe, deux soldes de crédits ([ADR 0002](adr/0002-credits-sans-report.md)), plus d'état `subscription_locked` ni de formule vraiment illimitée. Code écrit et testé (migration rejouée sur PGlite par `supabase/billing.test.ts`, `supabase/functions/_shared/billing.test.ts`, `components/shared/PricingModal.test.tsx`). Détail : [DATA_MODEL.md](DATA_MODEL.md), [WORKFLOWS.md](WORKFLOWS.md) « Abonnement et paiement ».
+
+Fait le 2026-10-12 : migration `20261012100000_abonnement_stripe.sql` appliquée, `billing` et `stripe-webhook` déployées, compte Stripe de test configuré (produits, prix, portail client, webhook).
+
+Décidé le 2026-10-12 (migration `20261012200000_formule_solo_essai_unique.sql`, appliquée le 2026-10-12) :
+
+- **formule unique Solo** à 21,99 € par mois, présentée comme « illimitée\* » (« \*Dans la limite d'un usage raisonnable de 30 bilans par mois » = 30 crédits du mois) ; Essentiel, Performance et Expert ne sont plus vendues (valeurs gardées en base pour l'historique), formules offertes passées en Solo ; achat à l'unité à 9 € réservé aux comptes sans formule ; plus de changement de formule dans le portail client ; clés de recherche Stripe `formule_solo` et `unite_sans_formule` (anciennes clés archivées en mode test) ;
+- **un essai par adresse e-mail réelle** (`email_trial_key`, `trial_claims`, `practitioners.trial_denied`), signalé dans l'écran admin (`admin_list_trial_flags`) ;
+- **pas de contrôle du SIRET** : gardé en réserve, à ne mettre en place que si un abus est constaté ; d'ici là, on surveille le signal de l'écran admin.
+
+Reste à faire :
+
+- fusionner #107 dans `main` rapidement : d'ici là, une inscription en production voit 0 crédit ;
+- #111 (robustesse : double abonnement, `invoice.paid` tardif, client Stripe en double, crédits du mois) : appliquer `20261013100000_stripe_robustesse.sql`, **puis** déployer `billing` et `stripe-webhook` (elles passent `p_user_id` et `p_previous`, inconnus avant la migration) ;
+- régénérer `supabase/schema.sql` ;
+- passage de Stripe du mode test (bac à sable) à la production (le 2026-10-13, #110 réserve le paiement de test aux admins et à `STRIPE_TEST_ALLOWED_EMAILS` ; en réel, poser `VITE_PAYMENT_OPEN=true` sur la production) : prix aux mêmes clés de recherche (`formule_solo`, `unite_sans_formule`), point de terminaison du webhook, portail client, clés de production, informations publiques (URL des CGV, exigée par la case à cocher de Checkout).
+
+Points ouverts :
+
+- politique « réservé aux professionnels » (CGU, CGV : pas de droit de rétractation) et article L221-3 du Code de la consommation à faire valider juridiquement ;
+- moyens de paiement à restreindre à la carte (avec Apple Pay et Google Pay) dans le tableau de bord Stripe : la version de l'API utilisée ne prend plus `payment_method_types`.
+
 ## Observabilité Sentry (2026-09-25)
 
 Instrumentation complète front et edge (voir [ARCHITECTURE.md](ARCHITECTURE.md), section Sentry). `generate` (v53) et `signup` (v28) ont été redéployées le 2026-09-25. Vérification du secret `SENTRY_DSN_BACKEND` et du jeton Vercel `SENTRY_AUTH_TOKEN` → #58. `VITE_SENTRY_ENVIRONMENT` est optionnel (sinon `VERCEL_ENV` est utilisé).

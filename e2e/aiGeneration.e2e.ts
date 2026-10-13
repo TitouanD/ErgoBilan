@@ -6,21 +6,23 @@
  *   npm run e2e:ai                          dry run: demo transport, no network, free
  *   E2E_AI_LIVE=1 npm run e2e:ai            live: production edge `generate` + Gemini (PAID)
  *   E2E_AI=reevaluation|style|all|a,b ...   flows (default: initial)
+ *   E2E_AI_DOSSIER=<file.json>              initial report of a supplied record
+ *                                           instead of the demo one (quality check)
  *
  * Every request is checked before it leaves: no identifier of the fictional
  * patient in it, else the run stops before the paid call. Each step is written
  * to `.e2e-trace/` (ignored by git).
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEMO_CATALOG } from '../data/demoCatalog';
 import { DEMO_PATIENTS } from '../data/demoData';
 import { createDemoTransport } from '../data/demoReport';
-import type { Patient, PatientAssessment, ReportSection } from '../types';
+import type { ClinicalSynthesis, Observations, Patient, PatientAssessment, ReportSection, TestData } from '../types';
 import { initialPatient } from '../utils/assessmentInProgress';
-import { buildCatalogIndex } from '../utils/catalogIndex';
+import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, buildCatalogIndex } from '../utils/catalogIndex';
 import {
   type AIAnswer,
   type AIRequest,
@@ -50,6 +52,8 @@ const parseFlows = (raw: string | undefined): Flow[] => {
 
 const FLOWS = parseFlows(process.env.E2E_AI);
 const LIVE = process.env.E2E_AI_LIVE === '1';
+const DOSSIER = process.env.E2E_AI_DOSSIER ? resolve(process.env.E2E_AI_DOSSIER) : null;
+if (DOSSIER && FLOWS.join() !== 'initial') throw new Error('E2E_AI_DOSSIER : bilan initial seulement (E2E_AI=initial).');
 const PLANNED_CALLS = Math.min(
   MAX_CALLS,
   FLOWS.reduce((sum, f) => sum + CALLS[f], 0),
@@ -58,7 +62,7 @@ const TRACE_DIR = resolve('.e2e-trace', `${new Date().toISOString().replace(/[:.
 
 // ─── Fictional records (demo data) ──────────────────────────────────────────
 
-const index = buildCatalogIndex(DEMO_CATALOG);
+let index = buildCatalogIndex(DEMO_CATALOG);
 
 const elya = (): InitialReportInput => ({
   patient: { ...initialPatient, ...DEMO_PATIENTS.ELYA.patient, id: 'demo-elya' },
@@ -67,6 +71,44 @@ const elya = (): InitialReportInput => ({
   synthesis: { diagnosticInput: 'Fragilité de la motricité fine.', projectInput: '', recommendationsInput: '' },
   index,
 });
+
+/**
+ * Supplied record (E2E_AI_DOSSIER): a JSON file holding `patient`, `observations`,
+ * `tests`, `synthesis` and optionally `stylePreferences`, scored against the real
+ * catalogue of the test account. Keep it out of the repo (`.e2e-dossiers/` is ignored).
+ */
+interface Dossier {
+  patient: Partial<Patient>;
+  observations?: Observations;
+  tests?: TestData;
+  synthesis?: Partial<ClinicalSynthesis>;
+  stylePreferences?: string;
+}
+
+/** Test and subtest keys unknown to the catalogue: the record would be described wrongly. */
+const unknownCatalogKeys = (tests: TestData, catalog: CatalogIndex): string[] =>
+  Object.entries(tests).flatMap(([testId, scores]) => {
+    if (testId === CUSTOM_OBSERVATIONS_TEST_ID) return [];
+    if (!catalog.testById.has(testId)) return [testId];
+    return Object.keys(scores ?? {}).flatMap((subtestId) =>
+      catalog.subtestByKey.has(`${testId}:${subtestId}`) ? [] : [`${testId}:${subtestId}`],
+    );
+  });
+
+const dossier = (path: string): InitialReportInput => {
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Dossier;
+  const tests = raw.tests ?? {};
+  const unknown = unknownCatalogKeys(tests, index);
+  if (unknown.length > 0) throw new Error(`E2E_AI_DOSSIER : inconnus du catalogue : ${unknown.join(', ')}`);
+  return {
+    patient: { ...initialPatient, ...raw.patient, id: 'e2e-dossier' } as Patient,
+    observations: raw.observations ?? ({} as Observations),
+    tests,
+    synthesis: { diagnosticInput: '', projectInput: '', recommendationsInput: '', ...raw.synthesis },
+    index,
+    stylePreferences: raw.stylePreferences,
+  };
+};
 
 /**
  * Second re-evaluation of SARAH: the reference is her first re-evaluation, whose
@@ -231,6 +273,8 @@ const writeTrace = (flow: Flow, steps: Step[], result: unknown) => {
     );
   });
   writeFileSync(join(dir, '3-rapport-rehydrate.json'), JSON.stringify(result, null, 2));
+  const sections = (result as { sections?: ReportSection[] } | null)?.sections;
+  if (sections) writeFileSync(join(dir, '4-rapport.md'), sections.map((s) => `## ${s.title}\n\n${s.content}\n`).join('\n'));
 };
 
 // ─── Run ────────────────────────────────────────────────────────────────────
@@ -247,6 +291,7 @@ beforeAll(async () => {
   console.info(
     [
       `\n[e2e:ai] mode ${LIVE ? 'RÉEL (edge de production + Gemini PAYANT)' : 'à blanc (transport démo, aucun appel réseau)'}`,
+      DOSSIER ? `[e2e:ai] dossier fourni : ${DOSSIER} (catalogue réel du compte de test)` : '',
       `[e2e:ai] parcours : ${FLOWS.join(', ')} ; appels payants ${LIVE ? '' : 'qui seraient '}envoyés : ${PLANNED_CALLS}`,
       LIVE
         ? '[e2e:ai] Coût MINIME : une exécution réelle quand tout est vert (check, tests, mode à blanc). Jamais en boucle pour déboguer.'
@@ -256,14 +301,17 @@ beforeAll(async () => {
       .filter(Boolean)
       .join('\n'),
   );
-  if (!LIVE) return;
+  if (!LIVE && !DOSSIER) return;
 
-  edge = installEdgeFetch(PLANNED_CALLS);
+  // A supplied record needs the real catalogue, even in a dry run (reading it is free).
+  if (LIVE) edge = installEdgeFetch(PLANNED_CALLS);
   account = await signInTestAccount();
   const row = await account.readAccount();
   if (row.is_admin) throw new Error(`${account.email} est admin : l'e2e tourne uniquement avec le compte de test dédié (§9).`);
   summary.account = account.email;
   summary.creditsBefore = row.credits;
+  if (DOSSIER) index = buildCatalogIndex(await account.readCatalog());
+  if (!LIVE) return;
   const { callAIProxyTask } = await import('../services/aiProxy');
   liveTransport = callAIProxyTask;
 });
@@ -288,6 +336,8 @@ afterAll(async () => {
 });
 
 /** Credits after a flow: debited once for a report, never for style learning (non-admin account). */
+const readCredits = async () => (LIVE && account ? (await account.readAccount()).credits : undefined);
+
 const expectCreditDelta = async (before: number | undefined, delta: number) => {
   if (!account || before === undefined) return;
   expect((await account.readAccount()).credits).toBe(before + delta);
@@ -305,9 +355,9 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
   });
 
   it.runIf(FLOWS.includes('initial'))('bilan initial : bio puis diagnostic sur la même session, un crédit', async () => {
-    const input = elya();
+    const input = DOSSIER ? dossier(DOSSIER) : elya();
     expect(findInitialSuspectTerms(input)).toEqual([]);
-    const before = account ? (await account.readAccount()).credits : undefined;
+    const before = await readCredits();
     const { transport, steps } = recorder(makeTransport(), input.patient);
 
     let report: Awaited<ReturnType<ReturnType<typeof createReportGenerator>['generateInitial']>> | undefined;
@@ -335,7 +385,7 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
   it.runIf(FLOWS.includes('reevaluation'))('réévaluation : une tâche HTML, un crédit', async () => {
     const input = sarah();
     expect(findReevaluationSuspectTerms(input)).toEqual([]);
-    const before = account ? (await account.readAccount()).credits : undefined;
+    const before = await readCredits();
     const { transport, steps } = recorder(makeTransport(), input.patient);
 
     let sections: ReportSection[] | undefined;
@@ -355,7 +405,7 @@ describe(`génération IA de bout en bout (${LIVE ? 'réel' : 'à blanc'})`, () 
 
   it.runIf(FLOWS.includes('style'))('apprentissage du style : une correction envoyée, aucun crédit', async () => {
     const patient: Patient = { ...initialPatient, ...DEMO_PATIENTS.SARAH.patient, id: 'demo-sarah' };
-    const row = account ? await account.readAccount() : undefined;
+    const row = LIVE && account ? await account.readAccount() : undefined;
     const { transport, steps } = recorder(makeTransport(), patient);
 
     let sent: boolean | undefined;

@@ -90,7 +90,8 @@ const toSubtestDef = (s: SubtestRow): SubtestDef | null => {
   };
 };
 
-const buildCatalog = (testRows: TestRow[], subtestRows: SubtestRow[]): CategoryDef[] => {
+/** Exported for the end-to-end AI test (e2e/liveEdge.ts), which reads the real catalogue. */
+export const buildCatalog = (testRows: TestRow[], subtestRows: SubtestRow[]): CategoryDef[] => {
   const subtestsByTestId = new Map<string, SubtestDef[]>();
   for (const row of subtestRows) {
     const def = row.test_id ? toSubtestDef(row) : null;

@@ -6,7 +6,7 @@
  * link (`?q_id=...#key=...`) is detected before authentication.
  */
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Info, Loader2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AssessmentProvider, useAssessment, type ReportType } from './contexts/AssessmentContext';
@@ -15,6 +15,18 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
+import {
+  BillingService,
+  hasActivePlan,
+  IS_PAYMENT_OPEN,
+  PaymentUnavailableError,
+  planMonthlyCredits,
+  readPaymentReturn,
+  rememberBillingState,
+  takeRememberedBillingState,
+  waitForBillingChange,
+} from './services/billing';
+import { readLegalTabFromUrl } from './utils/legalLink';
 import { Logger } from './utils/logger';
 import { setAppTag, setAppUser } from './services/sentryService';
 import { getDaysSinceBackup } from './utils/backupTracking';
@@ -44,9 +56,16 @@ const OnboardingExperience = React.lazy(() =>
   import('./components/auth/OnboardingExperience').then((m) => ({ default: m.OnboardingExperience })),
 );
 const PatientDetail = React.lazy(() => import('./components/dashboard/PatientDetail').then((m) => ({ default: m.PatientDetail })));
+const LegalModal = React.lazy(() => import('./components/shared/LegalModal').then((m) => ({ default: m.LegalModal })));
 const PricingModal = React.lazy(() => import('./components/shared/PricingModal').then((m) => ({ default: m.PricingModal })));
-/** Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build. */
-const DevTools = import.meta.env.DEV ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools }))) : null;
+/**
+ * Dev scenarios and fictitious patients (docs/VERIFICATION.md): removed from the production build,
+ * except the recette build (`VITE_SCENARIOS=1`, never set on Vercel: see vite.config.ts).
+ */
+const DevTools =
+  import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === '1'
+    ? React.lazy(() => import('./dev/DevTools').then((m) => ({ default: m.DevTools })))
+    : null;
 
 type Mode = 'landing' | 'dashboard' | 'assessment' | 'portal' | 'admin' | 'detail' | 'profile';
 
@@ -85,7 +104,7 @@ const AppRouter = () => {
     verifyAdminAccess,
     isLoading,
   } = useAuth();
-  const { index: catalogIndex, hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
+  const { hasLoaded: hasCatalogLoaded, ensureCatalogLoaded } = useCatalog();
   const assessment = useAssessment();
   const toast = useToast();
 
@@ -94,6 +113,16 @@ const AppRouter = () => {
   const [previousMode, setPreviousMode] = useState<Mode>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
+  const [isOpeningStripe, setIsOpeningStripe] = useState(false);
+  // Back from Checkout, waiting for the webhook to update the account (#111).
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  // Dev scenario `vente=fermee`: the pricing modal as the production build shows it (#110).
+  const [isPaymentClosedByScenario, setIsPaymentClosedByScenario] = useState(false);
+  // Legal document opened by its public address (/?legal=cgv, linked from Stripe Checkout).
+  const [legalTabFromUrl, setLegalTabFromUrl] = useState(readLegalTabFromUrl);
+  // Return from a Stripe page (?paiement=ok|annule), read once before any redirect cleans the URL.
+  const [paymentReturnAtLoad] = useState(readPaymentReturn);
+  const paymentReturn = useRef(paymentReturnAtLoad);
   const [selectedFile, setSelectedFile] = useState<PatientFile | null>(null);
   const [viewingReport, setViewingReport] = useState<PatientAssessment | null>(null);
   const [detailPaging, setDetailPaging] = useState({ hasMoreAssessments: false, nextAssessmentOffset: 0, isLoadingMore: false });
@@ -112,7 +141,16 @@ const AppRouter = () => {
     loadMorePatients,
   } = useDataLoader({ sessionKey, authState, practitioner, isDemoMode });
 
-  const flow = useAssessmentFlow({ assessment, sessionKey, isDemoMode, catalogIndex, practitioner, refreshProfile, loadData, toast });
+  const flow = useAssessmentFlow({
+    assessment,
+    sessionKey,
+    isDemoMode,
+    loadCatalog: ensureCatalogLoaded,
+    practitioner,
+    refreshProfile,
+    loadData,
+    toast,
+  });
   const launcher = useAssessmentLauncher({ assessment, patientFiles, draftsIndex, toast });
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
@@ -137,11 +175,64 @@ const AppRouter = () => {
     if (authState === 'unauthenticated' && !portalInitialUrl) setMode('landing');
     else if (authState === 'authenticated') setMode((prev) => (prev === 'landing' ? 'dashboard' : prev));
     else if (authState === 'registering') setMode('landing');
-    else if (authState === 'subscription_locked') {
-      setMode('dashboard');
-      setPricingModalMode('paywall');
-    } else if (authState === 'error') toast.error('Problème de connexion.');
+    else if (authState === 'error') toast.error('Problème de connexion.');
   }, [authState]);
+
+  // ─── Return from Stripe: credits arrive by webhook, possibly a few seconds later ─
+  useEffect(() => {
+    if (authState !== 'authenticated' || !paymentReturn.current) return;
+    const result = paymentReturn.current;
+    paymentReturn.current = null;
+    if (result === 'annule') {
+      toast.info('Paiement annulé : rien ne vous a été facturé.');
+      return;
+    }
+    // Until the webhook's change is seen, the payment buttons stay disabled: no second Checkout (#111).
+    let cancelled = false;
+    setIsConfirmingPayment(true);
+    toast.info('Paiement reçu, merci ! Confirmation en cours, cela prend quelques secondes.');
+    void waitForBillingChange(refreshProfile, takeRememberedBillingState(), { isCancelled: () => cancelled }).then((confirmed) => {
+      if (cancelled) return;
+      setIsConfirmingPayment(false);
+      if (confirmed) toast.success('Paiement confirmé : votre compte est à jour.');
+      else toast.info('La confirmation prend plus de temps que prévu : votre compte sera à jour dans quelques minutes.');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authState]);
+
+  // Back from Stripe with « Précédent », the page may come out of the browser cache with its buttons still disabled (#112).
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setIsOpeningStripe(false);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  /** Opens a Stripe page (Checkout or portal); the browser leaves the app on success. */
+  const openStripe = async (open: () => Promise<void>) => {
+    if (isDemoMode) {
+      toast.info("Le paiement n'est pas disponible en mode démo.");
+      return;
+    }
+    setIsOpeningStripe(true);
+    rememberBillingState(userProfile);
+    try {
+      await open();
+    } catch (e) {
+      setIsOpeningStripe(false);
+      if (e instanceof PaymentUnavailableError) {
+        toast.info(
+          'Le paiement en ligne arrive très bientôt. En attendant, écrivez-nous à contact@ergobilan.com pour choisir une formule.',
+        );
+        return;
+      }
+      Logger.error('SYSTEM', 'Stripe page could not be opened', e);
+      toast.error("La page de paiement n'a pas pu s'ouvrir. Réessayez dans un instant.");
+    }
+  };
 
   // ─── Sentry: who (pseudonymous id) and where, attached to every event ─────
   useEffect(() => {
@@ -292,6 +383,16 @@ const AppRouter = () => {
     };
     return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
   }
+  // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
+  if (legalTabFromUrl) {
+    return (
+      <div className="min-h-screen bg-[var(--app-bg)]">
+        <Suspense fallback={<AppLoader />}>
+          <LegalModal initialTab={legalTabFromUrl} onClose={() => setLegalTabFromUrl(null)} />
+        </Suspense>
+      </div>
+    );
+  }
   if (isLoading || authState === 'authenticating') return <AppLoader />;
   // Test environment (dev.ergobilan.com): only accounts on its access list get past sign-in.
   const accountEmail = userProfile?.email || practitioner?.email || tempEmail || '';
@@ -388,7 +489,11 @@ const AppRouter = () => {
           {mode === 'detail' && selectedFile && (
             <PatientDetail
               file={selectedFile}
-              onBack={() => setMode('dashboard')}
+              onBack={() => {
+                // The record may have changed (identity, archive): the list is read again.
+                setMode('dashboard');
+                void loadData();
+              }}
               onDelete={removePatientFromLists}
               onNewBilan={(type) => void startAssessment(type, selectedFile)}
               onOpenReport={(reportId) => {
@@ -421,9 +526,16 @@ const AppRouter = () => {
             <PricingModal
               isPaywallMode={pricingModalMode === 'paywall'}
               onClose={() => setPricingModalMode(null)}
-              // No online payment yet: plan changes are handled manually by the team.
-              onSelectPlan={() => toast.info("Le paiement en ligne n'est pas encore disponible : contactez-nous pour changer d'offre.")}
-              onUnlockOneOff={() => toast.info("L'achat à l'unité n'est pas encore disponible : contactez-nous pour obtenir des crédits.")}
+              hasActivePlan={hasActivePlan(userProfile)}
+              hasPaidPlan={userProfile.billingSource === 'stripe'}
+              renewalDate={userProfile.currentPeriodEnd}
+              monthlyQuota={planMonthlyCredits(userProfile.subscriptionPlan)}
+              isPaymentPending={userProfile.status === 'past_due'}
+              isBusy={isOpeningStripe || isConfirmingPayment}
+              isPaymentOpen={IS_PAYMENT_OPEN && !isPaymentClosedByScenario}
+              onSubscribe={() => openStripe(BillingService.subscribe)}
+              onBuyCredits={() => openStripe(BillingService.buyCredits)}
+              onManageSubscription={() => openStripe(BillingService.openPortal)}
             />
           )}
         </Suspense>
@@ -438,7 +550,19 @@ const AppRouter = () => {
 
         {DevTools && authState === 'authenticated' && sessionKey && !isDemoMode && (
           <Suspense fallback={null}>
-            <DevTools onLoadData={loadData} onResumeDraft={resumeDraft} onShowDashboard={() => setMode('dashboard')} />
+            <DevTools
+              onLoadData={loadData}
+              onResumeDraft={resumeDraft}
+              onShowDashboard={() => setMode('dashboard')}
+              onShowQuestionnaires={(rows) =>
+                setPendingQuestionnaires((prev) => [...rows, ...prev.filter((q) => !rows.some((r) => r.id === q.id))])
+              }
+              onShowPricing={(pricingMode, paymentClosed) => {
+                setIsPaymentClosedByScenario(paymentClosed);
+                setPricingModalMode(pricingMode);
+              }}
+              onShowTermsOfSale={() => setLegalTabFromUrl('cgv')}
+            />
           </Suspense>
         )}
 

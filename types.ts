@@ -51,6 +51,8 @@ export interface Patient {
   schoolType?: string;
   schoolTrack?: string;
   schoolRepeatYear?: string;
+  /** Classe redoublée, quand `schoolRepeatYear` vaut « oui » (#94). */
+  schoolRepeatClass?: string;
   teacher: string;
   carePlan: string;
   avs: string;
@@ -72,6 +74,9 @@ export interface Patient {
   crawling?: string;
   crawlingFourPattes?: string;
   crawlingRamper?: string;
+  /** Déroulé du développement moteur, puces séparées par des virgules (#97). Remplace marche, ramper et 4 pattes à la saisie. */
+  motorDevelopmentTags?: string;
+  extracurricularSport?: string;
   cleanliness?: string;
   languageStatus?: string;
   sleep?: string;
@@ -107,6 +112,8 @@ export interface Patient {
   schoolParticipation?: string;
   peerRelations?: string;
   homeworkHabits?: string;
+  /** « Comment se passent les apprentissages ? » (#99). */
+  learningNotes?: string;
   socialBehavior?: string;
   writingIssues: string;
   writingDifficultyTags?: string;
@@ -281,10 +288,21 @@ export interface BrandingConfig {
 export interface UserProfile {
   id: string;
   email: string;
+  /** Credits available for an AI generation: monthly + purchased (CONTEXT.md § Abonnement). */
   credits: number;
+  /** Crédits du mois: reset to the plan's quota at each renewal. */
+  monthlyCredits: number;
+  /** Crédits achetés: never expire. */
+  purchasedCredits: number;
   isAdmin: boolean;
-  subscriptionPlan: 'free' | 'essential' | 'performance' | 'expert';
+  subscriptionPlan: 'free' | 'solo' | 'essential' | 'performance' | 'expert';
   status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
+  /** 'stripe' = paid plan (managed in the Stripe portal), 'offerte' = granted by the admin, null = none. */
+  billingSource: 'stripe' | 'offerte' | null;
+  /** Next renewal of a plan (ISO), or end of the last one. */
+  currentPeriodEnd: string | null;
+  /** The trial was refused: this real e-mail address already had one (#107). */
+  trialDenied: boolean;
   isTrial: boolean;
   trialDaysRemaining: number;
   totalBilansGenerated: number;
@@ -382,6 +400,8 @@ export interface PendingQuestionnaire {
   createdAt: string;
   practitionerEncryptedKey: string;
   familyEncryptedData?: string;
+  /** « Prénom Nom » of the child, decrypted in the browser from `familyEncryptedData` (never stored in Supabase). */
+  childName?: string;
   practitioner_id?: string;
   accessToken?: string;
 }
@@ -455,11 +475,19 @@ export interface AdminUserRow {
   first_name: string | null;
   last_name: string | null;
   is_admin: boolean;
+  /** Crédits achetés */
   credits: number;
+  /** Crédits du mois */
+  monthly_credits: number;
+  billing_source: 'stripe' | 'offerte' | null;
+  /** Trial refused: the real e-mail address already had one (admin_list_trial_flags). */
+  trial_denied?: boolean;
+  /** Accounts sharing this real e-mail address (+tags and Gmail dots removed). */
+  accounts_with_same_key?: number;
   organization_id: string | null;
   organization_name: string | null;
   organization_role: string | null;
-  subscription_plan: 'free' | 'essential' | 'performance' | 'expert' | string;
+  subscription_plan: 'free' | 'solo' | 'essential' | 'performance' | 'expert' | string;
   subscription_status: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive' | string;
   trial_ends_at: string | null;
   current_period_end: string | null;
@@ -472,7 +500,8 @@ export interface AdminUserUpdatePayload {
   userId: string;
   isAdmin?: boolean;
   credits?: number;
-  planId?: 'free' | 'essential' | 'performance' | 'expert';
+  monthlyCredits?: number;
+  planId?: 'free' | 'solo' | 'essential' | 'performance' | 'expert';
   status?: 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
   trialEndsAt?: string | null;
   currentPeriodEnd?: string | null;

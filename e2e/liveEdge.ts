@@ -107,19 +107,31 @@ export const signInTestAccount = async () => {
     throw e;
   }
 
+  /** credits = crédits du mois + crédits achetés (monthly_credits absent avant la migration #107). */
   const readAccount = async () => {
-    const { data: row, error: readError } = await supabase
-      .from('practitioners')
-      .select('credits, ai_style_preferences, is_admin')
-      .eq('id', session.user.id)
-      .single();
+    const { data: row, error: readError } = await supabase.from('practitioners').select('*').eq('id', session.user.id).single();
     if (readError || !row) throw new Error(`Lecture du compte de test impossible (${readError?.message})`);
-    return row;
+    const monthly = (row as { monthly_credits?: number }).monthly_credits ?? 0;
+    return { credits: row.credits + monthly, ai_style_preferences: row.ai_style_preferences, is_admin: row.is_admin };
+  };
+
+  /** Catalogue seen by the test account, built as in the app (contexts/CatalogContext.tsx). */
+  const readCatalog = async () => {
+    const { buildCatalog } = await import('../contexts/CatalogContext');
+    const [tests, subtests] = await Promise.all([
+      supabase.from('view_unified_catalog').select('id, label, category_id, category_label, icon_key, sort_order').order('sort_order'),
+      supabase
+        .from('view_unified_subtests')
+        .select('id, test_id, name, unit, score_type, input_model, input_config, display_group_order, display_order'),
+    ]);
+    if (tests.error || subtests.error) throw new Error(`Lecture du catalogue impossible (${(tests.error ?? subtests.error)?.message})`);
+    return buildCatalog(tests.data ?? [], subtests.data ?? []);
   };
 
   return {
     email: session.user.email ?? '',
     readAccount,
+    readCatalog,
     close: async () => {
       await supabase.auth.stopAutoRefresh();
       unlock();

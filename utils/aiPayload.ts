@@ -6,7 +6,7 @@
  */
 
 import type { ClinicalSynthesis, Observations, Patient, PatientAssessment, TestData } from '../types';
-import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
+import { type CatalogIndex, getSubtestName, getTestName } from './catalogIndex';
 import { type DeltaEntry, buildEvolutionSummaryText, buildScoresSummaryText } from './reevaluationHelpers';
 import { htmlToPlainText, sectionToHtml } from './reportContent';
 import { resolveScores } from './resolvedScore';
@@ -63,6 +63,7 @@ export const buildQuestionnaireText = (p: Patient): string => {
     '',
     '--- SCOLARITÉ ---',
     line('École / Classe', school),
+    line('Redoublement', [p.schoolRepeatYear, p.schoolRepeatClass].filter(Boolean).join(', classe : ')),
     line('Plan de soin scolaire', p.carePlan),
     line('Attention scolaire', p.schoolAttention),
     line('Aménagements en place', p.schoolAccommodations),
@@ -79,16 +80,18 @@ export const buildQuestionnaireText = (p: Patient): string => {
     line('Profession prescripteur', p.prescribingDoctorProfession),
     line('Diagnostic médical', p.medicalDiagnosis),
     line('Traitements', p.medicalTreatments),
-    line('Suivi par la PCO', [p.pcoFollowup, p.pcoFollowupDate].filter(Boolean).join(', date : ')),
+    line('Suivi par la PCO', [p.pcoFollowup, p.pcoFollowupDate].filter(Boolean).join(', depuis le ')),
     line('Suivi médical', p.medicalFollowup),
     `Suivi paramédical:\n${tracking}`,
     '',
     '--- DÉVELOPPEMENT ---',
     line('Grossesse / Naissance', p.pregnancyBirth),
+    line('Déroulé du développement moteur', p.motorDevelopmentTags),
     line('Développement moteur', p.developmentMotor),
     line('Âge de marche', p.walkingAge),
     line('Quatre pattes', p.crawlingFourPattes || p.crawling),
     line('Ramper', p.crawlingRamper),
+    line('Activité sportive extra-scolaire', p.extracurricularSport),
     line('Développement du langage', p.developmentLanguage),
     line('Statut langage actuel', p.languageStatus),
     line('Propreté', p.cleanliness),
@@ -109,10 +112,16 @@ export const buildQuestionnaireText = (p: Patient): string => {
     line('Observations temps/espace', p.timeSpaceObservations),
     line('Orientation temps/espace', p.timeSpace),
     '',
+    '--- APPRENTISSAGES ---',
+    line('Apprentissages', p.learningNotes),
+    line('Mémorisation', p.schoolMemory),
+    line('Organisation', p.schoolOrganization),
+    line('Devoirs', p.homeworkHabits),
+    line('Utilisation des outils', p.toolUsage),
+    '',
     '--- ÉCRITURE & OUTILS ---',
     line("Difficultés d'écriture", p.writingIssues),
     line("Douleur à l'écriture", p.writingPain),
-    line('Utilisation des outils', p.toolUsage),
     line('Outils / ciseaux', p.toolScissors),
     line('Observations écriture autres', p.writingOther),
     '',
@@ -144,8 +153,10 @@ export const buildObservationsText = (patient: Patient, observations: Observatio
     Object.entries(subtests)
       .filter(([, res]) => res.observation?.trim())
       .map(([subId, res]) => {
-        const testName = testId === CUSTOM_OBSERVATIONS_TEST_ID ? 'Observations libres' : getTestName(index, testId);
-        return `[${getSubtestName(index, testId, subId, res.customLabel)} — ${testName}] ${res.observation!.trim()}`;
+        const testName = getTestName(index, testId);
+        const subtestName = getSubtestName(index, testId, subId, res.customLabel);
+        const label = subtestName === testName ? testName : `${subtestName} — ${testName}`;
+        return `[${label}] ${res.observation!.trim()}`;
       }),
   );
   return (

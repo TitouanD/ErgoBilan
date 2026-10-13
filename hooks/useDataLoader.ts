@@ -9,6 +9,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/db';
 import { StorageService } from '../services/storage';
 import type { DashboardDraftMeta, PatientFile, PendingQuestionnaire, PractitionerProfile } from '../types';
+import { DEMO_PATIENTS } from '../data/demoData';
+import { withChildNames } from '../utils/familyQuestionnaire';
 import { Logger } from '../utils/logger';
 
 interface UseDataLoaderParams {
@@ -97,6 +99,8 @@ export const useDataLoader = ({ sessionKey, authState, practitioner, isDemoMode 
         {
           id: 'demo-leo',
           label: 'Famille RAVEL (Dossier complet)',
+          // The import loads Elya (usePendingProcessor, demo path).
+          childName: `${DEMO_PATIENTS.ELYA.patient.firstName} ${DEMO_PATIENTS.ELYA.patient.lastName}`,
           status: 'completed',
           createdAt: new Date(Date.now() - 86400000).toISOString(),
           practitionerEncryptedKey: '',
@@ -115,16 +119,36 @@ export const useDataLoader = ({ sessionKey, authState, practitioner, isDemoMode 
       Logger.warn('DB', 'Failed to load pending questionnaires', error);
       return;
     }
-    setPendingQuestionnaires(
-      (data ?? []).map((p) => ({
-        id: p.id,
-        label: p.label ?? 'Questionnaire',
-        status: p.status === 'completed' ? 'completed' : 'pending',
-        createdAt: p.created_at ?? new Date().toISOString(),
-        practitionerEncryptedKey: p.practitioner_encrypted_key,
-        accessToken: p.access_token || undefined,
-      })),
+    const rows: PendingQuestionnaire[] = (data ?? []).map((p) => ({
+      id: p.id,
+      label: p.label ?? 'Questionnaire',
+      status: p.status === 'completed' ? 'completed' : 'pending',
+      createdAt: p.created_at ?? new Date().toISOString(),
+      practitionerEncryptedKey: p.practitioner_encrypted_key,
+      accessToken: p.access_token || undefined,
+    }));
+    setPendingQuestionnaires(rows);
+
+    // Child's name of the answered questionnaires: their encrypted data only, decrypted here (never stored in clear).
+    if (!rows.some((r) => r.status === 'completed')) return;
+    const { data: answered, error: answeredError } = await supabase
+      .from('pending_questionnaires')
+      .select('id, family_encrypted_data')
+      .eq('practitioner_id', practitioner.id)
+      .eq('status', 'completed');
+    if (answeredError) {
+      Logger.warn('DB', 'Failed to load answered questionnaires', answeredError);
+      return;
+    }
+    const encryptedById = new Map((answered ?? []).map((a) => [a.id, a.family_encrypted_data]));
+    const named = await withChildNames(
+      rows.map((r) => ({ ...r, familyEncryptedData: encryptedById.get(r.id) ?? undefined })),
+      sessionKey,
     );
+    const nameById = new Map(named.filter((r) => r.childName).map((r) => [r.id, r.childName]));
+    if (nameById.size === 0) return;
+    // Merge into the current list: a row may have been deleted or added meanwhile.
+    setPendingQuestionnaires((prev) => prev.map((q) => (nameById.has(q.id) ? { ...q, childName: nameById.get(q.id) } : q)));
   }, [sessionKey, authState, practitioner, isDemoMode]);
 
   const loadData = useCallback(async () => {
