@@ -21,6 +21,7 @@ import { CriticalErrorModal } from '../shared/CriticalErrorModal';
 import { ConfirmModal } from '../shared/ConfirmModal';
 import { SuspectTermsReview, useSuspectTermChoices } from '../shared/SuspectTermsReview';
 import { hasBrandingPlan } from '../../services/billing';
+import { confirmGenerationCredits } from '../../utils/generationCredits';
 
 const ScorePage = React.lazy(() => import('./pages/ScorePage').then((m) => ({ default: m.ScorePage })));
 const ValidationPage = React.lazy(() => import('./pages/ValidationPage').then((m) => ({ default: m.ValidationPage })));
@@ -51,7 +52,7 @@ const StepLoader = () => (
 
 export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfile, onShowPricing, onDemoConvert, loadData }) => {
   const assessment = useAssessment();
-  const { userProfile, isDemoMode, updateBranding } = useAuth();
+  const { userProfile, isDemoMode, updateBranding, refreshProfile } = useAuth();
   const [stepperTarget, setStepperTarget] = useState<number | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   /** Suspect words of the confirmation before the initial report; null while it is closed. */
@@ -60,8 +61,12 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
   const [loaderDismissed, setLoaderDismissed] = useState(false);
 
   const { reportType, step, setStep } = assessment;
-  // Same rule as consume_credit_for_user: monthly + purchased credits, the admin generates without credit.
-  const hasCredits = isDemoMode || userProfile.isAdmin || userProfile.credits > 0;
+  /** Before a generation: credits in memory, else in the profile read again (#112); none → credit wall. */
+  const ensureCredits = async (): Promise<boolean> => {
+    if (isDemoMode || (await confirmGenerationCredits(userProfile, refreshProfile))) return true;
+    onShowPricing('paywall');
+    return false;
+  };
 
   useEffect(() => {
     if (!flow.isGenerating) setLoaderDismissed(false);
@@ -160,7 +165,9 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
                 updateSynthesis={assessment.updateSynthesis}
                 tests={assessment.tests}
                 patient={assessment.patient}
-                onNext={async () => (hasCredits ? setGenerationConfirmTerms(await flow.findSuspectTerms()) : onShowPricing('paywall'))}
+                onNext={async () => {
+                  if (await ensureCredits()) setGenerationConfirmTerms(await flow.findSuspectTerms());
+                }}
                 onBack={() => setStep(2)}
                 isGenerating={flow.isGenerating}
               />
@@ -198,9 +205,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
                 onGenerate={flow.generateReevaluation}
                 findSuspectTerms={flow.findSuspectTerms}
                 isGenerating={flow.isGenerating}
-                hasCredits={hasCredits}
+                ensureCredits={ensureCredits}
                 isDemoMode={isDemoMode}
-                onNeedCredits={() => onShowPricing('paywall')}
                 onNext={() => setStep(3)}
                 onBack={() => setStep(1)}
               />

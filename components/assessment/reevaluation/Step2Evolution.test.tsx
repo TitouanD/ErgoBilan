@@ -10,7 +10,7 @@ import { DEMO_CATALOG } from '../../../data/demoCatalog';
 const index = buildCatalogIndex(DEMO_CATALOG);
 vi.mock('../../../contexts/CatalogContext', () => ({ useCatalog: () => ({ index }) }));
 
-const renderStep = (terms: string[]) => {
+const renderStep = (terms: string[], ensureCredits = async () => true) => {
   const onGenerate = vi.fn().mockResolvedValue(false);
   render(
     <Step2Evolution
@@ -21,9 +21,8 @@ const renderStep = (terms: string[]) => {
       onGenerate={onGenerate}
       findSuspectTerms={async () => terms}
       isGenerating={false}
-      hasCredits
+      ensureCredits={ensureCredits}
       isDemoMode
-      onNeedCredits={() => {}}
       onNext={() => {}}
       onBack={() => {}}
     />,
@@ -62,5 +61,16 @@ describe('Step2Evolution : mots repérés dans la modale de réévaluation (#54 
 
     await userEvent.click(screen.getByRole('button', { name: 'Générer (simulation)' }));
     expect(onGenerate).toHaveBeenCalledWith({ masked: [], allowed: [] });
+  });
+});
+
+describe('Step2Evolution : crédits avant la génération (#112)', () => {
+  it('sans crédit confirmé, n’ouvre pas la modale de génération', async () => {
+    const ensureCredits = vi.fn().mockResolvedValue(false);
+    renderStep([], ensureCredits);
+    await userEvent.click(screen.getByRole('button', { name: /Générer avec l’IA/ }));
+
+    expect(ensureCredits).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Générer la synthèse')).toBeNull();
   });
 });
