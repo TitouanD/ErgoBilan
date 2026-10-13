@@ -117,7 +117,9 @@ export const PricingModal: React.FC<Props> = ({
                   <Lock size={32} />
                 </div>
                 <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Plus de crédits disponibles.</h2>
-                <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour rédiger ce bilan avec l'IA, choisissez une option.</p>
+                {isPaymentOpen && (
+                  <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour rédiger ce bilan avec l'IA, choisissez une option.</p>
+                )}
               </div>
 
               {!isPaymentOpen ? (
