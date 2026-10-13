@@ -37,8 +37,11 @@ export const generationConfigFor = (target: Pick<GeminiTarget, 'provider' | 'gen
  * budget, counted from the request arrival; the margin covers auth, credit and finalization.
  */
 export const GEMINI_BUDGET_MS = 135_000;
-/** No attempt is started with less time left than this. */
-export const MIN_ATTEMPT_MS = 30_000;
+/**
+ * No attempt is started with less time left than this: a long task (diagnostic) would not
+ * finish in less, and a cut attempt is billed all the same (#109).
+ */
+export const MIN_ATTEMPT_MS = 60_000;
 
 /** Timeout of the next attempt: the per-attempt cap within the remaining budget; 0 = no time left for one. */
 export const attemptTimeoutMs = (requestStartedAt: number, now: number, perAttemptMs: number, budgetMs = GEMINI_BUDGET_MS): number => {
@@ -52,6 +55,8 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const TOKEN_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 /** Renew the token this long before Google's expiry. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
+/** A stuck token exchange (cold start) must not eat the request budget (#109). */
+export const TOKEN_TIMEOUT_MS = 10_000;
 
 export type GeminiProvider = 'agent-platform-eu' | 'gemini-api';
 
@@ -63,6 +68,8 @@ export interface GeminiTarget {
   generationConfig: Record<string, unknown>;
   /** Auth headers of a request; rejects when the OAuth token cannot be obtained. */
   authHeaders: () => Promise<Record<string, string>>;
+  /** Called when Gemini answers 401: the next authHeaders() gets fresh credentials. */
+  onUnauthorized?: () => void;
 }
 
 export interface ServiceAccountKey {
@@ -133,6 +140,7 @@ export const createAccessTokenSource = (key: ServiceAccountKey, fetchImpl: typeo
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion: await signAssertion(key, issuedAt),
       }),
+      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
     });
     const data = (await response.json().catch(() => null)) as { access_token?: string; expires_in?: number; error?: string } | null;
     if (!response.ok || !data?.access_token) throw new Error(`OAuth token refused (${response.status} ${data?.error ?? ''})`.trim());
@@ -140,13 +148,39 @@ export const createAccessTokenSource = (key: ServiceAccountKey, fetchImpl: typeo
     return data.access_token;
   };
 
-  return (): Promise<string> => {
+  const get = (): Promise<string> => {
     if (cached && now() < cached.expiresAt - TOKEN_MARGIN_MS) return Promise.resolve(cached.token);
     pending ??= mint().finally(() => {
       pending = null;
     });
     return pending;
   };
+  /** Drops the cached token (refused by Vertex: revoked or rotated key). */
+  const invalidate = () => {
+    cached = null;
+  };
+  return Object.assign(get, { invalidate });
+};
+
+export type GeminiAnswer = {
+  candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+  promptFeedback?: { blockReason?: string };
+};
+
+/**
+ * Text of a Gemini answer: the text parts joined, reasoning parts (thought) skipped. An answer
+ * cut by the token limit or blocked is a named failure, not an empty or invalid JSON (#109).
+ */
+export const readGeminiAnswer = (data: GeminiAnswer | null): { text: string; failure?: 'GEMINI_MAX_TOKENS' | 'GEMINI_BLOCKED' } => {
+  const candidate = data?.candidates?.[0];
+  const text = (candidate?.content?.parts ?? [])
+    .filter((part) => part.thought !== true && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('');
+  const finishReason = candidate?.finishReason;
+  if (finishReason === 'MAX_TOKENS') return { text, failure: 'GEMINI_MAX_TOKENS' };
+  if (data?.promptFeedback?.blockReason || (finishReason && finishReason !== 'STOP')) return { text, failure: 'GEMINI_BLOCKED' };
+  return { text };
 };
 
 export const agentPlatformUrl = (projectId: string, model = AGENT_PLATFORM_MODEL, location = AGENT_PLATFORM_LOCATION) =>
@@ -175,6 +209,7 @@ export const resolveGeminiTarget = (
         generationConfig: { thinkingConfig: { thinkingLevel: AGENT_PLATFORM_THINKING_LEVEL } },
         url: agentPlatformUrl(key.project_id),
         authHeaders: async () => ({ Authorization: `Bearer ${await token()}` }),
+        onUnauthorized: token.invalidate,
       },
     };
   }

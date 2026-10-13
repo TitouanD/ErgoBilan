@@ -17,7 +17,14 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { captureEdgeException, captureEdgeMessage, createTrail } from '../_shared/sentry.ts';
-import { type GeminiTarget, attemptTimeoutMs, generationConfigFor, resolveGeminiTarget } from './geminiTarget.ts';
+import {
+  type GeminiAnswer,
+  type GeminiTarget,
+  attemptTimeoutMs,
+  generationConfigFor,
+  readGeminiAnswer,
+  resolveGeminiTarget,
+} from './geminiTarget.ts';
 import { AI_TASKS, type AITask, type BuildResult, buildTask, sessionKind } from './prompts.ts';
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
@@ -181,9 +188,7 @@ const describeGeminiError = (raw: string) => {
   }
 };
 
-type GeminiResponse = {
-  candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
-  promptFeedback?: { blockReason?: string };
+type GeminiResponse = GeminiAnswer & {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
 };
 
@@ -227,8 +232,7 @@ const callGemini = async (target: GeminiTarget, built: BuildResult, task: AITask
   let lastStatus = 0;
   for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
     if (attempt > 0) await sleep(GEMINI_RETRY_BASE_MS * 2 ** (attempt - 1));
-    const timeoutMs = attemptTimeoutMs(requestStartedAt, Date.now(), GEMINI_TIMEOUT_MS);
-    if (timeoutMs === 0) break; // a retry could not finish before Supabase answers 504
+    if (attemptTimeoutMs(requestStartedAt, Date.now(), GEMINI_TIMEOUT_MS) === 0) break; // a retry could not finish before Supabase answers 504
     let authHeaders: Record<string, string>;
     try {
       authHeaders = await target.authHeaders();
@@ -236,6 +240,9 @@ const callGemini = async (target: GeminiTarget, built: BuildResult, task: AITask
       lastError = { exception: err instanceof Error ? err.message.slice(0, 300) : String(err) };
       return { ok: false, errorCode: 'GEMINI_AUTH_ERROR', retryable: false, status: 502, detail: detail(attempt) };
     }
+    // Computed after the token exchange, which takes from the same budget (#109).
+    const timeoutMs = attemptTimeoutMs(requestStartedAt, Date.now(), GEMINI_TIMEOUT_MS);
+    if (timeoutMs === 0) break;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -250,12 +257,18 @@ const callGemini = async (target: GeminiTarget, built: BuildResult, task: AITask
         lastStatus = response.status;
         lastError = describeGeminiError(await response.text());
         if (response.status === 429 || response.status === 503) continue;
+        // Token refused (revoked or rotated key): forget it, the retry mints a new one (#109).
+        if (response.status === 401 && target.onUnauthorized) {
+          target.onUnauthorized();
+          if (attempt < GEMINI_MAX_RETRIES) continue;
+        }
         return { ok: false, errorCode: 'GEMINI_ERROR', retryable: false, status: 502, detail: detail(attempt) };
       }
       const data = (await response.json()) as GeminiResponse | null;
       const usage = describeUsage(data);
-      const text: string | null = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
-      if (!text?.trim())
+      const { text, failure } = readGeminiAnswer(data);
+      if (failure) return { ok: false, errorCode: failure, retryable: false, status: 502, detail: detail(attempt, usage) };
+      if (!text.trim())
         return { ok: false, errorCode: 'GEMINI_EMPTY_RESPONSE', retryable: true, status: 502, detail: detail(attempt, usage) };
       if (built.responseMimeType === 'application/json') {
         try {
@@ -364,7 +377,7 @@ Deno.serve(async (req: Request) => {
     if (!SUPABASE_SERVICE_ROLE_KEY || 'error' in GEMINI) {
       const reason = !SUPABASE_SERVICE_ROLE_KEY ? 'missing SUPABASE_SERVICE_ROLE_KEY' : GEMINI.error;
       await captureEdgeMessage(`SERVER_MISCONFIGURED: ${reason}`, { ...sentry(), level: 'fatal' });
-      return json(origin, 500, { error: 'SERVER_MISCONFIGURED' });
+      return json(origin, 500, { error: 'SERVER_MISCONFIGURED', retryable: false });
     }
     const gemini = GEMINI.target;
     admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
