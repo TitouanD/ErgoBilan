@@ -15,7 +15,7 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
-import { BillingService, hasActivePlan, readPaymentReturn } from './services/billing';
+import { BillingService, hasActivePlan, IS_PAYMENT_OPEN, PaymentUnavailableError, readPaymentReturn } from './services/billing';
 import { readLegalTabFromUrl } from './utils/legalLink';
 import { Logger } from './utils/logger';
 import { setAppTag, setAppUser } from './services/sentryService';
@@ -104,6 +104,8 @@ const AppRouter = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
+  // Dev scenario `vente=fermee`: the pricing modal as the production build shows it (#110).
+  const [isPaymentClosedByScenario, setIsPaymentClosedByScenario] = useState(false);
   // Legal document opened by its public address (/?legal=cgv, linked from Stripe Checkout).
   const [legalTabFromUrl, setLegalTabFromUrl] = useState(readLegalTabFromUrl);
   // Return from a Stripe page (?paiement=ok|annule), read once before any redirect cleans the URL.
@@ -189,9 +191,15 @@ const AppRouter = () => {
     try {
       await open();
     } catch (e) {
+      setIsOpeningStripe(false);
+      if (e instanceof PaymentUnavailableError) {
+        toast.info(
+          'Le paiement en ligne arrive très bientôt. En attendant, écrivez-nous à contact@ergobilan.com pour choisir une formule.',
+        );
+        return;
+      }
       Logger.error('SYSTEM', 'Stripe page could not be opened', e);
       toast.error("La page de paiement n'a pas pu s'ouvrir. Réessayez dans un instant.");
-      setIsOpeningStripe(false);
     }
   };
 
@@ -492,6 +500,7 @@ const AppRouter = () => {
               renewalDate={userProfile.currentPeriodEnd}
               isPaymentPending={userProfile.status === 'past_due'}
               isBusy={isOpeningStripe}
+              isPaymentOpen={IS_PAYMENT_OPEN && !isPaymentClosedByScenario}
               onSubscribe={() => openStripe(BillingService.subscribe)}
               onBuyCredits={() => openStripe(BillingService.buyCredits)}
               onManageSubscription={() => openStripe(BillingService.openPortal)}
@@ -516,7 +525,10 @@ const AppRouter = () => {
               onShowQuestionnaires={(rows) =>
                 setPendingQuestionnaires((prev) => [...rows, ...prev.filter((q) => !rows.some((r) => r.id === q.id))])
               }
-              onShowPricing={setPricingModalMode}
+              onShowPricing={(pricingMode, paymentClosed) => {
+                setIsPaymentClosedByScenario(paymentClosed);
+                setPricingModalMode(pricingMode);
+              }}
               onShowTermsOfSale={() => setLegalTabFromUrl('cgv')}
             />
           </Suspense>

@@ -30,7 +30,7 @@ interface Props {
   onShowDashboard: () => void;
   /** Show fictitious parent questionnaires on the dashboard (memory only). */
   onShowQuestionnaires: (rows: PendingQuestionnaire[]) => void;
-  onShowPricing: (mode: 'plans' | 'paywall') => void;
+  onShowPricing: (mode: 'plans' | 'paywall', paymentClosed: boolean) => void;
   /** Terms of sale (`&modale=cgv`), also reachable at the public address /?legal=cgv. */
   onShowTermsOfSale: () => void;
 }
@@ -84,7 +84,7 @@ export const DevTools: React.FC<Props> = ({
         if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
         if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
-        else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal);
+        else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal, parsed.scenario.paymentClosed);
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);
         await afterPaint();
         setStatus('ready');

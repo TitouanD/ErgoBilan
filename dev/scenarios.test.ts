@@ -54,6 +54,8 @@ describe('parseScenario', () => {
     expect(scenarioOf('?scenario=abonnement')).toMatchObject({ name: 'dashboard', modal: 'plans' });
     expect(scenarioOf('?scenario=initial&etape=5&modale=paywall')).toMatchObject({ name: 'initial', step: 5, modal: 'paywall' });
     expect(parseScenario('?scenario=dashboard&modale=nope')).toMatchObject({ ok: false });
+    expect(scenarioOf('?scenario=abonnement')).toMatchObject({ paymentClosed: false });
+    expect(scenarioOf('?scenario=abonnement&vente=fermee')).toMatchObject({ paymentClosed: true });
   });
 
   it('rejects an unknown scenario, step or patient', () => {

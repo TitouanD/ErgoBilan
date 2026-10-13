@@ -10,20 +10,40 @@
  *
  * No JWT (`verify_jwt = false`): the request is authenticated by its Stripe signature.
  * Every RPC is idempotent (billing_events): a 5xx makes Stripe retry, a 2xx never does.
+ * Test events (livemode false) apply only to the test accounts (STRIPE_TEST_ALLOWED_EMAILS)
+ * and admins (#110): a test card must not grant a real plan.
  */
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@23.0.0';
 import { captureEdgeException, captureEdgeMessage } from '../_shared/sentry.ts';
-import { dedupKey, describeSubscription, routeEvent, type StripeSubscriptionLike } from '../_shared/billing.ts';
+import {
+  dedupKey,
+  describeSubscription,
+  isPaymentAllowed,
+  parseEmailList,
+  routeEvent,
+  type StripeSubscriptionLike,
+} from '../_shared/billing.ts';
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const STRIPE_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const TEST_ALLOWED_EMAILS = parseEmailList(Deno.env.get('STRIPE_TEST_ALLOWED_EMAILS'));
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+
+/** A test event may change this customer's account: test account or admin. An unknown customer is left to the RPC. */
+const isTestCustomerAllowed = async (admin: SupabaseClient, customerId: string): Promise<boolean> => {
+  const { data: sub, error } = await admin.from('subscriptions').select('user_id').eq('stripe_customer_id', customerId).maybeSingle();
+  if (error) throw new Error(`subscriptions: ${error.message}`);
+  if (!sub) return true;
+  const { data: prac, error: pracError } = await admin.from('practitioners').select('email, is_admin').eq('id', sub.user_id).maybeSingle();
+  if (pracError) throw new Error(`practitioners: ${pracError.message}`);
+  return !prac || isPaymentAllowed({ email: prac.email, isAdmin: prac.is_admin === true }, true, TEST_ALLOWED_EMAILS);
+};
 
 const reply = (status: number, body: Record<string, unknown>) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -59,8 +79,15 @@ Deno.serve(async (req: Request) => {
     if (action.kind === 'ignore') return reply(200, { result: 'ignored' });
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     let rpc: { data: unknown; error: { message: string; code?: string } | null };
+    const refuseTestEvent = async (customerId: string) => {
+      if (event.livemode || (await isTestCustomerAllowed(admin, customerId))) return null;
+      await captureEdgeMessage('Stripe test event for a production account: ignored', sentry());
+      return reply(200, { result: 'ignored', reason: 'TEST_MODE_ACCOUNT' });
+    };
 
     if (action.kind === 'credits') {
+      const refused = await refuseTestEvent(action.customerId);
+      if (refused) return refused;
       const items = await stripe.checkout.sessions.listLineItems(action.sessionId, { limit: 100 });
       const quantity = items.data.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
       rpc = await admin.rpc('billing_add_credits', { p_event_id: key, p_customer_id: action.customerId, p_quantity: quantity });
@@ -68,6 +95,8 @@ Deno.serve(async (req: Request) => {
       const subscription = await stripe.subscriptions.retrieve(action.subscriptionId, { expand: ['items.data.price'] });
       const state = describeSubscription(subscription as unknown as StripeSubscriptionLike);
       if (!state) return reply(200, { result: 'ignored', status: subscription.status });
+      const refused = await refuseTestEvent(state.customerId);
+      if (refused) return refused;
       rpc =
         action.kind === 'renewal'
           ? await admin.rpc('billing_renew_credits', {

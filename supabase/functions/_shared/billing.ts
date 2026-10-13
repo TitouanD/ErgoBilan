@@ -143,6 +143,24 @@ export const dedupKey = (action: BillingAction, eventId: string): string => {
   return eventId;
 };
 
+/**
+ * While Stripe runs in test mode (sk_test_ key), payment pages are reserved to test accounts:
+ * admins and the comma-separated STRIPE_TEST_ALLOWED_EMAILS. Otherwise any production account
+ * could take a real Solo plan with the test card 4242 (#110). Live mode allows everyone.
+ */
+export const isPaymentAllowed = (
+  account: { email: string; isAdmin: boolean },
+  testMode: boolean,
+  testAllowedEmails: readonly string[],
+): boolean => !testMode || account.isAdmin || testAllowedEmails.includes(account.email.trim().toLowerCase());
+
+/** STRIPE_TEST_ALLOWED_EMAILS → normalized list. */
+export const parseEmailList = (value: string | undefined): string[] =>
+  (value ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+
 /** Origins allowed to open a checkout and to receive its redirect (same list as the `generate` function). */
 export const isAllowedOrigin = (origin: string, allowed: readonly string[], allowLoopback: boolean): boolean => {
   if (!origin) return false;

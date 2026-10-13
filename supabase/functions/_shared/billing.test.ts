@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupKey, describeSubscription, planFromLookupKey, routeEvent } from './billing';
+import { dedupKey, describeSubscription, isPaymentAllowed, parseEmailList, planFromLookupKey, routeEvent } from './billing';
 
 const subscription = (status: string, lookupKey: string | null = 'formule_performance') => ({
   id: 'sub_1',
@@ -88,5 +88,25 @@ describe('routeEvent', () => {
     const async = { ...paid, id: 'evt_2', type: 'checkout.session.async_payment_succeeded' };
     expect(dedupKey(routeEvent(paid), paid.id)).toBe(dedupKey(routeEvent(async), async.id));
     expect(dedupKey({ kind: 'subscription', subscriptionId: 'sub_1' }, 'evt_7')).toBe('evt_7');
+  });
+});
+
+describe('paiement de test réservé aux comptes de test (#110)', () => {
+  const list = parseEmailList(' Testeuse@Exemple.fr , e2e@exemple.fr,, ');
+  const account = (email: string, isAdmin = false) => ({ email, isAdmin });
+
+  it('lit la liste sans espaces ni majuscules', () => {
+    expect(list).toEqual(['testeuse@exemple.fr', 'e2e@exemple.fr']);
+    expect(parseEmailList(undefined)).toEqual([]);
+  });
+
+  it('en mode test, refuse un compte de production et accepte les comptes de test et les admins', () => {
+    expect(isPaymentAllowed(account('cliente@cabinet.fr'), true, list)).toBe(false);
+    expect(isPaymentAllowed(account('TESTEUSE@exemple.fr'), true, list)).toBe(true);
+    expect(isPaymentAllowed(account('admin@ergobilan.com', true), true, list)).toBe(true);
+  });
+
+  it('en mode réel, accepte tout le monde', () => {
+    expect(isPaymentAllowed(account('cliente@cabinet.fr'), false, [])).toBe(true);
   });
 });
