@@ -6,6 +6,8 @@ import {
   agentPlatformUrl,
   attemptTimeoutMs,
   createAccessTokenSource,
+  readGeminiAnswer,
+  TOKEN_TIMEOUT_MS,
   generationConfigFor,
   parseServiceAccountKey,
   resolveGeminiTarget,
@@ -90,6 +92,24 @@ describe('createAccessTokenSource', () => {
     await expect(token()).rejects.toThrow('OAuth token refused (400 invalid_grant)');
     await expect(token()).resolves.toMatch(/^token-/);
   });
+
+  it('gives up on Google after 10 s instead of eating the request budget (#109)', async () => {
+    const fetchImpl = tokenFetch();
+    const token = createAccessTokenSource(parseServiceAccountKey(RAW_KEY), fetchImpl as unknown as typeof fetch);
+    await token();
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(TOKEN_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it('forgets the cached token once Vertex refuses it (#109)', async () => {
+    const fetchImpl = tokenFetch();
+    const token = createAccessTokenSource(parseServiceAccountKey(RAW_KEY), fetchImpl as unknown as typeof fetch);
+    await token();
+    token.invalidate();
+    await token();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('resolveGeminiTarget', () => {
@@ -157,7 +177,32 @@ describe('attemptTimeoutMs', () => {
     expect(GEMINI_BUDGET_MS).toBeLessThan(150_000);
   });
 
-  it('starts no attempt when less than 30 s remain', () => {
-    expect(attemptTimeoutMs(start, start + GEMINI_BUDGET_MS - 29_000, 100_000)).toBe(0);
+  it('starts no attempt when less than 60 s remain: a long task would not finish, and it is billed (#109)', () => {
+    // 503 at 90 s: 45 s left, no retry.
+    expect(attemptTimeoutMs(start, start + 90_000, 100_000)).toBe(0);
+    expect(attemptTimeoutMs(start, start + GEMINI_BUDGET_MS - 60_000, 100_000)).toBe(60_000);
+  });
+});
+
+describe('readGeminiAnswer (#109)', () => {
+  const answer = (parts: Array<{ text?: string; thought?: boolean }>, finishReason = 'STOP') => ({
+    candidates: [{ finishReason, content: { parts } }],
+  });
+
+  it('joins the text parts and skips the reasoning parts', () => {
+    expect(readGeminiAnswer(answer([{ text: 'réflexion', thought: true }, { text: '{"a":' }, { text: '1}' }]))).toEqual({
+      text: '{"a":1}',
+    });
+  });
+
+  it('names a cut answer and a blocked one instead of an empty or invalid JSON', () => {
+    expect(readGeminiAnswer(answer([{ text: '{"a":' }], 'MAX_TOKENS'))).toEqual({ text: '{"a":', failure: 'GEMINI_MAX_TOKENS' });
+    expect(readGeminiAnswer(answer([], 'SAFETY'))).toEqual({ text: '', failure: 'GEMINI_BLOCKED' });
+    expect(readGeminiAnswer({ promptFeedback: { blockReason: 'OTHER' } })).toEqual({ text: '', failure: 'GEMINI_BLOCKED' });
+  });
+
+  it('accepts an answer without finishReason', () => {
+    expect(readGeminiAnswer({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] })).toEqual({ text: 'ok' });
+    expect(readGeminiAnswer(null)).toEqual({ text: '' });
   });
 });
