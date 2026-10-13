@@ -72,6 +72,56 @@ export const effectivePlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 's
 /** A plan (paid or offered) is active: its monthly credits replace unit purchases. */
 export const hasActivePlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 'status'>): boolean => effectivePlan(profile) !== 'free';
 
+const BILLING_STATE_KEY = 'ergobilan.billingStateBeforeStripe';
+
+type BillingProfile = Pick<UserProfile, 'subscriptionPlan' | 'status' | 'billingSource' | 'monthlyCredits' | 'purchasedCredits'>;
+
+/** What a payment changes in the profile: plan, status, both balances. */
+export const billingSignature = (profile: BillingProfile): string =>
+  [profile.subscriptionPlan, profile.status, profile.billingSource ?? '', profile.monthlyCredits, profile.purchasedCredits].join('|');
+
+/** Kept for the return from Stripe (same tab): the webhook's change is detected against it (#111). */
+export const rememberBillingState = (profile: BillingProfile): void => {
+  try {
+    sessionStorage.setItem(BILLING_STATE_KEY, billingSignature(profile));
+  } catch {
+    // Storage unavailable: the return only re-reads the profile once.
+  }
+};
+
+export const takeRememberedBillingState = (): string | null => {
+  try {
+    const value = sessionStorage.getItem(BILLING_STATE_KEY);
+    sessionStorage.removeItem(BILLING_STATE_KEY);
+    return value;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * After a payment, the webhook updates the account a few seconds later: re-reads the profile
+ * every `intervalMs` until it differs from `before` (#111). Without `before`, one read is enough.
+ * Resolves true once the change is seen, false after `attempts` reads or when cancelled.
+ */
+export const waitForBillingChange = async (
+  refresh: () => Promise<BillingProfile | null>,
+  before: string | null,
+  {
+    intervalMs = 3_000,
+    attempts = 20,
+    isCancelled = () => false,
+  }: { intervalMs?: number; attempts?: number; isCancelled?: () => boolean } = {},
+): Promise<boolean> => {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (isCancelled()) return false;
+    const profile = await refresh();
+    if (profile && (before === null || billingSignature(profile) !== before)) return true;
+  }
+  return false;
+};
+
 /** Return from a Stripe page: reads and removes `?paiement=` from the address bar. */
 export const readPaymentReturn = (): 'ok' | 'annule' | null => {
   const url = new URL(window.location.href);

@@ -99,7 +99,8 @@ interface AuthContextType {
   isDemoMode: boolean;
 
   /** Reload credits/subscription/branding and the AI style preferences. */
-  refreshProfile: () => Promise<void>;
+  /** Re-reads the profile (credits, plan); resolves with it, or null in demo mode or on failure. */
+  refreshProfile: () => Promise<UserProfile | null>;
   reloadUserFromSession: () => Promise<AuthState | null>;
   setSessionKey: (key: CryptoKey | null) => void;
   unlockSession: (key: CryptoKey) => Promise<void>;
@@ -479,9 +480,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = async (): Promise<UserProfile | null> => {
     const targetId = userProfile.id || practitioner?.id;
-    if (!targetId || isDemoMode) return;
+    if (!targetId || isDemoMode) return null;
     try {
       const [fullProfile, aiStylePreferences] = await Promise.all([
         ProfileService.getUserProfile(targetId),
@@ -489,8 +490,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
       if (fullProfile) setUserProfile(fullProfile);
       setPractitioner((prev) => (prev ? { ...prev, aiStylePreferences } : prev));
+      return fullProfile ?? null;
     } catch (e) {
       Logger.warn('DB', 'Failed to refresh profile details', e);
+      return null;
     }
   };
 

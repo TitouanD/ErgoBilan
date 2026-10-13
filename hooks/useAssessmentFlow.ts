@@ -37,7 +37,7 @@ interface Params {
    */
   loadCatalog: () => Promise<CatalogIndex>;
   practitioner: PractitionerProfile | null;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<unknown>;
   loadData: () => Promise<void>;
   toast: Toast;
 }

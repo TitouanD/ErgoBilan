@@ -17,7 +17,15 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@23.0.0';
 import { captureEdgeException, captureEdgeMessage } from '../_shared/sentry.ts';
-import { isAllowedOrigin, isPaymentAllowed, parseEmailList, planLookupKey, SOLD_PLAN, UNIT_LOOKUP_KEY } from '../_shared/billing.ts';
+import {
+  isAllowedOrigin,
+  isBillingSubscription,
+  isPaymentAllowed,
+  parseEmailList,
+  planLookupKey,
+  SOLD_PLAN,
+  UNIT_LOOKUP_KEY,
+} from '../_shared/billing.ts';
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -74,7 +82,9 @@ const readAccount = async (admin: SupabaseClient, userId: string): Promise<Accou
 
 /**
  * The practitioner's Stripe customer, created on first use. A stored id unknown to the
- * current Stripe mode (test customer after the switch to live) is replaced.
+ * current Stripe mode (test customer after the switch to live) is replaced. Two simultaneous
+ * first purchases share one customer (idempotency key), and the database keeps the first one
+ * written (#111).
  */
 const ensureCustomer = async (admin: SupabaseClient, userId: string, account: Account): Promise<string> => {
   if (account.customerId) {
@@ -85,21 +95,37 @@ const ensureCustomer = async (admin: SupabaseClient, userId: string, account: Ac
       if ((err as { code?: string }).code !== 'resource_missing') throw err;
     }
   }
-  const customer = await stripe!.customers.create({
-    email: account.email,
-    ...(account.name ? { name: account.name } : {}),
-    preferred_locales: ['fr'],
-    metadata: { user_id: userId },
+  const customer = await stripe!.customers.create(
+    {
+      email: account.email,
+      ...(account.name ? { name: account.name } : {}),
+      preferred_locales: ['fr'],
+      metadata: { user_id: userId },
+    },
+    { idempotencyKey: `customer:${userId}:${account.customerId ?? 'none'}` },
+  );
+  const { data: linked, error } = await admin.rpc('billing_set_customer', {
+    p_user_id: userId,
+    p_customer_id: customer.id,
+    p_previous: account.customerId,
   });
-  const { error } = await admin.rpc('billing_set_customer', { p_user_id: userId, p_customer_id: customer.id });
   if (error) throw new Error(`billing_set_customer: ${error.message}`);
-  return customer.id;
+  if (linked) return customer.id;
+  // Another request linked its customer first: use that one.
+  const { data: sub } = await admin.from('subscriptions').select('stripe_customer_id').eq('user_id', userId).maybeSingle();
+  if (!sub?.stripe_customer_id) throw new Error('billing_set_customer: no customer linked');
+  return sub.stripe_customer_id;
 };
 
 const priceId = async (lookupKey: string): Promise<string> => {
   const prices = await stripe!.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
   if (!prices.data[0]) throw new Error(`No active Stripe price for lookup key ${lookupKey}`);
   return prices.data[0].id;
+};
+
+const hasBillingSubscription = async (customer: string): Promise<boolean> => {
+  const subscriptions = await stripe!.subscriptions.list({ customer, status: 'all', limit: 20 });
+  return subscriptions.data.some((subscription) => isBillingSubscription(subscription.status));
 };
 
 const portalUrl = async (customer: string, origin: string) =>
@@ -182,8 +208,11 @@ Deno.serve(async (req: Request) => {
 
     if (body.action === 'subscribe') {
       if (body.plan !== SOLD_PLAN) return json(origin, 400, { error: 'INVALID_PLAN' });
-      // A paid plan is changed or cancelled in the portal, never by a second subscription.
-      if (account.billingSource === 'stripe') return json(origin, 200, { url: await portalUrl(customer, origin) });
+      // A paid plan is changed or cancelled in the portal, never by a second subscription. Stripe is
+      // asked too: the webhook may not have reported a subscription paid seconds ago (#111).
+      if (account.billingSource === 'stripe' || (await hasBillingSubscription(customer))) {
+        return json(origin, 200, { url: await portalUrl(customer, origin) });
+      }
       const session = await stripe.checkout.sessions.create({
         ...checkoutBase(customer, userId, origin),
         mode: 'subscription',

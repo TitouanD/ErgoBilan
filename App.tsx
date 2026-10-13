@@ -15,7 +15,16 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
-import { BillingService, hasActivePlan, IS_PAYMENT_OPEN, PaymentUnavailableError, readPaymentReturn } from './services/billing';
+import {
+  BillingService,
+  hasActivePlan,
+  IS_PAYMENT_OPEN,
+  PaymentUnavailableError,
+  readPaymentReturn,
+  rememberBillingState,
+  takeRememberedBillingState,
+  waitForBillingChange,
+} from './services/billing';
 import { readLegalTabFromUrl } from './utils/legalLink';
 import { Logger } from './utils/logger';
 import { setAppTag, setAppUser } from './services/sentryService';
@@ -104,6 +113,8 @@ const AppRouter = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
+  // Back from Checkout, waiting for the webhook to update the account (#111).
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   // Dev scenario `vente=fermee`: the pricing modal as the production build shows it (#110).
   const [isPaymentClosedByScenario, setIsPaymentClosedByScenario] = useState(false);
   // Legal document opened by its public address (/?legal=cgv, linked from Stripe Checkout).
@@ -175,10 +186,19 @@ const AppRouter = () => {
       toast.info('Paiement annulé : rien ne vous a été facturé.');
       return;
     }
-    toast.success('Paiement reçu, merci ! Vos crédits sont mis à jour.');
-    void refreshProfile();
-    const timer = window.setTimeout(() => void refreshProfile(), 5_000);
-    return () => window.clearTimeout(timer);
+    // Until the webhook's change is seen, the payment buttons stay disabled: no second Checkout (#111).
+    let cancelled = false;
+    setIsConfirmingPayment(true);
+    toast.info('Paiement reçu, merci ! Confirmation en cours, cela prend quelques secondes.');
+    void waitForBillingChange(refreshProfile, takeRememberedBillingState(), { isCancelled: () => cancelled }).then((confirmed) => {
+      if (cancelled) return;
+      setIsConfirmingPayment(false);
+      if (confirmed) toast.success('Paiement confirmé : votre compte est à jour.');
+      else toast.info('La confirmation prend plus de temps que prévu : votre compte sera à jour dans quelques minutes.');
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [authState]);
 
   /** Opens a Stripe page (Checkout or portal); the browser leaves the app on success. */
@@ -188,6 +208,7 @@ const AppRouter = () => {
       return;
     }
     setIsOpeningStripe(true);
+    rememberBillingState(userProfile);
     try {
       await open();
     } catch (e) {
@@ -499,7 +520,7 @@ const AppRouter = () => {
               hasPaidPlan={userProfile.billingSource === 'stripe'}
               renewalDate={userProfile.currentPeriodEnd}
               isPaymentPending={userProfile.status === 'past_due'}
-              isBusy={isOpeningStripe}
+              isBusy={isOpeningStripe || isConfirmingPayment}
               isPaymentOpen={IS_PAYMENT_OPEN && !isPaymentClosedByScenario}
               onSubscribe={() => openStripe(BillingService.subscribe)}
               onBuyCredits={() => openStripe(BillingService.buyCredits)}

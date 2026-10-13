@@ -5,7 +5,12 @@
  *   Stripe (events may arrive out of order) and applied by billing_apply_subscription
  *   (plan, status, upgrade difference, trial credits kept as purchased credits).
  * - invoice.paid (subscription_create, subscription_cycle) : billing_renew_credits
- *   resets the monthly credits to the plan's quota.
+ *   resets the monthly credits to the plan's quota, only while the subscription is still
+ *   active in Stripe (a late retry must not restore a cancelled plan, #111).
+ * - End of the retained subscription while another one still bills (double Checkout): the
+ *   other one is applied in its place (#111).
+ * The account is found by its Stripe customer, or else by the user_id that the billing
+ * function sets on the subscription and the checkout session (#111).
  * - checkout.session.completed (unit purchase) : billing_add_credits adds the quantity.
  *
  * No JWT (`verify_jwt = false`): the request is authenticated by its Stripe signature.
@@ -25,6 +30,7 @@ import {
   parseEmailList,
   routeEvent,
   type StripeSubscriptionLike,
+  type SubscriptionState,
 } from '../_shared/billing.ts';
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
@@ -35,14 +41,37 @@ const TEST_ALLOWED_EMAILS = parseEmailList(Deno.env.get('STRIPE_TEST_ALLOWED_EMA
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
-/** A test event may change this customer's account: test account or admin. An unknown customer is left to the RPC. */
-const isTestCustomerAllowed = async (admin: SupabaseClient, customerId: string): Promise<boolean> => {
+/** A test event may change this account (customer, or else user_id): test account or admin. An unknown one is left to the RPC. */
+const isTestAccountAllowed = async (admin: SupabaseClient, customerId: string, userId: string | null): Promise<boolean> => {
   const { data: sub, error } = await admin.from('subscriptions').select('user_id').eq('stripe_customer_id', customerId).maybeSingle();
   if (error) throw new Error(`subscriptions: ${error.message}`);
-  if (!sub) return true;
-  const { data: prac, error: pracError } = await admin.from('practitioners').select('email, is_admin').eq('id', sub.user_id).maybeSingle();
+  const accountId = sub?.user_id ?? userId;
+  if (!accountId) return true;
+  const { data: prac, error: pracError } = await admin.from('practitioners').select('email, is_admin').eq('id', accountId).maybeSingle();
   if (pracError) throw new Error(`practitioners: ${pracError.message}`);
   return !prac || isPaymentAllowed({ email: prac.email, isAdmin: prac.is_admin === true }, true, TEST_ALLOWED_EMAILS);
+};
+
+const applySubscription = (admin: SupabaseClient, eventKey: string, state: SubscriptionState) =>
+  admin.rpc('billing_apply_subscription', {
+    p_event_id: eventKey,
+    p_customer_id: state.customerId,
+    p_subscription_id: state.subscriptionId,
+    p_plan_id: state.plan,
+    p_status: state.status,
+    p_current_period_end: state.currentPeriodEnd,
+    p_user_id: state.userId,
+  });
+
+/** Another subscription of the same customer still billing an ErgoBilan plan (second Checkout), or null. */
+const otherBillingSubscription = async (ended: SubscriptionState): Promise<SubscriptionState | null> => {
+  const list = await stripe!.subscriptions.list({ customer: ended.customerId, status: 'active', expand: ['data.items.data.price'] });
+  for (const subscription of list.data) {
+    if (subscription.id === ended.subscriptionId) continue;
+    const state = describeSubscription(subscription as unknown as StripeSubscriptionLike);
+    if (state?.status === 'active') return state;
+  }
+  return null;
 };
 
 const reply = (status: number, body: Record<string, unknown>) =>
@@ -79,41 +108,47 @@ Deno.serve(async (req: Request) => {
     if (action.kind === 'ignore') return reply(200, { result: 'ignored' });
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     let rpc: { data: unknown; error: { message: string; code?: string } | null };
-    const refuseTestEvent = async (customerId: string) => {
-      if (event.livemode || (await isTestCustomerAllowed(admin, customerId))) return null;
+    const refuseTestEvent = async (customerId: string, userId: string | null) => {
+      if (event.livemode || (await isTestAccountAllowed(admin, customerId, userId))) return null;
       await captureEdgeMessage('Stripe test event for a production account: ignored', sentry());
       return reply(200, { result: 'ignored', reason: 'TEST_MODE_ACCOUNT' });
     };
 
     if (action.kind === 'credits') {
-      const refused = await refuseTestEvent(action.customerId);
+      const refused = await refuseTestEvent(action.customerId, action.userId);
       if (refused) return refused;
       const items = await stripe.checkout.sessions.listLineItems(action.sessionId, { limit: 100 });
       const quantity = items.data.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-      rpc = await admin.rpc('billing_add_credits', { p_event_id: key, p_customer_id: action.customerId, p_quantity: quantity });
+      rpc = await admin.rpc('billing_add_credits', {
+        p_event_id: key,
+        p_customer_id: action.customerId,
+        p_quantity: quantity,
+        p_user_id: action.userId,
+      });
     } else {
       const subscription = await stripe.subscriptions.retrieve(action.subscriptionId, { expand: ['items.data.price'] });
       const state = describeSubscription(subscription as unknown as StripeSubscriptionLike);
       if (!state) return reply(200, { result: 'ignored', status: subscription.status });
-      const refused = await refuseTestEvent(state.customerId);
+      const refused = await refuseTestEvent(state.customerId, state.userId);
       if (refused) return refused;
-      rpc =
-        action.kind === 'renewal'
-          ? await admin.rpc('billing_renew_credits', {
-              p_event_id: key,
-              p_customer_id: state.customerId,
-              p_subscription_id: state.subscriptionId,
-              p_plan_id: state.plan,
-              p_current_period_end: state.currentPeriodEnd,
-            })
-          : await admin.rpc('billing_apply_subscription', {
-              p_event_id: key,
-              p_customer_id: state.customerId,
-              p_subscription_id: state.subscriptionId,
-              p_plan_id: state.plan,
-              p_status: state.status,
-              p_current_period_end: state.currentPeriodEnd,
-            });
+      if (action.kind === 'renewal') {
+        // A late retry of a paid invoice: the subscription has been cancelled since.
+        if (state.status !== 'active') return reply(200, { result: 'ignored', status: subscription.status });
+        rpc = await admin.rpc('billing_renew_credits', {
+          p_event_id: key,
+          p_customer_id: state.customerId,
+          p_subscription_id: state.subscriptionId,
+          p_plan_id: state.plan,
+          p_current_period_end: state.currentPeriodEnd,
+          p_user_id: state.userId,
+        });
+      } else {
+        rpc = await applySubscription(admin, key, state);
+        if (!rpc.error && rpc.data === 'applied' && state.status === 'canceled') {
+          const replacement = await otherBillingSubscription(state);
+          if (replacement) rpc = await applySubscription(admin, `${key}:${replacement.subscriptionId}`, replacement);
+        }
+      }
     }
 
     if (rpc.error) {

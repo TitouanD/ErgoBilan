@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { dedupKey, describeSubscription, isPaymentAllowed, parseEmailList, planFromLookupKey, routeEvent } from './billing';
+import {
+  dedupKey,
+  describeSubscription,
+  isBillingSubscription,
+  isPaymentAllowed,
+  parseEmailList,
+  planFromLookupKey,
+  routeEvent,
+} from './billing';
 
 const subscription = (status: string, lookupKey: string | null = 'formule_performance') => ({
   id: 'sub_1',
@@ -32,6 +40,7 @@ describe('describeSubscription', () => {
       plan: 'performance',
       status: 'active',
       currentPeriodEnd: new Date(1_800_000_000_000).toISOString(),
+      userId: null,
     });
   });
 
@@ -71,7 +80,7 @@ describe('routeEvent', () => {
         metadata: { kind: 'credits' },
         ...overrides,
       });
-    expect(routeEvent(session({}))).toEqual({ kind: 'credits', sessionId: 'cs_1', customerId: 'cus_1' });
+    expect(routeEvent(session({}))).toEqual({ kind: 'credits', sessionId: 'cs_1', customerId: 'cus_1', userId: null });
     expect(routeEvent(session({ payment_status: 'unpaid' }))).toEqual({ kind: 'ignore' });
     expect(routeEvent(session({ mode: 'subscription' }))).toEqual({ kind: 'ignore' });
     expect(routeEvent(session({ metadata: {} }))).toEqual({ kind: 'ignore' });
@@ -108,5 +117,25 @@ describe('paiement de test réservé aux comptes de test (#110)', () => {
 
   it('en mode réel, accepte tout le monde', () => {
     expect(isPaymentAllowed(account('cliente@cabinet.fr'), false, [])).toBe(true);
+  });
+});
+
+describe('robustesse Stripe (#111)', () => {
+  it("retrouve l'utilisateur d'un abonnement ou d'un achat, pour un client Stripe non rattaché", () => {
+    expect(describeSubscription({ ...subscription('active'), metadata: { user_id: 'u_1' } })?.userId).toBe('u_1');
+    const paid = event('checkout.session.completed', {
+      id: 'cs_1',
+      customer: 'cus_1',
+      mode: 'payment',
+      payment_status: 'paid',
+      client_reference_id: 'u_2',
+      metadata: { kind: 'credits', user_id: 'u_3' },
+    });
+    expect(routeEvent(paid)).toMatchObject({ kind: 'credits', userId: 'u_2' });
+  });
+
+  it('renvoie vers le portail tant qu’un abonnement facture encore', () => {
+    for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'incomplete']) expect(isBillingSubscription(status)).toBe(true);
+    for (const status of ['canceled', 'incomplete_expired', 'paused']) expect(isBillingSubscription(status)).toBe(false);
   });
 });

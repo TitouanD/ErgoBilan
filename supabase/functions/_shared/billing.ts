@@ -44,11 +44,21 @@ export const mapSubscriptionStatus = (status: string): 'active' | 'past_due' | '
   }
 };
 
+/**
+ * Stripe subscription statuses that still bill (or are about to): a new Checkout would create a
+ * second subscription, so the practitioner is sent to the portal instead (#111).
+ */
+export const BILLING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete'] as const;
+
+export const isBillingSubscription = (status: string): boolean => (BILLING_SUBSCRIPTION_STATUSES as readonly string[]).includes(status);
+
 /** Minimal shape of a Stripe subscription read with its items' prices. */
 export interface StripeSubscriptionLike {
   id: string;
   status: string;
   customer: string | { id: string };
+  /** user_id is set by the billing function (subscription_data.metadata). */
+  metadata?: Record<string, string> | null;
   items: { data: Array<{ current_period_end: number; price: { lookup_key: string | null } }> };
 }
 
@@ -58,8 +68,11 @@ export interface SubscriptionState {
   plan: PlanId;
   status: 'active' | 'past_due' | 'canceled';
   currentPeriodEnd: string;
+  /** The ErgoBilan account, from the subscription metadata: finds it when the customer is not linked (#111). */
+  userId: string | null;
 }
 
+const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
 const customerId = (customer: string | { id: string }): string => (typeof customer === 'string' ? customer : customer.id);
 
 /** What the database must reflect for this subscription; null when it carries no ErgoBilan plan or no state to apply. */
@@ -74,6 +87,7 @@ export const describeSubscription = (subscription: StripeSubscriptionLike): Subs
     plan,
     status,
     currentPeriodEnd: new Date(item.current_period_end * 1000).toISOString(),
+    userId: str(subscription.metadata?.user_id),
   };
 };
 
@@ -90,10 +104,9 @@ export type BillingAction =
   /** A subscription invoice was paid (creation or renewal): reset the monthly credits. */
   | { kind: 'renewal'; invoiceId: string; subscriptionId: string; customerId: string }
   /** A unit purchase was paid: add its quantity to the purchased credits. */
-  | { kind: 'credits'; sessionId: string; customerId: string }
+  | { kind: 'credits'; sessionId: string; customerId: string; userId: string | null }
   | { kind: 'ignore' };
 
-const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
 const idOf = (value: unknown): string | null =>
   str(value) ?? (value && typeof value === 'object' ? str((value as { id?: unknown }).id) : null);
 
@@ -129,7 +142,8 @@ export const routeEvent = (event: StripeEventLike): BillingAction => {
       if (object.mode !== 'payment' || object.payment_status !== 'paid' || metadata.kind !== 'credits') return { kind: 'ignore' };
       const sessionId = str(object.id);
       const customer = idOf(object.customer);
-      return sessionId && customer ? { kind: 'credits', sessionId, customerId: customer } : { kind: 'ignore' };
+      const userId = str(object.client_reference_id) ?? str(metadata.user_id);
+      return sessionId && customer ? { kind: 'credits', sessionId, customerId: customer, userId } : { kind: 'ignore' };
     }
     default:
       return { kind: 'ignore' };

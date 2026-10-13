@@ -9,9 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Démarrer Postgres (WASM) prend plusieurs secondes quand toute la suite tourne en parallèle.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const MIGRATIONS = ['20261012100000_abonnement_stripe.sql', '20261012200000_formule_solo_essai_unique.sql'].map((file) =>
-  readFileSync(join(__dirname, 'migrations', file), 'utf8'),
-);
+const MIGRATIONS = [
+  '20261012100000_abonnement_stripe.sql',
+  '20261012200000_formule_solo_essai_unique.sql',
+  '20261013100000_stripe_robustesse.sql',
+].map((file) => readFileSync(join(__dirname, 'migrations', file), 'utf8'));
 
 const FIXTURE = `
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
@@ -373,5 +375,108 @@ describe('formule Solo et essai unique (#107)', () => {
       { trial_denied: false, accounts_with_same_key: 2 },
       { trial_denied: true, accounts_with_same_key: 2 },
     ]);
+  });
+});
+
+describe('robustesse du webhook Stripe (#111)', () => {
+  beforeEach(() => migrate());
+
+  const apply = (event: string, customer: string, subscription: string, status: string, userId: string | null = null) =>
+    scalar<string>("SELECT billing_apply_subscription($1, $2, $3, 'solo', $4, now() + interval '1 month', $5)", [
+      event,
+      customer,
+      subscription,
+      status,
+      userId,
+    ]);
+  const renewSub = (event: string, customer: string, subscription: string, userId: string | null = null) =>
+    scalar<string>("SELECT billing_renew_credits($1, $2, $3, 'solo', now() + interval '1 month', $4)", [
+      event,
+      customer,
+      subscription,
+      userId,
+    ]);
+  const retained = (id: string) => scalar<string | null>('SELECT stripe_subscription_id FROM subscriptions WHERE user_id = $1', [id]);
+  const customerOf = (id: string) => scalar<string | null>('SELECT stripe_customer_id FROM subscriptions WHERE user_id = $1', [id]);
+
+  it('ignore un second abonnement tant que celui retenu est actif', async () => {
+    await signUp(ALICE, 'cus_a');
+    await apply('evt_1', 'cus_a', 'sub_A', 'active');
+    expect(await apply('evt_2', 'cus_a', 'sub_B', 'active')).toBe('ignored');
+    expect(await retained(ALICE)).toBe('sub_A');
+    expect(await renewSub('evt_3', 'cus_a', 'sub_B')).toBe('ignored');
+    expect(await retained(ALICE)).toBe('sub_A');
+  });
+
+  it("retient l'autre abonnement une fois le premier résilié", async () => {
+    await signUp(ALICE, 'cus_a');
+    await apply('evt_1', 'cus_a', 'sub_A', 'active');
+    await apply('evt_2', 'cus_a', 'sub_A', 'canceled');
+    expect(await apply('evt_3', 'cus_a', 'sub_B', 'active')).toBe('applied');
+    expect(await retained(ALICE)).toBe('sub_B');
+    expect(await sub(ALICE)).toMatchObject({ status: 'active', billing_source: 'stripe' });
+  });
+
+  it("n'écrase pas le client Stripe déjà rattaché, sauf remplacement explicite", async () => {
+    await signUp(ALICE, 'cus_1');
+    expect(await scalar<boolean>("SELECT billing_set_customer($1, 'cus_2')", [ALICE])).toBe(false);
+    expect(await customerOf(ALICE)).toBe('cus_1');
+    expect(await scalar<boolean>("SELECT billing_set_customer($1, 'cus_1')", [ALICE])).toBe(true);
+    expect(await scalar<boolean>("SELECT billing_set_customer($1, 'cus_3', 'cus_1')", [ALICE])).toBe(true);
+    expect(await customerOf(ALICE)).toBe('cus_3');
+  });
+
+  it("retrouve le compte par l'identifiant de l'utilisateur quand le client Stripe n'est pas le sien", async () => {
+    await signUp(ALICE, 'cus_1');
+    expect(await apply('evt_1', 'cus_2', 'sub_A', 'active', ALICE)).toBe('applied');
+    expect(await customerOf(ALICE)).toBe('cus_2');
+    expect(await sub(ALICE)).toMatchObject({ plan_id: 'solo', status: 'active', billing_source: 'stripe' });
+    expect(await scalar<string>("SELECT billing_add_credits('chk_1', 'cus_9', 2, $1)", [ALICE])).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(5);
+  });
+
+  it("n'enregistre pas l'événement d'un client inconnu : un rejeu l'applique une fois le compte rattaché", async () => {
+    await signUp(ALICE);
+    expect(await scalar<string>("SELECT billing_add_credits('chk_1', 'cus_a', 2)")).toBe('unknown_customer');
+    await db.query("SELECT billing_set_customer($1, 'cus_a')", [ALICE]);
+    expect(await scalar<string>("SELECT billing_add_credits('chk_1', 'cus_a', 2)")).toBe('applied');
+    expect(await scalar<string>("SELECT billing_add_credits('chk_1', 'cus_a', 2)")).toBe('duplicate');
+    expect(await renewSub('in_1', 'cus_x', 'sub_A')).toBe('unknown_customer');
+    expect(await apply('evt_1', 'cus_x', 'sub_A', 'active')).toBe('unknown_customer');
+  });
+
+  it("ne double pas les crédits du mois en passant d'une formule offerte à Solo payée", async () => {
+    await signUp(ALICE, 'cus_a');
+    await db.query("SET test.is_admin = 'true'");
+    await db.query("SELECT admin_update_user($1, p_plan_id => 'solo', p_status => 'active')", [ALICE]);
+    expect((await balances(ALICE)).monthly_credits).toBe(30);
+    await apply('evt_1', 'cus_a', 'sub_A', 'active');
+    expect((await balances(ALICE)).monthly_credits).toBe(30);
+  });
+
+  it('ne rend pas un crédit du mois au-delà du quota après un renouvellement', async () => {
+    await signUp(ALICE, 'cus_a');
+    await apply('evt_1', 'cus_a', 'sub_A', 'active');
+    await renewSub('in_1', 'cus_a', 'sub_A');
+    const gen = (await consume(ALICE))!;
+    await renewSub('in_2', 'cus_a', 'sub_A');
+    expect(await fail(gen, ALICE)).toBe(true);
+    expect((await balances(ALICE)).monthly_credits).toBe(30);
+  });
+
+  it("ne rend pas un crédit d'essai après la fin de l'essai", async () => {
+    await signUp(ALICE);
+    const gen = (await consume(ALICE))!;
+    await db.query("UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE user_id = $1", [ALICE]);
+    await db.query('SELECT billing_renew_and_expire()');
+    expect(await fail(gen, ALICE)).toBe(true);
+    expect(await balances(ALICE)).toEqual({ credits: 0, monthly_credits: 0 });
+  });
+
+  it("rend toujours le crédit pendant l'essai et la formule", async () => {
+    await signUp(ALICE);
+    const gen = (await consume(ALICE))!;
+    await fail(gen, ALICE);
+    expect((await balances(ALICE)).monthly_credits).toBe(3);
   });
 });
