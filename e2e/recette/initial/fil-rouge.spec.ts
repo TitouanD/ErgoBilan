@@ -186,12 +186,13 @@ test('Bilan initial : fil rouge, du nouveau patient au bilan finalisé', { tag: 
     await expect(page.getByText(`${CHILD.firstName} ${CHILD.lastName}`).first()).toBeVisible();
 
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Télécharger PDF' }).click()]);
+    // The toast lasts 4 s: checked before reading the PDF, which takes longer under load.
+    await expect(page.getByText('PDF exporté avec succès ✓')).toBeVisible();
     expect(download.suggestedFilename()).toBe(`Bilan_${CHILD.lastName}_${CHILD.firstName}_2026-10-01.pdf`);
     const pdf = readFileSync(await download.path());
     expect(pdf.subarray(0, 5).toString(), 'Fichier PDF').toBe('%PDF-');
     const pages = pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? [];
     expect(pages.length, 'Pages du PDF : sections et annexes').toBeGreaterThanOrEqual(3);
-    await expect(page.getByText('PDF exporté avec succès ✓')).toBeVisible();
   });
 
   await test.step('7. Finalisation : bilan rangé, brouillon supprimé, rappel à 6 mois', async () => {
