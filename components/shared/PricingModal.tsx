@@ -21,11 +21,23 @@ interface Props {
   renewalDate?: string | null;
   /** A Stripe page is being opened: buttons are disabled. */
   isBusy?: boolean;
+  /** Online payment is offered (false in production while Stripe is in test mode, #110). */
+  isPaymentOpen?: boolean;
 }
 
 const price = (eur: number) => eur.toLocaleString('fr-FR', { minimumFractionDigits: eur % 1 ? 2 : 0 });
 
 const FAIR_USE_NOTE = `*Dans la limite d'un usage raisonnable de ${SOLO_FAIR_USE_PER_MONTH} bilans par mois.`;
+
+const PaymentSoon: React.FC = () => (
+  <p className="text-sm text-[var(--text-secondary)] text-center">
+    Le paiement en ligne arrive très bientôt. En attendant, écrivez-nous à{' '}
+    <a href="mailto:contact@ergobilan.com" className="text-[var(--primary)] font-semibold underline">
+      contact@ergobilan.com
+    </a>
+    .
+  </p>
+);
 
 const Feature: React.FC<{ icon: typeof Check; children: React.ReactNode }> = ({ icon: Icon, children }) => (
   <li className="flex gap-3 items-start">
@@ -45,6 +57,7 @@ export const PricingModal: React.FC<Props> = ({
   renewalDate = null,
   isPaymentPending = false,
   isBusy = false,
+  isPaymentOpen = true,
 }) => {
   const [view, setView] = useState<'paywall' | 'plans'>(isPaywallMode ? 'paywall' : 'plans');
 
@@ -107,52 +120,60 @@ export const PricingModal: React.FC<Props> = ({
                 <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour rédiger ce bilan avec l'IA, choisissez une option.</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 mb-6">
-                <button
-                  type="button"
-                  onClick={() => setView('plans')}
-                  className="w-full text-left bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-[var(--primary)] text-white rounded-lg">
-                        <Zap size={20} fill="currentColor" />
+              {!isPaymentOpen ? (
+                <PaymentSoon />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => setView('plans')}
+                      className="w-full text-left bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-[var(--primary)] text-white rounded-lg">
+                            <Zap size={20} fill="currentColor" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-[var(--secondary)] text-sm">Passer à la formule Solo</h3>
+                            <p className="text-xs text-[var(--primary)] font-bold">
+                              Bilans illimités* pour {price(SOLO_PRICE_EUR)} € / mois
+                            </p>
+                          </div>
+                        </div>
+                        <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-[var(--secondary)] text-sm">Passer à la formule Solo</h3>
-                        <p className="text-xs text-[var(--primary)] font-bold">Bilans illimités* pour {price(SOLO_PRICE_EUR)} € / mois</p>
-                      </div>
-                    </div>
-                    <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </button>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={onBuyCredits}
-                  disabled={isBusy}
-                  className="w-full text-left bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group disabled:cursor-wait disabled:opacity-60"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-lg border border-[var(--border-color)]">
-                        <Coins size={20} />
+                    <button
+                      type="button"
+                      onClick={onBuyCredits}
+                      disabled={isBusy}
+                      className="w-full text-left bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-lg border border-[var(--border-color)]">
+                            <Coins size={20} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-[var(--text-heading)] text-sm">Acheter des bilans à l'unité</h3>
+                            <p className="text-xs text-[var(--text-secondary)] font-medium">
+                              {price(UNIT_PRICE_EUR)} € le bilan, sans engagement
+                            </p>
+                          </div>
+                        </div>
+                        <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-[var(--text-heading)] text-sm">Acheter des bilans à l'unité</h3>
-                        <p className="text-xs text-[var(--text-secondary)] font-medium">
-                          {price(UNIT_PRICE_EUR)} € le bilan, sans engagement
-                        </p>
-                      </div>
-                    </div>
-                    <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform" />
+                    </button>
                   </div>
-                </button>
-              </div>
 
-              <p className="text-center text-[10px] text-[var(--text-disabled)]">
-                Paiement sécurisé par Stripe. Facture envoyée par e-mail. {FAIR_USE_NOTE}
-              </p>
+                  <p className="text-center text-[10px] text-[var(--text-disabled)]">
+                    Paiement sécurisé par Stripe. Facture envoyée par e-mail. {FAIR_USE_NOTE}
+                  </p>
+                </>
+              )}
             </>
           )}
         </div>
@@ -204,16 +225,17 @@ export const PricingModal: React.FC<Props> = ({
 
             <button
               onClick={onSubscribe}
-              disabled={isBusy || hasActivePlan}
+              disabled={isBusy || hasActivePlan || !isPaymentOpen}
               className="w-full py-3.5 bg-[var(--primary)] text-white font-bold text-base rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] transition-all disabled:pointer-events-none disabled:opacity-50"
             >
-              {hasActivePlan ? 'Formule actuelle' : 'Choisir Solo'}
+              {hasActivePlan ? 'Formule actuelle' : isPaymentOpen ? 'Choisir Solo' : 'Paiement bientôt disponible'}
             </button>
             <p className="mt-3 text-[11px] text-[var(--text-secondary)]">{FAIR_USE_NOTE}</p>
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
-            {!hasActivePlan && (
+            {!hasActivePlan && !isPaymentOpen && <PaymentSoon />}
+            {!hasActivePlan && isPaymentOpen && (
               <button
                 type="button"
                 onClick={onBuyCredits}

@@ -11,6 +11,7 @@
  *   &patient=<profile>  &tests=bhk,mabc-2|tout  &scores=vide
  *   /?scenario=dashboard&questionnaires=oui   plus parent questionnaires (dev/fictiveQuestionnaires.ts)
  *   &modale=abonnement|paywall|cgv             open the pricing modal (or the terms of sale) on top
+ *   &vente=fermee                              pricing modal as in production while Stripe is in test mode (#110)
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -44,6 +45,8 @@ export interface Scenario {
   /** Dashboard: show fictitious parent questionnaires (`questionnaires=oui`), kept in memory only. */
   questionnaires: boolean;
   modal: ScenarioModal | null;
+  /** Pricing modal shown as in production while online payment is not open (`vente=fermee`, #110). */
+  paymentClosed: boolean;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
@@ -101,6 +104,7 @@ export const parseScenario = (search: string): ParsedScenario => {
       fill: params.get('scores') === 'vide' ? 'vide' : 'zones',
       questionnaires: params.get('questionnaires') === 'oui',
       modal,
+      paymentClosed: params.get('vente') === 'fermee',
     },
   };
 };

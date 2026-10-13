@@ -65,3 +65,21 @@ describe('PricingModal : formule Solo (#107)', () => {
     expect(screen.queryByText(/le bilan/)).toBeNull();
   });
 });
+
+describe('PricingModal : paiement pas encore ouvert (#110)', () => {
+  it('remplace les boutons de paiement par « Paiement bientôt disponible »', () => {
+    const h = handlers();
+    render(<PricingModal {...h} isPaymentOpen={false} />);
+    const subscribe = screen.getByText('Paiement bientôt disponible') as HTMLButtonElement;
+    expect(subscribe.disabled).toBe(true);
+    expect(screen.queryByText(/Sans abonnement/)).toBeNull();
+    expect(screen.getByText(/Le paiement en ligne arrive très bientôt/)).toBeTruthy();
+  });
+
+  it("sans crédit, n'offre ni formule ni achat à l'unité", () => {
+    render(<PricingModal {...handlers()} isPaywallMode isPaymentOpen={false} />);
+    expect(screen.queryByText(/Passer à la formule Solo/)).toBeNull();
+    expect(screen.queryByText(/Acheter des bilans à l'unité/)).toBeNull();
+    expect(screen.getByText(/Le paiement en ligne arrive très bientôt/)).toBeTruthy();
+  });
+});

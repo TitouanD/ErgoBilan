@@ -17,7 +17,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@23.0.0';
 import { captureEdgeException, captureEdgeMessage } from '../_shared/sentry.ts';
-import { isAllowedOrigin, planLookupKey, SOLD_PLAN, UNIT_LOOKUP_KEY } from '../_shared/billing.ts';
+import { isAllowedOrigin, isPaymentAllowed, parseEmailList, planLookupKey, SOLD_PLAN, UNIT_LOOKUP_KEY } from '../_shared/billing.ts';
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -46,6 +46,7 @@ const json = (origin: string, status: number, body: Record<string, unknown>) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } });
 
 type Account = {
+  isAdmin: boolean;
   email: string;
   name: string;
   planId: string;
@@ -56,11 +57,12 @@ type Account = {
 
 const readAccount = async (admin: SupabaseClient, userId: string): Promise<Account | null> => {
   const [{ data: prac }, { data: sub }] = await Promise.all([
-    admin.from('practitioners').select('email, first_name, last_name').eq('id', userId).maybeSingle(),
+    admin.from('practitioners').select('email, first_name, last_name, is_admin').eq('id', userId).maybeSingle(),
     admin.from('subscriptions').select('plan_id, status, billing_source, stripe_customer_id').eq('user_id', userId).maybeSingle(),
   ]);
   if (!prac || !sub) return null;
   return {
+    isAdmin: prac.is_admin === true,
     email: prac.email,
     name: `${prac.first_name ?? ''} ${prac.last_name ?? ''}`.trim(),
     planId: sub.plan_id,
@@ -110,6 +112,7 @@ const portalUrl = async (customer: string, origin: string) =>
  */
 const IS_TEST_MODE = (STRIPE_SECRET_KEY ?? '').startsWith('sk_test_');
 const TERMS_URL = 'https://app.ergobilan.com/?legal=cgv';
+const TEST_ALLOWED_EMAILS = parseEmailList(Deno.env.get('STRIPE_TEST_ALLOWED_EMAILS'));
 
 /**
  * Settings shared by both kinds of Checkout: invoice identity, terms of sale accepted.
@@ -171,6 +174,8 @@ Deno.serve(async (req: Request) => {
     const body = (await req.json().catch(() => ({}))) as { action?: unknown; plan?: unknown };
     const account = await readAccount(admin, userId);
     if (!account) return json(origin, 404, { error: 'ACCOUNT_NOT_FOUND' });
+    // Test mode: no Stripe page (nor Stripe customer) for production accounts (#110).
+    if (!isPaymentAllowed(account, IS_TEST_MODE, TEST_ALLOWED_EMAILS)) return json(origin, 403, { error: 'PAYMENT_NOT_AVAILABLE' });
     const customer = await ensureCustomer(admin, userId, account);
 
     if (body.action === 'portal') return json(origin, 200, { url: await portalUrl(customer, origin) });

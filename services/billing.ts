@@ -16,11 +16,43 @@ export const SOLO_FAIR_USE_PER_MONTH = 30;
 /** Price of a purchased credit, sold only without an active plan. Mirrors `unite_sans_formule`. */
 export const UNIT_PRICE_EUR = 9;
 
+declare const __APP_ENV__: string;
+
+/**
+ * Stripe is still in test mode (#110): the billing edge only serves test accounts, so the
+ * production build shows « Paiement bientôt disponible » instead of the payment buttons.
+ * Set VITE_PAYMENT_OPEN=true on production when Stripe switches to live mode.
+ */
+export const IS_PAYMENT_OPEN = __APP_ENV__ !== 'production' || import.meta.env.VITE_PAYMENT_OPEN === 'true';
+
 type BillingRequest = { action: 'subscribe'; plan: 'solo' } | { action: 'buy_credits' } | { action: 'portal' };
+
+/** Payment refused because Stripe is still in test mode and the account is not a test account (#110). */
+export class PaymentUnavailableError extends Error {
+  constructor() {
+    super('PAYMENT_NOT_AVAILABLE');
+    this.name = 'PaymentUnavailableError';
+  }
+}
+
+/** JSON body of a failed edge call (`FunctionsHttpError.context` is the Response), or null. */
+export const readEdgeErrorBody = async (error: unknown): Promise<{ error?: string } | null> => {
+  const response = (error as { context?: unknown } | null)?.context;
+  if (!(response instanceof Response)) return null;
+  try {
+    return (await response.clone().json()) as { error?: string };
+  } catch {
+    return null;
+  }
+};
 
 const openStripe = async (request: BillingRequest): Promise<void> => {
   const { data, error } = await supabase.functions.invoke<{ url?: string }>('billing', { body: request });
-  if (error || !data?.url) throw error ?? new Error('Stripe URL missing');
+  if (error) {
+    if ((await readEdgeErrorBody(error))?.error === 'PAYMENT_NOT_AVAILABLE') throw new PaymentUnavailableError();
+    throw error;
+  }
+  if (!data?.url) throw new Error('Stripe URL missing');
   window.location.assign(data.url);
 };
 

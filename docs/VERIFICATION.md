@@ -46,7 +46,7 @@ Paramètres :
 - `&tests=bhk,mabc-2` remplace les tests du profil, avec leurs identifiants du catalogue. `&tests=tout` charge le catalogue entier.
 - `&scores=vide` ajoute les tests sans remplir les scores.
 - `&questionnaires=oui` (tableau de bord) ajoute quatre questionnaires parents fictifs, chiffrés comme par le portail et déchiffrés par le tableau de bord (`dev/fictiveQuestionnaires.ts`) : Léo et Adam `FICTIF` reçus, un reçu indéchiffrable (libellé générique `Dossier #3`) et un en attente. Ils restent en mémoire : rien n'est écrit dans Supabase, « Importer » et « Supprimer » échouent sur eux.
-- `&modale=abonnement` ou `&modale=paywall` ouvre la modale des offres (formule Solo, ou « Plus de crédits ») par-dessus l'écran du scénario ; `&modale=cgv` ouvre les Conditions Générales de Vente (aussi publiques à l'adresse `/?legal=cgv`, avant toute connexion).
+- `&modale=abonnement` ou `&modale=paywall` ouvre la modale des offres (formule Solo, ou « Plus de crédits ») par-dessus l'écran du scénario ; `&modale=cgv` ouvre les Conditions Générales de Vente (aussi publiques à l'adresse `/?legal=cgv`, avant toute connexion). `&vente=fermee` montre la modale comme en production tant que Stripe est en mode test : « Paiement bientôt disponible » à la place des boutons (#110).
 
 Le tableau de bord contient :
 
