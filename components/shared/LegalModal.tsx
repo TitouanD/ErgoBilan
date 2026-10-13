@@ -65,9 +65,9 @@ const CGUContent: React.FC = () => (
         réaliser des bilans ergothérapiques). En créant un compte, l'utilisateur déclare exercer à titre professionnel.
       </p>
       <p className="mt-2">
-        Un essai gratuit de <strong>3 générations</strong> est offert à l'inscription, valable 30 jours. Au-delà, la rédaction par l'IA est
-        conditionnée à la souscription d'une formule ou à l'achat de crédits, selon les Conditions Générales de Vente. Le reste du service
-        (saisie, calcul des scores, aperçu et export des bilans) reste accessible sans formule.
+        Un essai gratuit de <strong>3 générations</strong> est offert à l'inscription, valable 30 jours, une seule fois par adresse e-mail.
+        Au-delà, la rédaction par l'IA est conditionnée à la souscription d'une formule ou à l'achat de crédits, selon les Conditions
+        Générales de Vente. Le reste du service (saisie, calcul des scores, aperçu et export des bilans) reste accessible sans formule.
       </p>
     </section>
 

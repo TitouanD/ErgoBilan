@@ -17,6 +17,8 @@ interface Props {
   hasPaidPlan?: boolean;
   /** The last payment of the plan failed (Stripe retries): no monthly credits until it is paid. */
   isPaymentPending?: boolean;
+  /** Monthly credits of the active plan, shown when they are used up (Solo: the fair-use limit). */
+  monthlyQuota?: number;
   /** Next renewal of the monthly credits (ISO), shown when the fair-use limit is reached. */
   renewalDate?: string | null;
   /** A Stripe page is being opened: buttons are disabled. */
@@ -55,6 +57,7 @@ export const PricingModal: React.FC<Props> = ({
   hasActivePlan = false,
   hasPaidPlan = false,
   renewalDate = null,
+  monthlyQuota = SOLO_FAIR_USE_PER_MONTH,
   isPaymentPending = false,
   isBusy = false,
   isPaymentOpen = true,
@@ -100,7 +103,7 @@ export const PricingModal: React.FC<Props> = ({
               </div>
               <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Limite du mois atteinte.</h2>
               <p className="text-[var(--text-secondary)] mt-3 text-sm leading-relaxed">
-                Vous avez rédigé les {SOLO_FAIR_USE_PER_MONTH} bilans de l'usage raisonnable de votre formule ce mois-ci.
+                Vous avez rédigé les {monthlyQuota} bilans de votre formule ce mois-ci.
                 {renewal ? ` Ils reviennent le ${renewal}.` : ' Ils reviennent au renouvellement de votre formule.'}
               </p>
               <p className="text-[var(--text-secondary)] mt-3 text-sm">

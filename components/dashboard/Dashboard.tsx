@@ -31,7 +31,7 @@ import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 import { getPatientAgeForIdentity } from '../../utils/patient';
 import { derivePatientStatus } from '../../utils/patientStatus';
 import { questionnaireDisplayLabel } from '../../utils/familyQuestionnaire';
-import { effectivePlan } from '../../services/billing';
+import { subscriptionBanner } from '../../services/billing';
 
 interface Props {
   userProfile: UserProfile;
@@ -197,6 +197,7 @@ export const Dashboard: React.FC<Props> = ({
     () => userProfile.branding.practitionerName.split(' ')[0] || 'Thérapeute',
     [userProfile.branding.practitionerName],
   );
+  const banner = subscriptionBanner(userProfile);
   const activeFiles = useMemo(() => patientFiles.filter((file) => !file.archived), [patientFiles]);
 
   const filteredFiles = useMemo(() => {
@@ -328,14 +329,13 @@ export const Dashboard: React.FC<Props> = ({
         </div>
       )}
 
-      {!isDemoMode && (userProfile.isTrial || effectivePlan(userProfile) === 'free') && (
+      {!isDemoMode && banner !== 'none' && (
         <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[var(--secondary)] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="animate-pulse text-[var(--primary)] motion-reduce:animate-none" />
-            {userProfile.trialDenied && userProfile.credits === 0 ? (
-              // One trial per real e-mail address (#107): never a block, only no free credits.
+            {banner === 'trialUsed' ? (
               <span className="font-medium">L'essai gratuit a déjà été utilisé avec cette adresse e-mail.</span>
-            ) : userProfile.isTrial ? (
+            ) : banner === 'trial' ? (
               <>
                 <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
                 <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>

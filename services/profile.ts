@@ -46,7 +46,8 @@ export const ProfileService = {
 
       let isTrial = false;
       let trialDaysRemaining = 0;
-      if (sub?.status === 'trialing' && sub.trial_ends_at) {
+      // A refused trial (#107) keeps status 'trialing' with no trial credit: not a trial for the screens (#112).
+      if (sub?.status === 'trialing' && sub.trial_ends_at && !prac.trial_denied) {
         const remainingMs = new Date(sub.trial_ends_at).getTime() - Date.now();
         if (remainingMs > 0) {
           isTrial = true;

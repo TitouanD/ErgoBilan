@@ -64,6 +64,11 @@ describe('PricingModal : formule Solo (#107)', () => {
     expect(screen.getByText(/Ils reviennent le 12 novembre/)).toBeTruthy();
     expect(screen.queryByText(/le bilan/)).toBeNull();
   });
+
+  it('annonce le quota réel de la formule, pas 30 en dur (#112)', () => {
+    render(<PricingModal {...handlers()} isPaywallMode hasActivePlan monthlyQuota={20} />);
+    expect(screen.getByText(/Vous avez rédigé les 20 bilans de votre formule ce mois-ci/)).toBeTruthy();
+  });
 });
 
 describe('PricingModal : paiement pas encore ouvert (#110)', () => {
