@@ -3,7 +3,7 @@ import { Loader2, RefreshCw, Save, Search, Shield, Users2 } from 'lucide-react';
 import { AdminService } from '../../services/admin';
 import { useToast } from '../../contexts/ToastContext';
 import { Logger } from '../../utils/logger';
-import type { AdminUserRow } from '../../types';
+import type { AdminUserRow, AdminUserUpdatePayload } from '../../types';
 
 type PlanId = 'free' | 'solo' | 'essential' | 'performance' | 'expert';
 type SubscriptionStatus = 'active' | 'trialing' | 'canceled' | 'past_due' | 'inactive';
@@ -19,6 +19,8 @@ interface UserDraft {
 }
 
 const PLAN_OPTIONS: PlanId[] = ['free', 'solo', 'essential', 'performance', 'expert'];
+/** Plans that can be granted here; the former ones (before 2026-10-12) are only shown on the accounts that still have them. */
+const GRANTABLE_PLANS: PlanId[] = ['free', 'solo'];
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'trialing', 'canceled', 'past_due', 'inactive'];
 
 const normalizePlan = (value: string): PlanId => (PLAN_OPTIONS.includes(value as PlanId) ? (value as PlanId) : 'free');
@@ -33,6 +35,29 @@ const toDraft = (row: AdminUserRow): UserDraft => ({
   planId: normalizePlan(row.subscription_plan || 'free'),
   status: normalizeStatus(row.subscription_status || 'inactive'),
 });
+
+/** The plan gives monthly credits now (offered or paid). */
+const isActivePlan = (draft: Pick<UserDraft, 'planId' | 'status'>): boolean => draft.status === 'active' && draft.planId !== 'free';
+
+/**
+ * Changed fields only (the RPC keeps the others). Credits are absolute values: sending an untouched
+ * balance would erase what was bought since the list was loaded (#112).
+ */
+const buildUserUpdate = (row: AdminUserRow, draft: UserDraft): AdminUserUpdatePayload => {
+  const base = toDraft(row);
+  // An offered plan taken back: its monthly credits go too (the RPC and the cron leave them, #112).
+  const offeredPlanRemoved = row.billing_source !== 'stripe' && isActivePlan(base) && !isActivePlan(draft);
+  const monthlyCredits =
+    draft.monthlyCredits !== base.monthlyCredits ? Math.max(0, Math.trunc(draft.monthlyCredits)) : offeredPlanRemoved ? 0 : undefined;
+  return {
+    userId: row.user_id,
+    ...(draft.isAdmin !== base.isAdmin ? { isAdmin: draft.isAdmin } : {}),
+    ...(draft.credits !== base.credits ? { credits: Math.max(0, Math.trunc(draft.credits)) } : {}),
+    ...(monthlyCredits !== undefined ? { monthlyCredits } : {}),
+    ...(draft.planId !== base.planId ? { planId: draft.planId } : {}),
+    ...(draft.status !== base.status ? { status: draft.status } : {}),
+  };
+};
 
 /** Who pays the plan: Stripe (changed by the practitioner in the portal) or nobody (granted here). */
 const SOURCE_LABELS: Record<string, string> = { stripe: 'payée (Stripe)', offerte: 'offerte' };
@@ -102,19 +127,11 @@ export const AdminUsers: React.FC = () => {
   const handleSaveUser = async (row: AdminUserRow) => {
     const draft = drafts[row.user_id];
     if (!draft) return;
-    const base = toDraft(row);
     setSavingUserId(row.user_id);
     try {
-      // Only the changed fields: an active paid plan given here becomes an « offerte » plan,
-      // with its monthly credits granted at once unless they were edited too.
-      await AdminService.updateUser({
-        userId: row.user_id,
-        isAdmin: draft.isAdmin,
-        credits: Math.max(0, Math.trunc(draft.credits)),
-        ...(draft.monthlyCredits !== base.monthlyCredits ? { monthlyCredits: Math.max(0, Math.trunc(draft.monthlyCredits)) } : {}),
-        ...(draft.planId !== base.planId ? { planId: draft.planId } : {}),
-        ...(draft.status !== base.status ? { status: draft.status } : {}),
-      });
+      // An active plan given here becomes an « offerte » plan, with its monthly credits
+      // granted at once unless they were edited too.
+      await AdminService.updateUser(buildUserUpdate(row, draft));
       toast.success('Utilisateur mis à jour.');
       await loadUsers();
     } catch (e) {
@@ -178,6 +195,9 @@ export const AdminUsers: React.FC = () => {
               {filteredUsers.map((row) => {
                 const draft = drafts[row.user_id] || toDraft(row);
                 const dirty = hasChanges(row);
+                // A Stripe plan follows its subscription: changed by the practitioner in the portal, the webhook would undo an edit here.
+                const paidByStripe = row.billing_source === 'stripe';
+                const planOptions = GRANTABLE_PLANS.includes(draft.planId) ? GRANTABLE_PLANS : [...GRANTABLE_PLANS, draft.planId];
                 return (
                   <tr key={row.user_id} className="border-t border-white/5">
                     <td className="px-3 py-2">
@@ -229,10 +249,20 @@ export const AdminUsers: React.FC = () => {
                     <td className="px-3 py-2 text-center">
                       <select
                         value={draft.planId}
-                        onChange={(e) => updateDraft(row.user_id, { planId: normalizePlan(e.target.value) })}
-                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white"
+                        aria-label="Formule"
+                        disabled={paidByStripe}
+                        title={paidByStripe ? 'Formule payée : elle se change dans l’espace Stripe de la cliente.' : undefined}
+                        onChange={(e) => {
+                          const planId = normalizePlan(e.target.value);
+                          // Granting a plan activates it: left « trialing », the cron would set it back to free at the end of the trial.
+                          updateDraft(
+                            row.user_id,
+                            planId !== 'free' && draft.status !== 'active' ? { planId, status: 'active' } : { planId },
+                          );
+                        }}
+                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white disabled:opacity-50"
                       >
-                        {PLAN_OPTIONS.map((plan) => (
+                        {planOptions.map((plan) => (
                           <option key={plan} value={plan} className="bg-[#23252F] text-stone-200">
                             {plan}
                           </option>
@@ -245,8 +275,11 @@ export const AdminUsers: React.FC = () => {
                     <td className="px-3 py-2 text-center">
                       <select
                         value={draft.status}
+                        aria-label="Statut"
+                        disabled={paidByStripe}
+                        title={paidByStripe ? 'Formule payée : elle se résilie dans l’espace Stripe de la cliente.' : undefined}
                         onChange={(e) => updateDraft(row.user_id, { status: normalizeStatus(e.target.value) })}
-                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white"
+                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white disabled:opacity-50"
                       >
                         {STATUS_OPTIONS.map((status) => (
                           <option key={status} value={status} className="bg-[#23252F] text-stone-200">

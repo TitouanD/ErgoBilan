@@ -65,6 +65,20 @@ export const BillingService = {
   openPortal: () => openStripe({ action: 'portal' }),
 };
 
+/** Monthly credits of a plan. Mirrors plan_monthly_credits (SQL); the former plans are no longer sold. */
+export const planMonthlyCredits = (plan: UserProfile['subscriptionPlan']): number =>
+  ({ free: 0, solo: SOLO_FAIR_USE_PER_MONTH, essential: 2, performance: 6, expert: 20 })[plan];
+
+/** Dashboard banner about the subscription: none with an active plan, or for the admin who generates without credits (#112). */
+export const subscriptionBanner = (
+  profile: Pick<UserProfile, 'isAdmin' | 'isTrial' | 'trialDenied' | 'status' | 'subscriptionPlan' | 'credits'>,
+): 'none' | 'trialUsed' | 'trial' | 'noPlan' => {
+  if (profile.isAdmin || (!profile.isTrial && effectivePlan(profile) !== 'free')) return 'none';
+  // One trial per real e-mail address (#107): never a block, only no free credits.
+  if (profile.trialDenied && profile.status === 'trialing' && profile.credits === 0) return 'trialUsed';
+  return profile.isTrial ? 'trial' : 'noPlan';
+};
+
 /** Plan whose rights apply: none unless the plan is active (or awaiting a payment retry). */
 export const effectivePlan = (profile: Pick<UserProfile, 'subscriptionPlan' | 'status'>): UserProfile['subscriptionPlan'] =>
   profile.status === 'active' || profile.status === 'past_due' ? profile.subscriptionPlan : 'free';

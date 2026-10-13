@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { billingSignature, readEdgeErrorBody, rememberBillingState, takeRememberedBillingState, waitForBillingChange } from './billing';
+import {
+  billingSignature,
+  planMonthlyCredits,
+  readEdgeErrorBody,
+  rememberBillingState,
+  subscriptionBanner,
+  takeRememberedBillingState,
+  waitForBillingChange,
+} from './billing';
 
 describe('readEdgeErrorBody (#110)', () => {
   it("lit le code d'erreur renvoyé par l'edge billing", async () => {
@@ -47,5 +55,42 @@ describe('retour de Stripe : attente du webhook (#111)', () => {
     rememberBillingState(profile(3));
     expect(takeRememberedBillingState()).toBe(billingSignature(profile(3)));
     expect(takeRememberedBillingState()).toBeNull();
+  });
+});
+
+describe('bandeau d’abonnement du dashboard (#112)', () => {
+  const base = {
+    isAdmin: false,
+    isTrial: false,
+    trialDenied: false,
+    status: 'inactive' as const,
+    subscriptionPlan: 'free' as const,
+    credits: 0,
+  };
+
+  it("annonce l'essai en cours", () => {
+    expect(subscriptionBanner({ ...base, isTrial: true, status: 'trialing', credits: 3 })).toBe('trial');
+  });
+
+  it("essai refusé : dit que l'essai a déjà été utilisé, pas « en essai »", () => {
+    expect(subscriptionBanner({ ...base, trialDenied: true, status: 'trialing' })).toBe('trialUsed');
+  });
+
+  it('essai refusé puis crédits achetés, ou compte passé sans formule : solde affiché', () => {
+    expect(subscriptionBanner({ ...base, trialDenied: true, status: 'trialing', credits: 10 })).toBe('noPlan');
+    expect(subscriptionBanner({ ...base, trialDenied: true, status: 'canceled' })).toBe('noPlan');
+  });
+
+  it("rien pour une formule active, ni pour l'admin qui génère sans crédit", () => {
+    expect(subscriptionBanner({ ...base, status: 'active', subscriptionPlan: 'solo', credits: 30 })).toBe('none');
+    expect(subscriptionBanner({ ...base, isAdmin: true })).toBe('none');
+  });
+});
+
+describe('planMonthlyCredits (#112)', () => {
+  it('reprend les quotas de plan_monthly_credits', () => {
+    expect(planMonthlyCredits('solo')).toBe(30);
+    expect(planMonthlyCredits('expert')).toBe(20);
+    expect(planMonthlyCredits('free')).toBe(0);
   });
 });

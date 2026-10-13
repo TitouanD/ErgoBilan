@@ -20,6 +20,7 @@ import {
   hasActivePlan,
   IS_PAYMENT_OPEN,
   PaymentUnavailableError,
+  planMonthlyCredits,
   readPaymentReturn,
   rememberBillingState,
   takeRememberedBillingState,
@@ -200,6 +201,15 @@ const AppRouter = () => {
       cancelled = true;
     };
   }, [authState]);
+
+  // Back from Stripe with « Précédent », the page may come out of the browser cache with its buttons still disabled (#112).
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setIsOpeningStripe(false);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
 
   /** Opens a Stripe page (Checkout or portal); the browser leaves the app on success. */
   const openStripe = async (open: () => Promise<void>) => {
@@ -519,6 +529,7 @@ const AppRouter = () => {
               hasActivePlan={hasActivePlan(userProfile)}
               hasPaidPlan={userProfile.billingSource === 'stripe'}
               renewalDate={userProfile.currentPeriodEnd}
+              monthlyQuota={planMonthlyCredits(userProfile.subscriptionPlan)}
               isPaymentPending={userProfile.status === 'past_due'}
               isBusy={isOpeningStripe || isConfirmingPayment}
               isPaymentOpen={IS_PAYMENT_OPEN && !isPaymentClosedByScenario}

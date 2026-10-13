@@ -59,9 +59,9 @@ test.describe('Profil et image de marque', { tag: '@profil' }, () => {
 
   test('personnaliser le rapport dans le Studio Design', async ({ app, page }) => {
     const writes = await capturePractitionerWrites(app);
-    // Offre Performance: the Studio Design is open to it.
+    // Formule Solo: the Studio Design is open to it.
     await app.mock(/\/rest\/v1\/subscriptions\b/, (route) =>
-      route.fulfill({ json: { plan_id: 'performance', status: 'active', trial_ends_at: null } }),
+      route.fulfill({ json: { plan_id: 'solo', status: 'active', trial_ends_at: null } }),
     );
     await app.open('scenario=initial-visualisation');
     await page.getByRole('button', { name: 'Design' }).click();
