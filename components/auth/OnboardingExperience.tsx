@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Clock, ArrowRight, Zap, ShieldCheck, FileText, Sparkles, Lock, Key, Share2, Database, Gift } from 'lucide-react';
+import { Check, Clock, ArrowRight, ShieldCheck, FileText, Sparkles, Lock, Key, Share2, Database, Gift } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext'; // Import du contexte Auth
 
 interface Props {
@@ -135,15 +135,9 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                 </svg>
               </div>
               <div className="text-center mt-4">
-                {isDemoMode ? (
-                  <div className="inline-block bg-[var(--primary)] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
-                    Données vérifiées
-                  </div>
-                ) : (
-                  <div className="inline-block bg-[var(--primary)] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
-                    +1 Crédit / Contribution
-                  </div>
-                )}
+                <div className="inline-block bg-[var(--primary)] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg shadow-orange-200 dark:shadow-black/30">
+                  Données vérifiées
+                </div>
               </div>
             </div>
           )}
@@ -284,14 +278,10 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                 <Share2 size={32} />
               </div>
 
-              <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">
-                {isDemoMode ? "Des normes prêtes a l'emploi" : "L'intelligence collective."}
-              </h2>
+              <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)]">Des normes prêtes à l'emploi</h2>
 
               <p className="text-stone-500 leading-relaxed">
-                {isDemoMode
-                  ? "Les conversions s'appliquent instantanement. Vous voyez l'impact des scores sur la synthese et les recommandations."
-                  : 'Accédez instantanément aux tables de conversion alimentées par la communauté. Gagnez des crédits bonus en contribuant à enrichir la base de données.'}
+                Les conversions s'appliquent instantanément. Vous voyez l'impact des scores sur la synthèse et les recommandations.
               </p>
 
               <div className="space-y-3">
@@ -304,17 +294,6 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                     </p>
                   </div>
                 </div>
-                {!isDemoMode && (
-                  <div className="flex items-start gap-4 p-4 bg-[var(--hover-bg)] rounded-xl">
-                    <Zap size={20} className="text-[var(--primary)] mt-1 shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-[var(--text-heading)] text-sm">Gagnez des crédits</h4>
-                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                        1 contribution validée = 1 crédit. Un modèle gagnant-gagnant.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <button

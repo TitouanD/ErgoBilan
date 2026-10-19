@@ -25,12 +25,12 @@ interface Props {
   /** Runs the AI generation; resolves true on success (sections are then in the context). */
   onGenerate: (decisions: SuspectTermDecisions) => Promise<boolean>;
   /** Words of the free text that may still identify someone (asked before the generation). */
-  findSuspectTerms: () => string[];
+  findSuspectTerms: () => Promise<string[]>;
   isGenerating: boolean;
-  hasCredits: boolean;
+  /** Resolves true when a generation may start; otherwise the credit wall is already shown. */
+  ensureCredits: () => Promise<boolean>;
   /** Demo: the generation is simulated and costs nothing. */
   isDemoMode: boolean;
-  onNeedCredits: () => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -53,9 +53,8 @@ export const Step2Evolution: React.FC<Props> = ({
   onGenerate,
   findSuspectTerms,
   isGenerating,
-  hasCredits,
+  ensureCredits,
   isDemoMode,
-  onNeedCredits,
   onNext,
   onBack,
 }) => {
@@ -158,7 +157,9 @@ export const Step2Evolution: React.FC<Props> = ({
       <StepNavFooter onBack={onBack}>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => (hasCredits ? setConfirmTerms(findSuspectTerms()) : onNeedCredits())}
+            onClick={async () => {
+              if (await ensureCredits()) setConfirmTerms(await findSuspectTerms());
+            }}
             disabled={isGenerating}
             className="flex items-center gap-3 px-6 py-4 rounded-2xl font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed bg-gradient-to-r from-[#E07A5F] to-[#d97706] hover:shadow-orange-200 hover:scale-[1.02]"
           >

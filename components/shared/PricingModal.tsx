@@ -1,47 +1,72 @@
 import React, { useState } from 'react';
-import { X, Check, Zap, Crown, Lock, ArrowRight, Sparkles, Coins, Info, Rocket, Palette } from 'lucide-react';
+import { X, Check, Zap, Lock, ArrowRight, Coins, Palette, Receipt, Rocket, CalendarClock } from 'lucide-react';
+import { SOLO_FAIR_USE_PER_MONTH, SOLO_PRICE_EUR, UNIT_PRICE_EUR } from '../../services/billing';
 
 interface Props {
   onClose: () => void;
-  onSelectPlan: (plan: string) => void;
-  onUnlockOneOff: () => void;
+  /** Checkout of the Solo plan (or, with a paid plan, the Stripe portal). */
+  onSubscribe: () => void;
+  /** Checkout of purchased credits; only offered without an active plan. */
+  onBuyCredits: () => void;
+  /** Stripe portal (invoices, card, cancellation); only with a paid plan. */
+  onManageSubscription?: () => void;
   isPaywallMode?: boolean;
+  /** A plan is active (paid or offered): its monthly credits cover the « illimité* ». */
+  hasActivePlan?: boolean;
+  /** The plan is paid through Stripe (managed in the portal). */
+  hasPaidPlan?: boolean;
+  /** The last payment of the plan failed (Stripe retries): no monthly credits until it is paid. */
+  isPaymentPending?: boolean;
+  /** Monthly credits of the active plan, shown when they are used up (Solo: the fair-use limit). */
+  monthlyQuota?: number;
+  /** Next renewal of the monthly credits (ISO), shown when the fair-use limit is reached. */
+  renewalDate?: string | null;
+  /** A Stripe page is being opened: buttons are disabled. */
+  isBusy?: boolean;
+  /** Online payment is offered (false in production while Stripe is in test mode, #110). */
+  isPaymentOpen?: boolean;
 }
 
-// Composant Helper pour les Tooltips
-const FeatureWithTooltip: React.FC<{
-  icon: any;
-  children: React.ReactNode;
-  tooltip: React.ReactNode;
-  highlightColor?: string;
-  bgColor?: string;
-  borderColor?: string;
-}> = ({ icon: Icon, children, tooltip, highlightColor = 'text-[#81B29A]', bgColor, borderColor }) => {
-  return (
-    <li
-      className={`group relative flex gap-3 items-center cursor-help transition-all ${bgColor ? `p-2 rounded-lg border ${bgColor} ${borderColor}` : ''}`}
-    >
-      <Icon size={18} className={`${highlightColor} shrink-0`} />
-      <div className="flex-1">{children}</div>
+const price = (eur: number) => eur.toLocaleString('fr-FR', { minimumFractionDigits: eur % 1 ? 2 : 0 });
 
-      {/* Tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-4 bg-[var(--secondary)] text-white text-xs rounded-xl shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 text-center leading-relaxed transform translate-y-2 group-hover:translate-y-0">
-        <div className="font-bold mb-1 flex justify-center">
-          <Info size={12} className="mb-1" />
-        </div>
-        {tooltip}
-        {/* Arrow */}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-8 border-transparent border-t-[#3D405B]"></div>
-      </div>
-    </li>
-  );
-};
+const FAIR_USE_NOTE = `*Dans la limite d'un usage raisonnable de ${SOLO_FAIR_USE_PER_MONTH} bilans par mois.`;
 
-export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockOneOff, isPaywallMode = false }) => {
+const PaymentSoon: React.FC = () => (
+  <p className="text-sm text-[var(--text-secondary)] text-center">
+    Le paiement en ligne arrive très bientôt. En attendant, écrivez-nous à{' '}
+    <a href="mailto:contact@ergobilan.com" className="text-[var(--primary)] font-semibold underline">
+      contact@ergobilan.com
+    </a>
+    .
+  </p>
+);
+
+const Feature: React.FC<{ icon: typeof Check; children: React.ReactNode }> = ({ icon: Icon, children }) => (
+  <li className="flex gap-3 items-start">
+    <Icon size={18} className="text-[var(--primary)] shrink-0 mt-0.5" />
+    <span>{children}</span>
+  </li>
+);
+
+export const PricingModal: React.FC<Props> = ({
+  onClose,
+  onSubscribe,
+  onBuyCredits,
+  onManageSubscription,
+  isPaywallMode = false,
+  hasActivePlan = false,
+  hasPaidPlan = false,
+  renewalDate = null,
+  monthlyQuota = SOLO_FAIR_USE_PER_MONTH,
+  isPaymentPending = false,
+  isBusy = false,
+  isPaymentOpen = true,
+}) => {
   const [view, setView] = useState<'paywall' | 'plans'>(isPaywallMode ? 'paywall' : 'plans');
 
-  // --- VUE 1 : LE PAYWALL (COMPARATEUR CHOC) ---
+  // --- VUE 1 : PLUS DE CRÉDITS ---
   if (view === 'paywall') {
+    const renewal = renewalDate ? new Date(renewalDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) : null;
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[var(--secondary)]/80 backdrop-blur-md animate-in fade-in duration-300">
         <div className="bg-[var(--card-bg)] w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative p-8">
@@ -49,75 +74,130 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
             <X size={24} />
           </button>
 
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
-              <Lock size={32} />
-            </div>
-            <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Plus de crédits disponibles.</h2>
-            <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour exporter ce bilan, choisissez une option.</p>
-          </div>
-
-          {/* Options d'Action */}
-          <div className="grid grid-cols-1 gap-4 mb-6">
-            {/* Option A : Upgrade (Promo) */}
-            <div
-              onClick={() => setView('plans')}
-              className="bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
-            >
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--primary)] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase whitespace-nowrap shadow-sm">
-                Offre Spéciale -50%
+          {hasActivePlan && isPaymentPending ? (
+            // Failed renewal: the monthly credits come back once the invoice is paid.
+            <div className="text-center">
+              <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
+                <Receipt size={32} />
               </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-[var(--primary)] text-white rounded-lg">
-                    <Zap size={20} fill="currentColor" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[var(--secondary)] text-sm">Passer en Abonnement</h3>
-                    <p className="text-xs text-[var(--primary)] font-bold">Dès 19€ / mois</p>
-                  </div>
+              <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Paiement en attente.</h2>
+              <p className="text-[var(--text-secondary)] mt-3 text-sm leading-relaxed">
+                Le dernier paiement de votre formule n'a pas abouti. Vos bilans du mois seront renouvelés dès qu'il sera réglé.
+              </p>
+              {onManageSubscription && (
+                <button
+                  type="button"
+                  onClick={onManageSubscription}
+                  disabled={isBusy}
+                  className="mt-5 w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[#d0694e] transition-all disabled:opacity-50"
+                >
+                  Mettre à jour ma carte bancaire
+                </button>
+              )}
+            </div>
+          ) : hasActivePlan ? (
+            // Fair-use limit of the plan reached: no unit purchase, the credits come back at renewal.
+            <div className="text-center">
+              <div className="w-16 h-16 bg-[var(--primary)]/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[var(--primary)]">
+                <CalendarClock size={32} />
+              </div>
+              <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Limite du mois atteinte.</h2>
+              <p className="text-[var(--text-secondary)] mt-3 text-sm leading-relaxed">
+                Vous avez rédigé les {monthlyQuota} bilans de votre formule ce mois-ci.
+                {renewal ? ` Ils reviennent le ${renewal}.` : ' Ils reviennent au renouvellement de votre formule.'}
+              </p>
+              <p className="text-[var(--text-secondary)] mt-3 text-sm">
+                Besoin de plus ?{' '}
+                <a href="mailto:contact@ergobilan.com" className="text-[var(--primary)] font-semibold underline">
+                  contact@ergobilan.com
+                </a>
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
+                  <Lock size={32} />
                 </div>
-                <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform" />
+                <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)]">Plus de crédits disponibles.</h2>
+                {isPaymentOpen && (
+                  <p className="text-[var(--text-secondary)] mt-2 text-sm">Pour rédiger ce bilan avec l'IA, choisissez une option.</p>
+                )}
               </div>
-            </div>
 
-            {/* Option B : One-Off */}
-            <div
-              onClick={onUnlockOneOff}
-              className="bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group"
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-lg border border-[var(--border-color)]">
-                    <Coins size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[var(--text-heading)] text-sm">Achat unique (Hors-forfait)</h3>
-                    <p className="text-xs text-[var(--text-secondary)] font-medium">Débloquer ce bilan pour 15€</p>
-                  </div>
-                </div>
-                <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-          </div>
+              {!isPaymentOpen ? (
+                <PaymentSoon />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => setView('plans')}
+                      className="w-full text-left bg-[#fff5f2] rounded-2xl p-5 border-2 border-[var(--primary)] relative shadow-lg cursor-pointer hover:scale-[1.02] transition-transform group"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-[var(--primary)] text-white rounded-lg">
+                            <Zap size={20} fill="currentColor" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-[var(--secondary)] text-sm">Passer à la formule Solo</h3>
+                            <p className="text-xs text-[var(--primary)] font-bold">
+                              Bilans illimités* pour {price(SOLO_PRICE_EUR)} € / mois
+                            </p>
+                          </div>
+                        </div>
+                        <ArrowRight size={20} className="text-[var(--primary)] group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </button>
 
-          <p className="text-center text-[10px] text-[var(--text-disabled)]">
-            Paiement sécurisé via Stripe. Facture disponible immédiatement.
-          </p>
+                    <button
+                      type="button"
+                      onClick={onBuyCredits}
+                      disabled={isBusy}
+                      className="w-full text-left bg-[var(--hover-bg)] rounded-2xl p-5 border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-colors cursor-pointer group disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-[var(--card-bg)] text-[var(--text-secondary)] rounded-lg border border-[var(--border-color)]">
+                            <Coins size={20} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-[var(--text-heading)] text-sm">Acheter des bilans à l'unité</h3>
+                            <p className="text-xs text-[var(--text-secondary)] font-medium">
+                              {price(UNIT_PRICE_EUR)} € le bilan, sans engagement
+                            </p>
+                          </div>
+                        </div>
+                        <ArrowRight size={20} className="text-[var(--text-disabled)] group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </button>
+                  </div>
+
+                  <p className="text-center text-[10px] text-[var(--text-disabled)]">
+                    Paiement sécurisé par Stripe. Facture envoyée par e-mail. {FAIR_USE_NOTE}
+                  </p>
+                </>
+              )}
+            </>
+          )}
         </div>
       </div>
     );
   }
 
-  // --- VUE 2 : LES PLANS (Pricing Table Responsive) ---
+  // --- VUE 2 : LA FORMULE ---
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[var(--secondary)]/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-[var(--card-bg)] backdrop-blur-xl w-full max-w-7xl rounded-[32px] shadow-2xl relative flex flex-col h-auto max-h-[95vh]">
-        {/* Header Sticky Mobile */}
-        <div className="p-6 pb-2 md:p-8 flex justify-between items-start shrink-0 border-b border-[var(--border-color)] md:border-none">
+      {/* Compact sizes so the modal fits a laptop screen (~700 px tall) without scrolling (#103). */}
+      <div
+        data-testid="pricing-plans"
+        className="bg-[var(--card-bg)] backdrop-blur-xl w-full max-w-xl rounded-[32px] shadow-2xl relative flex flex-col h-auto max-h-[calc(100dvh-2rem)]"
+      >
+        <div className="p-6 pb-2 md:px-8 md:pt-6 flex justify-between items-start shrink-0">
           <div>
             <h2 className="font-serif text-2xl md:text-3xl font-bold text-[var(--text-heading)]">Votre abonnement</h2>
-            <p className="text-sm text-[var(--text-secondary)] hidden md:block">Changez de plan à tout moment. Sans engagement.</p>
+            <p className="text-sm text-[var(--text-secondary)]">Une seule formule, sans engagement, résiliable à tout moment.</p>
           </div>
           <button
             onClick={onClose}
@@ -127,207 +207,59 @@ export const PricingModal: React.FC<Props> = ({ onClose, onSelectPlan, onUnlockO
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="overflow-y-auto p-4 md:p-8">
-          {/* Layout ajusté : Align center pour que la carte centrale puisse être plus grande sans overflow hidden */}
-          <div className="flex flex-col lg:flex-row gap-6 items-center justify-center lg:items-stretch xl:items-center">
-            {/* COLONNE 1: ESSENTIEL */}
-            <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] flex flex-col items-center text-center hover:border-[var(--text-secondary)] transition-colors shadow-sm order-2 lg:order-1">
-              <h3 className="font-bold text-lg text-[var(--text-heading)]">Essentiel</h3>
-              <div className="my-2">
-                <span className="text-4xl font-serif font-bold text-[var(--text-heading)]">19€</span>
-                <span className="text-[var(--text-secondary)] text-sm">/mois</span>
-              </div>
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-6">Pour débuter ou compléter</p>
-
-              <ul className="space-y-4 text-sm text-[var(--text-main)] mb-8 text-left w-full px-2">
-                <FeatureWithTooltip icon={Check} tooltip="2 dossiers complets inclus chaque mois. Idéal pour une activité complémentaire.">
-                  <span>
-                    <strong>2 bilans</strong> inclus / mois
-                  </span>
-                </FeatureWithTooltip>
-
-                <FeatureWithTooltip
-                  icon={Sparkles}
-                  highlightColor="text-amber-500"
-                  bgColor="bg-amber-50"
-                  borderColor="border-amber-100"
-                  tooltip="Vos crédits non utilisés ne sont jamais perdus ! Ils sont stockés pour le mois suivant (limite de 6)."
-                >
-                  <span className="text-xs text-amber-800 font-bold leading-tight">Reports crédits inclus</span>
-                </FeatureWithTooltip>
-
-                <li className="flex gap-3">
-                  <Coins size={18} className="text-[var(--text-secondary)] shrink-0" />{' '}
-                  <span>
-                    Hors-forfait : <strong>15€</strong> / bilan
-                  </span>
-                </li>
-
-                <div className="w-full h-px bg-[var(--border-color)] my-2"></div>
-
-                <FeatureWithTooltip
-                  icon={Check}
-                  highlightColor="text-[var(--text-main)]"
-                  tooltip="Fini les prises de tête avec les manuels. Saisissez le score brut, obtenez instantanément la Note Standard et le Percentile."
-                >
-                  <span>Calculs automatiques inclus</span>
-                </FeatureWithTooltip>
-
-                <FeatureWithTooltip
-                  icon={Zap}
-                  highlightColor="text-[var(--text-main)]"
-                  tooltip="L'IA génère les paragraphes rédactionnels basés sur vos observations."
-                >
-                  <span>Aide à la rédaction (IA)</span>
-                </FeatureWithTooltip>
-
-                <li className="flex gap-3 text-[var(--text-disabled)] line-through decoration-[var(--text-disabled)]">
-                  <Palette size={18} className="shrink-0" /> <span>Personnalisation (Logo...)</span>
-                </li>
-              </ul>
-              <button
-                onClick={() => onSelectPlan('essential')}
-                className="mt-auto w-full py-3 border-2 border-[var(--text-heading)] text-[var(--text-heading)] font-bold rounded-xl hover:bg-[var(--text-heading)] hover:text-white transition-all text-sm"
-              >
-                Choisir Essentiel
-              </button>
+        <div className="overflow-y-auto p-4 md:px-8 md:pt-4 md:pb-6">
+          <div className="px-6 pt-7 pb-5 rounded-[32px] bg-[#fff5f2] border-2 border-[var(--primary)] shadow-xl flex flex-col items-center text-center">
+            <div className="mb-2 p-2.5 bg-[var(--primary)] text-white rounded-2xl shadow-lg shadow-orange-200 dark:shadow-black/30">
+              <Rocket size={24} />
             </div>
-
-            {/* COLONNE 2: PERFORMANCE (LE BEST-SELLER) */}
-            <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-8 rounded-[32px] bg-[#fff5f2] border-2 border-[var(--primary)] shadow-2xl relative flex flex-col items-center text-center transform lg:scale-105 z-10 order-1 lg:order-2">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-[var(--primary)] text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-b-xl whitespace-nowrap shadow-md">
-                Le Choix Malin
-              </div>
-
-              <div className="mb-3 p-4 bg-[var(--primary)] text-white rounded-3xl shadow-lg shadow-orange-200 dark:shadow-black/30 mt-2">
-                <Rocket size={32} />
-              </div>
-
-              <h3 className="font-bold text-3xl text-[var(--primary)]">Performance</h3>
-              <div className="my-3">
-                <span className="text-6xl font-serif font-bold text-[var(--secondary)]">34€</span>
-                <span className="text-stone-400 text-sm">/mois</span>
-              </div>
-              <p className="text-xs font-bold text-[var(--primary)] mb-8 bg-[var(--primary)]/10 px-3 py-1 rounded-full">
-                Rentabilité maximale
-              </p>
-
-              <ul className="space-y-5 text-sm text-[var(--secondary)] mb-10 text-left w-full px-2 font-medium">
-                <FeatureWithTooltip
-                  icon={Check}
-                  highlightColor="text-[var(--primary)]"
-                  tooltip="Couvre la majorité des activités libérales. Coût par bilan : seulement 5,60€ (remboursé x10 par le patient)."
-                >
-                  <span className="text-lg">
-                    <strong>6 bilans</strong> inclus / mois
-                  </span>
-                </FeatureWithTooltip>
-
-                <FeatureWithTooltip
-                  icon={Sparkles}
-                  highlightColor="text-[var(--primary)]"
-                  bgColor="bg-white/60"
-                  borderColor="border-[var(--primary)]/20"
-                  tooltip={
-                    <span>
-                      <strong>Droit à la flexibilité :</strong> Vos crédits non utilisés sont reportés. Vacances, maladie, mois creux...
-                      vous ne perdez rien.
-                    </span>
-                  }
-                >
-                  <span className="font-bold text-[var(--primary)]">Reports de crédits inclus</span>
-                </FeatureWithTooltip>
-
-                <li className="flex gap-3">
-                  <Coins size={20} className="text-[var(--primary)] shrink-0" />{' '}
-                  <span>
-                    Hors-forfait : <strong>8€</strong> / bilan
-                  </span>
-                </li>
-
-                <div className="w-full h-px bg-[var(--primary)]/20 my-2"></div>
-
-                <FeatureWithTooltip
-                  icon={Palette}
-                  highlightColor="text-[var(--primary)]"
-                  tooltip="Ajoutez votre Logo, vos couleurs et choisissez la police. Votre image de marque est essentielle."
-                >
-                  <span>
-                    <strong>Personnalisation Complète</strong> (Logo, Couleurs...)
-                  </span>
-                </FeatureWithTooltip>
-
-                {/* THE SEXY FEATURE */}
-                <FeatureWithTooltip
-                  icon={Zap}
-                  highlightColor="text-[var(--primary)]"
-                  tooltip={
-                    <span>
-                      Rangez vos manuels et vos tableaux Excel. <br />
-                      Saisissez le score brut, le système vous donne <strong>instantanément</strong> la Note Standard, le Percentile et
-                      l'interprétation.
-                    </span>
-                  }
-                >
-                  <span className="text-base">
-                    <strong>Finie la corvée des normes</strong>
-                  </span>
-                </FeatureWithTooltip>
-              </ul>
-              <button
-                onClick={() => onSelectPlan('performance')}
-                className="mt-auto w-full py-5 bg-[var(--primary)] text-white font-bold text-lg rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] hover:shadow-orange-300 dark:hover:shadow-black/40 transition-all hover:scale-[1.02]"
-              >
-                Activer Performance
-              </button>
+            <h3 className="font-bold text-2xl text-[var(--primary)]">Solo</h3>
+            <div className="my-1">
+              <span className="text-5xl font-serif font-bold text-[var(--secondary)]">{price(SOLO_PRICE_EUR)} €</span>
+              <span className="text-stone-400 text-sm">/mois</span>
             </div>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">TVA non applicable, art. 293 B du CGI</p>
 
-            {/* COLONNE 3: EXPERT (Ex-Premium Illimité, maintenant 20 crédits) */}
-            <div className="w-full max-w-md lg:max-w-none lg:flex-1 p-6 rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] flex flex-col items-center text-center hover:border-[var(--text-secondary)] transition-colors shadow-sm order-3">
-              <div className="mb-2 p-2 bg-[var(--hover-bg)] text-[var(--text-secondary)] rounded-xl">
-                <Crown size={20} />
-              </div>
-              <h3 className="font-bold text-lg text-[var(--text-heading)]">Expert</h3>
-              <div className="my-2">
-                <span className="text-4xl font-serif font-bold text-[var(--text-heading)]">89€</span>
-                <span className="text-[var(--text-secondary)] text-sm">/mois</span>
-              </div>
-              <p className="text-xs text-[var(--text-secondary)] font-medium mb-6">Pour les cabinets intensifs</p>
-              <ul className="space-y-4 text-sm text-[var(--text-main)] mb-8 text-left w-full px-2">
-                <FeatureWithTooltip
-                  icon={Check}
-                  highlightColor="text-[#81B29A]"
-                  tooltip="Un volume énorme pour les spécialistes. Coût par bilan : 4,45€. Le tarif le plus bas du marché."
-                >
-                  <span className="text-lg font-bold text-[var(--text-heading)]">20 bilans / mois</span>
-                </FeatureWithTooltip>
+            <ul className="space-y-2.5 text-sm text-[var(--secondary)] mb-5 text-left w-full px-2 font-medium">
+              <Feature icon={Zap}>
+                <strong>Bilans rédigés par l'IA illimités*</strong>
+              </Feature>
+              <Feature icon={Check}>Calcul automatique des notes standard et percentiles</Feature>
+              <Feature icon={Palette}>Personnalisation complète du rapport (logo, couleurs)</Feature>
+              <Feature icon={Check}>Sans engagement, résiliable à tout moment</Feature>
+            </ul>
 
-                <li className="flex gap-3">
-                  <Check size={18} className="text-[#81B29A] shrink-0" /> <span>Gros volume d'activité</span>
-                </li>
+            <button
+              onClick={onSubscribe}
+              disabled={isBusy || hasActivePlan || !isPaymentOpen}
+              className="w-full py-3.5 bg-[var(--primary)] text-white font-bold text-base rounded-xl shadow-xl shadow-orange-200 dark:shadow-black/30 hover:bg-[#d0694e] transition-all disabled:pointer-events-none disabled:opacity-50"
+            >
+              {hasActivePlan ? 'Formule actuelle' : isPaymentOpen ? 'Choisir Solo' : 'Paiement bientôt disponible'}
+            </button>
+            <p className="mt-3 text-[11px] text-[var(--text-secondary)]">{FAIR_USE_NOTE}</p>
+          </div>
 
-                <FeatureWithTooltip icon={Palette} highlightColor="text-[#81B29A]" tooltip="Un rendu 100% à votre image.">
-                  <span>Personnalisation Avancée</span>
-                </FeatureWithTooltip>
-
-                <li className="flex gap-3">
-                  <Sparkles size={18} className="text-[#81B29A] shrink-0" /> <span>Accès Prioritaire IA</span>
-                </li>
-                <li className="flex gap-3">
-                  <Coins size={18} className="text-[#81B29A] shrink-0" />{' '}
-                  <span>
-                    Hors-forfait : <strong>5€</strong> / bilan
-                  </span>
-                </li>
-              </ul>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
+            {!hasActivePlan && !isPaymentOpen && <PaymentSoon />}
+            {!hasActivePlan && isPaymentOpen && (
               <button
-                onClick={() => onSelectPlan('expert')}
-                className="mt-auto w-full py-3 border-2 border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:border-[var(--text-heading)] hover:text-[var(--text-heading)] transition-all text-sm"
+                type="button"
+                onClick={onBuyCredits}
+                disabled={isBusy}
+                className="flex items-center gap-2 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] disabled:opacity-50"
               >
-                Choisir Expert
+                <Coins size={16} /> Sans abonnement : {price(UNIT_PRICE_EUR)} € le bilan
               </button>
-            </div>
+            )}
+            {hasPaidPlan && onManageSubscription && (
+              <button
+                type="button"
+                onClick={onManageSubscription}
+                disabled={isBusy}
+                className="flex items-center gap-2 font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] disabled:opacity-50"
+              >
+                <Receipt size={16} /> Factures, carte bancaire et résiliation
+              </button>
+            )}
           </div>
         </div>
       </div>

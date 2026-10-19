@@ -73,7 +73,9 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
   const editor = useEditor({
     extensions: [
       // StarterKit v3 already bundles Underline and Link.
-      StarterKit.configure({ heading: { levels: [2, 3] } }),
+      // Read-only: no empty paragraph appended after a final list. It came after the
+      // first transaction, so the same section was sometimes one line taller.
+      StarterKit.configure({ heading: { levels: [2, 3] }, ...(readOnly && { trailingNode: false }) }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyle,
       Color,

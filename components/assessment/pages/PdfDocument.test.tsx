@@ -59,7 +59,9 @@ const renderAnnexes = async (chartType: 'bar' | 'radar') => {
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('PdfAnnexes, pagination', () => {
+// A real react-pdf layout of 1.5 to 3 pages: the first render also pays react-pdf's start-up,
+// beyond Vitest's 5 s default when several checks share the machine (#104).
+describe('PdfAnnexes, pagination', { timeout: 30_000 }, () => {
   it('flows a test longer than a page over several pages instead of squashing it', async () => {
     // Radar: no profile chart, only the score table (60 rows ≈ 1.5 page).
     const { pages, squashed } = await renderAnnexes('radar');

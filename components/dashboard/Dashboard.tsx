@@ -30,6 +30,8 @@ import { CommandPalette } from './CommandPalette';
 import { NewPatientChoiceModal } from './NewPatientChoiceModal';
 import { getPatientAgeForIdentity } from '../../utils/patient';
 import { derivePatientStatus } from '../../utils/patientStatus';
+import { questionnaireDisplayLabel } from '../../utils/familyQuestionnaire';
+import { subscriptionBanner } from '../../services/billing';
 
 interface Props {
   userProfile: UserProfile;
@@ -195,6 +197,7 @@ export const Dashboard: React.FC<Props> = ({
     () => userProfile.branding.practitionerName.split(' ')[0] || 'Thérapeute',
     [userProfile.branding.practitionerName],
   );
+  const banner = subscriptionBanner(userProfile);
   const activeFiles = useMemo(() => patientFiles.filter((file) => !file.archived), [patientFiles]);
 
   const filteredFiles = useMemo(() => {
@@ -300,8 +303,8 @@ export const Dashboard: React.FC<Props> = ({
               <h3 className="font-serif text-xl font-bold text-[var(--text-heading)]">Supprimer ce lien ?</h3>
             </div>
             <p className="text-sm text-[var(--text-main)]">
-              Le questionnaire <span className="font-semibold text-[var(--text-heading)]">{deleteConfirmQ.label}</span> sera supprimé
-              définitivement. La famille ne pourra plus accéder au lien.
+              Le questionnaire <span className="font-semibold text-[var(--text-heading)]">{questionnaireDisplayLabel(deleteConfirmQ)}</span>{' '}
+              sera supprimé définitivement. La famille ne pourra plus accéder au lien.
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
               <button
@@ -326,18 +329,31 @@ export const Dashboard: React.FC<Props> = ({
         </div>
       )}
 
-      {!isDemoMode && (userProfile.isTrial || userProfile.subscriptionPlan === 'free') && (
+      {!isDemoMode && banner !== 'none' && (
         <div className="sticky top-0 z-30 flex items-center justify-center gap-4 bg-[var(--secondary)] px-6 py-3 text-white shadow-lg">
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="animate-pulse text-[var(--primary)] motion-reduce:animate-none" />
-            <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
-            <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
+            {banner === 'trialUsed' ? (
+              <span className="font-medium">L'essai gratuit a déjà été utilisé avec cette adresse e-mail.</span>
+            ) : banner === 'trial' ? (
+              <>
+                <span className="hidden font-medium md:inline">Vous êtes en mode essai.</span>
+                <span className="font-bold text-stone-200">{userProfile.trialDaysRemaining} jours restants</span>
+              </>
+            ) : (
+              <>
+                <span className="hidden font-medium md:inline">Aucune formule active.</span>
+                <span className="font-bold text-stone-200">
+                  {userProfile.credits} {userProfile.credits > 1 ? 'crédits restants' : 'crédit restant'}
+                </span>
+              </>
+            )}
           </div>
           <button
             onClick={onShowPricing}
             className="flex items-center gap-2 rounded-full bg-[var(--primary)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white hover:text-[var(--primary)] motion-reduce:transition-none"
           >
-            <Crown size={14} /> Passer en premium
+            <Crown size={14} /> Choisir une formule
           </button>
         </div>
       )}
@@ -436,7 +452,7 @@ export const Dashboard: React.FC<Props> = ({
 
                     {/* Label + date */}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[var(--text-heading)]">{q.label}</p>
+                      <p className="truncate text-sm font-semibold text-[var(--text-heading)]">{questionnaireDisplayLabel(q)}</p>
                       <p className="text-[11px] text-[var(--text-secondary)]">{monthDate(q.createdAt)}</p>
                     </div>
 

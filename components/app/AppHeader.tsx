@@ -160,12 +160,20 @@ export const AppHeader: React.FC<Props> = ({
           </>
         ) : (
           <>
-            <button
-              onClick={onShowPricing}
-              className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"
-            >
-              <Crown size={14} /> {userProfile.credits} Crédits
-            </button>
+            {userProfile.isAdmin ? (
+              // The admin generates without credits (consume_credit): no balance to show (#112), nothing to
+              // buy either, so a plain badge and not a second « Admin » button next to the menu entry.
+              <span className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50">
+                <Crown size={14} /> Admin
+              </span>
+            ) : (
+              <button
+                onClick={onShowPricing}
+                className="flex items-center gap-2 bg-[#F2CC8F]/20 text-[#d97706] px-4 py-2 rounded-full text-xs font-bold border border-[#F2CC8F]/50 hover:bg-[#F2CC8F]/30 transition-all"
+              >
+                <Crown size={14} /> {userProfile.credits} Crédits
+              </button>
+            )}
             <div className="h-8 w-px bg-[var(--border-color)] mx-1" />
 
             <div className="relative z-50" ref={menuRef}>

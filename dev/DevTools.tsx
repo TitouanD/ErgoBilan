@@ -1,28 +1,38 @@
 /**
- * DevTools — development only (loaded by App behind `import.meta.env.DEV`,
- * absent from the production build).
+ * DevTools — development only (loaded by App behind `import.meta.env.DEV`, or
+ * in the recette build with `VITE_SCENARIOS=1`; absent from the deployed build).
  *
  * - Runs the scenario of the URL (`?scenario=…`, dev/scenarios.ts) once per
- *   page load, then opens its screen. Reloading the page rebuilds it.
+ *   page load, then opens its screen (and its modal, `&modale=`). Reloading
+ *   the page rebuilds it.
  * - « Purger les fictifs »: deletes every FICTIF patient of the local database.
  *
  * The scenario state is exposed on `<html data-scenario="running|ready|error">`
- * for the screenshot script (scripts/capture.mjs).
+ * for the screenshot script (e2e/capture.mjs) and the recette (e2e/recette/).
  */
 
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useCatalog } from '../contexts/CatalogContext';
 import { useToast } from '../contexts/ToastContext';
 import { createDemoTransport } from '../data/demoReport';
 import { StorageService } from '../services/storage';
+import type { PendingQuestionnaire } from '../types';
+import { withChildNames } from '../utils/familyQuestionnaire';
 import { createReportGenerator } from '../utils/reportGenerator';
 import { Logger } from '../utils/logger';
+import { buildFictiveQuestionnaires } from './fictiveQuestionnaires';
 import { parseScenario, purgeFictivePatients, runScenario } from './scenarios';
 
 interface Props {
   onLoadData: () => Promise<void>;
   onResumeDraft: (patientId: string) => Promise<void>;
   onShowDashboard: () => void;
+  /** Show fictitious parent questionnaires on the dashboard (memory only). */
+  onShowQuestionnaires: (rows: PendingQuestionnaire[]) => void;
+  onShowPricing: (mode: 'plans' | 'paywall', paymentClosed: boolean) => void;
+  /** Terms of sale (`&modale=cgv`), also reachable at the public address /?legal=cgv. */
+  onShowTermsOfSale: () => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -36,8 +46,16 @@ const setStatus = (status: 'running' | 'ready' | 'error', error?: string) => {
 /** Ready once the screen opened by the scenario has painted. */
 const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDashboard }) => {
+export const DevTools: React.FC<Props> = ({
+  onLoadData,
+  onResumeDraft,
+  onShowDashboard,
+  onShowQuestionnaires,
+  onShowPricing,
+  onShowTermsOfSale,
+}) => {
   const { ensureCatalogLoaded } = useCatalog();
+  const { sessionKey } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
 
@@ -59,8 +77,14 @@ export const DevTools: React.FC<Props> = ({ onLoadData, onResumeDraft, onShowDas
         const generator = createReportGenerator(createDemoTransport(0));
         const result = await runScenario(parsed.scenario, { store: StorageService, index, generator, now: new Date() });
         await onLoadData();
+        if (parsed.scenario.questionnaires && sessionKey) {
+          // Same decryption as the questionnaires loaded from Supabase (useDataLoader → loadPending).
+          onShowQuestionnaires(await withChildNames(await buildFictiveQuestionnaires(sessionKey, new Date()), sessionKey));
+        }
         if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
+        if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
+        else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal, parsed.scenario.paymentClosed);
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);
         await afterPaint();
         setStatus('ready');

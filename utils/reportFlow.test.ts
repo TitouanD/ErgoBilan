@@ -72,7 +72,7 @@ const index = buildCatalogIndex(catalog);
 describe('catalogIndex', () => {
   it('resolves names with fallbacks', () => {
     expect(getTestName(index, 'mabc')).toBe('MABC-2');
-    expect(getTestName(index, 'custom_observations')).toBe('Observations personnalisées');
+    expect(getTestName(index, 'custom_observations')).toBe('Observation libre');
     expect(getSubtestName(index, 'mabc', 'dext')).toBe('Dextérité');
     expect(getSubtestName(index, 'x', 'custom_123', 'Écologique')).toBe('Écologique');
   });

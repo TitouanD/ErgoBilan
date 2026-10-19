@@ -8,7 +8,7 @@ import type { Json } from '../types/supabase';
 import { DEFAULT_BRANDING, PROFILE_BRANDING_FIELDS } from '../data/brandingDefaults';
 import { Logger } from '../utils/logger';
 
-const PLANS: ReadonlyArray<UserProfile['subscriptionPlan']> = ['free', 'essential', 'performance', 'expert'];
+const PLANS: ReadonlyArray<UserProfile['subscriptionPlan']> = ['free', 'solo', 'essential', 'performance', 'expert'];
 const STATUSES: ReadonlyArray<UserProfile['status']> = ['active', 'trialing', 'canceled', 'past_due', 'inactive'];
 
 const asPlan = (value: string | null | undefined): UserProfile['subscriptionPlan'] =>
@@ -31,20 +31,23 @@ export const ProfileService = {
     try {
       const { data: prac, error: pracError } = await supabase
         .from('practitioners')
-        .select('email, credits, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config')
+        .select(
+          'email, credits, monthly_credits, trial_denied, is_admin, first_name, last_name, phone_pro, siret, address_pro, branding_config',
+        )
         .eq('id', userId)
         .single();
       if (pracError || !prac) throw pracError ?? new Error('Practitioner not found');
 
       const { data: sub } = await supabase
         .from('subscriptions')
-        .select('plan_id, status, trial_ends_at')
+        .select('plan_id, status, trial_ends_at, current_period_end, billing_source')
         .eq('user_id', userId)
         .maybeSingle();
 
       let isTrial = false;
       let trialDaysRemaining = 0;
-      if (sub?.status === 'trialing' && sub.trial_ends_at) {
+      // A refused trial (#107) keeps status 'trialing' with no trial credit: not a trial for the screens (#112).
+      if (sub?.status === 'trialing' && sub.trial_ends_at && !prac.trial_denied) {
         const remainingMs = new Date(sub.trial_ends_at).getTime() - Date.now();
         if (remainingMs > 0) {
           isTrial = true;
@@ -55,11 +58,15 @@ export const ProfileService = {
       return {
         id: userId,
         email: prac.email,
-        credits: prac.credits || 0,
+        credits: (prac.credits || 0) + (prac.monthly_credits || 0),
+        monthlyCredits: prac.monthly_credits || 0,
+        purchasedCredits: prac.credits || 0,
         isAdmin: prac.is_admin || false,
         subscriptionPlan: asPlan(sub?.plan_id),
-        // No subscription row => no access (paywall)
         status: sub ? asStatus(sub.status) : 'inactive',
+        billingSource: sub?.billing_source === 'stripe' || sub?.billing_source === 'offerte' ? sub.billing_source : null,
+        currentPeriodEnd: sub?.current_period_end ?? null,
+        trialDenied: prac.trial_denied ?? false,
         isTrial,
         trialDaysRemaining,
         totalBilansGenerated: 0,

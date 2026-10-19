@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { AuthWizard } from '../auth/AuthWizard';
 import { ThemeToggle } from '../shared/ThemeToggle';
 
+import type { LegalTab } from '../../utils/legalLink';
 const LegalModal = React.lazy(() => import('../shared/LegalModal').then((m) => ({ default: m.LegalModal })));
 
 const TURNSTILE_SITE_KEY = (import.meta.env.VITE_SUPABASE_TURNSTILE_SITE_KEY || import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
@@ -40,7 +41,7 @@ export const LandingPage: React.FC<Props> = ({ authState, tempEmail, onEnterApp,
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
   const [captchaNonce, setCaptchaNonce] = useState(0);
-  const [legalTab, setLegalTab] = useState<'cgu' | 'privacy' | null>(null);
+  const [legalTab, setLegalTab] = useState<LegalTab | null>(null);
 
   // The wizard must open when the account exists but the PIN is not configured yet.
   useEffect(() => {
@@ -135,6 +136,10 @@ export const LandingPage: React.FC<Props> = ({ authState, tempEmail, onEnterApp,
       <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 text-[10px] text-[var(--text-disabled)] z-10">
         <button onClick={() => setLegalTab('cgu')} className="hover:text-[var(--text-secondary)] transition-colors">
           Conditions Générales
+        </button>
+        <span>·</span>
+        <button onClick={() => setLegalTab('cgv')} className="hover:text-[var(--text-secondary)] transition-colors">
+          Conditions de Vente
         </button>
         <span>·</span>
         <button onClick={() => setLegalTab('privacy')} className="hover:text-[var(--text-secondary)] transition-colors">

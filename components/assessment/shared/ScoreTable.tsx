@@ -105,6 +105,7 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
   const { index } = useCatalog();
   const Row = sortable ? SortableRow : StaticRow;
   const colCount = metrics.length + 2 + (sortable ? 1 : 0) + (readOnly ? 0 : 1);
+  const freeTextOnly = subtests.length > 0 && subtests.every((st) => st.inputModel === 'custom_text');
   const getScore = (id: string): ScoreResult => scores?.[id] ?? {};
   const update = (id: string, patch: Partial<ScoreResult>) => onChange?.(id, patch);
 
@@ -155,24 +156,29 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-[var(--border-color)]">
-            {sortable && <th className="w-[3%]" />}
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">
-              Épreuve
-            </th>
-            {metrics.map((m) => (
-              <th
-                key={m}
-                className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[11%]"
-              >
-                {METRIC_HEADER[m]}
+        {/* Free-observation blocks have no score columns: no header (#102). */}
+        {!freeTextOnly && (
+          <thead>
+            <tr className="border-b border-[var(--border-color)]">
+              {sortable && <th className="w-[3%]" />}
+              <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[28%]">
+                Épreuve
               </th>
-            ))}
-            <th className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Observation</th>
-            {!readOnly && <th className={onRemoveSubtest ? 'w-[5%]' : 'w-[3%]'} />}
-          </tr>
-        </thead>
+              {metrics.map((m) => (
+                <th
+                  key={m}
+                  className="text-center py-2 px-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] w-[11%]"
+                >
+                  {METRIC_HEADER[m]}
+                </th>
+              ))}
+              <th className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                Observation
+              </th>
+              {!readOnly && <th className={onRemoveSubtest ? 'w-[5%]' : 'w-[3%]'} />}
+            </tr>
+          </thead>
+        )}
         <tbody>
           {subtests.map((st) => {
             const res = getScore(st.id);

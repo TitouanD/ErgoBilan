@@ -38,6 +38,8 @@ describe('parseScenario', () => {
   it('applies the defaults and the aliases', () => {
     expect(scenarioOf('?scenario=initial')).toMatchObject({ name: 'initial', step: 2, fill: 'zones', tests: null });
     expect(scenarioOf('?scenario=initial-validation')).toMatchObject({ name: 'initial', step: 4 });
+    expect(scenarioOf('?scenario=dashboard').questionnaires).toBe(false);
+    expect(scenarioOf('?scenario=dashboard&questionnaires=oui').questionnaires).toBe(true);
     expect(scenarioOf('?scenario=reeval-scores').profile.id).toBe('lina');
     expect(scenarioOf('?scenario=historique&etape=3&patient=noah&scores=vide&tests=bhk')).toMatchObject({
       name: 'historique',
@@ -45,6 +47,15 @@ describe('parseScenario', () => {
       fill: 'vide',
       tests: 'bhk',
     });
+  });
+
+  it('opens the pricing modal with abonnement or &modale= (#103)', () => {
+    expect(scenarioOf('?scenario=dashboard')).toMatchObject({ modal: null });
+    expect(scenarioOf('?scenario=abonnement')).toMatchObject({ name: 'dashboard', modal: 'plans' });
+    expect(scenarioOf('?scenario=initial&etape=5&modale=paywall')).toMatchObject({ name: 'initial', step: 5, modal: 'paywall' });
+    expect(parseScenario('?scenario=dashboard&modale=nope')).toMatchObject({ ok: false });
+    expect(scenarioOf('?scenario=abonnement')).toMatchObject({ paymentClosed: false });
+    expect(scenarioOf('?scenario=abonnement&vente=fermee')).toMatchObject({ paymentClosed: true });
   });
 
   it('rejects an unknown scenario, step or patient', () => {

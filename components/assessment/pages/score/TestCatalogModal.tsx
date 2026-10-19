@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Layers, MessageSquare, Plus, Search, Star, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Layers, MessageSquare, Plus, Search, Star, X } from 'lucide-react';
 import type { TestData } from '../../../../types';
 import type { SubtestDef } from '../../../../data/testCatalog';
 import { useCatalog } from '../../../../contexts/CatalogContext';
@@ -54,6 +54,7 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
     });
   };
 
+  const observationSelected = Boolean(selected[CUSTOM_OBSERVATIONS_TEST_ID]);
   const totalSelected = Object.values(selected).reduce((acc: number, ids: string[]) => acc + ids.length, 0);
   const categoryTabs = useMemo(() => [{ id: 'all', label: 'Tous' }, ...catalog.map((c) => ({ id: c.id, label: c.name }))], [catalog]);
   const allTests = useMemo(() => catalog.flatMap((c) => c.tests), [catalog]);
@@ -338,15 +339,26 @@ export const TestCatalogModal: React.FC<Props> = ({ isOpen, onClose, existingTes
             >
               <Plus size={13} /> Créer un test
             </button>
+            {/* A free observation joins the pending selection like any test (#102): the modal stays open. */}
             <button
               type="button"
-              onClick={() => {
-                onAddTests({ [CUSTOM_OBSERVATIONS_TEST_ID]: [`custom_${Date.now()}`] });
-                onClose();
-              }}
-              className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--primary)] hover:underline transition-colors"
+              aria-pressed={observationSelected}
+              onClick={() =>
+                setSelected((prev) => {
+                  if (prev[CUSTOM_OBSERVATIONS_TEST_ID]) {
+                    const { [CUSTOM_OBSERVATIONS_TEST_ID]: _removed, ...rest } = prev;
+                    return rest;
+                  }
+                  return { ...prev, [CUSTOM_OBSERVATIONS_TEST_ID]: [`custom_${Date.now()}`] };
+                })
+              }
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${
+                observationSelected
+                  ? 'bg-[var(--primary)] text-white'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--primary)] hover:underline'
+              }`}
             >
-              <MessageSquare size={13} /> Observation libre
+              {observationSelected ? <Check size={13} /> : <MessageSquare size={13} />} Observation libre
             </button>
           </div>
           <div className="flex gap-2">

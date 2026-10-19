@@ -18,6 +18,7 @@ export default defineConfig({
       'dev/**/*.test.ts',
       'dev/**/*.test.tsx',
       'components/**/*.test.tsx',
+      'hooks/**/*.test.tsx',
     ],
     exclude: ['node_modules', 'dist'],
     setupFiles: ['./vitest.setup.ts'],
