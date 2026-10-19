@@ -4,6 +4,7 @@
  */
 
 import { expect, test, type App } from '../fixtures';
+import { fixedCredits } from '../helpers';
 
 /** Answers the PATCH to `practitioners` and keeps their bodies; the reads go to Supabase. */
 const capturePractitionerWrites = async (app: App) => {
@@ -92,6 +93,11 @@ test.describe('Profil et image de marque', { tag: '@profil' }, () => {
   });
 
   test('votre abonnement et le mur de crédits', async ({ app, page }) => {
+    // Without a plan and with a fixed balance, whatever the real test account holds that day.
+    await fixedCredits(app);
+    await app.mock(/\/rest\/v1\/subscriptions\b/, (route) =>
+      route.fulfill({ json: { plan_id: 'free', status: 'active', trial_ends_at: null } }),
+    );
     await app.open('scenario=abonnement');
     await expect(page.getByText('Votre abonnement')).toBeVisible();
     await expect(page).toHaveScreenshot('abonnement.png');
