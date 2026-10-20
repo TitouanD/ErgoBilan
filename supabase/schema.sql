@@ -150,7 +150,7 @@ ALTER TABLE ONLY public.generation_log ADD CONSTRAINT generation_log_status_chec
 ALTER TABLE ONLY public.official_categories ADD CONSTRAINT official_categories_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.official_subtests ADD CONSTRAINT official_subtests_input_model_check CHECK ((input_model = ANY (ARRAY['numeric_4mode'::text, 'qualitative_category'::text, 'custom_text'::text])));
 ALTER TABLE ONLY public.official_subtests ADD CONSTRAINT official_subtests_pkey PRIMARY KEY (id);
-ALTER TABLE ONLY public.official_subtests ADD CONSTRAINT official_subtests_score_type_domain_chk CHECK ((score_type = ANY (ARRAY['standard'::text, 'scaled'::text, 't-score'::text, 'v-scale'::text, 'scaled-15'::text, 'percentile'::text, 'sten'::text, 'stanine'::text, 'none'::text])));
+ALTER TABLE ONLY public.official_subtests ADD CONSTRAINT official_subtests_score_type_domain_chk CHECK ((score_type = ANY (ARRAY['standard'::text, 'scaled'::text, 't-score'::text, 't-score-inverse'::text, 'v-scale'::text, 'v-scale-inverse'::text, 'scaled-15'::text, 'percentile'::text, 'sten'::text, 'stanine'::text, 'none'::text])));
 ALTER TABLE ONLY public.official_tests ADD CONSTRAINT official_tests_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.organization_members ADD CONSTRAINT org_members_pkey PRIMARY KEY (organization_id, user_id);
 ALTER TABLE ONLY public.organizations ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);

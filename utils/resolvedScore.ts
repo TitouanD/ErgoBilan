@@ -17,6 +17,7 @@ import {
   getPercentileFromScore,
   getZFromScore,
   hasScoreValue,
+  isHigherWorse,
   parseNum,
   zoneFromPercentile,
   zoneFromZ,
@@ -41,7 +42,11 @@ export interface ResolvedScore {
   isQualitative: boolean;
   /** Free observation (pseudo-test or `custom_text` subtest): a note, not a score. */
   isFreeText: boolean;
+  /** High score = difficulty (BRIEF-2, SPM…): `display` and `valueIn` keep the manual's direction, `z` and `pct` are turned around. */
+  higherIsWorse: boolean;
+  /** z read in the common direction: negative = difficulty, whatever the scale. */
   z: number | null;
+  /** Percentile read in the common direction: low = difficulty, whatever the scale. */
   pct: number | null;
   /** From z, else from the percentile; null when the score is not standardized. */
   zone: ScoreZone | null;
@@ -82,13 +87,17 @@ export const describeScore = (index: CatalogIndex, testId: string, subtestId: st
   const metric = isMetric(score.unit) && parseNum(score.value) !== null ? score.unit : null;
   const isFreeText = testId === CUSTOM_OBSERVATIONS_TEST_ID || def?.inputModel === 'custom_text';
   const isQualitative = !isFreeText && (def?.inputModel === 'qualitative_category' || score.unit === 'qualitative');
-  const z = metric ? getZFromScore(score, scale) : null;
-  const pct = metric ? getPercentileFromScore(score, scale) : null;
+  const higherIsWorse = isHigherWorse(scale);
+  // As typed, in the direction of the test manual (T 72 = +2.2 ET).
+  const manualZ = metric ? getZFromScore(score, scale) : null;
+  const manualPct = metric ? getPercentileFromScore(score, scale) : null;
+  const z = higherIsWorse && manualZ !== null ? -manualZ : manualZ;
+  const pct = higherIsWorse && manualPct !== null ? 100 - manualPct : manualPct;
 
   const valueIn = (target: Metric): number | null => {
     if (!metric) return null;
     if (target === metric) return parseNum(score.value);
-    if (target === 'ET') return z !== null ? parseFloat(z.toFixed(2)) : null;
+    if (target === 'ET') return manualZ !== null ? parseFloat(manualZ.toFixed(2)) : null;
     const derived = deriveDisplayScores(score, scale);
     return parseNum(target === 'NS' ? derived.standard : derived.percentile);
   };
@@ -112,6 +121,7 @@ export const describeScore = (index: CatalogIndex, testId: string, subtestId: st
     metric,
     isQualitative,
     isFreeText,
+    higherIsWorse,
     z,
     pct,
     zone: zoneFromZ(z) ?? zoneFromPercentile(pct),

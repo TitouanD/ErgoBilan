@@ -303,8 +303,8 @@ const ChartCard: React.FC<{ title: string; theme: ReportTheme; children: React.R
   </div>
 );
 
-const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
-  const guide = readingGuide(scale);
+const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale; inverted: boolean }> = ({ theme, scale, inverted }) => {
+  const guide = readingGuide(scale, inverted);
   return (
     <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass(theme.corners)}`}>
       <p className="font-bold mb-2">{guide.title}</p>
@@ -318,6 +318,7 @@ const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ 
           </li>
         ))}
       </ul>
+      {guide.note && <p className="mt-2 text-stone-600">{guide.note}</p>}
     </div>
   );
 };
@@ -393,7 +394,7 @@ const ProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; theme: Rep
           <span className="w-14" />
         </div>
       </ChartCard>
-      <ReadingGuide theme={theme} scale={scale} />
+      <ReadingGuide theme={theme} scale={scale} inverted={chart.inverted} />
     </>
   );
 };

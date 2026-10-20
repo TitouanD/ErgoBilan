@@ -170,7 +170,11 @@ export const buildObservationsText = (patient: Patient, observations: Observatio
   );
 };
 
-/** Structured scores for the diagnostic prompt, including the scale and derived z / percentile. */
+/**
+ * Structured scores for the diagnostic prompt, including the scale and derived z / percentile.
+ * z and percentile are read in the common direction (negative = difficulty); `lecture` flags a
+ * scale where the typed value runs the other way (#122).
+ */
 export const buildScoresEvidence = (tests: TestData, index: CatalogIndex) =>
   resolveScores(tests, index).flatMap((test) =>
     test.subtests.map((r) => ({
@@ -186,6 +190,9 @@ export const buildScoresEvidence = (tests: TestData, index: CatalogIndex) =>
       percentile: r.pct,
       qualitativeLabel: r.score.qualitativeLabel || null,
       observation: r.score.observation || null,
+      ...(r.higherIsWorse
+        ? { lecture: 'note élevée = difficulté ; zScore et percentile déjà inversés (négatif ou bas = difficulté)' }
+        : {}),
     })),
   );
 
