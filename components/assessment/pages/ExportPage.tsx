@@ -167,9 +167,6 @@ export const ExportPage: React.FC<Props> = ({
           <div>
             <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Visualisation & Export</h2>
             <p className="text-[var(--text-secondary)] font-medium mt-2">Personnalisez la mise en page et exportez votre document.</p>
-            <SpellCheckHint>
-              Cliquez sur un texte pour le modifier : les fautes d'orthographe repérées par le navigateur y sont soulignées en rouge.
-            </SpellCheckHint>
           </div>
         </div>
         <div className="flex gap-3">
@@ -203,6 +200,12 @@ export const ExportPage: React.FC<Props> = ({
             Terminer & Archiver
           </button>
         </div>
+      </div>
+
+      <div className="-mt-5 mb-6">
+        <SpellCheckHint>
+          Cliquez sur un texte pour le modifier : les fautes d'orthographe repérées par le navigateur y sont soulignées en rouge.
+        </SpellCheckHint>
       </div>
 
       <div
