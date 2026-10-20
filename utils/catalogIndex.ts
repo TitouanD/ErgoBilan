@@ -7,6 +7,7 @@
  * `CatalogContext` (`useCatalog().index`).
  */
 
+import { RETIRED_SUBTEST_NAMES, RETIRED_TEST_NAMES } from '../data/retiredCatalog';
 import type { CategoryDef, ScoreType, SubtestDef, TestDef } from '../data/testCatalog';
 import type { ScoreResult } from '../types';
 import { resolveScaleType } from './scoring';
@@ -53,20 +54,22 @@ export const buildCatalogIndex = (catalog: CategoryDef[]): CatalogIndex => {
 export const getSubtestDef = (index: CatalogIndex, testId: string, subtestId: string): SubtestDef | undefined =>
   index.subtestByKey.get(`${testId}:${subtestId}`);
 
-/** Display name of a test, with sensible fallbacks for private/custom tests missing from the catalogue. */
+/** Display name of a test, with fallbacks for retired official tests and private/custom tests missing from the catalogue. */
 export const getTestName = (index: CatalogIndex, testId: string): string => {
   const test = index.testById.get(testId);
   if (test) return test.name;
   if (testId === CUSTOM_OBSERVATIONS_TEST_ID) return 'Observation libre';
+  if (Object.hasOwn(RETIRED_TEST_NAMES, testId)) return RETIRED_TEST_NAMES[testId];
   return 'Test personnalisé';
 };
 
-/** Display name of a subtest; `customLabel` (free observations) wins, then catalogue, then a cleaned id. */
+/** Display name of a subtest; `customLabel` (free observations) wins, then catalogue, then the name of a retired official subtest, then a cleaned id. */
 export const getSubtestName = (index: CatalogIndex, testId: string, subtestId: string, customLabel?: string): string => {
   if (customLabel?.trim()) return customLabel.trim();
   const def = getSubtestDef(index, testId, subtestId);
   if (def) return def.name;
   if (subtestId.startsWith('custom_')) return 'Observation libre';
+  if (Object.hasOwn(RETIRED_SUBTEST_NAMES, subtestId)) return RETIRED_SUBTEST_NAMES[subtestId];
   // Removed subtest: official ids are `<testId>__<slug>`, keep the readable slug.
   const slug = subtestId.startsWith(`${testId}__`) ? subtestId.slice(testId.length + 2) : subtestId;
   const name = slug
