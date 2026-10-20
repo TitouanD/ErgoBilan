@@ -89,6 +89,21 @@ export const getPatientAgeForIdentity = (
   return patient.age?.trim() || '';
 };
 
+/**
+ * The patient as of the assessment date (#153): `age` recomputed at that date (ISO string,
+ * '' or invalid = today), the age of the report and of the AI payload being the age at the passation.
+ */
+export const patientAtAssessmentDate = <P extends PatientIdentityRequiredFields & { age?: string }>(
+  patient: P,
+  assessmentDate?: string,
+): P => ({ ...patient, age: getPatientAgeForIdentity(patient, assessmentDateOrToday(assessmentDate)) });
+
+/** The assessment date as a Date: today when absent or unparsable. */
+export const assessmentDateOrToday = (assessmentDate?: string): Date => {
+  const parsed = assessmentDate ? new Date(assessmentDate) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
+};
+
 export interface PatientIdentitySummary {
   /** « Prénom NOM », vide si aucun des deux n'est saisi. */
   fullName: string;

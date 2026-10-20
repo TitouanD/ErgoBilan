@@ -29,10 +29,13 @@ import {
   readingGuide,
 } from '../../../utils/reportData';
 import { ZONE_META } from '../../../utils/scoring';
+import { assessmentDateOrToday, patientAtAssessmentDate } from '../../../utils/patient';
 import { type ReportTheme, formatBirthDate, formatReportDate, resolveReportTheme } from '../../../utils/reportTheme';
 
 interface PdfDocumentProps {
   patient: Patient;
+  /** Date of the assessment (passation), ISO; absent = today. Age and date of the first page (#153). */
+  assessmentDate?: string;
   sections: ReportSection[];
   tests: TestData;
   branding: BrandingConfig;
@@ -123,8 +126,9 @@ const PdfSectionTitle: React.FC<{ title: string; theme: ReportTheme; font: strin
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
-const PdfPatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
+const PdfPatientBlock: React.FC<{ patient: Patient; dateLabel: string; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
   patient,
+  dateLabel,
   theme,
   align,
 }) => {
@@ -138,6 +142,7 @@ const PdfPatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: '
         <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 2, textAlign }}>Né(e) le {formatBirthDate(patient.dob)}</Text>
       ) : null}
       {patient.age ? <Text style={{ fontSize: 9, color: COLORS.stone600, marginTop: 1, textAlign }}>{patient.age}</Text> : null}
+      <Text style={{ fontSize: 9, fontStyle: 'italic', color: COLORS.stone500, marginTop: 3, textAlign }}>Bilan du {dateLabel}</Text>
     </>
   );
   if (theme.patientBlockStyle === 'minimal') return <View>{lines}</View>;
@@ -201,8 +206,9 @@ const PdfPractitionerBlock: React.FC<{ branding: BrandingConfig; theme: ReportTh
   );
 };
 
-const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: ReportTheme; font: string }> = ({
+const PdfHeader: React.FC<{ patient: Patient; dateLabel: string; branding: BrandingConfig; theme: ReportTheme; font: string }> = ({
   patient,
+  dateLabel,
   branding,
   theme,
   font,
@@ -212,7 +218,7 @@ const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: R
     return (
       <View style={{ ...frame, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ width: '33%', paddingTop: 4 }}>
-          <PdfPatientBlock patient={patient} theme={theme} align="left" />
+          <PdfPatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="left" />
         </View>
         <View style={{ width: '50%' }}>
           <PdfPractitionerBlock branding={branding} theme={theme} font={font} alignEnd />
@@ -225,7 +231,7 @@ const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: R
       <View style={{ ...frame, alignItems: 'center' }}>
         <PdfPractitionerBlock branding={branding} theme={theme} font={font} />
         <View style={{ width: '66%', borderTopWidth: 1, borderTopColor: COLORS.stone100, paddingTop: 12, marginTop: 12 }}>
-          <PdfPatientBlock patient={patient} theme={theme} align="center" />
+          <PdfPatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="center" />
         </View>
       </View>
     );
@@ -236,7 +242,7 @@ const PdfHeader: React.FC<{ patient: Patient; branding: BrandingConfig; theme: R
         <PdfPractitionerBlock branding={branding} theme={theme} font={font} />
       </View>
       <View style={{ width: '33%', paddingTop: 4 }}>
-        <PdfPatientBlock patient={patient} theme={theme} align="right" />
+        <PdfPatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="right" />
       </View>
     </View>
   );
@@ -647,7 +653,8 @@ const PdfAnnexes: React.FC<{
 export { PdfAnnexes };
 
 export const PdfDocument: React.FC<PdfDocumentProps> = ({
-  patient,
+  patient: storedPatient,
+  assessmentDate,
   sections,
   tests,
   branding,
@@ -658,6 +665,8 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
   previousTests,
 }) => {
   const theme = resolveReportTheme(branding);
+  const patient = patientAtAssessmentDate(storedPatient, assessmentDate);
+  const dateLabel = formatReportDate(assessmentDateOrToday(assessmentDate));
   const font = bodyFont(branding, theme);
   const headingFont = theme.isCustom ? theme.headingFont : font;
   const sectionById = new Map(sections.map((s) => [s.id, s]));
@@ -682,11 +691,7 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({
           )}
         </View>
 
-        <PdfHeader patient={patient} branding={branding} theme={theme} font={headingFont} />
-
-        <Text style={{ fontSize: 9, fontStyle: 'italic', color: COLORS.stone500, textAlign: 'right', marginBottom: 20 }}>
-          Fait le {formatReportDate()}
-        </Text>
+        <PdfHeader patient={patient} dateLabel={dateLabel} branding={branding} theme={theme} font={headingFont} />
 
         <Text
           style={{
