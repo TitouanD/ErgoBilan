@@ -208,8 +208,9 @@ export const ExportPage: React.FC<Props> = ({
         </SpellCheckHint>
       </div>
 
+      {/* The frame fits the A4 sheet and slides as one block beside the Studio Design (#126): a margin would shrink the frame under a fixed-width sheet. */}
       <div
-        className={`pdf-viewer-panel shadow-xl shadow-black/20 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full transition-all duration-300 ${showBranding ? 'mr-[26rem]' : ''}`}
+        className={`pdf-viewer-panel w-fit shadow-xl shadow-black/20 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full transition-transform duration-300 ${showBranding ? 'min-[1360px]:-translate-x-44' : ''}`}
       >
         <ReportView
           patient={patient}

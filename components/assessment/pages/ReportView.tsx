@@ -506,15 +506,28 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
               </tr>
             </thead>
             <tbody className="text-stone-700">
-              {block.rows.map((row) => (
-                <tr key={row.subtestId}>
-                  <td className={`${TD} font-medium`}>{row.label}</td>
-                  <td className={`${TD} text-center font-bold whitespace-nowrap`} style={{ color: zoneTextColor(row.zone) ?? '#78716C' }}>
-                    {row.display}
-                  </td>
-                  {row.evolution && <EvolutionCell evolution={row.evolution} />}
-                  <td className={`${TD} italic text-[11px] text-stone-500`}>{row.observation || '-'}</td>
-                </tr>
+              {block.rows.map((row, i) => (
+                <React.Fragment key={row.subtestId}>
+                  {row.groupLabel && row.groupLabel !== block.rows[i - 1]?.groupLabel && (
+                    <tr>
+                      <td
+                        colSpan={block.showEvolution ? 4 : 3}
+                        className={`${TD} bg-stone-100 text-[10px] font-bold uppercase tracking-wider`}
+                        style={{ color: theme.primary }}
+                      >
+                        {row.groupLabel}
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td className={`${TD} font-medium`}>{row.label}</td>
+                    <td className={`${TD} text-center font-bold whitespace-nowrap`} style={{ color: zoneTextColor(row.zone) ?? '#78716C' }}>
+                      {row.display}
+                    </td>
+                    {row.evolution && <EvolutionCell evolution={row.evolution} />}
+                    <td className={`${TD} italic text-[11px] text-stone-500`}>{row.observation || '-'}</td>
+                  </tr>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
