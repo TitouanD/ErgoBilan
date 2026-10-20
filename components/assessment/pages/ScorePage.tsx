@@ -128,7 +128,7 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
   }, [tests]);
   const completion = stats.total > 0 ? Math.round((stats.filled / stats.total) * 100) : 0;
 
-  const testDef = (testId: string): TestDef => resolveTestDef(index, testId, Object.keys(tests[testId] ?? {}));
+  const testDef = (testId: string): TestDef => resolveTestDef(index, testId, tests[testId] ?? {});
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
