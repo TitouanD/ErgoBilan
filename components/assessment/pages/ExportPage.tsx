@@ -10,6 +10,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Check, Download, Loader2, Palette } from 'lucide-react';
 import type { BrandingConfig, Patient, ReportSection, TestData } from '../../../types';
 import { ReportView } from './ReportView';
+import { SpellCheckHint } from '../shared/SpellCheckHint';
 import { useToast } from '../../../contexts/ToastContext';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { Logger } from '../../../utils/logger';
@@ -162,6 +163,9 @@ export const ExportPage: React.FC<Props> = ({
           <div>
             <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Visualisation & Export</h2>
             <p className="text-[var(--text-secondary)] font-medium mt-2">Personnalisez la mise en page et exportez votre document.</p>
+            <SpellCheckHint>
+              Cliquez sur un texte pour le modifier : les fautes d'orthographe repérées par le navigateur y sont soulignées en rouge.
+            </SpellCheckHint>
           </div>
         </div>
         <div className="flex gap-3">

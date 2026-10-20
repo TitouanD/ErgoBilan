@@ -8,6 +8,7 @@ import { Check, CheckCheck, Download, Edit2, FileCheck } from 'lucide-react';
 import type { ReportSection } from '../../../types';
 import { ConfirmModal } from '../../shared/ConfirmModal';
 import { TipTapEditor } from '../shared/TipTapEditor';
+import { SpellCheckHint } from '../shared/SpellCheckHint';
 import { sectionToHtml } from '../../../utils/reportContent';
 import { isReportSectionVisible } from '../../../utils/reportData';
 
@@ -137,6 +138,10 @@ export const ValidationPage: React.FC<Props> = ({ sections, onValidateSection, o
         <div className="space-y-1">
           <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
           <p className="text-[var(--text-secondary)] font-medium mt-2">Vérifiez et ajustez le contenu avant la mise en page.</p>
+          <SpellCheckHint>
+            Cliquez sur « Modifier » pour corriger une section : les fautes d'orthographe repérées par le navigateur y sont soulignées en
+            rouge.
+          </SpellCheckHint>
         </div>
         <div className="flex items-center gap-3">
           <div
