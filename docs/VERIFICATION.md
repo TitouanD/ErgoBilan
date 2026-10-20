@@ -37,6 +37,7 @@ Avec `npm run dev`, connecté et déverrouillé, on ouvre `http://localhost:3000
 | `?scenario=reeval&etape=1` à `4`     | Réévaluation (le bilan de référence est créé, 6 mois avant) : Tests, Évolution, Validation, Export |
 | `?scenario=historique&etape=1` à `3` | Import d'un bilan antérieur : Dossier, Scores, Rapport                                             |
 | `?scenario=abonnement`               | Tableau de bord avec la modale « Votre abonnement » ouverte                                        |
+| `?scenario=accueil`                  | Accueil après l'inscription, dernière étape (`&essai=refuse` : essai refusé, #113)                 |
 
 Les raccourcis `initial-dossier`, `initial-scores`, `initial-diagnostic`, `initial-validation`, `initial-visualisation`, `reeval-scores`, `reeval-evolution`, `reeval-validation` et `reeval-export` sont aussi acceptés.
 

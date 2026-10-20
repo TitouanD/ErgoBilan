@@ -58,6 +58,12 @@ describe('parseScenario', () => {
     expect(scenarioOf('?scenario=abonnement&vente=fermee')).toMatchObject({ paymentClosed: true });
   });
 
+  it('opens the welcome screen with the trial granted or denied (#113)', () => {
+    expect(scenarioOf('?scenario=dashboard')).toMatchObject({ welcome: null });
+    expect(scenarioOf('?scenario=accueil')).toMatchObject({ name: 'dashboard', welcome: { trialDenied: false } });
+    expect(scenarioOf('?scenario=accueil&essai=refuse')).toMatchObject({ welcome: { trialDenied: true } });
+  });
+
   it('rejects an unknown scenario, step or patient', () => {
     expect(parseScenario('?scenario=nope')).toMatchObject({ ok: false });
     expect(parseScenario('?scenario=reeval&etape=5')).toMatchObject({ ok: false });

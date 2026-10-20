@@ -112,6 +112,8 @@ const AppRouter = () => {
   const [mode, setMode] = useState<Mode>(portalInitialUrl ? 'portal' : 'landing');
   const [previousMode, setPreviousMode] = useState<Mode>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  /** Dev scenario `accueil` (#113): welcome screen at its last step, trial granted or denied. */
+  const [welcomeByScenario, setWelcomeByScenario] = useState<{ trialDenied: boolean } | null>(null);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
   // Back from Checkout, waiting for the webhook to update the account (#111).
@@ -521,7 +523,16 @@ const AppRouter = () => {
               loadData={loadData}
             />
           )}
-          {showOnboarding && <OnboardingExperience onComplete={() => setShowOnboarding(false)} />}
+          {showOnboarding && (
+            <OnboardingExperience
+              onComplete={() => {
+                setShowOnboarding(false);
+                setWelcomeByScenario(null);
+              }}
+              initialStep={welcomeByScenario ? 4 : undefined}
+              trialDenied={welcomeByScenario?.trialDenied}
+            />
+          )}
           {pricingModalMode && (
             <PricingModal
               isPaywallMode={pricingModalMode === 'paywall'}
@@ -562,6 +573,10 @@ const AppRouter = () => {
                 setPricingModalMode(pricingMode);
               }}
               onShowTermsOfSale={() => setLegalTabFromUrl('cgv')}
+              onShowWelcome={(welcome) => {
+                setWelcomeByScenario(welcome);
+                setShowOnboarding(true);
+              }}
             />
           </Suspense>
         )}

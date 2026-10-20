@@ -22,7 +22,7 @@ import { withChildNames } from '../utils/familyQuestionnaire';
 import { createReportGenerator } from '../utils/reportGenerator';
 import { Logger } from '../utils/logger';
 import { buildFictiveQuestionnaires } from './fictiveQuestionnaires';
-import { parseScenario, purgeFictivePatients, runScenario } from './scenarios';
+import { parseScenario, purgeFictivePatients, runScenario, type ScenarioWelcome } from './scenarios';
 
 interface Props {
   onLoadData: () => Promise<void>;
@@ -33,6 +33,8 @@ interface Props {
   onShowPricing: (mode: 'plans' | 'paywall', paymentClosed: boolean) => void;
   /** Terms of sale (`&modale=cgv`), also reachable at the public address /?legal=cgv. */
   onShowTermsOfSale: () => void;
+  /** Welcome screen after sign-up at its last step (`scenario=accueil`, #113). */
+  onShowWelcome: (welcome: ScenarioWelcome) => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -53,6 +55,7 @@ export const DevTools: React.FC<Props> = ({
   onShowQuestionnaires,
   onShowPricing,
   onShowTermsOfSale,
+  onShowWelcome,
 }) => {
   const { ensureCatalogLoaded } = useCatalog();
   const { sessionKey } = useAuth();
@@ -85,6 +88,7 @@ export const DevTools: React.FC<Props> = ({
         else onShowDashboard();
         if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
         else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal, parsed.scenario.paymentClosed);
+        if (parsed.scenario.welcome) onShowWelcome(parsed.scenario.welcome);
         if (result.missing.length > 0) toast.warning(`Absents du catalogue : ${result.missing.join(', ')}`);
         await afterPaint();
         setStatus('ready');
