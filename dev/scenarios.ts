@@ -13,6 +13,7 @@
  *   &modale=abonnement|paywall|cgv             open the pricing modal (or the terms of sale) on top
  *   &vente=fermee                              pricing modal as in production while Stripe is in test mode (#110)
  *   /?scenario=accueil[&essai=refuse]         welcome screen after sign-up, last step (trial granted or denied, #113)
+ *   /?scenario=portail[&patient=<profile>]    family portal form, without a link (empty, or filled with the profile, #149)
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -31,7 +32,7 @@ import { FICTIVE_PROFILES, getFictiveProfile, isFictivePatient, type FictiveProf
 import { buildFictiveTests, parseTestsParam, type ScoreFill } from './fictiveScores';
 import type { StorageService } from '../services/storage';
 
-export type ScenarioName = 'dashboard' | 'initial' | 'reeval' | 'historique';
+export type ScenarioName = 'dashboard' | 'initial' | 'reeval' | 'historique' | 'portail';
 /** Modal opened on top of the scenario screen (`&modale=`): the pricing modal (plans or paywall) or the terms of sale. */
 export type ScenarioModal = 'plans' | 'paywall' | 'cgv';
 const MODALS: Record<string, ScenarioModal> = { abonnement: 'plans', paywall: 'paywall', cgv: 'cgv' };
@@ -51,15 +52,18 @@ export interface Scenario {
   /** Pricing modal shown as in production while online payment is not open (`vente=fermee`, #110). */
   paymentClosed: boolean;
   welcome: ScenarioWelcome | null;
+  /** Portal: fill the form with the profile's patient (`patient=` given), else leave it empty. */
+  portalFilled: boolean;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
-const STEP_COUNT: Record<Exclude<ScenarioName, 'dashboard'>, number> = { initial: 5, reeval: 4, historique: 3 };
+const STEP_COUNT: Record<Exclude<ScenarioName, 'dashboard' | 'portail'>, number> = { initial: 5, reeval: 4, historique: 3 };
 const DEFAULTS: Record<ScenarioName, { step: number; profile: string }> = {
   dashboard: { step: 0, profile: 'leo' },
   initial: { step: 2, profile: 'leo' },
   reeval: { step: 1, profile: 'lina' },
   historique: { step: 2, profile: 'ines' },
+  portail: { step: 0, profile: 'leo' },
 };
 /** Shortcut names, e.g. `scenario=initial-scores`. */
 const ALIASES: Record<string, { name: ScenarioName; step: number; modal?: ScenarioModal; welcome?: true }> = {
@@ -85,11 +89,11 @@ export const parseScenario = (search: string): ParsedScenario => {
   if (!raw) return null;
   const alias = ALIASES[raw];
   const name = (alias?.name ?? raw) as ScenarioName;
-  if (!(name in DEFAULTS)) return { ok: false, error: `Scénario inconnu : ${raw} (dashboard, initial, reeval, historique)` };
+  if (!(name in DEFAULTS)) return { ok: false, error: `Scénario inconnu : ${raw} (dashboard, initial, reeval, historique, portail)` };
 
   const stepParam = params.get('etape');
   const step = stepParam ? Number(stepParam) : (alias?.step ?? DEFAULTS[name].step);
-  if (name !== 'dashboard' && (!Number.isInteger(step) || step < 1 || step > STEP_COUNT[name])) {
+  if (name !== 'dashboard' && name !== 'portail' && (!Number.isInteger(step) || step < 1 || step > STEP_COUNT[name])) {
     return { ok: false, error: `Étape ${stepParam} invalide pour ${name} (1 à ${STEP_COUNT[name]})` };
   }
   const profileId = params.get('patient') ?? DEFAULTS[name].profile;
@@ -111,6 +115,7 @@ export const parseScenario = (search: string): ParsedScenario => {
       modal,
       paymentClosed: params.get('vente') === 'fermee',
       welcome: alias?.welcome ? { trialDenied: params.get('essai') === 'refuse' } : null,
+      portalFilled: params.has('patient'),
     },
   };
 };
@@ -158,6 +163,8 @@ export const purgeFictivePatients = async (store: Pick<ScenarioStore, 'loadPatie
 export const runScenario = async (scenario: Scenario, deps: ScenarioDeps): Promise<ScenarioResult> => {
   const { store, index, generator, now } = deps;
   const missing = new Set<string>();
+  // The portal is shown by App from the scenario itself: nothing to write.
+  if (scenario.name === 'portail') return { open: null, missing: [] };
 
   const scoresOf = (profile: FictiveProfile, options: { fill?: ScoreFill; shift?: number; tests?: string | null } = {}): TestData => {
     const wanted = parseTestsParam(options.tests ?? null, index) ?? profile.tests;

@@ -14,6 +14,7 @@ import { CatalogProvider, useCatalog } from './contexts/CatalogContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
+import type { PortalPreview } from './dev/DevTools';
 import { StorageService } from './services/storage';
 import {
   BillingService,
@@ -109,6 +110,8 @@ const AppRouter = () => {
   const toast = useToast();
 
   const [portalInitialUrl, setPortalInitialUrl] = useState(detectPortalUrl);
+  /** Dev scenario `portail` (#149): the family form without a link. */
+  const [portalPreview, setPortalPreview] = useState<PortalPreview | null>(null);
   const [mode, setMode] = useState<Mode>(portalInitialUrl ? 'portal' : 'landing');
   const [previousMode, setPreviousMode] = useState<Mode>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -157,6 +160,7 @@ const AppRouter = () => {
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
     practitioner,
+    practitionerName: userProfile?.branding.practitionerName || `${practitioner?.firstName || ''} ${practitioner?.lastName || ''}`.trim(),
     isDemoMode,
     pendingQuestionnaires,
     setPendingQuestionnaires,
@@ -374,8 +378,9 @@ const AppRouter = () => {
 
   // ─── Render ─────────────────────────────────────────────────────────────
   // Family portal: public and standalone (no practitioner header), bypasses loading/PIN screens.
-  if (portalInitialUrl || mode === 'portal') {
+  if (portalInitialUrl || mode === 'portal' || portalPreview) {
     const leavePortal = () => {
+      setPortalPreview(null);
       if (portalInitialUrl) {
         // Drop ?q_id=…#key=… so the key does not linger in the address bar.
         window.history.replaceState(null, '', window.location.pathname);
@@ -383,7 +388,7 @@ const AppRouter = () => {
       }
       setMode('landing');
     };
-    return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
+    return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} preview={portalPreview ?? undefined} />;
   }
   // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
   if (legalTabFromUrl) {
@@ -577,6 +582,7 @@ const AppRouter = () => {
                 setWelcomeByScenario(welcome);
                 setShowOnboarding(true);
               }}
+              onShowPortal={setPortalPreview}
             />
           </Suspense>
         )}

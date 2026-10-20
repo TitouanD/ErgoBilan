@@ -16,6 +16,8 @@ import { Logger } from './logger';
 export interface FamilySubmission {
   patient?: Patient;
   timestamp?: string;
+  /** Written by the practitioner when creating the link, read by the portal to sign its introduction (#149). */
+  practitioner?: { name?: string };
 }
 
 /** Decrypt the family's submission: link key with the sessionKey, then the data. Throws on a wrong key or a malformed envelope. */

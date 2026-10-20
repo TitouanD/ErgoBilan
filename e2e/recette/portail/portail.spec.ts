@@ -23,7 +23,8 @@ const simulatePendingTable = () => {
     switch (request.method()) {
       case 'POST': {
         const body = request.postDataJSON() as Row | Row[];
-        row = { ...(Array.isArray(body) ? body[0] : body), id: Q_ID, created_at: '2026-10-01T07:00:00Z', family_encrypted_data: null };
+        // The practitioner's name, encrypted with the link key, is sent with the row (#149).
+        row = { family_encrypted_data: null, ...(Array.isArray(body) ? body[0] : body), id: Q_ID, created_at: '2026-10-01T07:00:00Z' };
         return route.fulfill({ status: 201, json: wantsObject(route) ? row : [row] });
       }
       case 'PATCH':
@@ -66,12 +67,17 @@ test.describe('Portail famille', { tag: '@portail' }, () => {
       await expect(page.getByRole('heading', { name: 'Questionnaires' })).toBeVisible();
       expect(table.current()).toMatchObject({ status: 'pending' });
     });
+    const signedLink = Boolean(table.current()?.family_encrypted_data);
     const link = await page.evaluate(() => (window as unknown as { __copied: string }).__copied);
     expect(link).toMatch(new RegExp(`/\\?q_id=${Q_ID}&t=[0-9a-f]{64}#key=.+`));
 
     await test.step('2. La famille remplit le questionnaire et l’envoie', async () => {
       await page.goto(link);
       await expect(page.getByRole('heading', { name: 'Préparation du Bilan' })).toBeVisible();
+      // Introduction signed with the practitioner's name carried by the link (#149).
+      await expect(page.getByText('Monsieur, Madame,')).toBeVisible();
+      if (signedLink) await expect(page.getByText('Votre ergothérapeute')).toHaveCount(0);
+      await expect(page.getByText('Documents à apporter')).toHaveCount(0);
       const send = page.getByRole('button', { name: 'Chiffrer et Envoyer' });
       await expect(send).toBeDisabled();
 
