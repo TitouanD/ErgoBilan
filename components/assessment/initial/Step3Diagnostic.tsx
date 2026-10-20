@@ -107,9 +107,14 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
           </div>
         </div>
       )}
-      <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden">
+      {/* On wide screens the panel stays in view and scrolls on its own (#118): the practitioner reads the scores
+          while writing on the left without losing her place. On mobile it is a plain block in the page flow. */}
+      <div
+        data-testid="scores-panel"
+        className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm overflow-hidden flex flex-col lg:max-h-[calc(100vh-8rem)]"
+      >
         {/* Panel header */}
-        <div className="px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
+        <div className="shrink-0 px-4 pt-3 pb-2.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity size={13} className="text-stone-400" />
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">Scores & Observations</h4>
@@ -131,100 +136,102 @@ const ScoresAndObservationsPanel: React.FC<{ tests: TestData; interviewNotes?: s
           </button>
         </div>
 
-        {/* Interview notes */}
-        {interviewNotes && (
-          <div className="px-4 py-2.5 border-b border-[var(--border-color)] bg-amber-50/60 dark:bg-amber-950/20 flex items-start gap-2">
-            <Quote size={10} className="text-amber-500 mt-0.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p
-                className={`text-[10px] text-amber-900 dark:text-amber-200/80 italic leading-relaxed ${!notesExpanded && interviewNotes.length > 120 ? 'line-clamp-2' : ''}`}
-              >
-                {interviewNotes}
-              </p>
-              {interviewNotes.length > 120 && (
-                <button
-                  onClick={() => setNotesExpanded((p) => !p)}
-                  className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5 hover:underline"
+        <div data-testid="scores-panel-scroll" className="min-h-0 overflow-y-auto overscroll-contain">
+          {/* Interview notes */}
+          {interviewNotes && (
+            <div className="px-4 py-2.5 border-b border-[var(--border-color)] bg-amber-50/60 dark:bg-amber-950/20 flex items-start gap-2">
+              <Quote size={10} className="text-amber-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-[10px] text-amber-900 dark:text-amber-200/80 italic leading-relaxed ${!notesExpanded && interviewNotes.length > 120 ? 'line-clamp-2' : ''}`}
                 >
-                  {notesExpanded ? 'Réduire' : 'Voir tout'}
-                </button>
-              )}
+                  {interviewNotes}
+                </p>
+                {interviewNotes.length > 120 && (
+                  <button
+                    onClick={() => setNotesExpanded((p) => !p)}
+                    className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-0.5 hover:underline"
+                  >
+                    {notesExpanded ? 'Réduire' : 'Voir tout'}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Table */}
-        <table className="w-full border-collapse text-left">
-          <tbody>
-            {groupedData.map(({ testId, name, avg, subtests }) => {
-              const color = zoneColor(zoneFromZ(avg));
-              return (
-                <React.Fragment key={testId}>
-                  {/* Test row */}
-                  <tr className="bg-[var(--app-bg)]">
-                    <td colSpan={2} className="px-4 pt-3 pb-1.5 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                      <span className="text-[11px] font-bold text-[var(--text-heading)] flex-1">{name}</span>
-                    </td>
-                  </tr>
+          {/* Table */}
+          <table className="w-full border-collapse text-left">
+            <tbody>
+              {groupedData.map(({ testId, name, avg, subtests }) => {
+                const color = zoneColor(zoneFromZ(avg));
+                return (
+                  <React.Fragment key={testId}>
+                    {/* Test row */}
+                    <tr className="bg-[var(--app-bg)]">
+                      <td colSpan={2} className="px-4 pt-3 pb-1.5 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-[11px] font-bold text-[var(--text-heading)] flex-1">{name}</span>
+                      </td>
+                    </tr>
 
-                  {/* Subtest rows */}
-                  {subtests.map((r) => {
-                    const { subtestId: subId, label: subName, score: res, z } = r;
-                    const col = zoneColor(r.zone);
-                    const hasObs = !!res.observation?.trim();
-                    const hasZ = typeof z === 'number' && Number.isFinite(z);
-                    const barW = hasZ ? Math.min(100, Math.max(2, ((z! + 3.5) / 7) * 100)) : null;
-                    const scoreLabel = enteredScoreLabel(r);
+                    {/* Subtest rows */}
+                    {subtests.map((r) => {
+                      const { subtestId: subId, label: subName, score: res, z } = r;
+                      const col = zoneColor(r.zone);
+                      const hasObs = !!res.observation?.trim();
+                      const hasZ = typeof z === 'number' && Number.isFinite(z);
+                      const barW = hasZ ? Math.min(100, Math.max(2, ((z! + 3.5) / 7) * 100)) : null;
+                      const scoreLabel = enteredScoreLabel(r);
 
-                    return (
-                      <tr
-                        key={subId}
-                        className={`border-t border-[var(--border-color)]/40 ${hasObs ? 'bg-violet-50/30 dark:bg-violet-950/15' : ''}`}
-                      >
-                        {/* Name + obs */}
-                        <td className="pl-7 pr-3 py-1.5" colSpan={2}>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="w-[2px] h-3 rounded-full shrink-0" style={{ backgroundColor: col }} />
-                            <span className="text-[10px] text-[var(--text-secondary)] leading-tight flex-1">{subName}</span>
-                            {/* score badge replaces the bar when no z can be computed */}
-                            {!hasZ && scoreLabel && (
-                              <span
-                                className="text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0"
-                                style={{ color: col, borderColor: col + '60', backgroundColor: col + '18' }}
-                              >
-                                {scoreLabel}
-                              </span>
-                            )}
-                          </div>
-                          {/* Mini ET bar — color/position derived from z-score, label reflects entered unit */}
-                          {hasZ && (
-                            <div className="flex items-center gap-2 pl-3.5">
-                              <div className="flex-1 h-[3px] bg-[var(--progress-bg)] rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-500"
-                                  style={{ width: `${barW}%`, backgroundColor: col }}
-                                />
+                      return (
+                        <tr
+                          key={subId}
+                          className={`border-t border-[var(--border-color)]/40 ${hasObs ? 'bg-violet-50/30 dark:bg-violet-950/15' : ''}`}
+                        >
+                          {/* Name + obs */}
+                          <td className="pl-7 pr-3 py-1.5" colSpan={2}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="w-[2px] h-3 rounded-full shrink-0" style={{ backgroundColor: col }} />
+                              <span className="text-[10px] text-[var(--text-secondary)] leading-tight flex-1">{subName}</span>
+                              {/* score badge replaces the bar when no z can be computed */}
+                              {!hasZ && scoreLabel && (
+                                <span
+                                  className="text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0"
+                                  style={{ color: col, borderColor: col + '60', backgroundColor: col + '18' }}
+                                >
+                                  {scoreLabel}
+                                </span>
+                              )}
+                            </div>
+                            {/* Mini ET bar — color/position derived from z-score, label reflects entered unit */}
+                            {hasZ && (
+                              <div className="flex items-center gap-2 pl-3.5">
+                                <div className="flex-1 h-[3px] bg-[var(--progress-bg)] rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{ width: `${barW}%`, backgroundColor: col }}
+                                  />
+                                </div>
+                                <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: col }}>
+                                  {scoreLabel}
+                                </span>
                               </div>
-                              <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color: col }}>
-                                {scoreLabel}
-                              </span>
-                            </div>
-                          )}
-                          {hasObs && (
-                            <div className="mt-1 pl-3.5">
-                              <p className="text-[9px] text-violet-600 dark:text-violet-300 italic leading-snug">« {res.observation} »</p>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                            )}
+                            {hasObs && (
+                              <div className="mt-1 pl-3.5">
+                                <p className="text-[9px] text-violet-600 dark:text-violet-300 italic leading-snug">« {res.observation} »</p>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
@@ -341,7 +348,7 @@ export const Step3BisDiagnostic: React.FC<Props> = ({ synthesis, updateSynthesis
         </div>
 
         {/* RIGHT COLUMN (CONTEXT) */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <ScoresAndObservationsPanel tests={tests} interviewNotes={patient?.interviewNotes} />
         </div>
       </div>

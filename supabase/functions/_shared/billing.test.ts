@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  creditsToReverse,
   dedupKey,
+  describeCreditPurchase,
   describeSubscription,
   isBillingSubscription,
   isPaymentAllowed,
@@ -137,5 +139,53 @@ describe('robustesse Stripe (#111)', () => {
   it('renvoie vers le portail tant qu’un abonnement facture encore', () => {
     for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'incomplete']) expect(isBillingSubscription(status)).toBe(true);
     for (const status of ['canceled', 'incomplete_expired', 'paused']) expect(isBillingSubscription(status)).toBe(false);
+  });
+});
+
+describe('remboursement ou litige d’un achat à l’unité (#107)', () => {
+  it('relit la charge remboursée ou contestée', () => {
+    expect(routeEvent(event('charge.refunded', { id: 'ch_1', amount: 2700, amount_refunded: 900 }))).toEqual({
+      kind: 'reversal',
+      chargeId: 'ch_1',
+      disputedAmount: null,
+    });
+    expect(routeEvent(event('charge.dispute.created', { id: 'dp_1', charge: 'ch_1', amount: 2700 }))).toEqual({
+      kind: 'reversal',
+      chargeId: 'ch_1',
+      disputedAmount: 2700,
+    });
+    expect(routeEvent(event('charge.dispute.created', { id: 'dp_1', amount: 2700 }))).toEqual({ kind: 'ignore' });
+  });
+
+  it('compte les crédits retirés par charge : un remboursement puis un litige ne se cumulent pas deux fois', () => {
+    const refund = routeEvent(event('charge.refunded', { id: 'ch_1' }));
+    const dispute = routeEvent({ ...event('charge.dispute.created', { id: 'dp_1', charge: { id: 'ch_1' }, amount: 900 }), id: 'evt_2' });
+    expect(dedupKey(refund, 'evt_1')).toBe('reversal:ch_1');
+    expect(dedupKey(dispute, 'evt_2')).toBe('reversal:ch_1');
+  });
+
+  it('retire la part remboursée de la quantité achetée, arrondie à l’inférieur', () => {
+    expect(creditsToReverse(3, 2700, 2700)).toBe(3);
+    expect(creditsToReverse(3, 2700, 1800)).toBe(2);
+    // Geste commercial de 5 € sur un crédit à 9 € : le crédit reste.
+    expect(creditsToReverse(1, 900, 500)).toBe(0);
+    expect(creditsToReverse(3, 2700, 2000)).toBe(2);
+    // Remboursement et litige cumulés au-delà de la charge : plafonné à la quantité.
+    expect(creditsToReverse(3, 2700, 5400)).toBe(3);
+    expect(creditsToReverse(3, 0, 900)).toBe(0);
+    expect(creditsToReverse(0, 2700, 2700)).toBe(0);
+  });
+
+  it("ne retient qu'une session Checkout d'achat à l'unité, quel que soit son statut de paiement", () => {
+    const session = {
+      id: 'cs_1',
+      customer: 'cus_1',
+      mode: 'payment',
+      payment_status: 'paid',
+      metadata: { kind: 'credits', user_id: 'u_1' },
+    };
+    expect(describeCreditPurchase(session)).toEqual({ sessionId: 'cs_1', customerId: 'cus_1', userId: 'u_1' });
+    expect(describeCreditPurchase({ ...session, mode: 'subscription' })).toBeNull();
+    expect(describeCreditPurchase({ ...session, metadata: {} })).toBeNull();
   });
 });

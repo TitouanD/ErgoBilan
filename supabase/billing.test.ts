@@ -13,6 +13,7 @@ const MIGRATIONS = [
   '20261012100000_abonnement_stripe.sql',
   '20261012200000_formule_solo_essai_unique.sql',
   '20261013100000_stripe_robustesse.sql',
+  '20261020150000_remboursement_credits.sql',
 ].map((file) => readFileSync(join(__dirname, 'migrations', file), 'utf8'));
 
 const FIXTURE = `
@@ -478,5 +479,66 @@ describe('robustesse du webhook Stripe (#111)', () => {
     const gen = (await consume(ALICE))!;
     await fail(gen, ALICE);
     expect((await balances(ALICE)).monthly_credits).toBe(3);
+  });
+});
+
+describe('remboursement ou litige d’un achat à l’unité (#107)', () => {
+  beforeEach(() => migrate());
+
+  const buy = (key: string, quantity: number) => scalar<string>("SELECT billing_add_credits($1, 'cus_a', $2)", [key, quantity]);
+  const reverse = (charge: string, count: number, customer = 'cus_a', userId: string | null = null) =>
+    scalar<string>('SELECT billing_remove_credits($1, $2, $3, $4)', [`reversal:${charge}`, customer, count, userId]);
+
+  it('retire les crédits achetés remboursés, sans toucher aux crédits du mois', async () => {
+    await signUp(ALICE, 'cus_a');
+    await buy('checkout:cs_1', 3);
+    expect(await balances(ALICE)).toEqual({ credits: 3, monthly_credits: 3 });
+    expect(await reverse('ch_1', 3)).toBe('applied');
+    expect(await balances(ALICE)).toEqual({ credits: 0, monthly_credits: 3 });
+  });
+
+  it('ne descend pas sous 0 quand les crédits ont déjà été consommés', async () => {
+    await signUp(ALICE, 'cus_a');
+    await buy('checkout:cs_1', 2);
+    await db.query("SET app.internal_operation = 'true'");
+    await db.query('UPDATE practitioners SET credits = 1 WHERE id = $1', [ALICE]);
+    await db.query("SET app.internal_operation = 'false'");
+    expect((await balances(ALICE)).credits).toBe(1);
+    expect(await reverse('ch_1', 2)).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(0);
+  });
+
+  it("n'applique qu'une fois un même événement, et seulement l'écart d'un remboursement cumulé ou d'un litige", async () => {
+    await signUp(ALICE, 'cus_a');
+    await buy('checkout:cs_1', 5);
+    await buy('checkout:cs_2', 4);
+    expect((await balances(ALICE)).credits).toBe(9);
+    // Premier remboursement partiel : 2 crédits ; le même événement renvoyé ne retire rien.
+    expect(await reverse('ch_1', 2)).toBe('applied');
+    expect(await reverse('ch_1', 2)).toBe('duplicate');
+    expect((await balances(ALICE)).credits).toBe(7);
+    // Second remboursement : montant cumulé de 3 crédits, 1 de plus.
+    expect(await reverse('ch_1', 3)).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(6);
+    // Litige sur le reste de la charge : 5 au total, 2 de plus.
+    expect(await reverse('ch_1', 5)).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(4);
+    // Un autre achat est compté à part.
+    expect(await reverse('ch_2', 4)).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(0);
+  });
+
+  it("n'enregistre rien pour un client inconnu : un rejeu s'applique une fois le compte retrouvé", async () => {
+    await signUp(ALICE, 'cus_a');
+    await buy('checkout:cs_1', 2);
+    expect(await reverse('ch_1', 2, 'cus_x')).toBe('unknown_customer');
+    expect((await balances(ALICE)).credits).toBe(2);
+    expect(await reverse('ch_1', 2, 'cus_x', ALICE)).toBe('applied');
+    expect((await balances(ALICE)).credits).toBe(0);
+  });
+
+  it('refuse un nombre de crédits invalide', async () => {
+    await signUp(ALICE, 'cus_a');
+    await expect(reverse('ch_1', 0)).rejects.toThrow(/nombre invalide/);
   });
 });

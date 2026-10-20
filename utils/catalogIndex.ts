@@ -8,6 +8,7 @@
  */
 
 import type { CategoryDef, ScoreType, SubtestDef, TestDef } from '../data/testCatalog';
+import type { ScoreResult } from '../types';
 import { resolveScaleType } from './scoring';
 
 /** Pseudo-test holding free-text observations ("Observation libre"). Never in the catalogue. */
@@ -66,7 +67,13 @@ export const getSubtestName = (index: CatalogIndex, testId: string, subtestId: s
   const def = getSubtestDef(index, testId, subtestId);
   if (def) return def.name;
   if (subtestId.startsWith('custom_')) return 'Observation libre';
-  return subtestId.replace(/_[a-f0-9]{8}$/i, '').replace(/[_-]/g, ' ');
+  // Removed subtest: official ids are `<testId>__<slug>`, keep the readable slug.
+  const slug = subtestId.startsWith(`${testId}__`) ? subtestId.slice(testId.length + 2) : subtestId;
+  const name = slug
+    .replace(/_[a-f0-9]{8}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  return name.charAt(0).toUpperCase() + name.slice(1);
 };
 
 /** Scale type of a subtest ('none' when unknown — see `resolveScaleType`). */
@@ -76,22 +83,24 @@ export const getScaleType = (index: CatalogIndex, testId: string, subtestId: str
 /**
  * Definition used to render stored scores: the catalogue entry, completed with
  * fallback subtests for the ids it does not know (free observations, deleted
- * private tests or subtests), so no stored score is silently hidden.
+ * private tests or subtests), so no stored score is silently hidden. A stored
+ * qualitative value keeps a qualitative fallback whose only option is that value.
  */
-export const resolveTestDef = (index: CatalogIndex, testId: string, subtestIds: string[]): TestDef => {
+export const resolveTestDef = (index: CatalogIndex, testId: string, scores: Record<string, ScoreResult | undefined>): TestDef => {
   const known = index.testById.get(testId);
   const knownIds = new Set(known?.subtests.map((st) => st.id));
-  const extra = subtestIds
+  const extra = Object.keys(scores)
     .filter((id) => !knownIds.has(id))
-    .map(
-      (id): SubtestDef => ({
-        id,
-        name: getSubtestName(index, testId, id),
-        unit: '',
-        scoreType: 'none',
-        inputModel: id.startsWith('custom_') || testId === CUSTOM_OBSERVATIONS_TEST_ID ? 'custom_text' : 'numeric_4mode',
-      }),
-    );
+    .map((id): SubtestDef => {
+      const base = { id, name: getSubtestName(index, testId, id), unit: '', scoreType: 'none' as const };
+      if (id.startsWith('custom_') || testId === CUSTOM_OBSERVATIONS_TEST_ID) return { ...base, inputModel: 'custom_text' };
+      const score = scores[id];
+      if (score?.unit === 'qualitative' && score.value) {
+        const option = { code: score.value, label: score.qualitativeLabel || score.value, order: 1 };
+        return { ...base, inputModel: 'qualitative_category', inputConfig: { options: [option] } };
+      }
+      return { ...base, inputModel: 'numeric_4mode' };
+    });
   if (known && extra.length === 0) return known;
   return { id: testId, name: known?.name ?? getTestName(index, testId), subtests: [...(known?.subtests ?? []), ...extra] };
 };
