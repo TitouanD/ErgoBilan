@@ -37,6 +37,8 @@ export const SCALE_PARAMS: Record<ScoreType, { mean: number; sd: number } | null
   't-score': { mean: 50, sd: 10 },
   // Vineland « notes v » (sous-domaines, #90).
   'v-scale': { mean: 15, sd: 3 },
+  // Notes d'échelle des sous-tests du BOT-2 (#123).
+  'scaled-15': { mean: 15, sd: 5 },
   sten: { mean: 5.5, sd: 2 },
   stanine: { mean: 5, sd: 2 },
   percentile: null,
@@ -59,6 +61,7 @@ const SCALE_ALIASES: Record<string, ScoreType> = {
   'v-scale': 'v-scale',
   vscale: 'v-scale',
   'note v': 'v-scale',
+  'scaled-15': 'scaled-15',
   percentile: 'percentile',
   pct: 'percentile',
   percentile_rank: 'percentile',

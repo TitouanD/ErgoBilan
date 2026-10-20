@@ -16,6 +16,7 @@ describe('resolveScaleType', () => {
     expect(resolveScaleType('Standard')).toBe('standard');
     expect(resolveScaleType('t score')).toBe('t-score');
     expect(resolveScaleType('v-scale')).toBe('v-scale');
+    expect(resolveScaleType('scaled-15')).toBe('scaled-15');
   });
 
   it('never falls back to "standard" for unknown or missing scales', () => {
@@ -36,6 +37,13 @@ describe('conversions', () => {
     const d = deriveDisplayScores({ value: '9', unit: 'NS' }, 'v-scale');
     expect(d.zScore).toBe(-2);
     expect(d.percentile).toBe('2');
+  });
+
+  it('converts a BOT-2 subtest scale score (mean 15, sd 5) (#123)', () => {
+    const d = deriveDisplayScores({ value: '5', unit: 'NS' }, 'scaled-15');
+    expect(d.zScore).toBe(-2);
+    expect(d.percentile).toBe('2');
+    expect(deriveDisplayScores({ value: '-1', unit: 'ET' }, 'scaled-15').standard).toBe('10');
   });
 
   it('does not invent a z-score for NS on an unknown scale', () => {

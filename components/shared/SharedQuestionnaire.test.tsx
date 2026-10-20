@@ -71,6 +71,23 @@ describe('SharedQuestionnaire : bloc « Bilans et suivis extérieurs » (#37)', 
     expect(screen.getByText('Bilans et suivis extérieurs')).toBeInTheDocument();
     expect(screen.queryByText(/Suivi Extérieur/i)).toBeNull();
   });
+
+  it('ajoute un professionnel sans profession pré-remplie (#150)', async () => {
+    const onChange = vi.fn();
+    render(<SharedQuestionnaire data={patient()} onChange={onChange} mode="family" />);
+    await userEvent.click(screen.getByText('Suivi médical'));
+    await userEvent.click(screen.getByRole('button', { name: /Ajouter un pro/ }));
+    const [added] = onChange.mock.calls.at(-1)![0].medicalTracking;
+    expect(added.profession).toBe('');
+    expect(added.type).toBe('');
+  });
+
+  it('une profession effacée reste vide, sans revenir à l’ancien type (#150)', () => {
+    const track = { id: 't1', type: 'Orthophoniste', profession: '', name: '', frequency: '', since: '', contact: '', reason: '' };
+    render(<SharedQuestionnaire data={patient({ medicalTracking: [track] })} onChange={() => {}} mode="practitioner" />);
+    fireEvent.click(screen.getByText('Suivi médical'));
+    expect(screen.getAllByPlaceholderText('Profession').at(-1)).toHaveValue('');
+  });
 });
 
 describe('SharedQuestionnaire : puce « Vocabulaire riche » (#38)', () => {

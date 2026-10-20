@@ -10,6 +10,7 @@ export const SCALE_LABELS: Record<string, string> = {
   standard: 'QI (m=100, \u03c3=15)',
   't-score': 'T (m=50, \u03c3=10)',
   'v-scale': 'Note v (m=15, \u03c3=3)',
+  'scaled-15': 'Note d\u2019\u00e9chelle (m=15, \u03c3=5)',
   sten: 'Sten (m=5.5, \u03c3=2)',
   stanine: 'Stanine (m=5, \u03c3=2)',
   percentile: 'Rang percentile',

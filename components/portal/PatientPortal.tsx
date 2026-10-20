@@ -8,7 +8,7 @@ import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../../types/supabase';
 import { importQuestionnaireKey, encryptToEnvelope, decryptEnvelope, parseEnvelope } from '../../utils/crypto';
-import { isAdministrativeSectionReady } from '../../utils/patient';
+import { familyQuestionnaireProgress, isAdministrativeSectionReady } from '../../utils/patient';
 import { Logger } from '../../utils/logger';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -26,13 +26,15 @@ const linkError = (message: string) => Object.assign(new Error(message), { name:
 interface Props {
   onBack: () => void;
   initialUrl?: string; // Permet l'auto-login si l'URL est fournie
-  /** Dev scenario `portail` (dev/scenarios.ts): the form opened without a link, nothing is sent. */
-  preview?: { patient?: Patient; practitionerName?: string };
+  /** Dev scenario `portail` (dev/scenarios.ts): the form, pre-filled, without a link; nothing can be sent. */
+  previewPatient?: Patient;
+  /** Name signing the introduction in the dev scenario (a real link carries it encrypted, #149). */
+  previewPractitionerName?: string;
 }
 
-export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, preview }) => {
-  const [loadingStep, setLoadingStep] = useState<'idle' | 'validating' | 'loading' | 'ready' | 'error'>(preview ? 'ready' : 'idle');
-  const [practitionerName, setPractitionerName] = useState(preview?.practitionerName ?? '');
+export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPatient, previewPractitionerName }) => {
+  const [loadingStep, setLoadingStep] = useState<'idle' | 'validating' | 'loading' | 'ready' | 'error'>(previewPatient ? 'ready' : 'idle');
+  const [practitionerName, setPractitionerName] = useState(previewPractitionerName ?? '');
   const [errorMessage, setErrorMessage] = useState('');
   const toast = useToast();
 
@@ -100,10 +102,11 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, preview }) 
     prescribingDoctorProfession: '',
     remarks: '',
     priorities: '',
-    ...preview?.patient,
+    ...previewPatient,
   });
 
   const isAdministrativeReady = isAdministrativeSectionReady(localPatient);
+  const progress = familyQuestionnaireProgress(localPatient);
 
   // Fonction de connexion unifiée
   const attemptLogin = async (urlStr: string) => {
@@ -196,10 +199,6 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, preview }) 
   const handleSaveData = async () => {
     if (!isAdministrativeReady) {
       toast.error("La partie administrative est obligatoire (identité, responsables, médical, motif) avant l'envoi.");
-      return;
-    }
-    if (preview) {
-      toast.info('Aperçu : rien n’est envoyé.');
       return;
     }
     if (!questionnaireId || !encryptionKey) return;
@@ -360,6 +359,23 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, preview }) 
           >
             Déconnexion
           </button>
+        </div>
+        {/* Progression : dans l'en-tête collant, pour garder le même aspect quel que soit le défilement (#152). */}
+        <div className="max-w-4xl mx-auto px-6 pb-3">
+          <div className="flex justify-between text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">
+            <span id="portal-progress-label">Progression</span>
+            <span>{progress}%</span>
+          </div>
+          <div
+            role="progressbar"
+            aria-labelledby="portal-progress-label"
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-2 bg-[var(--progress-bg)] rounded-full overflow-hidden"
+          >
+            <div className="h-full bg-[var(--primary)] transition-all duration-500" style={{ width: `${progress}%` }}></div>
+          </div>
         </div>
       </header>
 
