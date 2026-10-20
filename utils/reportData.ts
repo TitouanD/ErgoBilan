@@ -184,6 +184,15 @@ export interface TestScoreBlock {
   notes: Array<{ label: string; observation: string }>;
 }
 
+/** Unit typed for most scores of a test (first one on a tie): the test is shown in it until another one is picked (#139). */
+const typedMetric = (subtests: ResolvedScore[]): Metric | null => {
+  const counts = new Map<Metric, number>();
+  for (const { metric } of subtests) if (metric) counts.set(metric, (counts.get(metric) ?? 0) + 1);
+  let best: Metric | null = null;
+  for (const [metric, count] of counts) if (best === null || count > counts.get(best)!) best = metric;
+  return best;
+};
+
 const freeObservationBlock = (testId: string, r: ResolvedScore): TestScoreBlock => ({
   testId: `${testId}:${r.subtestId}`,
   testName: r.label,
@@ -207,7 +216,7 @@ export const buildTestScoreBlocks = (
     if (test.subtests.length === 0) return [];
     // Free observations: one card per note, titled by the title the practitioner typed (#143).
     if (test.isFreeObservations) return test.subtests.map((r) => freeObservationBlock(test.testId, r));
-    const mode = modes[test.testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
+    const mode = modes[test.testId] ?? typedMetric(test.subtests) ?? DEFAULT_SCORE_DISPLAY_MODE;
     const block: TestScoreBlock = {
       testId: test.testId,
       testName: test.testName,
