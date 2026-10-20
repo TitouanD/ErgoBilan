@@ -12,6 +12,7 @@ import type { InitialSectionId, ReevaluationSectionId } from './reportSections';
 import { type Trend, TREND_LABEL, trendFromZDelta } from './reevaluationHelpers';
 import { type Metric, type ResolvedScore, describeScore, formatMetricValue, resolveScores } from './resolvedScore';
 import { type ScoreZone, ZONE_META, ZONE_PERCENTILE_THRESHOLDS, formatZ } from './scoring';
+import { groupForReport } from './subtestOrdering';
 
 export type ChartType = 'radar' | 'bar' | 'percentile';
 export type ScoreDisplayMode = Metric;
@@ -126,6 +127,8 @@ export interface ScoreTableRow {
   display: string;
   zone: ScoreZone | null;
   observation: string;
+  /** Catalogue category heading (#140); null when the test has a single category. Rows of a category follow each other. */
+  groupLabel: string | null;
   /** Re-evaluation only (see TestScoreBlock.showEvolution). */
   evolution?: ScoreEvolution;
 }
@@ -229,7 +232,11 @@ export const buildTestScoreBlocks = (
       notes: [],
     };
 
-    for (const r of test.subtests) {
+    const scoreRows = test.subtests.filter((r) => !r.isFreeText && !r.isQualitative);
+    const groupOf = new Map(groupForReport(scoreRows, (r) => r.def).flatMap((g) => g.items.map((r) => [r, g.label] as const)));
+    const ordered = [...groupOf.keys(), ...test.subtests.filter((r) => !groupOf.has(r))];
+
+    for (const r of ordered) {
       const observation = r.score.observation?.trim() || '';
       if (r.isFreeText) {
         block.notes.push({ label: r.label, observation });
@@ -243,7 +250,14 @@ export const buildTestScoreBlocks = (
           observation,
         });
       } else {
-        const row: ScoreTableRow = { subtestId: r.subtestId, label: r.label, display: r.display(mode), zone: r.zone, observation };
+        const row: ScoreTableRow = {
+          subtestId: r.subtestId,
+          label: r.label,
+          display: r.display(mode),
+          zone: r.zone,
+          observation,
+          groupLabel: groupOf.get(r) ?? null,
+        };
         if (previousTests) {
           const previous = describeScore(index, test.testId, r.subtestId, previousTests[test.testId]?.[r.subtestId]);
           row.evolution = scoreEvolution(r, previous, mode);

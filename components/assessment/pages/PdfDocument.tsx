@@ -560,22 +560,29 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
               {block.showEvolution && <Text style={{ ...headCell, ...gridCell(EVOLUTION_W), textAlign: 'center' }}>Évolution</Text>}
               <Text style={{ ...headCell, ...gridCell(obsW) }}>Observations</Text>
             </View>
-            {block.rows.map((row) => (
-              <View key={row.subtestId} wrap={false} style={gridRow}>
-                <Text style={{ ...labelText, ...gridCell('35%') }}>{row.label}</Text>
-                <Text
-                  style={{
-                    ...gridCell('15%'),
-                    fontSize: 8,
-                    textAlign: 'center',
-                    fontWeight: 700,
-                    color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500,
-                  }}
-                >
-                  {row.display}
-                </Text>
-                {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
-                <Text style={{ ...noteText, ...gridCell(obsW) }}>{row.observation || '-'}</Text>
+            {block.rows.map((row, i) => (
+              <View key={row.subtestId} wrap={false}>
+                {row.groupLabel && row.groupLabel !== block.rows[i - 1]?.groupLabel ? (
+                  <View style={{ ...gridRow, backgroundColor: COLORS.stone100 }} minPresenceAhead={20}>
+                    <Text style={{ ...headCell, ...gridCell('100%'), color: theme.primary }}>{row.groupLabel}</Text>
+                  </View>
+                ) : null}
+                <View style={gridRow}>
+                  <Text style={{ ...labelText, ...gridCell('35%') }}>{row.label}</Text>
+                  <Text
+                    style={{
+                      ...gridCell('15%'),
+                      fontSize: 8,
+                      textAlign: 'center',
+                      fontWeight: 700,
+                      color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500,
+                    }}
+                  >
+                    {row.display}
+                  </Text>
+                  {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
+                  <Text style={{ ...noteText, ...gridCell(obsW) }}>{row.observation || '-'}</Text>
+                </View>
               </View>
             ))}
           </View>
