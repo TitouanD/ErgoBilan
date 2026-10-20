@@ -300,8 +300,8 @@ const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string;
   </View>
 );
 
-const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
-  const guide = readingGuide(scale);
+const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale; inverted: boolean }> = ({ theme, scale, inverted }) => {
+  const guide = readingGuide(scale, inverted);
   return (
     <View
       wrap={false}
@@ -320,6 +320,7 @@ const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = 
           <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{line.legend}.</Text>
         </View>
       ))}
+      {guide.note && <Text style={{ fontSize: 8, color: COLORS.stone600, marginTop: 4 }}>{guide.note}</Text>}
     </View>
   );
 };
@@ -411,7 +412,7 @@ const PdfProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; index: 
       <PdfChartFrame title={chart.title} theme={theme} font={font} breakable={chart.items.length > CHART_SLICE}>
         <PdfDotChart chart={chart} />
       </PdfChartFrame>
-      <PdfReadingGuide theme={theme} scale={scale} />
+      <PdfReadingGuide theme={theme} scale={scale} inverted={chart.inverted} />
     </>
   );
 };
@@ -480,12 +481,21 @@ const headCell = { fontSize: 7, fontWeight: 700 as const, textTransform: 'upperc
 
 const EVOLUTION_W = '15%';
 
+// Score tables (#139): ruled grid, compact text like the observations.
+const GRID = COLORS.stone200;
+const tableFrame = { borderTopWidth: 0.5, borderLeftWidth: 0.5, borderColor: GRID };
+const gridRow = { flexDirection: 'row' as const, borderBottomWidth: 0.5, borderBottomColor: GRID };
+const gridCell = (width: string) => ({ width, paddingVertical: 3, paddingHorizontal: 4, borderRightWidth: 0.5, borderRightColor: GRID });
+const headRow = { ...gridRow, backgroundColor: COLORS.stone50 };
+const labelText = { fontSize: 8, fontWeight: 600 as const, color: COLORS.stone700 };
+const noteText = { fontSize: 7.5, fontStyle: 'italic' as const, color: COLORS.stone500 };
+
 const PdfEvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }) => {
   const color = evolution.trend ? TREND_COLOR[evolution.trend] : COLORS.stone400;
   return (
-    <View style={{ width: EVOLUTION_W, alignItems: 'center' }}>
-      <Text style={{ fontSize: 9, fontWeight: 700, color }}>{evolution.text}</Text>
-      {evolution.trendLabel ? <Text style={{ fontSize: 7, color }}>{evolution.trendLabel}</Text> : null}
+    <View style={{ ...gridCell(EVOLUTION_W), alignItems: 'center' }}>
+      <Text style={{ fontSize: 8, fontWeight: 700, color }}>{evolution.text}</Text>
+      {evolution.trendLabel ? <Text style={{ fontSize: 6.5, color }}>{evolution.trendLabel}</Text> : null}
     </View>
   );
 };
@@ -497,118 +507,114 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
   theme,
   font,
   last,
-}) => (
-  <View
-    style={{
-      marginBottom: last ? 0 : 16,
-      backgroundColor: COLORS.white,
-      border: `0.5pt solid ${COLORS.stone200}`,
-      borderRadius: getCornerRadius(theme.corners),
-      overflow: 'hidden',
-    }}
-    wrap={block.rows.length + block.qualitativeRows.length > UNBREAKABLE_ROWS}
-  >
+}) => {
+  const obsW = block.showEvolution ? '35%' : '50%';
+  return (
     <View
-      wrap={false}
-      minPresenceAhead={80}
       style={{
-        backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100,
-        padding: 10,
-        borderBottomWidth: 0.5,
-        borderBottomColor: COLORS.stone200,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        marginBottom: last ? 0 : 10,
+        backgroundColor: COLORS.white,
+        border: `0.5pt solid ${COLORS.stone200}`,
+        borderRadius: getCornerRadius(theme.corners),
+        overflow: 'hidden',
       }}
+      wrap={block.rows.length + block.qualitativeRows.length > UNBREAKABLE_ROWS}
     >
-      <Text style={{ fontSize: 12, fontWeight: 700, color: theme.primary, fontFamily: font }}>{block.testName}</Text>
-      {block.hasStandardizedScores ? <Text style={headCell}>Score ({block.mode})</Text> : null}
-    </View>
-    <View style={{ padding: 12, gap: 10 }}>
-      {block.notes.map((note, i) => (
-        <View key={i} style={{ border: `0.5pt solid ${COLORS.stone100}`, borderRadius: 4, padding: 8 }}>
-          <Text style={{ fontSize: 9, fontWeight: 700, color: COLORS.stone700, marginBottom: 4 }}>{note.label}</Text>
-          <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{note.observation || '-'}</Text>
-        </View>
-      ))}
-      {block.rows.length > 0 && (
-        <View>
-          <View
-            wrap={false}
-            minPresenceAhead={40}
-            style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}
-          >
-            <Text style={{ ...headCell, width: '35%' }}>Épreuves</Text>
-            <Text style={{ ...headCell, width: '15%', textAlign: 'center' }}>{block.hasStandardizedScores ? 'Score' : 'Résultat'}</Text>
-            {block.showEvolution && <Text style={{ ...headCell, width: EVOLUTION_W, textAlign: 'center' }}>Évolution</Text>}
-            <Text style={{ ...headCell, width: block.showEvolution ? '35%' : '50%', paddingLeft: 8 }}>Observations</Text>
-          </View>
-          {block.rows.map((row) => (
-            <View
-              key={row.subtestId}
-              wrap={false}
-              style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}
-            >
-              <Text style={{ width: '35%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 6 }}>• {row.label}</Text>
-              <Text
-                style={{
-                  width: '15%',
-                  fontSize: 9,
-                  textAlign: 'center',
-                  fontWeight: 700,
-                  color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500,
-                }}
-              >
-                {row.display}
-              </Text>
-              {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
-              <Text
-                style={{
-                  width: block.showEvolution ? '35%' : '50%',
-                  fontSize: 8,
-                  fontStyle: 'italic',
-                  color: COLORS.stone500,
-                  paddingLeft: 8,
-                }}
-              >
-                {row.observation || '-'}
-              </Text>
+      <View
+        wrap={false}
+        minPresenceAhead={80}
+        style={{
+          backgroundColor: theme.isCustom ? theme.primary + '08' : COLORS.stone100,
+          paddingVertical: 6,
+          paddingHorizontal: 10,
+          borderBottomWidth: 0.5,
+          borderBottomColor: COLORS.stone200,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: 700, color: theme.primary, fontFamily: font }}>{block.testName}</Text>
+        {block.hasStandardizedScores ? <Text style={headCell}>Score ({block.mode})</Text> : null}
+      </View>
+      <View style={{ padding: 8, gap: 6 }}>
+        {block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <Text key={i} style={{ fontSize: 9, color: COLORS.stone600, lineHeight: 1.5 }}>
+              {note.observation || '-'}
+            </Text>
+          ))}
+        {!block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <View key={i} style={{ border: `0.5pt solid ${GRID}`, borderRadius: 3, padding: 6 }}>
+              <Text style={{ ...labelText, marginBottom: 2 }}>{note.label}</Text>
+              <Text style={{ fontSize: 7.5, color: COLORS.stone600 }}>{note.observation || '-'}</Text>
             </View>
           ))}
-        </View>
-      )}
-      {block.qualitativeRows.length > 0 && (
-        <View>
-          <Text style={{ ...headCell, marginBottom: 6 }}>Qualitatif</Text>
-          <View
-            wrap={false}
-            minPresenceAhead={40}
-            style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.stone100, paddingBottom: 4, marginBottom: 2 }}
-          >
-            <Text style={{ ...headCell, width: '30%' }}>Épreuves</Text>
-            <Text style={{ ...headCell, width: '20%', textAlign: 'center' }}>Catégorie</Text>
-            <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Interprétation</Text>
-            <Text style={{ ...headCell, width: '25%', paddingLeft: 6 }}>Observations</Text>
-          </View>
-          {block.qualitativeRows.map((row) => (
-            <View
-              key={row.subtestId}
-              wrap={false}
-              style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: COLORS.stone50, paddingVertical: 4 }}
-            >
-              <Text style={{ width: '30%', fontSize: 9, fontWeight: 600, color: COLORS.stone700, paddingRight: 4 }}>• {row.label}</Text>
-              <Text style={{ width: '20%', fontSize: 9, textAlign: 'center', fontWeight: 700, color: theme.primary }}>{row.category}</Text>
-              <Text style={{ width: '25%', fontSize: 8, color: COLORS.stone600, paddingLeft: 6 }}>{row.interpretation}</Text>
-              <Text style={{ width: '25%', fontSize: 8, fontStyle: 'italic', color: COLORS.stone500, paddingLeft: 6 }}>
-                {row.observation || '-'}
+        {block.rows.length > 0 && (
+          <View style={tableFrame}>
+            <View wrap={false} minPresenceAhead={40} style={headRow}>
+              <Text style={{ ...headCell, ...gridCell('35%') }}>Épreuves</Text>
+              <Text style={{ ...headCell, ...gridCell('15%'), textAlign: 'center' }}>
+                {block.hasStandardizedScores ? 'Score' : 'Résultat'}
               </Text>
+              {block.showEvolution && <Text style={{ ...headCell, ...gridCell(EVOLUTION_W), textAlign: 'center' }}>Évolution</Text>}
+              <Text style={{ ...headCell, ...gridCell(obsW) }}>Observations</Text>
             </View>
-          ))}
-        </View>
-      )}
+            {block.rows.map((row, i) => (
+              <View key={row.subtestId} wrap={false}>
+                {row.groupLabel && row.groupLabel !== block.rows[i - 1]?.groupLabel ? (
+                  <View style={{ ...gridRow, backgroundColor: COLORS.stone100 }} minPresenceAhead={20}>
+                    <Text style={{ ...headCell, ...gridCell('100%'), color: theme.primary }}>{row.groupLabel}</Text>
+                  </View>
+                ) : null}
+                <View style={gridRow}>
+                  <Text style={{ ...labelText, ...gridCell('35%') }}>{row.label}</Text>
+                  <Text
+                    style={{
+                      ...gridCell('15%'),
+                      fontSize: 8,
+                      textAlign: 'center',
+                      fontWeight: 700,
+                      color: row.zone ? ZONE_META[row.zone].color : COLORS.stone500,
+                    }}
+                  >
+                    {row.display}
+                  </Text>
+                  {row.evolution && <PdfEvolutionCell evolution={row.evolution} />}
+                  <Text style={{ ...noteText, ...gridCell(obsW) }}>{row.observation || '-'}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+        {block.qualitativeRows.length > 0 && (
+          <View>
+            <Text style={{ ...headCell, marginBottom: 3 }}>Qualitatif</Text>
+            <View style={tableFrame}>
+              <View wrap={false} minPresenceAhead={40} style={headRow}>
+                <Text style={{ ...headCell, ...gridCell('30%') }}>Épreuves</Text>
+                <Text style={{ ...headCell, ...gridCell('20%'), textAlign: 'center' }}>Catégorie</Text>
+                <Text style={{ ...headCell, ...gridCell('25%') }}>Interprétation</Text>
+                <Text style={{ ...headCell, ...gridCell('25%') }}>Observations</Text>
+              </View>
+              {block.qualitativeRows.map((row) => (
+                <View key={row.subtestId} wrap={false} style={gridRow}>
+                  <Text style={{ ...labelText, ...gridCell('30%') }}>{row.label}</Text>
+                  <Text style={{ ...gridCell('20%'), fontSize: 8, textAlign: 'center', fontWeight: 700, color: theme.primary }}>
+                    {row.category}
+                  </Text>
+                  <Text style={{ ...gridCell('25%'), fontSize: 7.5, color: COLORS.stone600 }}>{row.interpretation}</Text>
+                  <Text style={{ ...noteText, ...gridCell('25%') }}>{row.observation || '-'}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 const PdfAnnexes: React.FC<{
   tests: TestData;

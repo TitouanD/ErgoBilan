@@ -41,6 +41,7 @@ import {
   computeRadarData,
   moveSectionInPages,
   readingGuide,
+  sheetEnds,
 } from '../../../utils/reportData';
 import { ZONE_META, type ScoreZone } from '../../../utils/scoring';
 import { sectionToHtml } from '../../../utils/reportContent';
@@ -302,8 +303,8 @@ const ChartCard: React.FC<{ title: string; theme: ReportTheme; children: React.R
   </div>
 );
 
-const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
-  const guide = readingGuide(scale);
+const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale; inverted: boolean }> = ({ theme, scale, inverted }) => {
+  const guide = readingGuide(scale, inverted);
   return (
     <div className={`mb-8 p-4 bg-stone-50 border border-stone-200 text-xs ${roundedClass(theme.corners)}`}>
       <p className="font-bold mb-2">{guide.title}</p>
@@ -317,6 +318,7 @@ const ReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ 
           </li>
         ))}
       </ul>
+      {guide.note && <p className="mt-2 text-stone-600">{guide.note}</p>}
     </div>
   );
 };
@@ -392,7 +394,7 @@ const ProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; theme: Rep
           <span className="w-14" />
         </div>
       </ChartCard>
-      <ReadingGuide theme={theme} scale={scale} />
+      <ReadingGuide theme={theme} scale={scale} inverted={chart.inverted} />
     </>
   );
 };
@@ -429,10 +431,14 @@ const RadarProfile: React.FC<{ tests: TestData; theme: ReportTheme }> = ({ tests
 
 // ─── Score tables ───────────────────────────────────────────────────────────
 
+// Score tables (#139): ruled grid, compact text like the observations.
+const TH = 'border border-stone-200 bg-stone-50 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-stone-500';
+const TD = 'border border-stone-200 px-2 py-1.5 align-top';
+
 const EvolutionCell: React.FC<{ evolution: ScoreEvolution }> = ({ evolution }) => {
   const color = evolution.trend ? TREND_COLOR[evolution.trend] : '#A8A29E';
   return (
-    <td className="py-3 text-center" style={{ color }}>
+    <td className={`${TD} text-center`} style={{ color }}>
       <div className="font-bold">{evolution.text}</div>
       {evolution.trendLabel && <div className="text-[10px]">{evolution.trendLabel}</div>}
     </td>
@@ -448,15 +454,15 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
   return (
     <div className={`break-inside-avoid bg-white border border-stone-200 overflow-hidden shadow-sm ${roundedClass(theme.corners)}`}>
       <div
-        className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center"
+        className="bg-stone-100 px-4 py-2 border-b border-stone-200 flex justify-between items-center"
         style={{ backgroundColor: theme.primary + '08' }}
       >
         <div className="flex items-center gap-4">
-          <h3 className="font-bold text-lg" style={headingCss}>
+          <h3 className="font-bold text-base" style={headingCss}>
             {block.testName}
           </h3>
           {!block.isFreeObservations && (
-            <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
               {block.rows.length + block.qualitativeRows.length} épreuves
             </span>
           )}
@@ -476,56 +482,76 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
           </select>
         )}
       </div>
-      <div className="p-6 space-y-6">
-        {block.notes.map((note, i) => (
-          <div key={i} className="border border-stone-100 rounded-lg p-4">
-            <h4 className="font-semibold text-sm text-stone-700 mb-2">{note.label}</h4>
-            <p className="text-sm text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
-          </div>
-        ))}
+      <div className="p-4 space-y-3">
+        {block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <p key={i} className="text-sm text-stone-600 whitespace-pre-wrap">
+              {note.observation || '-'}
+            </p>
+          ))}
+        {!block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <div key={i} className="border border-stone-200 rounded-md px-3 py-2">
+              <h4 className="font-semibold text-xs text-stone-700 mb-1">{note.label}</h4>
+              <p className="text-xs text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
+            </div>
+          ))}
         {block.rows.length > 0 && (
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
-                <th className="pb-3 w-[35%]">Épreuves</th>
-                <th className="pb-3 w-[15%] text-center">{block.hasStandardizedScores ? `Score (${block.mode})` : 'Résultat'}</th>
-                {block.showEvolution && <th className="pb-3 w-[15%] text-center">Évolution</th>}
-                <th className={`pb-3 pl-4 ${block.showEvolution ? 'w-[35%]' : 'w-[50%]'}`}>Observations</th>
+              <tr>
+                <th className={`${TH} w-[35%]`}>Épreuves</th>
+                <th className={`${TH} w-[15%] !text-center`}>{block.hasStandardizedScores ? `Score (${block.mode})` : 'Résultat'}</th>
+                {block.showEvolution && <th className={`${TH} w-[15%] !text-center`}>Évolution</th>}
+                <th className={`${TH} ${block.showEvolution ? 'w-[35%]' : 'w-[50%]'}`}>Observations</th>
               </tr>
             </thead>
             <tbody className="text-stone-700">
-              {block.rows.map((row) => (
-                <tr key={row.subtestId} className="border-b border-stone-50 last:border-0 align-top">
-                  <td className="py-3 pr-4 font-medium">• {row.label}</td>
-                  <td className="py-3 text-center font-bold" style={{ color: zoneTextColor(row.zone) ?? '#78716C' }}>
-                    {row.display}
-                  </td>
-                  {row.evolution && <EvolutionCell evolution={row.evolution} />}
-                  <td className="py-3 pl-4 italic text-xs text-stone-500">{row.observation || '-'}</td>
-                </tr>
+              {block.rows.map((row, i) => (
+                <React.Fragment key={row.subtestId}>
+                  {row.groupLabel && row.groupLabel !== block.rows[i - 1]?.groupLabel && (
+                    <tr>
+                      <td
+                        colSpan={block.showEvolution ? 4 : 3}
+                        className={`${TD} bg-stone-100 text-[10px] font-bold uppercase tracking-wider`}
+                        style={{ color: theme.primary }}
+                      >
+                        {row.groupLabel}
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td className={`${TD} font-medium`}>{row.label}</td>
+                    <td className={`${TD} text-center font-bold whitespace-nowrap`} style={{ color: zoneTextColor(row.zone) ?? '#78716C' }}>
+                      {row.display}
+                    </td>
+                    {row.evolution && <EvolutionCell evolution={row.evolution} />}
+                    <td className={`${TD} italic text-[11px] text-stone-500`}>{row.observation || '-'}</td>
+                  </tr>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         )}
         {block.qualitativeRows.length > 0 && (
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">Qualitatif</div>
-            <table className="w-full border-collapse text-sm">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1">Qualitatif</div>
+            <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b-2 border-stone-100 text-left text-xs font-bold text-stone-400 uppercase tracking-wider">
-                  <th className="pb-3 w-[30%]">Épreuves</th>
-                  <th className="pb-3 w-[20%] text-center">Catégorie</th>
-                  <th className="pb-3 w-[25%] pl-3">Interprétation</th>
-                  <th className="pb-3 w-[25%] pl-3">Observations</th>
+                <tr>
+                  <th className={`${TH} w-[30%]`}>Épreuves</th>
+                  <th className={`${TH} w-[20%] !text-center`}>Catégorie</th>
+                  <th className={`${TH} w-[25%]`}>Interprétation</th>
+                  <th className={`${TH} w-[25%]`}>Observations</th>
                 </tr>
               </thead>
               <tbody className="text-stone-700">
                 {block.qualitativeRows.map((row) => (
-                  <tr key={row.subtestId} className="border-b border-stone-50 last:border-0 align-top">
-                    <td className="py-3 pr-4 font-medium">• {row.label}</td>
-                    <td className="py-3 text-center font-semibold text-[var(--secondary)]">{row.category}</td>
-                    <td className="py-3 pl-3 text-xs text-stone-600">{row.interpretation}</td>
-                    <td className="py-3 pl-3 italic text-xs text-stone-500">{row.observation || '-'}</td>
+                  <tr key={row.subtestId}>
+                    <td className={`${TD} font-medium`}>{row.label}</td>
+                    <td className={`${TD} text-center font-semibold text-[var(--secondary)]`}>{row.category}</td>
+                    <td className={`${TD} text-[11px] text-stone-600`}>{row.interpretation}</td>
+                    <td className={`${TD} italic text-[11px] text-stone-500`}>{row.observation || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -586,7 +612,7 @@ const AnnexesBlock: React.FC<{
         {chartType === 'radar' && <RadarProfile tests={tests} theme={theme} />}
         {chartType !== 'radar' && <ProfileChart scale={chartType === 'bar' ? 'z' : 'percentile'} tests={tests} theme={theme} />}
 
-        <div className="space-y-12">
+        <div className="space-y-4">
           {blocks.map((block) => (
             <ScoreBlockCard
               key={block.testId}
@@ -723,6 +749,43 @@ const ReportHeader: React.FC<{ patient: Patient; dateLabel: string; branding?: B
   );
 };
 
+// ─── Page ───────────────────────────────────────────────────────────────────
+
+/**
+ * One preview page. A page taller than an A4 sheet flows over several sheets in
+ * the PDF: the sheet ends are marked in the margin, outside the text (#136).
+ */
+const PreviewPage: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [ends, setEnds] = useState<number[]>([]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const next = sheetEnds(el.offsetHeight);
+      setEnds((prev) => (prev.length === next.length && prev.every((y, i) => Math.abs(y - next[i]) < 1) ? prev : next));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="page-a4">
+      {children}
+      {ends.map((y) => (
+        <div
+          key={y}
+          className="absolute left-full ml-3 -translate-y-1/2 no-print pointer-events-none flex items-center gap-1 text-[10px] leading-tight text-stone-400 whitespace-nowrap"
+          style={{ top: y }}
+          title="Le PDF passe ici à la page suivante"
+        >
+          <span className="w-3 border-t border-stone-300" />
+          fin de page A4
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── Report ─────────────────────────────────────────────────────────────────
 
 export const ReportView: React.FC<Props> = ({
@@ -765,7 +828,7 @@ export const ReportView: React.FC<Props> = ({
   return (
     <div id="printable-report" className="w-full flex flex-col items-center gap-8 no-scrollbar">
       {pages.map((pageSections, pageIdx) => (
-        <div key={pageIdx} className="page-a4">
+        <PreviewPage key={pageIdx}>
           {pageIdx === 0 && (
             <>
               <ReportHeader patient={patient} dateLabel={dateLabel} branding={branding} theme={theme} />
@@ -834,7 +897,7 @@ export const ReportView: React.FC<Props> = ({
               </div>
             )}
           </div>
-        </div>
+        </PreviewPage>
       ))}
 
       {onUpdateSection && onPagesChange && (

@@ -18,17 +18,17 @@ Hiérarchie : `official_categories` → `official_tests` → `official_subtests`
 
 Correspondance faite par `toSubtestDef` et `buildCatalog` (`contexts/CatalogContext.tsx`) :
 
-| Colonne (vue)                                   | Type / contrainte                                                                               | Mappé vers                                                          |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| catalog.`id`, `label`                           | text                                                                                            | `TestDef.id`, `TestDef.name`                                        |
-| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                        | `CategoryDef.id`, `.name`                                           |
-| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                           | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
-| catalog.`subtests_count`                        | calculé                                                                                         | non chargé                                                          |
-| subtests.`unit`                                 | text                                                                                            | `unit` (défaut `'pts'`)                                             |
-| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, v-scale, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
-| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text                        | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
-| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                   | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
-| subtests.`display_group_order`, `display_order` | integer                                                                                         | `displayGroupOrder`, `displayOrder`                                 |
+| Colonne (vue)                                   | Type / contrainte                                                                                                                            | Mappé vers                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| catalog.`id`, `label`                           | text                                                                                                                                         | `TestDef.id`, `TestDef.name`                                        |
+| catalog.`category_id`, `category_label`         | FK `official_categories`                                                                                                                     | `CategoryDef.id`, `.name`                                           |
+| catalog.`icon_key`, `sort_order`                | issus de la catégorie                                                                                                                        | `CategoryDef.iconKey` (défaut `Box`), `.sortOrder` (défaut 99)      |
+| catalog.`subtests_count`                        | calculé                                                                                                                                      | non chargé                                                          |
+| subtests.`unit`                                 | text                                                                                                                                         | `unit` (défaut `'pts'`)                                             |
+| subtests.`score_type`                           | NOT NULL, défaut `'none'` ; standard, scaled, t-score, t-score-inverse, v-scale, v-scale-inverse, scaled-15, percentile, sten, stanine, none | `scoreType`, via `resolveScaleType` (inconnu → `none`)              |
+| subtests.`input_model`                          | NOT NULL, défaut `'numeric_4mode'` ; + qualitative_category, custom_text                                                                     | `inputModel` (`toInputModel` : valeur inconnue → `numeric_4mode`)   |
+| subtests.`input_config`                         | jsonb NOT NULL, défaut `'{}'`                                                                                                                | `inputConfig`, validé par `toInputConfig` (clés inconnues ignorées) |
+| subtests.`display_group_order`, `display_order` | integer                                                                                                                                      | `displayGroupOrder`, `displayOrder`                                 |
 
 ## 2. Chargement côté client
 
@@ -65,16 +65,19 @@ Un seul tableau de saisie, `ScoreTable` (`components/assessment/shared/ScoreTabl
 
 `SCALE_PARAMS` (`utils/scoring.ts`), libellés `SCALE_LABELS` (`utils/subtestOrdering.ts`) :
 
-| `score_type` | Moyenne | ET  | Bornes usuelles | Libellé UI             | Conversion                           |
-| ------------ | ------- | --- | --------------- | ---------------------- | ------------------------------------ |
-| `scaled`     | 10      | 3   | 1–19            | NS (m=10, σ=3)         | paramétrique                         |
-| `standard`   | 100     | 15  | 40–160          | QI (m=100, σ=15)       | paramétrique                         |
-| `t-score`    | 50      | 10  | 20–80           | T (m=50, σ=10)         | paramétrique                         |
-| `v-scale`    | 15      | 3   | 1–24            | Note v (m=15, σ=3)     | paramétrique (Vineland, #90)         |
-| `sten`       | 5,5     | 2   | 1–10            | Sten (m=5.5, σ=2)      | paramétrique                         |
-| `stanine`    | 5       | 2   | 1–9             | Stanine (m=5, σ=2)     | paramétrique                         |
-| `percentile` | —       | —   | 1–99            | Rang percentile        | la valeur « NS » est un rang centile |
-| `none`       | —       | —   | —               | Échelle non renseignée | NS non convertible ; ET ↔ % possible |
+| `score_type`      | Moyenne | ET  | Bornes usuelles | Libellé UI                                  | Conversion                                                             |
+| ----------------- | ------- | --- | --------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| `scaled`          | 10      | 3   | 1–19            | NS (m=10, σ=3)                              | paramétrique                                                           |
+| `standard`        | 100     | 15  | 40–160          | QI (m=100, σ=15)                            | paramétrique                                                           |
+| `t-score`         | 50      | 10  | 20–80           | T (m=50, σ=10)                              | paramétrique                                                           |
+| `v-scale`         | 15      | 3   | 1–24            | Note v (m=15, σ=3)                          | paramétrique (Vineland, #90)                                           |
+| `scaled-15`       | 15      | 5   | 0–35            | Note d’échelle (m=15, σ=5)                  | paramétrique (sous-tests BOT-2, #123)                                  |
+| `t-score-inverse` | 50      | 10  | 20–80           | T (m=50, σ=10), note haute = difficulté     | paramétrique, sens inversé (BRIEF-2, SPM, #122)                        |
+| `v-scale-inverse` | 15      | 3   | 1–24            | Note v (m=15, σ=3), note haute = difficulté | paramétrique, sens inversé (Vineland-3 Internalisé, Externalisé, #122) |
+| `sten`            | 5,5     | 2   | 1–10            | Sten (m=5.5, σ=2)                           | paramétrique                                                           |
+| `stanine`         | 5       | 2   | 1–9             | Stanine (m=5, σ=2)                          | paramétrique                                                           |
+| `percentile`      | —       | —   | 1–99            | Rang percentile                             | la valeur « NS » est un rang centile                                   |
+| `none`            | —       | —   | —               | Échelle non renseignée                      | NS non convertible ; ET ↔ % possible                                   |
 
 Aucune borne n'est validée à la saisie. Fonctions de `utils/scoring.ts` :
 
@@ -124,6 +127,8 @@ affichage
 `ZONE_META` porte aussi les couleurs (hex, communes à Recharts, au HTML et à `@react-pdf`) et les légendes. Les légendes percentile donnent les seuils réels (« inférieur ou égal à 2,3 », « entre 2,3 et 15,9 »). Les écrans prennent leurs classes Tailwind et leur dégradé de zone dans `components/assessment/shared/zoneStyles.ts` (`zoneColor`, `zoneTextClass`, `zoneRowClass`, `zoneGradient`).
 
 **Règle de zone** : un score standardisé prend la zone de son z ; si le z n'est pas calculable (percentile 0 ou 100 saisi), celle de son percentile. Un score qualitatif, une observation ou un score vide n'a pas de zone. Au seuil, le z l'emporte : z = −1 est `fragile` même si son percentile arrondi (16) serait `normal`.
+
+**Échelles inversées** (`t-score-inverse`, `v-scale-inverse`, `isHigherWorse`, #122) : une note haute y signale une difficulté. La saisie et l'affichage (`display`, `valueIn`, colonnes NS / ET / % du tableau) suivent le manuel : T 72 = +2,2 ET = 99 %. Le score résolu retourne son `z` et son `pct` (−2,2 et 1) : zone, graphiques, moyenne par test, radar, tendance de l'évolution et charge de l'IA lisent donc tous « négatif = difficulté ». Sur les graphiques, le libellé de ces sous-tests finit par ` *` et le guide de lecture l'explique (`DotChart.inverted`, `readingGuide(scale, inverted).note`) ; la charge de l'IA porte un champ `lecture`.
 
 Les données des annexes sont calculées dans `utils/reportData.ts` ; l'aperçu et le PDF ne font que les rendre :
 

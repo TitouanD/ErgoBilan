@@ -20,8 +20,22 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   User,
 };
 
-/** Scale of a subtest's standardized score (`official_subtests.score_type`). 'none' = unknown scale. */
-export type ScoreType = 'standard' | 'scaled' | 't-score' | 'v-scale' | 'percentile' | 'sten' | 'stanine' | 'none';
+/**
+ * Scale of a subtest's standardized score (`official_subtests.score_type`). 'none' = unknown scale.
+ * `*-inverse`: same scale, but a high score signals a difficulty (BRIEF-2, SPM, Vineland-3 maladaptive, #122).
+ */
+export type ScoreType =
+  | 'standard'
+  | 'scaled'
+  | 't-score'
+  | 't-score-inverse'
+  | 'v-scale'
+  | 'v-scale-inverse'
+  | 'scaled-15'
+  | 'percentile'
+  | 'sten'
+  | 'stanine'
+  | 'none';
 
 /**
  * How a subtest is entered in the score table:

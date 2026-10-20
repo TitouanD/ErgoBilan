@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState } from 'react';
 import type { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils/patient';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
@@ -198,30 +198,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
     goals: false,
   });
 
-  const [progress, setProgress] = useState(0);
-
-  // Calcul progression
-  useEffect(() => {
-    if (mode === 'family') {
-      let filled = 0;
-      const total = 13;
-      if (data.lastName && data.firstName) filled++;
-      if (data.parent1Name || data.parent2Name || data.parentNames) filled++;
-      if (data.guardMode) filled++;
-      if (data.school && data.classLevel) filled++;
-      if (data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0) filled++;
-      if (data.motorDevelopmentTags || data.walkingAge || data.developmentMotor) filled++;
-      if (data.clothingButtons || data.eatingHabits) filled++;
-      if (data.reason) filled++;
-      if ((data.goals?.length ?? 0) > 0) filled++;
-      if (data.sensory || data.sleepStatus) filled++;
-      if (data.writingPain || data.writingIssues) filled++;
-      if (data.continence || data.dressing) filled++;
-      if (data.emotionalGlobalTags || data.emotionalReactionTags || data.emotionalNotes || data.emotionalRegulation) filled++;
-
-      setProgress(Math.round((filled / total) * 100));
-    }
-  }, [data, mode]);
+  // Sticky band above the sections: the portal header (with the progress, #152) in family mode, the app header otherwise.
+  const stickyTop = () => (mode === 'family' ? (document.querySelector('header')?.getBoundingClientRect().bottom ?? 80) : 80);
 
   const toggleSection = (id: SectionKey, forceState?: boolean) => {
     setOpenSections((prev) => {
@@ -262,7 +240,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       const el = document.getElementById(`section-${id}`);
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      if (top < 80) window.scrollTo({ top: top + window.scrollY - 80, behavior: 'smooth' });
+      const offset = stickyTop();
+      if (top < offset) window.scrollTo({ top: top + window.scrollY - offset, behavior: 'smooth' });
     }, 50);
   };
 
@@ -276,7 +255,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
         setTimeout(() => {
           const el = document.getElementById(`section-${nextId}`);
           if (el) {
-            const top = el.getBoundingClientRect().top + window.scrollY - 80;
+            const top = el.getBoundingClientRect().top + window.scrollY - stickyTop();
             window.scrollTo({ top, behavior: 'smooth' });
           }
         }, 100);
@@ -335,9 +314,9 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const addMedicalTracking = () => {
     const newItem: ParamedicalTracking = {
       id: crypto.randomUUID(),
-      type: 'Orthophoniste',
+      type: '',
       name: '',
-      profession: 'Orthophoniste',
+      profession: '',
       frequency: '',
       since: '',
       assessmentDate: '',
@@ -349,6 +328,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const updateMedicalTracking = (idx: number, field: keyof ParamedicalTracking, val: any) => {
     const newTracking = [...(data.medicalTracking || [])];
     newTracking[idx] = { ...newTracking[idx], [field]: val };
+    // `type` is the legacy profession, still read as a fallback: keep it in step so a cleared profession stays empty.
+    if (field === 'profession') newTracking[idx].type = val;
     onChange({ medicalTracking: newTracking });
   };
   const removeMedicalTracking = (idx: number) => {
@@ -634,18 +615,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   return (
     <div className="space-y-6 pb-20" onClick={handleRadioReclick}>
-      {mode === 'family' && (
-        <div className="sticky top-20 z-30 bg-[var(--app-bg)] pt-4 pb-4 border-b border-[var(--border-color)] mb-6">
-          <div className="flex justify-between text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2">
-            <span>Progression</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="h-2 bg-[var(--progress-bg)] rounded-full overflow-hidden">
-            <div className="h-full bg-[var(--primary)] transition-all duration-500" style={{ width: `${progress}%` }}></div>
-          </div>
-        </div>
-      )}
-
       {SECTIONS_CONFIG.map((section) => {
         const isOpen = openSections[section.id];
         const isAdministrativeSection = ['identity', 'parents', 'medical', 'reason'].includes(section.id);
@@ -1251,12 +1220,17 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             multi
                           />
                           <div className="mt-2">
-                            <DebouncedInput
+                            <label htmlFor="classroomBehavior" className={labelClass}>
+                              Précisions
+                            </label>
+                            <DebouncedTextarea
+                              id="classroomBehavior"
                               name="classroomBehavior"
                               value={data.classroomBehavior || ''}
                               onChange={(v) => handleFieldChange('classroomBehavior', v)}
                               className={inputClass}
                               placeholder="Précisions complémentaires..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1279,12 +1253,17 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             multi
                           />
                           <div className="mt-2">
-                            <DebouncedInput
+                            <label htmlFor="peerRelations" className={labelClass}>
+                              Précisions
+                            </label>
+                            <DebouncedTextarea
+                              id="peerRelations"
                               name="peerRelations"
                               value={data.peerRelations || data.socialBehavior || ''}
                               onChange={(v) => handleFieldChange('peerRelations', v)}
                               className={inputClass}
                               placeholder="Jeux, interactions, conflits, isolement..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1311,22 +1290,24 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className={labelClass}>Mémorisation</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="schoolMemory"
                               value={data.schoolMemory || ''}
                               onChange={(v) => handleFieldChange('schoolMemory', v)}
                               className={inputClass}
                               placeholder="Leçons, consignes, automatismes..."
+                              rows={1}
                             />
                           </div>
                           <div>
                             <label className={labelClass}>Organisation</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="schoolOrganization"
                               value={data.schoolOrganization || ''}
                               onChange={(v) => handleFieldChange('schoolOrganization', v)}
                               className={inputClass}
                               placeholder="Cartable, matériel, consignes..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1464,12 +1445,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                         </div>
                         <div>
                           <label className={labelClass}>Traitements en cours</label>
-                          <DebouncedInput
+                          <DebouncedTextarea
                             name="medicalTreatments"
                             value={data.medicalTreatments || ''}
                             onChange={(v) => handleFieldChange('medicalTreatments', v)}
                             className={inputClass}
                             placeholder="Médicaments, lunettes..."
+                            rows={1}
                           />
                         </div>
                         <div>
@@ -1524,7 +1506,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                   <label className={labelClass}>Profession</label>
                                   <DebouncedInput
                                     placeholder="Profession"
-                                    value={track.profession || (track.type === 'Autre' ? '' : track.type)}
+                                    value={track.profession ?? (track.type === 'Autre' ? '' : track.type)}
                                     onChange={(v) => updateMedicalTracking(idx, 'profession', v)}
                                     className={inputClass}
                                   />
@@ -1764,12 +1746,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                           </div>
                           <div>
                             <label className={labelClass}>Précisions</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="sleep"
                               value={data.sleep || ''}
                               onChange={(v) => handleFieldChange('sleep', v)}
                               className={inputClass}
                               placeholder="Heure coucher/lever, durée, rituel..."
+                              rows={1}
                             />
                           </div>
                         </div>

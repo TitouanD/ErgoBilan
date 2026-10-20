@@ -12,7 +12,7 @@
 import type { SubtestDef } from '../data/testCatalog';
 import type { ScoreResult, TestData } from '../types';
 import { CUSTOM_OBSERVATIONS_TEST_ID, type CatalogIndex } from '../utils/catalogIndex';
-import { SCALE_PARAMS, normalCDF, resolveScaleType } from '../utils/scoring';
+import { SCALE_PARAMS, isHigherWorse, normalCDF, resolveScaleType } from '../utils/scoring';
 import { compareSubtestsForDisplay } from '../utils/subtestOrdering';
 import type { FictiveTest } from './fictivePatients';
 
@@ -46,7 +46,9 @@ export const fictiveScore = (def: SubtestDef, z: number, position: number): Scor
   const scale = resolveScaleType(def.scoreType);
   const params = SCALE_PARAMS[scale];
   if (params) {
-    const value = clamp(Math.round(z * params.sd + params.mean), scale === 'scaled' ? 1 : 0, Math.round(params.mean + 3.5 * params.sd));
+    // On a scale where a high score signals a difficulty, a low z is a high score.
+    const shown = isHigherWorse(scale) ? -z : z;
+    const value = clamp(Math.round(shown * params.sd + params.mean), scale === 'scaled' ? 1 : 0, Math.round(params.mean + 3.5 * params.sd));
     return { value: String(value), unit: 'NS' };
   }
   if (scale === 'percentile' || position % 2 === 1) return { value: percentileOf(z), unit: '%' };

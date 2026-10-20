@@ -12,6 +12,8 @@ import { Logger } from '../utils/logger';
 interface UseLinkManagerParams {
   sessionKey: CryptoKey | null;
   practitioner: PractitionerProfile | null;
+  /** Name signing the portal introduction (#149); empty = generic signature. */
+  practitionerName: string;
   isDemoMode: boolean;
   pendingQuestionnaires: PendingQuestionnaire[];
   setPendingQuestionnaires: Dispatch<SetStateAction<PendingQuestionnaire[]>>;
@@ -21,6 +23,7 @@ interface UseLinkManagerParams {
 export const useLinkManager = ({
   sessionKey,
   practitioner,
+  practitionerName,
   isDemoMode,
   pendingQuestionnaires,
   setPendingQuestionnaires,
@@ -68,8 +71,12 @@ export const useLinkManager = ({
       return;
     }
 
-    const { keyString } = await generateQuestionnaireKey();
+    const { key, keyString } = await generateQuestionnaireKey();
     const practitionerEncryptedKey = await encryptToEnvelope(keyString, sessionKey);
+    // The portal signs its introduction with this name; encrypted with the link key like the answers,
+    // which replace it when the family sends the questionnaire.
+    const name = practitionerName.trim();
+    const familyEncryptedData = name ? await encryptToEnvelope({ practitioner: { name } }, key) : null;
 
     // Générer un token d'accès pour sécuriser l'accès anonyme
     const accessTokenBytes = new Uint8Array(32);
@@ -89,6 +96,7 @@ export const useLinkManager = ({
         status: 'pending',
         practitioner_encrypted_key: practitionerEncryptedKey,
         access_token: accessToken,
+        family_encrypted_data: familyEncryptedData,
       })
       .select()
       .single();
@@ -115,7 +123,7 @@ export const useLinkManager = ({
       const copied = await tryCopyLink(generatedLink);
       toast.success(copied ? 'Lien sécurisé généré et copié' : 'Lien sécurisé généré');
     }
-  }, [isDemoMode, sessionKey, practitioner, pendingQuestionnaires, setPendingQuestionnaires, toast, tryCopyLink]);
+  }, [isDemoMode, sessionKey, practitioner, practitionerName, pendingQuestionnaires, setPendingQuestionnaires, toast, tryCopyLink]);
 
   // ------------------------------------------------------------------
   // Delete a pending questionnaire (suppression en DB)

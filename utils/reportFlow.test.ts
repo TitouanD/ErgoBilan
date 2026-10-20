@@ -8,6 +8,7 @@ import { markdownToHtml, sectionToHtml } from './reportContent';
 import {
   buildDefaultPages,
   buildTestScoreBlocks,
+  sheetEnds,
   computeDotChart,
   computeRadarData,
   moveSectionInPages,
@@ -214,6 +215,112 @@ describe('report data', () => {
     expect(inEt.rows[0].evolution?.text).toBe('+0.67 ET');
   });
 
+  it('shows each free observation as its own card, titled by the title typed, with the whole text (#143)', () => {
+    const text = 'Premier paragraphe.\n\nDeuxième paragraphe.';
+    const blocks = buildTestScoreBlocks(
+      {
+        custom_observations: {
+          custom_1: { customLabel: "Observation de l'écriture", observation: text },
+          custom_2: { observation: 'Autre note.' },
+        },
+      },
+      index,
+    );
+    expect(blocks.map((b) => [b.testName, b.isFreeObservations, b.notes])).toEqual([
+      ["Observation de l'écriture", true, [{ label: '', observation: text }]],
+      ['Observation libre', true, [{ label: '', observation: 'Autre note.' }]],
+    ]);
+  });
+
+  it('shows each test in the unit typed at the scores step until the practitioner picks another one (#139)', () => {
+    const tests = {
+      mabc: { dext: { value: '7', unit: 'NS' as const } },
+      dtvp: { copy: { value: '30', unit: '%' as const } },
+      bells: { omis: { value: '-1', unit: 'ET' as const } },
+    };
+    expect(buildTestScoreBlocks(tests, index).map((b) => [b.testId, b.mode, b.rows[0].display])).toEqual([
+      ['mabc', 'NS', '7 NS'],
+      ['dtvp', '%', '30 %'],
+      ['bells', 'ET', '-1 ET'],
+    ]);
+    expect(buildTestScoreBlocks(tests, index, { mabc: 'ET' })[0].mode).toBe('ET');
+  });
+
+  it('groups the score rows by catalogue category, each total at the end of its category (#140)', () => {
+    const band = (label: string, order: number) => ({ groupHeaderLabel: `Groupe d'âge 2 (7 à 10 ans) — ${label}`, groupOrder: order });
+    const sub = (id: string, name: string, order: number, group: { groupHeaderLabel: string; groupOrder: number }) => ({
+      id,
+      name,
+      unit: 'pts',
+      scoreType: 'scaled' as const,
+      inputModel: 'numeric_4mode' as const,
+      displayGroupOrder: group.groupOrder,
+      displayOrder: order,
+      inputConfig: group,
+    });
+    const totals = { groupHeaderLabel: 'Notes totales', groupOrder: 98 };
+    const mabcIndex = buildCatalogIndex([
+      {
+        id: 'motor',
+        name: 'Motricité',
+        iconKey: 'Hand',
+        sortOrder: 1,
+        tests: [
+          {
+            id: 'mabc-2',
+            name: 'MABC-2',
+            subtests: [
+              sub('pegs', 'Chevilles main préférée', 11, band('Dextérité manuelle', 4)),
+              sub('catch', 'Attraper avec 2 mains', 15, band('Viser et attraper', 5)),
+              sub('board', 'Équilibre sur une planche', 17, band('Équilibre', 6)),
+              sub('dext-total', 'Note totale dextérité manuelle', 33, totals),
+              sub('aim-total', 'Note totale viser et attraper', 34, totals),
+              sub('bal-total', 'Note totale Équilibre', 35, totals),
+              sub('total', 'Note totale du test', 36, totals),
+            ],
+          },
+          {
+            id: 'bhk',
+            name: 'BHK',
+            subtests: [
+              sub('quality', 'Qualité', 1, { groupHeaderLabel: 'Scores BHK', groupOrder: 1 }),
+              sub('speed', 'Vitesse', 2, { groupHeaderLabel: 'Scores BHK', groupOrder: 1 }),
+            ],
+          },
+        ],
+      },
+    ]);
+    const ns = (value: string) => ({ value, unit: 'NS' as const });
+    // Stored in another order than the catalogue's.
+    const tests = {
+      'mabc-2': {
+        total: ns('5'),
+        board: ns('6'),
+        'bal-total': ns('7'),
+        pegs: ns('8'),
+        'dext-total': ns('9'),
+        catch: ns('10'),
+        'aim-total': ns('11'),
+      },
+      bhk: { speed: ns('9'), quality: ns('8') },
+    };
+    const [mabc, bhk] = buildTestScoreBlocks(tests, mabcIndex);
+    expect(mabc.rows.map((r) => [r.groupLabel, r.label])).toEqual([
+      ['Dextérité manuelle', 'Chevilles main préférée'],
+      ['Dextérité manuelle', 'Note totale dextérité manuelle'],
+      ['Viser et attraper', 'Attraper avec 2 mains'],
+      ['Viser et attraper', 'Note totale viser et attraper'],
+      ['Équilibre', 'Équilibre sur une planche'],
+      ['Équilibre', 'Note totale Équilibre'],
+      ['Notes totales', 'Note totale du test'],
+    ]);
+    // A single category: no heading.
+    expect(bhk.rows.map((r) => [r.groupLabel, r.label])).toEqual([
+      [null, 'Qualité'],
+      [null, 'Vitesse'],
+    ]);
+  });
+
   it('has no evolution column outside a re-evaluation', () => {
     const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
     expect(block.showEvolution).toBe(false);
@@ -255,6 +362,13 @@ describe('report data', () => {
       ['conclusion', 'recommandations_reev'],
       ['annexes'],
     ]);
+  });
+
+  it('marks where each A4 sheet ends in a preview page taller than one sheet (#136)', () => {
+    expect(sheetEnds(1122)).toEqual([]);
+    expect(sheetEnds(1123, 1122)).toEqual([]);
+    expect(sheetEnds(1500, 1000)).toEqual([1000]);
+    expect(sheetEnds(3200, 1000)).toEqual([1000, 2000, 3000]);
   });
 
   it('moves sections without mutating and reconciles layouts', () => {

@@ -12,6 +12,7 @@ import type { InitialSectionId, ReevaluationSectionId } from './reportSections';
 import { type Trend, TREND_LABEL, trendFromZDelta } from './reevaluationHelpers';
 import { type Metric, type ResolvedScore, describeScore, formatMetricValue, resolveScores } from './resolvedScore';
 import { type ScoreZone, ZONE_META, ZONE_PERCENTILE_THRESHOLDS, formatZ } from './scoring';
+import { groupForReport } from './subtestOrdering';
 
 export type ChartType = 'radar' | 'bar' | 'percentile';
 export type ScoreDisplayMode = Metric;
@@ -47,16 +48,24 @@ export interface DotChart {
   bands: Array<{ zone: ScoreZone; from: number; to: number }>;
   centerLine: number;
   ticks: Array<{ position: number; label: string; bold: boolean }>;
+  /** Some items are on a scale where a high score signals a difficulty: their label ends with ` *`, see `readingGuide`. */
+  inverted: boolean;
 }
+
+/** Chart label: ` *` marks a score turned around (high score = difficulty). */
+const chartLabel = (r: ResolvedScore): string => (r.higherIsWorse ? `${r.label} *` : r.label);
 
 export const computeDotChart = (scale: DotChartScale, tests: TestData, index: CatalogIndex): DotChart => {
   const entries = resolvedEntries(tests, index);
+  const inverted = entries.some((r) => r.higherIsWorse && (scale === 'z' ? r.z : r.pct) !== null && r.zone);
   if (scale === 'z') {
     const [deficitEnd, fragileEnd] = [zToFraction(-2), zToFraction(-1)];
     return {
       title: 'Profil des scores (écarts-types)',
       items: entries.flatMap((r) =>
-        r.z !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: zToFraction(r.z), value: formatZ(r.z, 1) }] : [],
+        r.z !== null && r.zone
+          ? [{ key: r.key, label: chartLabel(r), zone: r.zone, position: zToFraction(r.z), value: formatZ(r.z, 1) }]
+          : [],
       ),
       bands: [
         { zone: 'deficit', from: 0, to: deficitEnd },
@@ -65,13 +74,16 @@ export const computeDotChart = (scale: DotChartScale, tests: TestData, index: Ca
       ],
       centerLine: zToFraction(0),
       ticks: Z_AXIS.ticks.map((t) => ({ position: zToFraction(t), label: t === 0 ? '0' : `${t > 0 ? '+' : ''}${t} ET`, bold: t === 0 })),
+      inverted,
     };
   }
   const [deficitEnd, fragileEnd] = [pctToFraction(ZONE_PERCENTILE_THRESHOLDS.deficit), pctToFraction(ZONE_PERCENTILE_THRESHOLDS.fragile)];
   return {
     title: 'Profil des scores (percentiles)',
     items: entries.flatMap((r) =>
-      r.pct !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: pctToFraction(r.pct), value: `${r.pct}e` }] : [],
+      r.pct !== null && r.zone
+        ? [{ key: r.key, label: chartLabel(r), zone: r.zone, position: pctToFraction(r.pct), value: `${r.pct}e` }]
+        : [],
     ),
     bands: [
       { zone: 'deficit', from: 0, to: deficitEnd },
@@ -80,19 +92,24 @@ export const computeDotChart = (scale: DotChartScale, tests: TestData, index: Ca
     ],
     centerLine: 0.5,
     ticks: PERCENTILE_TICKS.map((t) => ({ position: pctToFraction(t), label: String(t), bold: t === 50 })),
+    inverted,
   };
 };
 
-/** Legend shown under a dot chart. */
+/** Legend shown under a dot chart; `inverted` = the chart holds turned-around scores (`DotChart.inverted`). */
 export const readingGuide = (
   scale: DotChartScale,
-): { title: string; lines: Array<{ zone: ScoreZone; label: string; legend: string }> } => ({
+  inverted = false,
+): { title: string; lines: Array<{ zone: ScoreZone; label: string; legend: string }>; note: string | null } => ({
   title: `Guide de lecture${scale === 'percentile' ? ' (percentiles)' : ''} :`,
   lines: (['normal', 'fragile', 'deficit'] as const).map((zone) => ({
     zone,
     label: ZONE_META[zone].label,
     legend: scale === 'z' ? ZONE_META[zone].zLegend : ZONE_META[zone].pctLegend,
   })),
+  note: inverted
+    ? `* Épreuve où une note élevée signale une difficulté : ${scale === 'z' ? 'son écart-type est inversé' : 'son percentile est inversé'} sur le graphique, pour que la difficulté soit toujours à gauche. Le tableau des scores donne la valeur du manuel.`
+    : null,
 });
 
 export interface RadarPoint {
@@ -126,6 +143,8 @@ export interface ScoreTableRow {
   display: string;
   zone: ScoreZone | null;
   observation: string;
+  /** Catalogue category heading (#140); null when the test has a single category. Rows of a category follow each other. */
+  groupLabel: string | null;
   /** Re-evaluation only (see TestScoreBlock.showEvolution). */
   evolution?: ScoreEvolution;
 }
@@ -172,7 +191,7 @@ export interface QualitativeRow {
 export interface TestScoreBlock {
   testId: string;
   testName: string;
-  /** Free-text observations pseudo-test: render as notes, not as a table. */
+  /** One free observation (pseudo-test): `testName` is its title, its single note is the text (no inner card). */
   isFreeObservations: boolean;
   /** At least one row can be shown as NS/ET/% → show the display-mode selector. */
   hasStandardizedScores: boolean;
@@ -184,6 +203,27 @@ export interface TestScoreBlock {
   notes: Array<{ label: string; observation: string }>;
 }
 
+/** Unit typed for most scores of a test (first one on a tie): the test is shown in it until another one is picked (#139). */
+const typedMetric = (subtests: ResolvedScore[]): Metric | null => {
+  const counts = new Map<Metric, number>();
+  for (const { metric } of subtests) if (metric) counts.set(metric, (counts.get(metric) ?? 0) + 1);
+  let best: Metric | null = null;
+  for (const [metric, count] of counts) if (best === null || count > counts.get(best)!) best = metric;
+  return best;
+};
+
+const freeObservationBlock = (testId: string, r: ResolvedScore): TestScoreBlock => ({
+  testId: `${testId}:${r.subtestId}`,
+  testName: r.label,
+  isFreeObservations: true,
+  hasStandardizedScores: false,
+  showEvolution: false,
+  mode: DEFAULT_SCORE_DISPLAY_MODE,
+  rows: [],
+  qualitativeRows: [],
+  notes: [{ label: '', observation: r.score.observation?.trim() || '' }],
+});
+
 export const buildTestScoreBlocks = (
   tests: TestData,
   index: CatalogIndex,
@@ -193,7 +233,9 @@ export const buildTestScoreBlocks = (
 ): TestScoreBlock[] =>
   resolveScores(tests, index).flatMap((test) => {
     if (test.subtests.length === 0) return [];
-    const mode = modes[test.testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
+    // Free observations: one card per note, titled by the title the practitioner typed (#143).
+    if (test.isFreeObservations) return test.subtests.map((r) => freeObservationBlock(test.testId, r));
+    const mode = modes[test.testId] ?? typedMetric(test.subtests) ?? DEFAULT_SCORE_DISPLAY_MODE;
     const block: TestScoreBlock = {
       testId: test.testId,
       testName: test.testName,
@@ -206,7 +248,11 @@ export const buildTestScoreBlocks = (
       notes: [],
     };
 
-    for (const r of test.subtests) {
+    const scoreRows = test.subtests.filter((r) => !r.isFreeText && !r.isQualitative);
+    const groupOf = new Map(groupForReport(scoreRows, (r) => r.def).flatMap((g) => g.items.map((r) => [r, g.label] as const)));
+    const ordered = [...groupOf.keys(), ...test.subtests.filter((r) => !groupOf.has(r))];
+
+    for (const r of ordered) {
       const observation = r.score.observation?.trim() || '';
       if (r.isFreeText) {
         block.notes.push({ label: r.label, observation });
@@ -220,7 +266,14 @@ export const buildTestScoreBlocks = (
           observation,
         });
       } else {
-        const row: ScoreTableRow = { subtestId: r.subtestId, label: r.label, display: r.display(mode), zone: r.zone, observation };
+        const row: ScoreTableRow = {
+          subtestId: r.subtestId,
+          label: r.label,
+          display: r.display(mode),
+          zone: r.zone,
+          observation,
+          groupLabel: groupOf.get(r) ?? null,
+        };
         if (previousTests) {
           const previous = describeScore(index, test.testId, r.subtestId, previousTests[test.testId]?.[r.subtestId]);
           row.evolution = scoreEvolution(r, previous, mode);
@@ -232,6 +285,21 @@ export const buildTestScoreBlocks = (
   });
 
 // ─── Section layout ─────────────────────────────────────────────────────────
+
+/** Height of an A4 sheet in CSS px (297 mm at 96 dpi). */
+export const A4_HEIGHT_PX = (297 * 96) / 25.4;
+
+/**
+ * Preview: offsets (px from the top of a preview page) where an A4 sheet ends,
+ * for a page taller than one sheet. The PDF flows such a page over several
+ * sheets; the preview marks these ends in the margin, never across the text (#136).
+ */
+export const sheetEnds = (pageHeight: number, sheetHeight = A4_HEIGHT_PX): number[] => {
+  const ends: number[] = [];
+  // 1 px of tolerance: a page of exactly one sheet has no end to mark.
+  for (let y = sheetHeight; y < pageHeight - 1; y += sheetHeight) ends.push(y);
+  return ends;
+};
 
 /** Placeholder id of the annexes block (scores) in the page layout. */
 export const ANNEXES_ID = 'annexes';

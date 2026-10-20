@@ -13,7 +13,7 @@ import { AssessmentProvider, useAssessment, type ReportType } from './contexts/A
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
+import type { Patient, PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
 import {
   BillingService,
@@ -114,6 +114,9 @@ const AppRouter = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   /** Dev scenario `accueil` (#113): welcome screen at its last step, trial granted or denied. */
   const [welcomeByScenario, setWelcomeByScenario] = useState<{ trialDenied: boolean } | null>(null);
+  /** Dev scenario `portail` (#152): the family form, pre-filled, without a link. */
+  const [portalPreview, setPortalPreview] = useState<Patient | undefined>(undefined);
+  const [portalPreviewName, setPortalPreviewName] = useState<string | undefined>(undefined);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
   // Back from Checkout, waiting for the webhook to update the account (#111).
@@ -157,6 +160,7 @@ const AppRouter = () => {
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
     practitioner,
+    practitionerName: userProfile?.branding.practitionerName || `${practitioner?.firstName || ''} ${practitioner?.lastName || ''}`.trim(),
     isDemoMode,
     pendingQuestionnaires,
     setPendingQuestionnaires,
@@ -381,9 +385,17 @@ const AppRouter = () => {
         window.history.replaceState(null, '', window.location.pathname);
         setPortalInitialUrl(undefined);
       }
+      setPortalPreview(undefined);
       setMode('landing');
     };
-    return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} />;
+    return (
+      <PatientPortal
+        onBack={leavePortal}
+        initialUrl={portalInitialUrl}
+        previewPatient={portalPreview}
+        previewPractitionerName={portalPreviewName}
+      />
+    );
   }
   // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
   if (legalTabFromUrl) {
@@ -576,6 +588,11 @@ const AppRouter = () => {
               onShowWelcome={(welcome) => {
                 setWelcomeByScenario(welcome);
                 setShowOnboarding(true);
+              }}
+              onShowPortal={(patient, practitionerName) => {
+                setPortalPreview(patient);
+                setPortalPreviewName(practitionerName);
+                setMode('portal');
               }}
             />
           </Suspense>
