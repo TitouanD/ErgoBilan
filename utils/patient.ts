@@ -88,3 +88,26 @@ export const getPatientAgeForIdentity = (
   if (derivedAge) return derivedAge;
   return patient.age?.trim() || '';
 };
+
+export interface PatientIdentitySummary {
+  /** « Prénom NOM », vide si aucun des deux n'est saisi. */
+  fullName: string;
+  /** Âge en ans et mois à `referenceDate`, sinon l'âge enregistré ; vide si inconnu. */
+  age: string;
+  /** Classe actuelle (le texte saisi quand la classe est « Autre ») ; vide si non renseignée. */
+  classLevel: string;
+}
+
+/**
+ * Rappel d'identité affiché en haut d'un bilan (#116) : nom, âge, classe.
+ * Affichage local seulement, rien n'est envoyé à l'IA.
+ */
+export const summarizePatientIdentity = (
+  patient: PatientIdentityRequiredFields & { age?: string; classLevel?: string; classLevelOther?: string },
+  referenceDate?: Date | string,
+): PatientIdentitySummary => {
+  const fullName = [patient.firstName?.trim(), patient.lastName?.trim()].filter(Boolean).join(' ');
+  const rawClass = patient.classLevel?.trim() || '';
+  const classLevel = rawClass === 'Autre' ? patient.classLevelOther?.trim() || '' : rawClass;
+  return { fullName, age: getPatientAgeForIdentity(patient, referenceDate), classLevel };
+};
