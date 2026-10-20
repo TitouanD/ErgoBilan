@@ -13,8 +13,7 @@ import { AssessmentProvider, useAssessment, type ReportType } from './contexts/A
 import { CatalogProvider, useCatalog } from './contexts/CatalogContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import type { PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
-import type { PortalPreview } from './dev/DevTools';
+import type { Patient, PatientAssessment, PatientFile, PatientFollowup, PractitionerProfile } from './types';
 import { StorageService } from './services/storage';
 import {
   BillingService,
@@ -110,13 +109,14 @@ const AppRouter = () => {
   const toast = useToast();
 
   const [portalInitialUrl, setPortalInitialUrl] = useState(detectPortalUrl);
-  /** Dev scenario `portail` (#149): the family form without a link. */
-  const [portalPreview, setPortalPreview] = useState<PortalPreview | null>(null);
   const [mode, setMode] = useState<Mode>(portalInitialUrl ? 'portal' : 'landing');
   const [previousMode, setPreviousMode] = useState<Mode>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState(false);
   /** Dev scenario `accueil` (#113): welcome screen at its last step, trial granted or denied. */
   const [welcomeByScenario, setWelcomeByScenario] = useState<{ trialDenied: boolean } | null>(null);
+  /** Dev scenario `portail` (#152): the family form, pre-filled, without a link. */
+  const [portalPreview, setPortalPreview] = useState<Patient | undefined>(undefined);
+  const [portalPreviewName, setPortalPreviewName] = useState<string | undefined>(undefined);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
   // Back from Checkout, waiting for the webhook to update the account (#111).
@@ -378,17 +378,24 @@ const AppRouter = () => {
 
   // ─── Render ─────────────────────────────────────────────────────────────
   // Family portal: public and standalone (no practitioner header), bypasses loading/PIN screens.
-  if (portalInitialUrl || mode === 'portal' || portalPreview) {
+  if (portalInitialUrl || mode === 'portal') {
     const leavePortal = () => {
-      setPortalPreview(null);
       if (portalInitialUrl) {
         // Drop ?q_id=…#key=… so the key does not linger in the address bar.
         window.history.replaceState(null, '', window.location.pathname);
         setPortalInitialUrl(undefined);
       }
+      setPortalPreview(undefined);
       setMode('landing');
     };
-    return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} preview={portalPreview ?? undefined} />;
+    return (
+      <PatientPortal
+        onBack={leavePortal}
+        initialUrl={portalInitialUrl}
+        previewPatient={portalPreview}
+        previewPractitionerName={portalPreviewName}
+      />
+    );
   }
   // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
   if (legalTabFromUrl) {
@@ -582,7 +589,11 @@ const AppRouter = () => {
                 setWelcomeByScenario(welcome);
                 setShowOnboarding(true);
               }}
-              onShowPortal={setPortalPreview}
+              onShowPortal={(patient, practitionerName) => {
+                setPortalPreview(patient);
+                setPortalPreviewName(practitionerName);
+                setMode('portal');
+              }}
             />
           </Suspense>
         )}

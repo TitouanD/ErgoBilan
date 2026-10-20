@@ -30,6 +30,13 @@ const VINELAND_RECEPTIF: SubtestDef = {
   scoreType: 'v-scale',
   inputModel: 'numeric_4mode',
 };
+const BOT2_EQUILIBRE: SubtestDef = {
+  id: 'bot-2__balance',
+  name: 'Équilibre (Balance)',
+  unit: 'pts',
+  scoreType: 'scaled-15',
+  inputModel: 'numeric_4mode',
+};
 const ADDED: CategoryDef = {
   id: 'ajouts-90',
   name: 'Ajouts #90',
@@ -38,6 +45,7 @@ const ADDED: CategoryDef = {
   tests: [
     { id: 'barrage-h', name: 'Barrage des H', subtests: [BARRAGE_STRATEGIE] },
     { id: 'vineland-3', name: 'Vineland-3', subtests: [VINELAND_RECEPTIF] },
+    { id: 'bot-2', name: 'BOT-2', subtests: [BOT2_EQUILIBRE] },
   ],
 };
 
@@ -98,6 +106,12 @@ describe('ScoreTable : sous-tests ajoutés au catalogue (#90)', () => {
     );
     expect(screen.getByText('Note v (m=15, σ=3)')).toBeInTheDocument();
     expect(screen.getByText('-2')).toBeInTheDocument();
+  });
+
+  it('un sous-test du BOT-2 en note d’échelle est converti en ET (m=15, σ=5) (#123)', () => {
+    render(<ScoreTable testId="bot-2" subtests={[BOT2_EQUILIBRE]} scores={{ 'bot-2__balance': { value: '10', unit: 'NS' } }} />);
+    expect(screen.getByText('Note d’échelle (m=15, σ=5)')).toBeInTheDocument();
+    expect(screen.getByText('-1')).toBeInTheDocument();
   });
 });
 

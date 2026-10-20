@@ -35,13 +35,6 @@ describe('parseScenario', () => {
     expect(parseScenario('?foo=1')).toBeNull();
   });
 
-  it('opens the family portal empty, or filled with the profile given (#149)', async () => {
-    expect(scenarioOf('?scenario=portail')).toMatchObject({ name: 'portail', portalFilled: false });
-    expect(scenarioOf('?scenario=portail&patient=leo')).toMatchObject({ portalFilled: true, profile: { id: 'leo' } });
-    expect(await runScenario(scenarioOf('?scenario=portail'), deps())).toEqual({ open: null, missing: [] });
-    expect(await allFiles()).toHaveLength(0);
-  });
-
   it('applies the defaults and the aliases', () => {
     expect(scenarioOf('?scenario=initial')).toMatchObject({ name: 'initial', step: 2, fill: 'zones', tests: null });
     expect(scenarioOf('?scenario=initial-validation')).toMatchObject({ name: 'initial', step: 4 });
@@ -69,6 +62,13 @@ describe('parseScenario', () => {
     expect(scenarioOf('?scenario=dashboard')).toMatchObject({ welcome: null });
     expect(scenarioOf('?scenario=accueil')).toMatchObject({ name: 'dashboard', welcome: { trialDenied: false } });
     expect(scenarioOf('?scenario=accueil&essai=refuse')).toMatchObject({ welcome: { trialDenied: true } });
+  });
+
+  it('opens the parent portal form, without writing anything (#152)', async () => {
+    expect(scenarioOf('?scenario=portail')).toMatchObject({ name: 'portail', profile: { id: 'leo' } });
+    expect(scenarioOf('?scenario=portail&patient=lina')).toMatchObject({ profile: { id: 'lina' } });
+    expect(await runScenario(scenarioOf('?scenario=portail'), deps())).toEqual({ open: null, missing: [] });
+    expect((await StorageService.loadPatientListPage({ limit: 100 })).files).toHaveLength(0);
   });
 
   it('rejects an unknown scenario, step or patient', () => {

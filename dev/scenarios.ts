@@ -13,7 +13,7 @@
  *   &modale=abonnement|paywall|cgv             open the pricing modal (or the terms of sale) on top
  *   &vente=fermee                              pricing modal as in production while Stripe is in test mode (#110)
  *   /?scenario=accueil[&essai=refuse]         welcome screen after sign-up, last step (trial granted or denied, #113)
- *   /?scenario=portail[&patient=<profile>]    family portal form, without a link (empty, or filled with the profile, #149)
+ *   /?scenario=portail[&patient=…]            parent portal form, pre-filled with the profile, nothing sent (#152)
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -52,8 +52,6 @@ export interface Scenario {
   /** Pricing modal shown as in production while online payment is not open (`vente=fermee`, #110). */
   paymentClosed: boolean;
   welcome: ScenarioWelcome | null;
-  /** Portal: fill the form with the profile's patient (`patient=` given), else leave it empty. */
-  portalFilled: boolean;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
@@ -115,7 +113,6 @@ export const parseScenario = (search: string): ParsedScenario => {
       modal,
       paymentClosed: params.get('vente') === 'fermee',
       welcome: alias?.welcome ? { trialDenied: params.get('essai') === 'refuse' } : null,
-      portalFilled: params.has('patient'),
     },
   };
 };
@@ -163,8 +160,6 @@ export const purgeFictivePatients = async (store: Pick<ScenarioStore, 'loadPatie
 export const runScenario = async (scenario: Scenario, deps: ScenarioDeps): Promise<ScenarioResult> => {
   const { store, index, generator, now } = deps;
   const missing = new Set<string>();
-  // The portal is shown by App from the scenario itself: nothing to write.
-  if (scenario.name === 'portail') return { open: null, missing: [] };
 
   const scoresOf = (profile: FictiveProfile, options: { fill?: ScoreFill; shift?: number; tests?: string | null } = {}): TestData => {
     const wanted = parseTestsParam(options.tests ?? null, index) ?? profile.tests;
@@ -209,6 +204,9 @@ export const runScenario = async (scenario: Scenario, deps: ScenarioDeps): Promi
 
   const saveDraft = (patient: Patient, patch: Partial<AssessmentState> & { reportType: ReportType; step: number }) =>
     store.saveDraft(buildDraft({ ...initialAssessmentState, ...patch, patient }, patient, now));
+
+  // ─── Parent portal: the form only, the profile stays in memory ────────────
+  if (scenario.name === 'portail') return { open: null, missing: [] };
 
   // ─── Dashboard: one patient per status ────────────────────────────────────
   if (scenario.name === 'dashboard') {

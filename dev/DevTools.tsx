@@ -32,11 +32,6 @@ const PORTAL_LONG_ANSWERS = {
   schoolOrganization: 'Oublie souvent des choses en classe ou à la maison, range difficilement son cartable et perd son matériel.',
 };
 
-export interface PortalPreview {
-  patient?: Patient;
-  practitionerName: string;
-}
-
 interface Props {
   onLoadData: () => Promise<void>;
   onResumeDraft: (patientId: string) => Promise<void>;
@@ -48,8 +43,8 @@ interface Props {
   onShowTermsOfSale: () => void;
   /** Welcome screen after sign-up at its last step (`scenario=accueil`, #113). */
   onShowWelcome: (welcome: ScenarioWelcome) => void;
-  /** Family portal form without a link (`scenario=portail`, #149). */
-  onShowPortal: (preview: PortalPreview) => void;
+  /** Parent portal form pre-filled with the profile (`scenario=portail`, #152), its introduction signed by a fictitious practitioner (#149): nothing written, nothing sent. */
+  onShowPortal: (patient: Patient, practitionerName: string) => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -100,13 +95,9 @@ export const DevTools: React.FC<Props> = ({
           // Same decryption as the questionnaires loaded from Supabase (useDataLoader → loadPending).
           onShowQuestionnaires(await withChildNames(await buildFictiveQuestionnaires(sessionKey, new Date()), sessionKey));
         }
-        if (parsed.scenario.name === 'portail') {
-          const { profile, portalFilled } = parsed.scenario;
-          onShowPortal({
-            patient: portalFilled ? { ...profile.patient, ...PORTAL_LONG_ANSWERS } : undefined,
-            practitionerName: `Sophie ${FICTIF_LAST_NAME}`,
-          });
-        } else if (result.open) await onResumeDraft(result.open);
+        if (parsed.scenario.name === 'portail')
+          onShowPortal({ ...parsed.scenario.profile.patient, ...PORTAL_LONG_ANSWERS }, `Sophie ${FICTIF_LAST_NAME}`);
+        else if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
         if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
         else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal, parsed.scenario.paymentClosed);
