@@ -414,7 +414,9 @@ export interface DraftPayload {
   synthesis?: ClinicalSynthesis;
   sections?: ReportSection[];
   reportType?: 'initial' | 'reevaluation' | 'historique';
-  /** Date of the original assessment (historical flow). */
+  /** Date of the assessment (passation), ISO string; absent = today. */
+  assessmentDate?: string;
+  /** Older drafts: date of the original assessment (historical flow only), read as `assessmentDate`. */
   historicalDate?: string;
   /** Reference assessment of a re-evaluation draft. */
   previousAssessmentId?: string;

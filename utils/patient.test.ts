@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateAge, summarizePatientIdentity } from './patient';
+import { calculateAge, patientAtAssessmentDate, summarizePatientIdentity } from './patient';
 
 describe('calculateAge', () => {
   it('counts completed months, not calendar months', () => {
@@ -40,5 +40,12 @@ describe('summarizePatientIdentity (#116)', () => {
       age: '7 ans',
       classLevel: '',
     });
+  });
+});
+
+describe('patientAtAssessmentDate (#153)', () => {
+  it('replaces the age saved at the writing date by the age at the passation', () => {
+    const patient = { firstName: 'A', lastName: 'B', dob: '2018-03-20', age: '8 ans 6 mois' };
+    expect(patientAtAssessmentDate(patient, '2026-08-25T00:00:00.000Z').age).toBe('8 ans 5 mois');
   });
 });
