@@ -47,16 +47,24 @@ export interface DotChart {
   bands: Array<{ zone: ScoreZone; from: number; to: number }>;
   centerLine: number;
   ticks: Array<{ position: number; label: string; bold: boolean }>;
+  /** Some items are on a scale where a high score signals a difficulty: their label ends with ` *`, see `readingGuide`. */
+  inverted: boolean;
 }
+
+/** Chart label: ` *` marks a score turned around (high score = difficulty). */
+const chartLabel = (r: ResolvedScore): string => (r.higherIsWorse ? `${r.label} *` : r.label);
 
 export const computeDotChart = (scale: DotChartScale, tests: TestData, index: CatalogIndex): DotChart => {
   const entries = resolvedEntries(tests, index);
+  const inverted = entries.some((r) => r.higherIsWorse && (scale === 'z' ? r.z : r.pct) !== null && r.zone);
   if (scale === 'z') {
     const [deficitEnd, fragileEnd] = [zToFraction(-2), zToFraction(-1)];
     return {
       title: 'Profil des scores (écarts-types)',
       items: entries.flatMap((r) =>
-        r.z !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: zToFraction(r.z), value: formatZ(r.z, 1) }] : [],
+        r.z !== null && r.zone
+          ? [{ key: r.key, label: chartLabel(r), zone: r.zone, position: zToFraction(r.z), value: formatZ(r.z, 1) }]
+          : [],
       ),
       bands: [
         { zone: 'deficit', from: 0, to: deficitEnd },
@@ -65,13 +73,16 @@ export const computeDotChart = (scale: DotChartScale, tests: TestData, index: Ca
       ],
       centerLine: zToFraction(0),
       ticks: Z_AXIS.ticks.map((t) => ({ position: zToFraction(t), label: t === 0 ? '0' : `${t > 0 ? '+' : ''}${t} ET`, bold: t === 0 })),
+      inverted,
     };
   }
   const [deficitEnd, fragileEnd] = [pctToFraction(ZONE_PERCENTILE_THRESHOLDS.deficit), pctToFraction(ZONE_PERCENTILE_THRESHOLDS.fragile)];
   return {
     title: 'Profil des scores (percentiles)',
     items: entries.flatMap((r) =>
-      r.pct !== null && r.zone ? [{ key: r.key, label: r.label, zone: r.zone, position: pctToFraction(r.pct), value: `${r.pct}e` }] : [],
+      r.pct !== null && r.zone
+        ? [{ key: r.key, label: chartLabel(r), zone: r.zone, position: pctToFraction(r.pct), value: `${r.pct}e` }]
+        : [],
     ),
     bands: [
       { zone: 'deficit', from: 0, to: deficitEnd },
@@ -80,19 +91,24 @@ export const computeDotChart = (scale: DotChartScale, tests: TestData, index: Ca
     ],
     centerLine: 0.5,
     ticks: PERCENTILE_TICKS.map((t) => ({ position: pctToFraction(t), label: String(t), bold: t === 50 })),
+    inverted,
   };
 };
 
-/** Legend shown under a dot chart. */
+/** Legend shown under a dot chart; `inverted` = the chart holds turned-around scores (`DotChart.inverted`). */
 export const readingGuide = (
   scale: DotChartScale,
-): { title: string; lines: Array<{ zone: ScoreZone; label: string; legend: string }> } => ({
+  inverted = false,
+): { title: string; lines: Array<{ zone: ScoreZone; label: string; legend: string }>; note: string | null } => ({
   title: `Guide de lecture${scale === 'percentile' ? ' (percentiles)' : ''} :`,
   lines: (['normal', 'fragile', 'deficit'] as const).map((zone) => ({
     zone,
     label: ZONE_META[zone].label,
     legend: scale === 'z' ? ZONE_META[zone].zLegend : ZONE_META[zone].pctLegend,
   })),
+  note: inverted
+    ? `* Épreuve où une note élevée signale une difficulté : ${scale === 'z' ? 'son écart-type est inversé' : 'son percentile est inversé'} sur le graphique, pour que la difficulté soit toujours à gauche. Le tableau des scores donne la valeur du manuel.`
+    : null,
 });
 
 export interface RadarPoint {

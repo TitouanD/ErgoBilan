@@ -1,7 +1,8 @@
 /**
  * scoring.ts — single source of truth for score maths and interpretation.
  *
- * - Scale types (`score_type` in the catalogue) and their mean/SD.
+ * - Scale types (`score_type` in the catalogue), their mean/SD and their
+ *   direction (on `*-inverse` scales a high score signals a difficulty).
  * - Conversions between the three standardized metrics: NS (scale score),
  *   ET (z-score / écart-type) and % (percentile rank).
  * - Interpretation zones (deficit / fragile / normal), shared by the score
@@ -35,8 +36,12 @@ export const SCALE_PARAMS: Record<ScoreType, { mean: number; sd: number } | null
   scaled: { mean: 10, sd: 3 },
   standard: { mean: 100, sd: 15 },
   't-score': { mean: 50, sd: 10 },
+  // BRIEF-2, SPM : une note T haute signale une difficulté (#122).
+  't-score-inverse': { mean: 50, sd: 10 },
   // Vineland « notes v » (sous-domaines, #90).
   'v-scale': { mean: 15, sd: 3 },
+  // Vineland Internalisé / Externalisé : une note v haute signale une difficulté (#122).
+  'v-scale-inverse': { mean: 15, sd: 3 },
   // Notes d'échelle des sous-tests du BOT-2 (#123).
   'scaled-15': { mean: 15, sd: 5 },
   sten: { mean: 5.5, sd: 2 },
@@ -58,9 +63,11 @@ const SCALE_ALIASES: Record<string, ScoreType> = {
   tscore: 't-score',
   't score': 't-score',
   t: 't-score',
+  't-score-inverse': 't-score-inverse',
   'v-scale': 'v-scale',
   vscale: 'v-scale',
   'note v': 'v-scale',
+  'v-scale-inverse': 'v-scale-inverse',
   'scaled-15': 'scaled-15',
   percentile: 'percentile',
   pct: 'percentile',
@@ -79,6 +86,16 @@ const SCALE_ALIASES: Record<string, ScoreType> = {
 export const resolveScaleType = (value?: string | null): ScoreType => {
   if (!value) return 'none';
   return SCALE_ALIASES[value.toLowerCase().trim()] ?? 'none';
+};
+
+/**
+ * True when a high score signals a difficulty. The score is typed and shown
+ * as in the test manual (T 72 = +2.2 ET); the score résolu turns its z and
+ * percentile around so that, everywhere else, negative still means difficulty.
+ */
+export const isHigherWorse = (scaleType?: string | null): boolean => {
+  const scale = resolveScaleType(scaleType);
+  return scale === 't-score-inverse' || scale === 'v-scale-inverse';
 };
 
 /** True when the scale is unknown: NS cannot be converted to ET/% (ET ↔ % still can). */

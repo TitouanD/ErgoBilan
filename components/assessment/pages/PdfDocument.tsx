@@ -294,8 +294,8 @@ const PdfChartFrame: React.FC<{ title: string; theme: ReportTheme; font: string;
   </View>
 );
 
-const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = ({ theme, scale }) => {
-  const guide = readingGuide(scale);
+const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale; inverted: boolean }> = ({ theme, scale, inverted }) => {
+  const guide = readingGuide(scale, inverted);
   return (
     <View
       wrap={false}
@@ -314,6 +314,7 @@ const PdfReadingGuide: React.FC<{ theme: ReportTheme; scale: DotChartScale }> = 
           <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{line.legend}.</Text>
         </View>
       ))}
+      {guide.note && <Text style={{ fontSize: 8, color: COLORS.stone600, marginTop: 4 }}>{guide.note}</Text>}
     </View>
   );
 };
@@ -405,7 +406,7 @@ const PdfProfileChart: React.FC<{ scale: DotChartScale; tests: TestData; index: 
       <PdfChartFrame title={chart.title} theme={theme} font={font} breakable={chart.items.length > CHART_SLICE}>
         <PdfDotChart chart={chart} />
       </PdfChartFrame>
-      <PdfReadingGuide theme={theme} scale={scale} />
+      <PdfReadingGuide theme={theme} scale={scale} inverted={chart.inverted} />
     </>
   );
 };
