@@ -40,8 +40,8 @@ export interface AssessmentState {
   /** Page layout chosen at the export step; null = default layout (utils/reportData.ts resolvePages). */
   reportPages: string[][] | null;
   reportType: ReportType;
-  /** Date of the original assessment (historical flow only), ISO string. */
-  historicalDate: string;
+  /** Date of the assessment (passation), ISO string; '' = today. The age is computed at this date (#153). */
+  assessmentDate: string;
   step: number;
   /** Reference assessment of a re-evaluation. */
   previousAssessment: PatientAssessment | null;
@@ -183,7 +183,7 @@ export const initialAssessmentState: AssessmentState = {
   sections: [],
   reportPages: null,
   reportType: 'initial',
-  historicalDate: '',
+  assessmentDate: '',
   step: 1,
   previousAssessment: null,
   isAutoSaving: false,
@@ -197,7 +197,7 @@ export const buildDraft = (state: AssessmentState, patient: Patient, now: Date):
   sections: state.sections,
   ...(state.reportPages ? { reportPages: state.reportPages } : {}),
   reportType: state.reportType,
-  historicalDate: state.historicalDate || undefined,
+  assessmentDate: state.assessmentDate || undefined,
   previousAssessmentId: state.previousAssessment?.id,
   step: state.step,
   version: DRAFT_VERSION,
@@ -214,7 +214,7 @@ const stateFromDraft = (draft: DraftPayload): AssessmentState => ({
   ...(draft.sections ? { sections: [...draft.sections] } : {}),
   ...(Array.isArray(draft.reportPages) ? { reportPages: draft.reportPages } : {}),
   ...(draft.reportType ? { reportType: draft.reportType } : {}),
-  ...(draft.historicalDate ? { historicalDate: draft.historicalDate } : {}),
+  ...(draft.assessmentDate || draft.historicalDate ? { assessmentDate: draft.assessmentDate || draft.historicalDate } : {}),
   ...(draft.step ? { step: draft.step } : {}),
 });
 
@@ -535,8 +535,8 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
       const persisted = await ensurePatient();
       if (!persisted.ok) return persisted;
       const { patient } = persisted;
-      const { reportType, historicalDate, tests, sections, reportPages, previousAssessment } = state;
-      const date = reportType === 'historique' && historicalDate ? historicalDate : now().toISOString();
+      const { reportType, assessmentDate, tests, sections, reportPages, previousAssessment } = state;
+      const date = assessmentDate || now().toISOString();
       const record = buildAssessmentRecord({
         // A historical import is the initial assessment done outside the app.
         kind: reportType === 'reevaluation' ? 'reevaluation' : 'initial',
@@ -611,7 +611,7 @@ export const createAssessmentInProgress = (deps: AssessmentInProgressDeps) => {
           ? state.sections.map((s) => (s.id === id ? { ...s, ...update } : s))
           : [...state.sections, { id, title: update.title || id, content: update.content || '', status: 'draft' as const, ...update }],
       }),
-    setHistoricalDate: (historicalDate: string) => change({ historicalDate }),
+    setAssessmentDate: (assessmentDate: string) => change({ assessmentDate }),
     setStep: (step: number) => change({ step }),
   };
 

@@ -24,6 +24,8 @@ interface Props {
   /** Re-evaluation: scores of the reference assessment (evolution column of the score tables). */
   previousTests?: TestData;
   reportType?: ReportKind;
+  /** Date of the assessment (passation), ISO; absent = today (#153). */
+  assessmentDate?: string;
   /** Saved page layout (null or absent: default layout). */
   reportPages?: string[][] | null;
   onReportPagesChange: (pages: string[][]) => void;
@@ -53,6 +55,7 @@ export const ExportPage: React.FC<Props> = ({
   tests,
   previousTests,
   reportType = 'initial',
+  assessmentDate,
   reportPages,
   onReportPagesChange,
   onValidate,
@@ -88,6 +91,7 @@ export const ExportPage: React.FC<Props> = ({
     return pdf(
       <PdfDocument
         patient={patient}
+        assessmentDate={assessmentDate}
         sections={sections}
         tests={tests}
         branding={branding}
@@ -203,6 +207,7 @@ export const ExportPage: React.FC<Props> = ({
       >
         <ReportView
           patient={patient}
+          assessmentDate={assessmentDate}
           sections={sections}
           tests={tests}
           pages={pages}

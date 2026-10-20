@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw, Home, MessageSquareText } from 'lucide-react'
 import { Logger } from '../../utils/logger';
 import { isFeedbackAvailable } from '../../services/sentryService';
 import { FeedbackModal } from './FeedbackModal';
+import { isChunkLoadError, reloadForNewVersion } from '../../utils/newVersionReload';
 
 interface Props {
   children?: ReactNode;
@@ -12,6 +13,8 @@ interface State {
   hasError: boolean;
   error: Error | null;
   showFeedback: boolean;
+  /** A chunk of the previous build is missing after a deployment: the page is reloading (#124). */
+  reloading: boolean;
 }
 
 export class GlobalErrorBoundary extends React.Component<Props, State> {
@@ -21,14 +24,17 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
     hasError: false,
     error: null,
     showFeedback: false,
+    reloading: false,
   };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error };
+    return { hasError: true, error, reloading: isChunkLoadError(error) };
   }
 
   // Sentry capture happens once, in the React root `onCaughtError` hook (index.tsx), with the component stack.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // New version deployed: reload once instead of showing the error screen (already reloaded a moment ago: show it).
+    if (this.state.reloading && !reloadForNewVersion()) this.setState({ reloading: false });
     Logger.warn('SYSTEM', 'Uncaught error in component tree (error screen shown)', {
       message: error.message,
       componentStack: errorInfo.componentStack,
@@ -45,6 +51,14 @@ export class GlobalErrorBoundary extends React.Component<Props, State> {
   };
 
   render() {
+    if (this.state.hasError && this.state.reloading) {
+      return (
+        <div className="min-h-screen bg-[var(--app-bg)] flex flex-col items-center justify-center gap-4 p-6 text-center">
+          <RefreshCw size={32} className="animate-spin text-[var(--primary)]" />
+          <p className="text-[var(--text-secondary)] text-sm font-bold">Nouvelle version de l'application, rechargement…</p>
+        </div>
+      );
+    }
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center p-6">
