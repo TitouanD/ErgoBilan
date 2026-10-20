@@ -260,7 +260,7 @@ export const runScenario = async (scenario: Scenario, deps: ScenarioDeps): Promi
     await saveDraft(patient, {
       reportType: 'historique',
       step,
-      historicalDate: monthsAgo(now, 12).slice(0, 10),
+      assessmentDate: monthsAgo(now, 12).slice(0, 10),
       tests,
       observations,
       sections,
