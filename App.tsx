@@ -116,6 +116,7 @@ const AppRouter = () => {
   const [welcomeByScenario, setWelcomeByScenario] = useState<{ trialDenied: boolean } | null>(null);
   /** Dev scenario `portail` (#152): the family form, pre-filled, without a link. */
   const [portalPreview, setPortalPreview] = useState<Patient | undefined>(undefined);
+  const [portalPreviewName, setPortalPreviewName] = useState<string | undefined>(undefined);
   const [pricingModalMode, setPricingModalMode] = useState<'plans' | 'paywall' | null>(null);
   const [isOpeningStripe, setIsOpeningStripe] = useState(false);
   // Back from Checkout, waiting for the webhook to update the account (#111).
@@ -159,6 +160,7 @@ const AppRouter = () => {
   const { handleGenerateLink, handleCopyLink, handleDeletePending } = useLinkManager({
     sessionKey,
     practitioner,
+    practitionerName: userProfile?.branding.practitionerName || `${practitioner?.firstName || ''} ${practitioner?.lastName || ''}`.trim(),
     isDemoMode,
     pendingQuestionnaires,
     setPendingQuestionnaires,
@@ -386,7 +388,14 @@ const AppRouter = () => {
       setPortalPreview(undefined);
       setMode('landing');
     };
-    return <PatientPortal onBack={leavePortal} initialUrl={portalInitialUrl} previewPatient={portalPreview} />;
+    return (
+      <PatientPortal
+        onBack={leavePortal}
+        initialUrl={portalInitialUrl}
+        previewPatient={portalPreview}
+        previewPractitionerName={portalPreviewName}
+      />
+    );
   }
   // Public document (/?legal=cgv): shown first, whatever the session; closing it opens the app.
   if (legalTabFromUrl) {
@@ -580,8 +589,9 @@ const AppRouter = () => {
                 setWelcomeByScenario(welcome);
                 setShowOnboarding(true);
               }}
-              onShowPortal={(patient) => {
+              onShowPortal={(patient, practitionerName) => {
                 setPortalPreview(patient);
+                setPortalPreviewName(practitionerName);
                 setMode('portal');
               }}
             />

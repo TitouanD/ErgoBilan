@@ -1,7 +1,9 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import type { Patient } from '../../types';
-import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key, FileText } from 'lucide-react';
+import { Send, Lock, ArrowLeft, Sparkles, CheckCircle2, Loader2, ShieldCheck, AlertCircle, Key } from 'lucide-react';
 import { SharedQuestionnaire } from '../shared/SharedQuestionnaire';
+import { PortalIntroduction } from './PortalIntroduction';
+import type { FamilySubmission } from '../../utils/familyQuestionnaire';
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../services/db';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../../types/supabase';
@@ -26,10 +28,13 @@ interface Props {
   initialUrl?: string; // Permet l'auto-login si l'URL est fournie
   /** Dev scenario `portail` (dev/scenarios.ts): the form, pre-filled, without a link; nothing can be sent. */
   previewPatient?: Patient;
+  /** Name signing the introduction in the dev scenario (a real link carries it encrypted, #149). */
+  previewPractitionerName?: string;
 }
 
-export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPatient }) => {
+export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPatient, previewPractitionerName }) => {
   const [loadingStep, setLoadingStep] = useState<'idle' | 'validating' | 'loading' | 'ready' | 'error'>(previewPatient ? 'ready' : 'idle');
+  const [practitionerName, setPractitionerName] = useState(previewPractitionerName ?? '');
   const [errorMessage, setErrorMessage] = useState('');
   const toast = useToast();
 
@@ -162,7 +167,8 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPati
       if (data.family_encrypted_data) {
         Logger.info('CRYPTO', 'Decrypting existing family data...');
         if (parseEnvelope(data.family_encrypted_data)) {
-          const decrypted = (await decryptEnvelope(data.family_encrypted_data, key)) as { patient?: Patient } | null;
+          const decrypted = (await decryptEnvelope(data.family_encrypted_data, key)) as FamilySubmission | null;
+          if (decrypted?.practitioner?.name) setPractitionerName(decrypted.practitioner.name);
           if (decrypted && decrypted.patient) {
             setLocalPatient((prev) => ({ ...prev, ...(decrypted.patient as Patient) }));
           }
@@ -375,12 +381,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPati
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="animate-in slide-in-from-bottom-4 fade-in duration-500">
-          <div className="bg-[var(--card-bg)] p-8 rounded-[32px] mb-8 shadow-xl shadow-black/20 border border-[var(--border-color)]">
-            <h2 className="font-serif text-2xl font-bold text-[var(--text-heading)] mb-2">Préparation du Bilan</h2>
-            <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-              Merci de compléter ce questionnaire pour préparer la consultation. Vos réponses sont chiffrées avant envoi.
-            </p>
-          </div>
+          <PortalIntroduction practitionerName={practitionerName} />
 
           <SharedQuestionnaire
             data={localPatient}
@@ -388,21 +389,7 @@ export const PatientPortal: React.FC<Props> = ({ onBack, initialUrl, previewPati
             mode="family"
           />
 
-          {/* NOTE: RAPPEL DOCUMENTS */}
-          <div className="mt-8 mb-6 p-5 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-2xl flex gap-4 items-start shadow-sm">
-            <div className="p-2 bg-[var(--card-bg)] rounded-lg text-[var(--text-heading)] shadow-sm">
-              <FileText size={20} />
-            </div>
-            <div>
-              <h4 className="font-bold text-[var(--text-heading)] text-sm mb-1">Documents à apporter</h4>
-              <p className="text-[var(--text-main)] text-xs leading-relaxed">
-                Veuillez penser à apporter <strong>l'ordonnance médicale</strong>, les <strong>bilans précédents</strong> et les{' '}
-                <strong>cahiers scolaires</strong> lors du premier rendez-vous.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
+          <div className="mt-8 flex justify-end">
             <button
               onClick={handleSaveData}
               disabled={!isAdministrativeReady}
