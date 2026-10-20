@@ -3,7 +3,7 @@ import type { CategoryDef } from '../data/testCatalog';
 import { createDemoTransport } from '../data/demoReport';
 import type { Observations, Patient, PatientAssessment, ReportSection } from '../types';
 import { initialPatient } from './assessmentInProgress';
-import { buildCatalogIndex } from './catalogIndex';
+import { CUSTOM_OBSERVATIONS_TEST_ID, buildCatalogIndex } from './catalogIndex';
 import {
   type AIRequest,
   type AITransport,
@@ -133,6 +133,21 @@ describe('reportGenerator — initial report', () => {
     expect(diagnostic.content).toBe("Léa, scolarisée à l'école, s'investit « bien ».");
     expect(diagnostic.originalContent).toBe('<p>Léa, scolarisée à l&#39;école, s&#39;investit « bien ».</p>');
     expect(report.reformulatedObservations).toEqual({ dext: 'Préhension & force.' });
+  });
+
+  it("keeps the practitioner's free observation as typed: never replaced by a one-sentence reformulation (#143)", async () => {
+    const free = 'Écrit debout, penché sur la table.\n\nPrise quadridigitale rigide, fort appui.\n\nPoignet en flexion.';
+    const withFree: InitialReportInput = {
+      ...input,
+      tests: { ...tests, [CUSTOM_OBSERVATIONS_TEST_ID]: { custom_1: { customLabel: "Observation de l'écriture", observation: free } } },
+    };
+    const diag = {
+      ...DIAG,
+      reformulated_observations: [...DIAG.reformulated_observations, { subtestId: 'custom_1', text: 'Résumé en une phrase.' }],
+    };
+    const { transport } = fakeTransport({ report_bio: [BIO], report_diagnostic: [diag] });
+    const report = await createReportGenerator(transport, { now: () => NOW }).generateInitial(withFree);
+    expect(report.reformulatedObservations).toEqual({ dext: 'Léa serre le crayon.' });
   });
 
   it('refuses an empty answer', async () => {

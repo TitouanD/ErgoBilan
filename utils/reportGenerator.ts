@@ -20,6 +20,7 @@ import { type Anonymization, createAnonymization } from './anonymizer';
 import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';
 import { buildDeltaEntries } from './reevaluationHelpers';
+import { resolveScores } from './resolvedScore';
 import { htmlToPlainText, sectionToHtml, sectionToPlainText } from './reportContent';
 import {
   ADULT_RECOMMENDATIONS_TITLE,
@@ -296,9 +297,15 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
     }
     const { bio, diag } = result;
 
+    // A free observation is the practitioner's own text, often several paragraphs: the one-sentence
+    // reformulation would replace it with a summary (#143). It still informs the synthesis.
+    const freeText = new Set(
+      resolveScores(input.tests, input.index).flatMap((t) => t.subtests.filter((r) => r.isFreeText).map((r) => r.subtestId)),
+    );
     const reformulatedObservations: Record<string, string> = {};
     for (const entry of diag.reformulated_observations ?? []) {
-      if (entry?.subtestId && entry?.text) reformulatedObservations[entry.subtestId] = hydrate(entry.text);
+      if (entry?.subtestId && entry?.text && !freeText.has(entry.subtestId))
+        reformulatedObservations[entry.subtestId] = hydrate(entry.text);
     }
 
     return {

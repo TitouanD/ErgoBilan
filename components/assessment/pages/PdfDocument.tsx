@@ -519,12 +519,19 @@ const PdfScoreBlock: React.FC<{ block: TestScoreBlock; theme: ReportTheme; font:
       {block.hasStandardizedScores ? <Text style={headCell}>Score ({block.mode})</Text> : null}
     </View>
     <View style={{ padding: 12, gap: 10 }}>
-      {block.notes.map((note, i) => (
-        <View key={i} style={{ border: `0.5pt solid ${COLORS.stone100}`, borderRadius: 4, padding: 8 }}>
-          <Text style={{ fontSize: 9, fontWeight: 700, color: COLORS.stone700, marginBottom: 4 }}>{note.label}</Text>
-          <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{note.observation || '-'}</Text>
-        </View>
-      ))}
+      {block.isFreeObservations &&
+        block.notes.map((note, i) => (
+          <Text key={i} style={{ fontSize: 9, color: COLORS.stone600, lineHeight: 1.5 }}>
+            {note.observation || '-'}
+          </Text>
+        ))}
+      {!block.isFreeObservations &&
+        block.notes.map((note, i) => (
+          <View key={i} style={{ border: `0.5pt solid ${COLORS.stone100}`, borderRadius: 4, padding: 8 }}>
+            <Text style={{ fontSize: 9, fontWeight: 700, color: COLORS.stone700, marginBottom: 4 }}>{note.label}</Text>
+            <Text style={{ fontSize: 8, color: COLORS.stone600 }}>{note.observation || '-'}</Text>
+          </View>
+        ))}
       {block.rows.length > 0 && (
         <View>
           <View
