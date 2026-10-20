@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calculateAge, summarizePatientIdentity } from './patient';
+import { calculateAge, familyQuestionnaireProgress, summarizePatientIdentity } from './patient';
+import type { Patient } from '../types';
 
 describe('calculateAge', () => {
   it('counts completed months, not calendar months', () => {
@@ -40,5 +41,13 @@ describe('summarizePatientIdentity (#116)', () => {
       age: '7 ans',
       classLevel: '',
     });
+  });
+});
+
+describe('familyQuestionnaireProgress (#152)', () => {
+  it('compte les repères remplis sur 13', () => {
+    expect(familyQuestionnaireProgress({} as Patient)).toBe(0);
+    expect(familyQuestionnaireProgress({ firstName: 'Léo', lastName: 'FICTIF', reason: 'Écriture' } as Patient)).toBe(15);
+    expect(familyQuestionnaireProgress({ firstName: 'Léo', reason: 'Écriture' } as Patient)).toBe(8);
   });
 });

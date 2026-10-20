@@ -2,6 +2,8 @@
  * patient.ts — patient identity helpers (age, readiness checks, identity signature).
  */
 
+import type { Patient } from '../types';
+
 interface PatientIdentityRequiredFields {
   firstName?: string;
   lastName?: string;
@@ -110,4 +112,28 @@ export const summarizePatientIdentity = (
   const rawClass = patient.classLevel?.trim() || '';
   const classLevel = rawClass === 'Autre' ? patient.classLevelOther?.trim() || '' : rawClass;
   return { fullName, age: getPatientAgeForIdentity(patient, referenceDate), classLevel };
+};
+
+/**
+ * Avancement du questionnaire parents (portail famille), en pourcentage :
+ * 13 repères, chacun compté dès qu'une de ses réponses est donnée. Affiché dans
+ * l'en-tête du portail (#152).
+ */
+export const familyQuestionnaireProgress = (data: Patient): number => {
+  const milestones = [
+    data.lastName && data.firstName,
+    data.parent1Name || data.parent2Name || data.parentNames,
+    data.guardMode,
+    data.school && data.classLevel,
+    data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0,
+    data.motorDevelopmentTags || data.walkingAge || data.developmentMotor,
+    data.clothingButtons || data.eatingHabits,
+    data.reason,
+    (data.goals?.length ?? 0) > 0,
+    data.sensory || data.sleepStatus,
+    data.writingPain || data.writingIssues,
+    data.continence || data.dressing,
+    data.emotionalGlobalTags || data.emotionalReactionTags || data.emotionalNotes || data.emotionalRegulation,
+  ];
+  return Math.round((milestones.filter(Boolean).length / milestones.length) * 100);
 };
