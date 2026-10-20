@@ -180,6 +180,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             {step === 4 && (
               <ValidationPage
                 sections={assessment.sections}
+                tests={assessment.tests}
+                interviewNotes={assessment.patient.interviewNotes}
                 onValidateSection={validateSection}
                 onNext={() => setStep(5)}
                 onBack={() => setStep(3)}
@@ -219,6 +221,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             {step === 3 && (
               <ValidationPage
                 sections={assessment.sections}
+                tests={assessment.tests}
+                interviewNotes={assessment.patient.interviewNotes}
                 onValidateSection={validateSection}
                 onNext={() => setStep(4)}
                 onBack={() => setStep(2)}
