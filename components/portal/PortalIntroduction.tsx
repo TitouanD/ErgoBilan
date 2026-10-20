@@ -36,9 +36,9 @@ export const PortalIntroduction: React.FC<{ practitionerName?: string }> = ({ pr
         vous inquiétez pas : nous les aborderons ensemble lors du rendez-vous.
       </p>
       <p>
-        Si certains éléments sont difficiles à évoquer en présence de votre enfant, je vous invite à les mentionner dans la zone de texte «
-        Remarques complémentaires » de la partie « Motif de consultation ». Nous pourrons alors convenir d’un moment privilégié pour en
-        parler.
+        Si certains éléments sont difficiles à évoquer en présence de votre enfant, je vous invite à les mentionner dans la zone de texte{' '}
+        {'« Remarques complémentaires »'} de la partie {'« Motif de consultation »'}. Nous pourrons alors convenir d’un moment privilégié
+        pour en parler.
       </p>
       <div>
         <p>Pour le premier rendez-vous, je vous invite à apporter :</p>
