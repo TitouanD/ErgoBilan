@@ -28,7 +28,7 @@ export const DEMO_CATALOG: CategoryDef[] = [
       {
         id: 'bhk',
         name: 'BHK',
-        subtests: [numeric('bhk__quality', 'Qualité', 'standard', 1), numeric('bhk__speed', 'Vitesse', 'standard', 2)],
+        subtests: [numeric('bhk__quality', 'Qualité', 'none', 1), numeric('bhk__speed', 'Vitesse', 'none', 2)],
       },
     ],
   },
