@@ -115,3 +115,60 @@ export const compareSubtestsForDisplay = (a: SubtestDef, b: SubtestDef): number 
 
   return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
 };
+
+const fold = (text: string): string => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** Heading of a catalogue group in the report, without the age band ("Groupe d'âge 2 (7 à 10 ans) — Équilibre" → "Équilibre"). */
+export const getReportGroupLabel = (subtest: SubtestDef): string | undefined => {
+  const parts = (getDisplayGroupLabel(subtest) ?? '')
+    .split('—')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.at(-1);
+};
+
+export interface ReportGroup<T> {
+  /** null when the rows form a single category (no heading) or are outside the catalogue. */
+  label: string | null;
+  items: T[];
+}
+
+/**
+ * Report rows grouped as in the test picker (#140): catalogue order, one
+ * group per category. A total that names another category ("Note totale
+ * équilibre") goes at the end of that category. Rows outside the catalogue
+ * come last, in their order.
+ */
+export const groupForReport = <T>(items: T[], defOf: (item: T) => SubtestDef | undefined): ReportGroup<T>[] => {
+  const sorted = [...items].sort((a, b) => {
+    const [da, db] = [defOf(a), defOf(b)];
+    if (da && db) return compareSubtestsForDisplay(da, db);
+    return da ? -1 : db ? 1 : 0;
+  });
+  const groups: ReportGroup<T>[] = [];
+  const byKey = new Map<string, ReportGroup<T>>();
+  for (const item of sorted) {
+    const def = defOf(item);
+    const label = def ? (getReportGroupLabel(def) ?? null) : null;
+    const key = label ? fold(label) : '';
+    let group = byKey.get(key);
+    if (!group) {
+      group = { label, items: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  for (const group of groups) {
+    for (const item of [...group.items]) {
+      const name = fold(defOf(item)?.name ?? '');
+      if (!name.includes('total')) continue;
+      const target = groups.find((g) => g !== group && g.label && name.includes(fold(g.label)));
+      if (!target) continue;
+      group.items.splice(group.items.indexOf(item), 1);
+      target.items.push(item);
+    }
+  }
+  const kept = groups.filter((g) => g.items.length > 0);
+  return kept.length > 1 ? kept : [{ label: null, items: kept.flatMap((g) => g.items) }];
+};

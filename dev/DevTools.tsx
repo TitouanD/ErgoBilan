@@ -17,12 +17,13 @@ import { useCatalog } from '../contexts/CatalogContext';
 import { useToast } from '../contexts/ToastContext';
 import { createDemoTransport } from '../data/demoReport';
 import { StorageService } from '../services/storage';
-import type { PendingQuestionnaire } from '../types';
+import type { Patient, PendingQuestionnaire } from '../types';
 import { withChildNames } from '../utils/familyQuestionnaire';
 import { createReportGenerator } from '../utils/reportGenerator';
 import { Logger } from '../utils/logger';
 import { buildFictiveQuestionnaires } from './fictiveQuestionnaires';
 import { parseScenario, purgeFictivePatients, runScenario, type ScenarioWelcome } from './scenarios';
+import { FICTIF_LAST_NAME } from './fictivePatients';
 
 interface Props {
   onLoadData: () => Promise<void>;
@@ -35,6 +36,8 @@ interface Props {
   onShowTermsOfSale: () => void;
   /** Welcome screen after sign-up at its last step (`scenario=accueil`, #113). */
   onShowWelcome: (welcome: ScenarioWelcome) => void;
+  /** Parent portal form pre-filled with the profile (`scenario=portail`, #152), its introduction signed by a fictitious practitioner (#149): nothing written, nothing sent. */
+  onShowPortal: (patient: Patient, practitionerName: string) => void;
 }
 
 /** Search string whose scenario already ran (the component can remount after a lock). */
@@ -56,6 +59,7 @@ export const DevTools: React.FC<Props> = ({
   onShowPricing,
   onShowTermsOfSale,
   onShowWelcome,
+  onShowPortal,
 }) => {
   const { ensureCatalogLoaded } = useCatalog();
   const { sessionKey } = useAuth();
@@ -84,7 +88,8 @@ export const DevTools: React.FC<Props> = ({
           // Same decryption as the questionnaires loaded from Supabase (useDataLoader → loadPending).
           onShowQuestionnaires(await withChildNames(await buildFictiveQuestionnaires(sessionKey, new Date()), sessionKey));
         }
-        if (result.open) await onResumeDraft(result.open);
+        if (parsed.scenario.name === 'portail') onShowPortal(parsed.scenario.profile.patient, `Sophie ${FICTIF_LAST_NAME}`);
+        else if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
         if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
         else if (parsed.scenario.modal) onShowPricing(parsed.scenario.modal, parsed.scenario.paymentClosed);

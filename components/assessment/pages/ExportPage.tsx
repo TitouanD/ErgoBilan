@@ -10,6 +10,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Check, Download, Loader2, Palette } from 'lucide-react';
 import type { BrandingConfig, Patient, ReportSection, TestData } from '../../../types';
 import { ReportView } from './ReportView';
+import { SpellCheckHint } from '../shared/SpellCheckHint';
 import { useToast } from '../../../contexts/ToastContext';
 import { useCatalog } from '../../../contexts/CatalogContext';
 import { Logger } from '../../../utils/logger';
@@ -201,8 +202,15 @@ export const ExportPage: React.FC<Props> = ({
         </div>
       </div>
 
+      <div className="-mt-5 mb-6">
+        <SpellCheckHint>
+          Cliquez sur un texte pour le modifier : les fautes d'orthographe repérées par le navigateur y sont soulignées en rouge.
+        </SpellCheckHint>
+      </div>
+
+      {/* The frame fits the A4 sheet and slides as one block beside the Studio Design (#126): a margin would shrink the frame under a fixed-width sheet. */}
       <div
-        className={`pdf-viewer-panel shadow-xl shadow-black/20 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full transition-all duration-300 ${showBranding ? 'mr-[26rem]' : ''}`}
+        className={`pdf-viewer-panel w-fit shadow-xl shadow-black/20 min-h-[29.7cm] p-[10mm] md:p-[20mm] mx-auto print:shadow-none print:p-0 print:m-0 print:w-full transition-transform duration-300 ${showBranding ? 'min-[1360px]:-translate-x-44' : ''}`}
       >
         <ReportView
           patient={patient}
