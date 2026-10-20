@@ -246,6 +246,81 @@ describe('report data', () => {
     expect(buildTestScoreBlocks(tests, index, { mabc: 'ET' })[0].mode).toBe('ET');
   });
 
+  it('groups the score rows by catalogue category, each total at the end of its category (#140)', () => {
+    const band = (label: string, order: number) => ({ groupHeaderLabel: `Groupe d'âge 2 (7 à 10 ans) — ${label}`, groupOrder: order });
+    const sub = (id: string, name: string, order: number, group: { groupHeaderLabel: string; groupOrder: number }) => ({
+      id,
+      name,
+      unit: 'pts',
+      scoreType: 'scaled' as const,
+      inputModel: 'numeric_4mode' as const,
+      displayGroupOrder: group.groupOrder,
+      displayOrder: order,
+      inputConfig: group,
+    });
+    const totals = { groupHeaderLabel: 'Notes totales', groupOrder: 98 };
+    const mabcIndex = buildCatalogIndex([
+      {
+        id: 'motor',
+        name: 'Motricité',
+        iconKey: 'Hand',
+        sortOrder: 1,
+        tests: [
+          {
+            id: 'mabc-2',
+            name: 'MABC-2',
+            subtests: [
+              sub('pegs', 'Chevilles main préférée', 11, band('Dextérité manuelle', 4)),
+              sub('catch', 'Attraper avec 2 mains', 15, band('Viser et attraper', 5)),
+              sub('board', 'Équilibre sur une planche', 17, band('Équilibre', 6)),
+              sub('dext-total', 'Note totale dextérité manuelle', 33, totals),
+              sub('aim-total', 'Note totale viser et attraper', 34, totals),
+              sub('bal-total', 'Note totale Équilibre', 35, totals),
+              sub('total', 'Note totale du test', 36, totals),
+            ],
+          },
+          {
+            id: 'bhk',
+            name: 'BHK',
+            subtests: [
+              sub('quality', 'Qualité', 1, { groupHeaderLabel: 'Scores BHK', groupOrder: 1 }),
+              sub('speed', 'Vitesse', 2, { groupHeaderLabel: 'Scores BHK', groupOrder: 1 }),
+            ],
+          },
+        ],
+      },
+    ]);
+    const ns = (value: string) => ({ value, unit: 'NS' as const });
+    // Stored in another order than the catalogue's.
+    const tests = {
+      'mabc-2': {
+        total: ns('5'),
+        board: ns('6'),
+        'bal-total': ns('7'),
+        pegs: ns('8'),
+        'dext-total': ns('9'),
+        catch: ns('10'),
+        'aim-total': ns('11'),
+      },
+      bhk: { speed: ns('9'), quality: ns('8') },
+    };
+    const [mabc, bhk] = buildTestScoreBlocks(tests, mabcIndex);
+    expect(mabc.rows.map((r) => [r.groupLabel, r.label])).toEqual([
+      ['Dextérité manuelle', 'Chevilles main préférée'],
+      ['Dextérité manuelle', 'Note totale dextérité manuelle'],
+      ['Viser et attraper', 'Attraper avec 2 mains'],
+      ['Viser et attraper', 'Note totale viser et attraper'],
+      ['Équilibre', 'Équilibre sur une planche'],
+      ['Équilibre', 'Note totale Équilibre'],
+      ['Notes totales', 'Note totale du test'],
+    ]);
+    // A single category: no heading.
+    expect(bhk.rows.map((r) => [r.groupLabel, r.label])).toEqual([
+      [null, 'Qualité'],
+      [null, 'Vitesse'],
+    ]);
+  });
+
   it('has no evolution column outside a re-evaluation', () => {
     const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
     expect(block.showEvolution).toBe(false);
