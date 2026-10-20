@@ -37,7 +37,7 @@ Les 19 lignes étaient des items (certains fusionnés, plusieurs rangés dans le
 | Précision motrice fine, Intégration motrice fine, Dextérité manuelle, Coordination bilatérale, Équilibre, Vitesse de course et agilité, Coordination des membres supérieurs, Force (ordre des sous-tests 1 à 8, nom anglais entre parenthèses) | **ajouté**, `none`                 |
 | Contrôle manuel fin, Coordination manuelle, Coordination corporelle, Force et agilité, Composite moteur total                                                                                                                                  | **ajouté**, `t-score` (m=50, σ=10) |
 
-L'app n'a pas d'échelle m=15, σ=5 (l'ajouter touche la contrainte de `score_type`, donc le schéma) : les sous-tests sont en `none`, l'en-tête de groupe rappelle « note d'échelle m=15, σ=5 » et la saisie en ET ou en % reste convertible.
+L'app n'a pas d'échelle m=15, σ=5 (l'ajouter touche la contrainte de `score_type`, donc le schéma : #123) : les sous-tests sont en `none`, l'en-tête de groupe rappelle « note d'échelle m=15, σ=5 » et la saisie en ET ou en % reste convertible.
 
 ## Jebsen-Taylor par main
 
@@ -62,7 +62,7 @@ L'app n'a pas d'échelle m=15, σ=5 (l'ajouter touche la contrainte de `score_ty
 
 ## Échelles à sens inversé (relevé en chemin)
 
-BRIEF-2 (échelles et indices, notes T) et SPM (notes T) : une note haute y signale une **difficulté** (BRIEF-2 : échelles de difficultés exécutives, « Résultats en percentiles et notes T » [7] ; SPM : zones typique, difficultés modérées, sévères [12 bis]). L'app ne sait lire une note que dans un sens (z bas = difficulté) : une note T de 72 s'affichait « dans la moyenne », voire au-dessus. Comme Internalisé et Externalisé de la Vineland-3 (#90, 2026-10-02), ces lignes passent en `none` : la valeur saisie s'affiche telle quelle, sans zone. Une échelle « note haute = difficulté » demande une évolution de l'app, suivie dans une issue dédiée.
+BRIEF-2 (échelles et indices, notes T) et SPM (notes T) : une note haute y signale une **difficulté** (BRIEF-2 : échelles de difficultés exécutives, « Résultats en percentiles et notes T » [7] ; SPM : zones typique, difficultés modérées, sévères [12 bis]). L'app ne sait lire une note que dans un sens (z bas = difficulté) : une note T de 72 s'affichait « dans la moyenne », voire au-dessus. Comme Internalisé et Externalisé de la Vineland-3 (#90, 2026-10-02), ces lignes passent en `none` : la valeur saisie s'affiche telle quelle, sans zone. Une échelle « note haute = difficulté » demande une évolution de l'app : #122.
 
 ## Sources
 
