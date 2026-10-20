@@ -172,7 +172,7 @@ export interface QualitativeRow {
 export interface TestScoreBlock {
   testId: string;
   testName: string;
-  /** Free-text observations pseudo-test: render as notes, not as a table. */
+  /** One free observation (pseudo-test): `testName` is its title, its single note is the text (no inner card). */
   isFreeObservations: boolean;
   /** At least one row can be shown as NS/ET/% → show the display-mode selector. */
   hasStandardizedScores: boolean;
@@ -184,6 +184,18 @@ export interface TestScoreBlock {
   notes: Array<{ label: string; observation: string }>;
 }
 
+const freeObservationBlock = (testId: string, r: ResolvedScore): TestScoreBlock => ({
+  testId: `${testId}:${r.subtestId}`,
+  testName: r.label,
+  isFreeObservations: true,
+  hasStandardizedScores: false,
+  showEvolution: false,
+  mode: DEFAULT_SCORE_DISPLAY_MODE,
+  rows: [],
+  qualitativeRows: [],
+  notes: [{ label: '', observation: r.score.observation?.trim() || '' }],
+});
+
 export const buildTestScoreBlocks = (
   tests: TestData,
   index: CatalogIndex,
@@ -193,6 +205,8 @@ export const buildTestScoreBlocks = (
 ): TestScoreBlock[] =>
   resolveScores(tests, index).flatMap((test) => {
     if (test.subtests.length === 0) return [];
+    // Free observations: one card per note, titled by the title the practitioner typed (#143).
+    if (test.isFreeObservations) return test.subtests.map((r) => freeObservationBlock(test.testId, r));
     const mode = modes[test.testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
     const block: TestScoreBlock = {
       testId: test.testId,

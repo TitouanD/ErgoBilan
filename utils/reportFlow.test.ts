@@ -214,6 +214,23 @@ describe('report data', () => {
     expect(inEt.rows[0].evolution?.text).toBe('+0.67 ET');
   });
 
+  it('shows each free observation as its own card, titled by the title typed, with the whole text (#143)', () => {
+    const text = 'Premier paragraphe.\n\nDeuxième paragraphe.';
+    const blocks = buildTestScoreBlocks(
+      {
+        custom_observations: {
+          custom_1: { customLabel: "Observation de l'écriture", observation: text },
+          custom_2: { observation: 'Autre note.' },
+        },
+      },
+      index,
+    );
+    expect(blocks.map((b) => [b.testName, b.isFreeObservations, b.notes])).toEqual([
+      ["Observation de l'écriture", true, [{ label: '', observation: text }]],
+      ['Observation libre', true, [{ label: '', observation: 'Autre note.' }]],
+    ]);
+  });
+
   it('has no evolution column outside a re-evaluation', () => {
     const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
     expect(block.showEvolution).toBe(false);

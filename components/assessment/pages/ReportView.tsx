@@ -477,12 +477,19 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
         )}
       </div>
       <div className="p-6 space-y-6">
-        {block.notes.map((note, i) => (
-          <div key={i} className="border border-stone-100 rounded-lg p-4">
-            <h4 className="font-semibold text-sm text-stone-700 mb-2">{note.label}</h4>
-            <p className="text-sm text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
-          </div>
-        ))}
+        {block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <p key={i} className="text-sm text-stone-600 whitespace-pre-wrap">
+              {note.observation || '-'}
+            </p>
+          ))}
+        {!block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <div key={i} className="border border-stone-100 rounded-lg p-4">
+              <h4 className="font-semibold text-sm text-stone-700 mb-2">{note.label}</h4>
+              <p className="text-sm text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
+            </div>
+          ))}
         {block.rows.length > 0 && (
           <table className="w-full border-collapse text-sm">
             <thead>
