@@ -1,6 +1,6 @@
 # Vérification du catalogue : douteux, BOT-2, « à confirmer », Jebsen-Taylor (2026-10-20, #90)
 
-Suite de [`verification-2026-09-30.md`](./verification-2026-09-30.md). Base lue en lecture seule le 2026-10-20 (`official_subtests`, `organization_id is null`). Consigne de Titouan : sans information suffisante, la ligne est retirée (« un test faux est bien pire qu'un test absent »). Les corrections sont appliquées par la migration `20261020180000_catalogue_douteux.sql`.
+Suite de [`verification-2026-09-30.md`](./verification-2026-09-30.md). Base lue en lecture seule le 2026-10-20 (`official_subtests`, `organization_id is null`). Consigne de Titouan : sans information suffisante, la ligne est retirée (« un test faux est bien pire qu'un test absent »). Les corrections sont appliquées par la migration `20261020200000_catalogue_douteux.sql`.
 
 Un score déjà saisi sur une ligne retirée reste dans le bilan local. Il s'affiche sous son ancien nom (`data/retiredCatalog.ts`, lu par `getSubtestName` et `getTestName`, `utils/catalogIndex.ts`), avec l'échelle `none` : la valeur saisie est montrée telle quelle, sans conversion ni zone. Test : `utils/catalogIndex.test.ts`.
 
