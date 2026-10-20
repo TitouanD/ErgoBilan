@@ -25,6 +25,13 @@ import { buildFictiveQuestionnaires } from './fictiveQuestionnaires';
 import { parseScenario, purgeFictivePatients, runScenario, type ScenarioWelcome } from './scenarios';
 import { FICTIF_LAST_NAME } from './fictivePatients';
 
+/** Long free-text answers of the filled portal: the fields grow with their text (#151). */
+const PORTAL_LONG_ANSWERS = {
+  classroomBehavior:
+    'Attention fragile lorsqu’il y a du bruit et trop de mouvements dans la classe, et pareil lorsqu’il doit faire une double tâche (écouter et écrire).',
+  schoolOrganization: 'Oublie souvent des choses en classe ou à la maison, range difficilement son cartable et perd son matériel.',
+};
+
 interface Props {
   onLoadData: () => Promise<void>;
   onResumeDraft: (patientId: string) => Promise<void>;
@@ -88,7 +95,8 @@ export const DevTools: React.FC<Props> = ({
           // Same decryption as the questionnaires loaded from Supabase (useDataLoader → loadPending).
           onShowQuestionnaires(await withChildNames(await buildFictiveQuestionnaires(sessionKey, new Date()), sessionKey));
         }
-        if (parsed.scenario.name === 'portail') onShowPortal(parsed.scenario.profile.patient, `Sophie ${FICTIF_LAST_NAME}`);
+        if (parsed.scenario.name === 'portail')
+          onShowPortal({ ...parsed.scenario.profile.patient, ...PORTAL_LONG_ANSWERS }, `Sophie ${FICTIF_LAST_NAME}`);
         else if (result.open) await onResumeDraft(result.open);
         else onShowDashboard();
         if (parsed.scenario.modal === 'cgv') onShowTermsOfSale();
