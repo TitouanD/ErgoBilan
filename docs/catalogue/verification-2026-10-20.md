@@ -1,6 +1,6 @@
 # Vérification du catalogue : douteux, BOT-2, « à confirmer », Jebsen-Taylor (2026-10-20, #90)
 
-Suite de [`verification-2026-09-30.md`](./verification-2026-09-30.md). Base lue en lecture seule le 2026-10-20 (`official_subtests`, `organization_id is null`). Consigne de Titouan : sans information suffisante, la ligne est retirée (« un test faux est bien pire qu'un test absent »). Les corrections sont appliquées par la migration `20261020200000_catalogue_douteux.sql`.
+Suite de [`verification-2026-09-30.md`](./verification-2026-09-30.md). Base lue en lecture seule le 2026-10-20 (`official_subtests`, `organization_id is null`). Consigne de Titouan : sans information suffisante, la ligne est retirée (« un test faux est bien pire qu'un test absent »). Les corrections sont appliquées par les migrations `20261020200000_catalogue_douteux.sql` et `20261020210000_jebsen_noms_main.sql` (libellés Jebsen-Taylor).
 
 Un score déjà saisi sur une ligne retirée reste dans le bilan local. Il s'affiche sous son ancien nom (`data/retiredCatalog.ts`, lu par `getSubtestName` et `getTestName`, `utils/catalogIndex.ts`), avec l'échelle `none` : la valeur saisie est montrée telle quelle, sans conversion ni zone. Test : `utils/catalogIndex.test.ts`.
 
@@ -43,10 +43,10 @@ L'app n'a pas d'échelle m=15, σ=5 (l'ajouter touche la contrainte de `score_ty
 
 « Each item performed with each hand separately – non-dominant hand first » ; score = temps en secondes (120 s au plus), total = somme des temps, rapportés par main [10].
 
-| Ligne                                                                                          | Décision                                                                                                    |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| les 7 lignes sans main                                                                         | **retiré** : une valeur saisie ne dit pas de quelle main il s'agit ; elle s'affiche « (main non précisée) » |
-| 7 épreuves + total, main non dominante ; 7 épreuves + total, main dominante (secondes, `none`) | **ajouté**, dans l'ordre des épreuves déjà en base (Jebsen 1969)                                            |
+| Ligne                                                                                          | Décision                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| les 7 lignes sans main                                                                         | **retiré** : une valeur saisie ne dit pas de quelle main il s'agit ; elle s'affiche « (main non précisée) »                                                                                                                           |
+| 7 épreuves + total, main non dominante ; 7 épreuves + total, main dominante (secondes, `none`) | **ajouté**, dans l'ordre des épreuves déjà en base (Jebsen 1969) ; la main est dans le nom (« Écriture, main non dominante »), car le tableau des scores n'affiche pas les en-têtes de groupe (`20261020210000_jebsen_noms_main.sql`) |
 
 ## Points « à confirmer »
 
