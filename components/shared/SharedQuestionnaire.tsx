@@ -1251,12 +1251,17 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             multi
                           />
                           <div className="mt-2">
-                            <DebouncedInput
+                            <label htmlFor="classroomBehavior" className={labelClass}>
+                              Précisions
+                            </label>
+                            <DebouncedTextarea
+                              id="classroomBehavior"
                               name="classroomBehavior"
                               value={data.classroomBehavior || ''}
                               onChange={(v) => handleFieldChange('classroomBehavior', v)}
                               className={inputClass}
                               placeholder="Précisions complémentaires..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1279,12 +1284,17 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                             multi
                           />
                           <div className="mt-2">
-                            <DebouncedInput
+                            <label htmlFor="peerRelations" className={labelClass}>
+                              Précisions
+                            </label>
+                            <DebouncedTextarea
+                              id="peerRelations"
                               name="peerRelations"
                               value={data.peerRelations || data.socialBehavior || ''}
                               onChange={(v) => handleFieldChange('peerRelations', v)}
                               className={inputClass}
                               placeholder="Jeux, interactions, conflits, isolement..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1311,22 +1321,24 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className={labelClass}>Mémorisation</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="schoolMemory"
                               value={data.schoolMemory || ''}
                               onChange={(v) => handleFieldChange('schoolMemory', v)}
                               className={inputClass}
                               placeholder="Leçons, consignes, automatismes..."
+                              rows={1}
                             />
                           </div>
                           <div>
                             <label className={labelClass}>Organisation</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="schoolOrganization"
                               value={data.schoolOrganization || ''}
                               onChange={(v) => handleFieldChange('schoolOrganization', v)}
                               className={inputClass}
                               placeholder="Cartable, matériel, consignes..."
+                              rows={1}
                             />
                           </div>
                         </div>
@@ -1464,12 +1476,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                         </div>
                         <div>
                           <label className={labelClass}>Traitements en cours</label>
-                          <DebouncedInput
+                          <DebouncedTextarea
                             name="medicalTreatments"
                             value={data.medicalTreatments || ''}
                             onChange={(v) => handleFieldChange('medicalTreatments', v)}
                             className={inputClass}
                             placeholder="Médicaments, lunettes..."
+                            rows={1}
                           />
                         </div>
                         <div>
@@ -1764,12 +1777,13 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                           </div>
                           <div>
                             <label className={labelClass}>Précisions</label>
-                            <DebouncedInput
+                            <DebouncedTextarea
                               name="sleep"
                               value={data.sleep || ''}
                               onChange={(v) => handleFieldChange('sleep', v)}
                               className={inputClass}
                               placeholder="Heure coucher/lever, durée, rituel..."
+                              rows={1}
                             />
                           </div>
                         </div>

@@ -157,3 +157,33 @@ describe('SharedQuestionnaire : retours de la testeuse sur le questionnaire pare
     expect(screen.getAllByText('Utilisation des outils scolaires')).toHaveLength(1);
   });
 });
+
+describe('SharedQuestionnaire : les précisions reviennent à la ligne et s’agrandissent (#151)', () => {
+  const LONG = 'Attention fragile lorsqu’il y a du bruit et trop de mouvements dans la classe, et pareil en double tâche.';
+
+  it('titre « Précisions » les zones de texte de la vie scolaire et sociale', async () => {
+    render(<SharedQuestionnaire data={patient()} onChange={() => {}} mode="family" />);
+    await userEvent.click(screen.getByText('Vie scolaire'));
+    expect(screen.getByLabelText('Précisions', { selector: '#classroomBehavior' }).tagName).toBe('TEXTAREA');
+    expect(screen.getByLabelText('Précisions', { selector: '#peerRelations' }).tagName).toBe('TEXTAREA');
+  });
+
+  it('écrit sur plusieurs lignes et grandit avec le texte', async () => {
+    const scrollHeight = vi.spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get').mockReturnValue(96);
+    const { container } = render(
+      <SharedQuestionnaire
+        data={patient({ classroomBehavior: LONG, peerRelations: LONG, schoolMemory: LONG, schoolOrganization: LONG })}
+        onChange={() => {}}
+        mode="family"
+      />,
+    );
+    await userEvent.click(screen.getByText('Vie scolaire'));
+    for (const name of ['classroomBehavior', 'peerRelations', 'schoolMemory', 'schoolOrganization']) {
+      const field = container.querySelector<HTMLTextAreaElement>(`textarea[name=${name}]`);
+      expect(field, name).not.toBeNull();
+      expect(field!.value).toBe(LONG);
+      expect(field!.style.height).toBe('96px');
+    }
+    scrollHeight.mockRestore();
+  });
+});
