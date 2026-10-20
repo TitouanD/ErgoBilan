@@ -110,6 +110,16 @@ describe('reportGenerator — initial report', () => {
     expect(report.reformulatedObservations).toEqual({ dext: 'Léa serre le crayon.' });
   });
 
+  it('sends the age at the assessment date, not at the writing date (#153)', async () => {
+    // Born 2018-03-20, assessed 2026-03-10, written 2026-09-29.
+    const { transport, requests } = fakeTransport({ report_bio: [BIO], report_diagnostic: [DIAG] });
+    await createReportGenerator(transport, { now: () => NOW }).generateInitial({ ...input, assessmentDate: '2026-03-10T00:00:00.000Z' });
+
+    const bio = requests[0].payload as { childContext: string };
+    expect(bio.childContext).toContain('7 ans 11 mois');
+    expect(bio.childContext).not.toContain('8 ans');
+  });
+
   it('resumes at the diagnostic after a failure, without a new bio call', async () => {
     const { transport, requests } = fakeTransport({ report_bio: [BIO], report_diagnostic: ['TIMEOUT_AI', DIAG] });
     const generator = createReportGenerator(transport, { now: () => NOW });
@@ -183,6 +193,23 @@ describe('reportGenerator — re-evaluation', () => {
     expect(sections[0].content).toBe('<p>Bilan du 02/2026 pour &lt;b&gt;Léa&lt;/b&gt;.</p>');
     expect(sections.map((s) => s.id)).toEqual(['resume_initial', 'evolution', 'conclusion', 'recommandations_reev']);
     expect(sections[0].title).toBe('Rappel du bilan initial');
+  });
+
+  it('dates the re-evaluation and the age at the assessment date (#153)', async () => {
+    const { transport, requests } = fakeTransport({
+      report_reevaluation: [{ resume_initial: 'r', evolution_commentee: 'e', conclusion: 'c', recommandations: 'r' }],
+    });
+    await createReportGenerator(transport, { now: () => NOW }).generateReevaluation({
+      patient,
+      previousAssessment,
+      tests,
+      index,
+      assessmentDate: '2026-04-15T00:00:00.000Z',
+    });
+
+    const payload = requests[0].payload as Record<string, string>;
+    expect(payload.childContext).toContain('8 ans 0 mois');
+    expect(payload.childContext).toContain('Bilan initial réalisé : {{DATE_1}} (il y a 2 mois)');
   });
 
   it('takes the context of a second re-evaluation from the previous re-evaluation (#70)', async () => {

@@ -21,7 +21,7 @@ const DEFAULT_SECTIONS: { id: string; title: string }[] = INITIAL_SECTIONS.filte
 
 interface Props {
   patient: Patient;
-  historicalDate: string;
+  assessmentDate: string;
   /** Sections live in the assessment context so they survive navigation and are saved in the draft. */
   sections: ReportSection[];
   onChangeSection: (id: string, update: Partial<ReportSection>) => void;
@@ -39,7 +39,7 @@ const formatDate = (isoDate: string): string => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export const HistoricalSectionsStep: React.FC<Props> = ({ patient, historicalDate, sections: stored, onChangeSection, onBack, onSave }) => {
+export const HistoricalSectionsStep: React.FC<Props> = ({ patient, assessmentDate, sections: stored, onChangeSection, onBack, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
 
@@ -84,10 +84,10 @@ export const HistoricalSectionsStep: React.FC<Props> = ({ patient, historicalDat
         <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Rapport antérieur</h2>
         <p className="text-[var(--text-secondary)] font-medium mt-2">
           Copiez-collez les sections du bilan de <span className="font-bold text-[var(--text-heading)]">{patientName}</span>
-          {historicalDate && (
+          {assessmentDate && (
             <>
               {' '}
-              réalisé le <span className="font-bold text-amber-700 dark:text-amber-400">{formatDate(historicalDate)}</span>
+              réalisé le <span className="font-bold text-amber-700 dark:text-amber-400">{formatDate(assessmentDate)}</span>
             </>
           )}
           .
