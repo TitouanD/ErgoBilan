@@ -19,7 +19,9 @@ import { type InitialReportPayload, type ReevaluationPayload, buildInitialReport
 import { type Anonymization, createAnonymization } from './anonymizer';
 import type { CatalogIndex } from './catalogIndex';
 import { Logger } from './logger';
+import { getPatientAgeForIdentity } from './patient';
 import { buildDeltaEntries } from './reevaluationHelpers';
+import { resolveScores } from './resolvedScore';
 import { htmlToPlainText, sectionToHtml, sectionToPlainText } from './reportContent';
 import {
   ADULT_RECOMMENDATIONS_TITLE,
@@ -59,6 +61,8 @@ export interface InitialReportInput {
   index: CatalogIndex;
   /** practitioners.ai_style_preferences */
   stylePreferences?: string;
+  /** Date of the assessment (passation), ISO string; absent = today. */
+  assessmentDate?: string;
 }
 
 export interface ReevaluationInput {
@@ -67,6 +71,7 @@ export interface ReevaluationInput {
   tests: TestData;
   index: CatalogIndex;
   stylePreferences?: string;
+  assessmentDate?: string;
 }
 
 export interface StyleLessonInput {
@@ -179,35 +184,53 @@ const parseAnswer = <T extends object>(text: string | null, task: string): T => 
 
 // ─── Anonymized payloads (also used to list the suspect words) ──────────────
 
-const initialRequest = (input: InitialReportInput, now: Date): { anonymization: Anonymization; payload: InitialReportPayload } => {
-  const anonymization = createAnonymization(input.patient, now);
+/**
+ * The patient as of the assessment date (#153): age at the passation, not at the writing,
+ * and that date as the reference of the anonymized date distances.
+ */
+const atAssessmentDate = (input: { patient: Patient; assessmentDate?: string }, now: Date): { patient: Patient; date: Date } => {
+  const parsed = input.assessmentDate ? new Date(input.assessmentDate) : null;
+  const date = parsed && !Number.isNaN(parsed.getTime()) ? parsed : now;
+  return { patient: { ...input.patient, age: getPatientAgeForIdentity(input.patient, date) }, date };
+};
+
+const initialRequest = (
+  input: InitialReportInput,
+  now: Date,
+): { anonymization: Anonymization; payload: InitialReportPayload; patient: Patient } => {
+  const { patient, date } = atAssessmentDate(input, now);
+  const anonymization = createAnonymization(patient, date);
   const payload = anonymization.deep(
     buildInitialReportPayload({
-      patient: input.patient,
+      patient,
       observations: input.observations,
       tests: input.tests,
       synthesis: input.synthesis,
       index: input.index,
     }),
   );
-  return { anonymization, payload };
+  return { anonymization, payload, patient };
 };
 
-const reevaluationRequest = (input: ReevaluationInput, now: Date): { anonymization: Anonymization; payload: ReevaluationPayload } => {
-  const anonymization = createAnonymization(input.patient, now);
+const reevaluationRequest = (
+  input: ReevaluationInput,
+  now: Date,
+): { anonymization: Anonymization; payload: ReevaluationPayload; patient: Patient } => {
+  const { patient, date } = atAssessmentDate(input, now);
+  const anonymization = createAnonymization(patient, date);
   const previousTests = input.previousAssessment?.tests ?? {};
   const payload = anonymization.deep(
     buildReevaluationPayload({
-      patient: input.patient,
+      patient,
       previousAssessment: input.previousAssessment,
       previousTests,
       newTests: input.tests,
       deltas: buildDeltaEntries(previousTests, input.tests, input.index),
       index: input.index,
-      reevaluationDate: now,
+      reevaluationDate: date,
     }),
   );
-  return { anonymization, payload };
+  return { anonymization, payload, patient };
 };
 
 /** Words of the anonymized initial payload that may still identify someone (see suspectTerms.ts). */
@@ -232,9 +255,9 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
   let pendingBio: { key: string; bio: BioResponse; generationId: string; at: number } | null = null;
 
   const generateInitial = async (input: InitialReportInput): Promise<InitialReportResult> => {
-    const { patient, stylePreferences } = input;
-    Logger.info('AI', 'Starting initial report generation', { patientId: patient.id });
-    const { anonymization, payload } = initialRequest(input, now());
+    const { stylePreferences } = input;
+    Logger.info('AI', 'Starting initial report generation', { patientId: input.patient.id });
+    const { anonymization, payload, patient } = initialRequest(input, now());
     const profile = getAiProfile(patient.age);
     // Plain-text answer: entities decoded before re-hydration, so that patient values stay as typed.
     const hydrate = (text: string | undefined) => sanitizeReportText(anonymization.hydrate(decodeHtmlEntities(text || NOT_GENERATED)));
@@ -296,9 +319,15 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
     }
     const { bio, diag } = result;
 
+    // A free observation is the practitioner's own text, often several paragraphs: the one-sentence
+    // reformulation would replace it with a summary (#143). It still informs the synthesis.
+    const freeText = new Set(
+      resolveScores(input.tests, input.index).flatMap((t) => t.subtests.filter((r) => r.isFreeText).map((r) => r.subtestId)),
+    );
     const reformulatedObservations: Record<string, string> = {};
     for (const entry of diag.reformulated_observations ?? []) {
-      if (entry?.subtestId && entry?.text) reformulatedObservations[entry.subtestId] = hydrate(entry.text);
+      if (entry?.subtestId && entry?.text && !freeText.has(entry.subtestId))
+        reformulatedObservations[entry.subtestId] = hydrate(entry.text);
     }
 
     return {
@@ -323,12 +352,12 @@ export const createReportGenerator = (transport: AITransport, options: { now?: (
   /** The re-evaluation answer is HTML: injected patient values are escaped. */
   const generateReevaluation = async (input: ReevaluationInput): Promise<ReportSection[]> => {
     Logger.info('AI', 'Starting re-evaluation generation', { patientId: input.patient.id });
-    const { anonymization, payload } = reevaluationRequest(input, now());
+    const { anonymization, payload, patient } = reevaluationRequest(input, now());
     const response = await transport({
       task: 'report_reevaluation',
       payload: {
         ...payload,
-        profile: getAiProfile(input.patient.age),
+        profile: getAiProfile(patient.age),
         // Only the recommendations have section-specific rules shared with the initial report.
         styleDirectives: buildStyleBlock(input.stylePreferences, ['recommandations']),
       },

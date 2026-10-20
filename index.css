@@ -159,6 +159,8 @@ select:focus {
   width: 210mm;
   min-height: 297mm;
   padding: 15mm;
+  /* Room for the footer (absolute, at the bottom): the text never runs under it (#136). */
+  padding-bottom: 35mm;
   margin: 10mm auto;
   background: #ffffff;
   color: #1c1c1e;
@@ -168,18 +170,6 @@ select:focus {
   position: relative;
   box-sizing: border-box;
   transition: none !important;
-}
-
-/* Dashed page-height guide: shows where the A4 boundary ends */
-.page-a4::after {
-  content: '';
-  position: absolute;
-  left: 5mm;
-  right: 5mm;
-  top: 297mm;
-  border-top: 1.5px dashed #d4d4d8;
-  pointer-events: none;
-  z-index: 10;
 }
 
 /* PDF viewer panel gets themed; A4 canvas remains white */
@@ -227,10 +217,6 @@ select:focus {
     width: 100%;
     border: none;
     padding: 15mm;
-  }
-
-  .page-a4::after {
-    display: none;
   }
 
   .no-print,

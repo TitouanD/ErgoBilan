@@ -121,6 +121,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
       tests={assessment.tests}
       previousTests={reportType === 'reevaluation' ? (assessment.previousAssessment?.tests ?? {}) : undefined}
       reportType={reportType}
+      assessmentDate={assessment.assessmentDate}
       reportPages={assessment.reportPages}
       onReportPagesChange={assessment.setReportPages}
       onValidate={finalizeAndExit}
@@ -140,7 +141,9 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
     <div className="max-w-7xl mx-auto p-6">
       <PatientIdentityBar
         patient={assessment.patient}
-        referenceDate={reportType === 'historique' ? assessment.historicalDate : undefined}
+        assessmentDate={assessment.assessmentDate}
+        // Historical import: the date of the original assessment is a required field of its form.
+        onAssessmentDateChange={reportType === 'historique' ? undefined : assessment.setAssessmentDate}
       />
       <AssessmentStepper currentStep={step} onStepClick={handleStepperClick} disabled={flow.isGenerating} reportType={reportType} />
 
@@ -180,6 +183,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             {step === 4 && (
               <ValidationPage
                 sections={assessment.sections}
+                tests={assessment.tests}
+                interviewNotes={assessment.patient.interviewNotes}
                 onValidateSection={validateSection}
                 onNext={() => setStep(5)}
                 onBack={() => setStep(3)}
@@ -219,6 +224,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             {step === 3 && (
               <ValidationPage
                 sections={assessment.sections}
+                tests={assessment.tests}
+                interviewNotes={assessment.patient.interviewNotes}
                 onValidateSection={validateSection}
                 onNext={() => setStep(4)}
                 onBack={() => setStep(2)}
@@ -250,7 +257,7 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
             {step === 3 && (
               <HistoricalSectionsStep
                 patient={assessment.patient}
-                historicalDate={assessment.historicalDate}
+                assessmentDate={assessment.assessmentDate}
                 sections={assessment.sections}
                 onChangeSection={assessment.updateSection}
                 onBack={() => setStep(2)}

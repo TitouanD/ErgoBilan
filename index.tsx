@@ -4,6 +4,7 @@ import App from './App';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { initSentry, reactRootErrorHandler, withSentryProfiler } from './services/sentryService';
+import { installNewVersionReload } from './utils/newVersionReload';
 
 // Local font assets for lower startup latency and fewer third-party requests.
 import '@fontsource/quicksand/latin-400.css';
@@ -18,6 +19,7 @@ if (!rootElement) {
 }
 
 initSentry();
+installNewVersionReload();
 const AppWithProfiler = withSentryProfiler(App);
 
 // React 19 root hooks: errors caught by GlobalErrorBoundary arrive through onCaughtError (with the component stack).

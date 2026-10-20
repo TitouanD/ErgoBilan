@@ -262,6 +262,30 @@ describe('assessmentInProgress', () => {
     expect(db.assessments.get(patientId)?.[0].report?.pages).toEqual(layout);
   });
 
+  it('dates the assessment at the passation, chosen by the practitioner, in every flow (#153)', async () => {
+    const { bilan, db } = ctx;
+    bilan.updatePatient(identity);
+    bilan.setAssessmentDate('2026-09-02T00:00:00.000Z');
+    expect(await bilan.saveAndClose()).toEqual({ ok: true });
+    expect(db.drafts.get('p1')?.assessmentDate).toBe('2026-09-02T00:00:00.000Z');
+
+    expect(await bilan.resume('p1', { stale: false })).toEqual({ ok: true });
+    expect((await bilan.finalize(index)).ok).toBe(true);
+    expect(db.assessments.get('p1')?.[0].date).toBe('2026-09-02T00:00:00.000Z');
+  });
+
+  it('reads the date of a historical draft saved before #153', async () => {
+    const { bilan, db } = ctx;
+    db.addPatient({ ...identity, id: 'ancien' });
+    db.drafts.set('ancien', {
+      patient: { ...identity, id: 'ancien' },
+      reportType: 'historique',
+      historicalDate: '2025-05-12T00:00:00.000Z',
+    });
+    expect(await bilan.resume('ancien', { stale: false })).toEqual({ ok: true });
+    expect(bilan.getState().assessmentDate).toBe('2025-05-12T00:00:00.000Z');
+  });
+
   it('resumes a draft saved without layout (older versions)', async () => {
     const { bilan, db } = ctx;
     db.addPatient({ ...identity, id: 'ancien' });
