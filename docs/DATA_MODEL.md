@@ -286,6 +286,8 @@ Appliquées le 2026-10-12 par l'éditeur SQL (le MCP refuse les migrations qui c
 
 Catalogue, données seulement : `20261020200000_catalogue_douteux.sql` et `20261020210000_jebsen_noms_main.sql` (#90), appliquées le 2026-10-20 par `db push`. Elle retire les sous-tests douteux sans source (Ozeretzki entier, items du BOT-2, Jebsen-Taylor sans main, etc.), ajoute les sous-tests et composites du BOT-2, Jebsen-Taylor par main, les items EGP du protocole, les notes combinées du Tapping NEPSY-2 et les indices du WISC-V, corrige des échelles et passe des libellés en français. Détail ligne par ligne : `docs/catalogue/verification-2026-10-20.md`. Les noms des lignes retirées sont dans `data/retiredCatalog.ts`.
 
+`20261020240000_manos3_noms_sans_classes.sql` (#127) : noms des sous-tests du MANOS-3 sans les classes (« Règle souligner — manipulation »), que l'en-tête de catégorie donne depuis #115 ; identifiants inchangés.
+
 Les index `idx_official_tests_category` et `generation_log_user_created_at_idx`, inutilisés eux aussi, sont conservés : ce sont les seuls index d'une clé étrangère. Les orphelins de P2-2 restent à supprimer (`supabase/checks/20261001100100_orphelins.sql`, en attente de Titouan).
 
 `supabase/checks/` contient les requêtes à lancer juste après une migration (résultat attendu en commentaire) ; `supabase/rollback/` les retours arrière, jamais appliqués automatiquement.
