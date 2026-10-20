@@ -15,6 +15,7 @@ import { useAssessment } from '../../contexts/AssessmentContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { useAssessmentFlow } from '../../hooks/useAssessmentFlow';
 import { AssessmentStepper } from './shared/AssessmentStepper';
+import { PatientIdentityBar } from './shared/PatientIdentityBar';
 import { Step1Admin } from './initial/Step1Admin';
 import { GenerationLoader } from '../shared/GenerationLoader';
 import { CriticalErrorModal } from '../shared/CriticalErrorModal';
@@ -137,6 +138,10 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
 
   return (
     <div className="max-w-7xl mx-auto p-6">
+      <PatientIdentityBar
+        patient={assessment.patient}
+        referenceDate={reportType === 'historique' ? assessment.historicalDate : undefined}
+      />
       <AssessmentStepper currentStep={step} onStepClick={handleStepperClick} disabled={flow.isGenerating} reportType={reportType} />
 
       <Suspense fallback={<StepLoader />}>
