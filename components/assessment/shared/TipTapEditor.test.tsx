@@ -18,4 +18,15 @@ describe('TipTapEditor', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(doc().lastElementChild?.tagName).toBe('UL');
   });
+
+  // #134: the hint of the Relecture and Visualisation steps promises red underlines
+  // while editing; they come from the browser's French spell checker.
+  it('en édition, laisse le navigateur souligner les fautes en français', async () => {
+    const { container } = render(<TipTapEditor content="<p>Texte</p>" onChange={() => {}} inline />);
+    await waitFor(() => expect(container.querySelector('.ProseMirror')).not.toBeNull());
+    const doc = container.querySelector('.ProseMirror')!;
+    expect(doc.getAttribute('spellcheck')).toBe('true');
+    expect(doc.getAttribute('lang')).toBe('fr');
+    expect(doc.getAttribute('contenteditable')).toBe('true');
+  });
 });
