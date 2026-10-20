@@ -142,7 +142,8 @@ export const AssessmentWorkspace: React.FC<Props> = ({ flow, onExit, onOpenProfi
       <PatientIdentityBar
         patient={assessment.patient}
         assessmentDate={assessment.assessmentDate}
-        onAssessmentDateChange={assessment.setAssessmentDate}
+        // Historical import: the date of the original assessment is a required field of its form.
+        onAssessmentDateChange={reportType === 'historique' ? undefined : assessment.setAssessmentDate}
       />
       <AssessmentStepper currentStep={step} onStepClick={handleStepperClick} disabled={flow.isGenerating} reportType={reportType} />
 
