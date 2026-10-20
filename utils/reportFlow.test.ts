@@ -118,16 +118,29 @@ describe('assessment helpers', () => {
 
 describe('resolveTestDef', () => {
   it('keeps stored scores of subtests or tests missing from the catalogue', () => {
-    const known = resolveTestDef(index, 'mabc', ['dext', 'old_subtest']);
+    const known = resolveTestDef(index, 'mabc', { dext: {}, old_subtest: {} });
     expect(known.name).toBe('MABC-2');
     expect(known.subtests.map((s) => s.id)).toEqual(['dext', 'grip', 'old_subtest']);
     expect(known.subtests[2]).toMatchObject({ scoreType: 'none', inputModel: 'numeric_4mode' });
 
-    const deleted = resolveTestDef(index, 'deleted-test', ['custom_1a2b3c4d']);
+    const deleted = resolveTestDef(index, 'deleted-test', { custom_1a2b3c4d: {} });
     expect(deleted.name).toBe('Test personnalisé');
     expect(deleted.subtests[0]).toMatchObject({ name: 'Observation libre', inputModel: 'custom_text' });
 
-    expect(resolveTestDef(index, 'dtvp', ['copy'])).toBe(index.testById.get('dtvp'));
+    expect(resolveTestDef(index, 'dtvp', { copy: {} })).toBe(index.testById.get('dtvp'));
+  });
+
+  it('keeps a readable name and the stored value of an official subtest removed from the catalogue (#101)', () => {
+    const def = resolveTestDef(index, 'barrage-h', {
+      'barrage-h__fausses-alarmes': { value: '3', unit: 'NS' },
+      'barrage-h__strategie': { value: 'anarchique', unit: 'qualitative', qualitativeLabel: 'Anarchique' },
+    });
+    expect(def.subtests[0]).toMatchObject({ name: 'Fausses alarmes', inputModel: 'numeric_4mode' });
+    expect(def.subtests[1]).toMatchObject({
+      name: 'Strategie',
+      inputModel: 'qualitative_category',
+      inputConfig: { options: [{ code: 'anarchique', label: 'Anarchique', order: 1 }] },
+    });
   });
 });
 

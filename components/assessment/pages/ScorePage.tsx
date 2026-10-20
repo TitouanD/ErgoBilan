@@ -3,7 +3,8 @@
  *
  * The practitioner picks tests/subtests from the catalogue and types scores
  * in one ScoreTable per test. Tests and subtests can be reordered by
- * drag-and-drop; the order is persisted as the key order of `tests`, which
+ * drag-and-drop, and tests also by the « Monter » / « Descendre » buttons
+ * (dragging a test with many subtests is hard to aim, #117); the order is persisted as the key order of `tests`, which
  * every downstream consumer (report, PDF, AI payload) reads as-is.
  */
 
@@ -11,7 +12,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Activity, ArrowRight, ChevronDown, ChevronRight, GripVertical, Layers, Plus, Trash2 } from 'lucide-react';
+import { Activity, ArrowDown, ArrowRight, ArrowUp, ChevronDown, ChevronRight, GripVertical, Layers, Plus, Trash2 } from 'lucide-react';
 import type { ScoreResult, TestData } from '../../../types';
 import { ICON_MAP, type SubtestDef, type TestDef } from '../../../data/testCatalog';
 import { useCatalog } from '../../../contexts/CatalogContext';
@@ -90,6 +91,18 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
     [tests, testOrder, updateTests],
   );
 
+  /** Moves a test one place up (-1) or down (+1). */
+  const moveTest = useCallback(
+    (testId: string, step: -1 | 1) => {
+      const from = testOrder.indexOf(testId);
+      const to = from + step;
+      if (from < 0 || to < 0 || to >= testOrder.length) return;
+      const reordered = arrayMove(testOrder, from, to);
+      updateTests(Object.fromEntries(reordered.map((id) => [id, tests[id]])));
+    },
+    [tests, testOrder, updateTests],
+  );
+
   const addTests = useCallback(
     (selection: Record<string, string[]>) => {
       const { tests: next, newTestIds } = addCatalogSelection(tests, selection, index);
@@ -128,7 +141,7 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
   }, [tests]);
   const completion = stats.total > 0 ? Math.round((stats.filled / stats.total) * 100) : 0;
 
-  const testDef = (testId: string): TestDef => resolveTestDef(index, testId, Object.keys(tests[testId] ?? {}));
+  const testDef = (testId: string): TestDef => resolveTestDef(index, testId, tests[testId] ?? {});
 
   return (
     <div className="max-w-7xl mx-auto animate-in fade-in duration-500 pb-10">
@@ -182,7 +195,7 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
 
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={testOrder} strategy={verticalListSortingStrategy}>
-              {testOrder.map((testId) => {
+              {testOrder.map((testId, position) => {
                 const def = testDef(testId);
                 const category = index.categoryByTestId.get(testId);
                 const CatIcon = ICON_MAP[category?.iconKey || 'Box'] ?? ICON_MAP.Box;
@@ -230,13 +243,35 @@ export const ScorePage: React.FC<Props> = ({ tests, updateTests, onNext, onBack,
                               </p>
                             </div>
                           </div>
-                          <button
-                            onClick={() => removeTest(testId)}
-                            className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200"
-                            title="Retirer ce test"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => moveTest(testId, -1)}
+                              disabled={position === 0}
+                              className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--card-bg)] disabled:opacity-30 disabled:pointer-events-none"
+                              title="Monter ce test"
+                              aria-label={`Monter ${def.name}`}
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveTest(testId, 1)}
+                              disabled={position === testOrder.length - 1}
+                              className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--card-bg)] disabled:opacity-30 disabled:pointer-events-none"
+                              title="Descendre ce test"
+                              aria-label={`Descendre ${def.name}`}
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                            <button
+                              onClick={() => removeTest(testId)}
+                              className="p-2 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-rose-500 hover:border-rose-200"
+                              title="Retirer ce test"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                         {!collapsed && (
                           <div className="p-3">
