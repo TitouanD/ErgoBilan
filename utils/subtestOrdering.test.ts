@@ -21,7 +21,7 @@ describe('libellé et ordre des sous-tests (nom du catalogue)', () => {
     expect(getSubtestName(index, 't', 'a')).toBe('Dextérité');
     expect(getSubtestName(index, 't', 'a', '  Libre  ')).toBe('Libre');
     expect(getSubtestName(index, 't', 'custom_x')).toBe('Observation libre');
-    expect(getSubtestName(index, 't', 'mon_test-2_abcdef12')).toBe('mon test 2');
+    expect(getSubtestName(index, 't', 'mon_test-2_abcdef12')).toBe('Mon test 2');
   });
 
   it('déduit groupe et rang du nom quand la configuration est absente', () => {

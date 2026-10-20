@@ -113,7 +113,7 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
       <div className="space-y-6">
         {testIds.map((testId) => {
           const prevScores = previousTests[testId] ?? {};
-          const test = resolveTestDef(index, testId, Object.keys(prevScores));
+          const test = resolveTestDef(index, testId, prevScores);
           const shownIds = new Set(reevaluationSubtestIds(prevScores, tests[testId]));
           const subtests = test.subtests.filter((st) => shownIds.has(st.id)).sort(compareSubtestsForDisplay);
           if (subtests.length === 0) return null;
@@ -169,7 +169,7 @@ export const Step1Scores: React.FC<Props> = ({ tests, updateTests, previousAsses
 
         {addedTestIds.map((testId) => {
           const scores = tests[testId] ?? {};
-          const test = resolveTestDef(index, testId, Object.keys(scores));
+          const test = resolveTestDef(index, testId, scores);
           const subtests = test.subtests.filter((st) => st.id in scores).sort(compareSubtestsForDisplay);
 
           return (
