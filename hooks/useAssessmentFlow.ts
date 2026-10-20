@@ -102,10 +102,10 @@ export const useAssessmentFlow = ({
   /** Words of the free text that may still identify someone, to confirm before the generation. */
   const findSuspectTerms = useCallback(async (): Promise<string[]> => {
     const index = await loadCatalog();
-    const { patient, observations, tests, synthesis, previousAssessment, reportType } = assessment;
+    const { patient, observations, tests, synthesis, previousAssessment, reportType, assessmentDate } = assessment;
     return reportType === 'reevaluation'
-      ? findReevaluationSuspectTerms({ patient, previousAssessment, tests, index })
-      : findInitialSuspectTerms({ patient, observations, tests, synthesis, index });
+      ? findReevaluationSuspectTerms({ patient, previousAssessment, tests, index, assessmentDate })
+      : findInitialSuspectTerms({ patient, observations, tests, synthesis, index, assessmentDate });
   }, [assessment, loadCatalog]);
 
   /** Initial report: sections + AI-reformulated subtest observations. Moves to the validation step. */
@@ -115,7 +115,7 @@ export const useAssessmentFlow = ({
       const ok = await runGeneration(async () => {
         const patient = withDecisions(decisions);
         const ticket = assessment.beginGeneration();
-        const { observations, tests, synthesis } = assessment;
+        const { observations, tests, synthesis, assessmentDate } = assessment;
         const index = await loadCatalog();
         const report = await generator.generateInitial({
           patient,
@@ -124,6 +124,7 @@ export const useAssessmentFlow = ({
           synthesis,
           index,
           stylePreferences: practitioner?.aiStylePreferences,
+          assessmentDate,
         });
         applied = assessment.applyGeneratedReport(ticket, report);
         if (!isDemoMode) void refreshProfile();
@@ -143,7 +144,7 @@ export const useAssessmentFlow = ({
       const ok = await runGeneration(async () => {
         const patient = withDecisions(decisions);
         const ticket = assessment.beginGeneration();
-        const { previousAssessment, tests } = assessment;
+        const { previousAssessment, tests, assessmentDate } = assessment;
         const index = await loadCatalog();
         const sections = await generator.generateReevaluation({
           patient,
@@ -151,6 +152,7 @@ export const useAssessmentFlow = ({
           tests,
           index,
           stylePreferences: practitioner?.aiStylePreferences,
+          assessmentDate,
         });
         applied = assessment.applyGeneratedReport(ticket, { sections });
         if (!isDemoMode) void refreshProfile();
