@@ -4,11 +4,17 @@ import { useAuth } from '../../contexts/AuthContext'; // Import du contexte Auth
 
 interface Props {
   onComplete: () => void;
+  /** Step shown first (dev scenario `accueil` opens the last one). */
+  initialStep?: 1 | 2 | 3 | 4;
+  /** Trial refused for this e-mail address; defaults to the profile (the dev scenario sets it). */
+  trialDenied?: boolean;
 }
 
-export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
-  const { isDemoMode } = useAuth(); // Hook pour détecter le mode démo
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+export const OnboardingExperience: React.FC<Props> = ({ onComplete, initialStep = 1, trialDenied: trialDeniedProp }) => {
+  const { isDemoMode, userProfile } = useAuth(); // Hook pour détecter le mode démo
+  /** Adresse déjà utilisée pour un essai : compte créé sans crédit d'essai (#113). */
+  const trialDenied = trialDeniedProp ?? userProfile.trialDenied;
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep);
 
   // Si on est en mode démo, on n'a que 3 étapes (Pas de cadeau de crédits)
   const maxSteps = isDemoMode ? 3 : 4;
@@ -142,8 +148,34 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
             </div>
           )}
 
+          {/* VISUEL ÉTAPE 4, ESSAI REFUSÉ (#113) : pas de cadeau, l'espace reste ouvert */}
+          {step === 4 && trialDenied && (
+            <div className="relative animate-in slide-in-from-right duration-500 w-full max-w-md flex flex-col items-center">
+              <div className="bg-[var(--card-bg)] rounded-[32px] p-8 shadow-2xl border border-[var(--border-color)] relative z-10 w-80 text-center">
+                <div className="w-20 h-20 bg-[var(--secondary)] text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                  <Sparkles size={40} />
+                </div>
+                <h3 className="font-serif font-bold text-2xl text-[var(--text-heading)] mb-6">Votre espace est prêt</h3>
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-3 p-3 bg-[var(--hover-bg)] rounded-xl">
+                    <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[var(--primary)]">
+                      <Check size={14} strokeWidth={3} />
+                    </div>
+                    <span className="text-sm font-bold text-[var(--text-main)]">Toute l'application accessible</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-[var(--hover-bg)] rounded-xl">
+                    <div className="p-1.5 bg-[var(--card-bg)] rounded-full shadow-sm text-[var(--primary)]">
+                      <Sparkles size={14} strokeWidth={3} />
+                    </div>
+                    <span className="text-sm font-bold text-[var(--text-main)]">Rédaction par l'IA : 1 crédit par bilan</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* VISUEL ÉTAPE 4 : LE CADEAU (3 Crédits) - SEULEMENT PROD */}
-          {step === 4 && (
+          {step === 4 && !trialDenied && (
             <div className="relative animate-in slide-in-from-right duration-500 w-full max-w-md flex flex-col items-center">
               <div className="relative">
                 {/* Effet de lueur */}
@@ -312,26 +344,36 @@ export const OnboardingExperience: React.FC<Props> = ({ onComplete }) => {
                 <h2 className="font-serif text-3xl md:text-4xl font-bold text-[var(--secondary)] mb-4">
                   Démarrez maintenant <br /> sans contrainte.
                 </h2>
-                <p className="text-lg text-stone-500 leading-relaxed">
-                  Nous avons crédité votre compte de <strong className="text-[var(--primary)]">3 bilans offerts</strong>. Aucun engagement,
-                  aucune carte bancaire requise.
-                </p>
+                {trialDenied ? (
+                  <p className="text-lg text-stone-500 leading-relaxed">
+                    L'essai gratuit a déjà été utilisé avec cette adresse e-mail : ce compte n'a pas de bilans offerts. Toute l'application
+                    reste accessible ; seule la rédaction par l'IA demande un crédit.
+                  </p>
+                ) : (
+                  <p className="text-lg text-stone-500 leading-relaxed">
+                    Nous avons crédité votre compte de <strong className="text-[var(--primary)]">3 bilans offerts</strong>. Aucun
+                    engagement, aucune carte bancaire requise.
+                  </p>
+                )}
               </div>
 
-              <div className="bg-amber-50 rounded-2xl p-6 border-l-4 border-amber-400 shadow-sm">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 bg-white rounded-full shadow-sm text-amber-500 mt-1">
-                    <Clock size={24} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-amber-900 text-lg mb-1">Durée Limitée</h4>
-                    <p className="text-amber-800 leading-relaxed">
-                      Votre période d'essai est valable <strong>30 jours</strong>. <br />
-                      Passé ce délai, les fonctionnalités premium seront verrouillées.
-                    </p>
+              {!trialDenied && (
+                <div className="bg-amber-50 rounded-2xl p-6 border-l-4 border-amber-400 shadow-sm">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-white rounded-full shadow-sm text-amber-500 mt-1">
+                      <Clock size={24} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-amber-900 text-lg mb-1">Durée Limitée</h4>
+                      <p className="text-amber-800 leading-relaxed">
+                        Votre période d'essai est valable <strong>30 jours</strong>. <br />
+                        Passé ce délai, les crédits d'essai non utilisés sont perdus. Toute l'application reste accessible ; seule la
+                        rédaction par l'IA demande un crédit.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <button

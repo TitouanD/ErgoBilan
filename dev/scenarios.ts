@@ -12,6 +12,7 @@
  *   /?scenario=dashboard&questionnaires=oui   plus parent questionnaires (dev/fictiveQuestionnaires.ts)
  *   &modale=abonnement|paywall|cgv             open the pricing modal (or the terms of sale) on top
  *   &vente=fermee                              pricing modal as in production while Stripe is in test mode (#110)
+ *   /?scenario=accueil[&essai=refuse]         welcome screen after sign-up, last step (trial granted or denied, #113)
  *
  * The data goes through the app's own paths: the patient record, the finalized
  * assessments and the draft are written with StorageService, then the app
@@ -34,6 +35,8 @@ export type ScenarioName = 'dashboard' | 'initial' | 'reeval' | 'historique';
 /** Modal opened on top of the scenario screen (`&modale=`): the pricing modal (plans or paywall) or the terms of sale. */
 export type ScenarioModal = 'plans' | 'paywall' | 'cgv';
 const MODALS: Record<string, ScenarioModal> = { abonnement: 'plans', paywall: 'paywall', cgv: 'cgv' };
+/** Welcome screen after sign-up (`scenario=accueil`), opened at its last step, with the trial granted or denied (#113). */
+export type ScenarioWelcome = { trialDenied: boolean };
 
 export interface Scenario {
   name: ScenarioName;
@@ -47,6 +50,7 @@ export interface Scenario {
   modal: ScenarioModal | null;
   /** Pricing modal shown as in production while online payment is not open (`vente=fermee`, #110). */
   paymentClosed: boolean;
+  welcome: ScenarioWelcome | null;
 }
 
 /** Steps of each flow (components/assessment/shared/AssessmentStepper.tsx). */
@@ -58,8 +62,9 @@ const DEFAULTS: Record<ScenarioName, { step: number; profile: string }> = {
   historique: { step: 2, profile: 'ines' },
 };
 /** Shortcut names, e.g. `scenario=initial-scores`. */
-const ALIASES: Record<string, { name: ScenarioName; step: number; modal?: ScenarioModal }> = {
+const ALIASES: Record<string, { name: ScenarioName; step: number; modal?: ScenarioModal; welcome?: true }> = {
   abonnement: { name: 'dashboard', step: 0, modal: 'plans' },
+  accueil: { name: 'dashboard', step: 0, welcome: true },
   'initial-dossier': { name: 'initial', step: 1 },
   'initial-scores': { name: 'initial', step: 2 },
   'initial-diagnostic': { name: 'initial', step: 3 },
@@ -105,6 +110,7 @@ export const parseScenario = (search: string): ParsedScenario => {
       questionnaires: params.get('questionnaires') === 'oui',
       modal,
       paymentClosed: params.get('vente') === 'fermee',
+      welcome: alias?.welcome ? { trialDenied: params.get('essai') === 'refuse' } : null,
     },
   };
 };
