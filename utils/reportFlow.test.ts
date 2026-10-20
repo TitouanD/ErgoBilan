@@ -8,6 +8,7 @@ import { markdownToHtml, sectionToHtml } from './reportContent';
 import {
   buildDefaultPages,
   buildTestScoreBlocks,
+  sheetEnds,
   computeDotChart,
   computeRadarData,
   moveSectionInPages,
@@ -272,6 +273,13 @@ describe('report data', () => {
       ['conclusion', 'recommandations_reev'],
       ['annexes'],
     ]);
+  });
+
+  it('marks where each A4 sheet ends in a preview page taller than one sheet (#136)', () => {
+    expect(sheetEnds(1122)).toEqual([]);
+    expect(sheetEnds(1123, 1122)).toEqual([]);
+    expect(sheetEnds(1500, 1000)).toEqual([1000]);
+    expect(sheetEnds(3200, 1000)).toEqual([1000, 2000, 3000]);
   });
 
   it('moves sections without mutating and reconciles layouts', () => {

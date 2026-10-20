@@ -41,6 +41,7 @@ import {
   computeRadarData,
   moveSectionInPages,
   readingGuide,
+  sheetEnds,
 } from '../../../utils/reportData';
 import { ZONE_META, type ScoreZone } from '../../../utils/scoring';
 import { sectionToHtml } from '../../../utils/reportContent';
@@ -730,6 +731,43 @@ const ReportHeader: React.FC<{ patient: Patient; dateLabel: string; branding?: B
   );
 };
 
+// ─── Page ───────────────────────────────────────────────────────────────────
+
+/**
+ * One preview page. A page taller than an A4 sheet flows over several sheets in
+ * the PDF: the sheet ends are marked in the margin, outside the text (#136).
+ */
+const PreviewPage: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [ends, setEnds] = useState<number[]>([]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const next = sheetEnds(el.offsetHeight);
+      setEnds((prev) => (prev.length === next.length && prev.every((y, i) => Math.abs(y - next[i]) < 1) ? prev : next));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="page-a4">
+      {children}
+      {ends.map((y) => (
+        <div
+          key={y}
+          className="absolute left-full ml-3 -translate-y-1/2 no-print pointer-events-none flex items-center gap-1 text-[10px] leading-tight text-stone-400 whitespace-nowrap"
+          style={{ top: y }}
+          title="Le PDF passe ici à la page suivante"
+        >
+          <span className="w-3 border-t border-stone-300" />
+          fin de page A4
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── Report ─────────────────────────────────────────────────────────────────
 
 export const ReportView: React.FC<Props> = ({
@@ -772,7 +810,7 @@ export const ReportView: React.FC<Props> = ({
   return (
     <div id="printable-report" className="w-full flex flex-col items-center gap-8 no-scrollbar">
       {pages.map((pageSections, pageIdx) => (
-        <div key={pageIdx} className="page-a4">
+        <PreviewPage key={pageIdx}>
           {pageIdx === 0 && (
             <>
               <ReportHeader patient={patient} dateLabel={dateLabel} branding={branding} theme={theme} />
@@ -841,7 +879,7 @@ export const ReportView: React.FC<Props> = ({
               </div>
             )}
           </div>
-        </div>
+        </PreviewPage>
       ))}
 
       {onUpdateSection && onPagesChange && (
