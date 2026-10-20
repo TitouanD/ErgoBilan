@@ -290,6 +290,8 @@ Catalogue, données seulement : `20261020200000_catalogue_douteux.sql` et `20261
 
 `20261020230000_echelles_note_haute_difficulte.sql` (#122) : `t-score-inverse` et `v-scale-inverse` ajoutées à la contrainte de `score_type` ; BRIEF-2 (13 échelles et indices) et SPM (8 échelles) passent en `t-score-inverse`, Internalisé et Externalisé de la Vineland-3 en `v-scale-inverse`. Échelles de validité de la BRIEF-2 et « Goût et odorat » de la SPM restent en `none`.
 
+`20261020240000_manos3_noms_sans_classes.sql` (#127) : noms des sous-tests du MANOS-3 sans les classes (« Règle souligner — manipulation »), que l'en-tête de catégorie donne depuis #115 ; identifiants inchangés.
+
 Les index `idx_official_tests_category` et `generation_log_user_created_at_idx`, inutilisés eux aussi, sont conservés : ce sont les seuls index d'une clé étrangère. Les orphelins de P2-2 restent à supprimer (`supabase/checks/20261001100100_orphelins.sql`, en attente de Titouan).
 
 `supabase/checks/` contient les requêtes à lancer juste après une migration (résultat attendu en commentaire) ; `supabase/rollback/` les retours arrière, jamais appliqués automatiquement.
