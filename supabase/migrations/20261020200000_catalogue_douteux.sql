@@ -327,7 +327,7 @@ commit;
 --   and test_id in ('bot-2','jebsen-taylor','egp','nepsy-2','wisc-v','mvpt-4','figure-rey','moca',
 --                   'reversal','vineland-3','brief-2','ozeretzki')
 -- group by 1 order by 1;
--- Attendu : bot-2 13, brief-2 15, egp 18, figure-rey 5, jebsen-taylor 16, moca 8, mvpt-4 1,
+-- Attendu : bot-2 13, brief-2 16, egp 18, figure-rey 5, jebsen-taylor 16, moca 8, mvpt-4 1,
 -- nepsy-2 50, reversal 1, vineland-3 18, wisc-v 16 ; ozeretzki absent (et absent d'official_tests).
 -- select test_id, display_group_order, input_config ->> 'groupKey', display_order, count(*)
 -- from official_subtests where test_id in ('bot-2','jebsen-taylor','egp','nepsy-2','wisc-v')
