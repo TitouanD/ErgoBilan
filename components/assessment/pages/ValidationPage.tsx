@@ -1,18 +1,23 @@
 /**
  * ValidationPage — "Relecture": the practitioner reviews, edits (TipTap) and
- * validates each generated section before the export step.
+ * validates each generated section before the export step. Scores, observations and
+ * interview notes stay in view on the right, as on the diagnostic step (#121).
  */
 
 import React, { useCallback, useState } from 'react';
 import { Check, CheckCheck, Download, Edit2, FileCheck } from 'lucide-react';
-import type { ReportSection } from '../../../types';
+import type { ReportSection, TestData } from '../../../types';
 import { ConfirmModal } from '../../shared/ConfirmModal';
 import { TipTapEditor } from '../shared/TipTapEditor';
+import { ScoresAndObservationsPanel } from '../shared/ScoresAndObservationsPanel';
 import { sectionToHtml } from '../../../utils/reportContent';
 import { isReportSectionVisible } from '../../../utils/reportData';
 
 interface Props {
   sections: ReportSection[];
+  /** Scores of the assessment being proofread, shown in the side panel. */
+  tests: TestData;
+  interviewNotes?: string;
   /** Validate a section, optionally with edited HTML content. */
   onValidateSection: (id: string, html?: string) => void;
   onNext: () => void;
@@ -104,7 +109,7 @@ const SectionCard: React.FC<{
   );
 };
 
-export const ValidationPage: React.FC<Props> = ({ sections, onValidateSection, onNext, onBack }) => {
+export const ValidationPage: React.FC<Props> = ({ sections, tests, interviewNotes, onValidateSection, onNext, onBack }) => {
   const displayedSections = sections.filter(isReportSectionVisible);
   const validatedCount = displayedSections.filter((s) => s.status === 'validated').length;
   const pendingCount = displayedSections.length - validatedCount;
@@ -132,7 +137,7 @@ export const ValidationPage: React.FC<Props> = ({ sections, onValidateSection, o
   };
 
   return (
-    <div className="max-w-4xl mx-auto pb-10 animate-in fade-in duration-500">
+    <div className="max-w-6xl mx-auto pb-10 animate-in fade-in duration-500">
       <div className="mb-8 border-b border-[var(--border-color)] pb-6 flex justify-between items-end gap-4 relative z-10">
         <div className="space-y-1">
           <h2 className="text-3xl font-serif font-bold text-[var(--text-heading)]">Relecture</h2>
@@ -162,14 +167,19 @@ export const ValidationPage: React.FC<Props> = ({ sections, onValidateSection, o
         </div>
       </div>
 
-      <div className="space-y-4">
-        {displayedSections.length === 0 ? (
-          <div className="text-center py-20 text-stone-400 dark:text-[var(--text-disabled)] italic">Aucune section à relire.</div>
-        ) : (
-          displayedSections.map((section) => (
-            <SectionCard key={section.id} section={section} onValidate={onValidateSection} onDirtyChange={handleDirtyChange} />
-          ))
-        )}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-4 min-w-0">
+          {displayedSections.length === 0 ? (
+            <div className="text-center py-20 text-stone-400 dark:text-[var(--text-disabled)] italic">Aucune section à relire.</div>
+          ) : (
+            displayedSections.map((section) => (
+              <SectionCard key={section.id} section={section} onValidate={onValidateSection} onDirtyChange={handleDirtyChange} />
+            ))
+          )}
+        </div>
+        <div className="lg:sticky lg:top-24 lg:self-start">
+          <ScoresAndObservationsPanel tests={tests} interviewNotes={interviewNotes} />
+        </div>
       </div>
 
       <div className="mt-10 flex items-center justify-between gap-4">

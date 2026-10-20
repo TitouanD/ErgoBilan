@@ -188,7 +188,7 @@ export interface QualitativeRow {
 export interface TestScoreBlock {
   testId: string;
   testName: string;
-  /** Free-text observations pseudo-test: render as notes, not as a table. */
+  /** One free observation (pseudo-test): `testName` is its title, its single note is the text (no inner card). */
   isFreeObservations: boolean;
   /** At least one row can be shown as NS/ET/% → show the display-mode selector. */
   hasStandardizedScores: boolean;
@@ -200,6 +200,18 @@ export interface TestScoreBlock {
   notes: Array<{ label: string; observation: string }>;
 }
 
+const freeObservationBlock = (testId: string, r: ResolvedScore): TestScoreBlock => ({
+  testId: `${testId}:${r.subtestId}`,
+  testName: r.label,
+  isFreeObservations: true,
+  hasStandardizedScores: false,
+  showEvolution: false,
+  mode: DEFAULT_SCORE_DISPLAY_MODE,
+  rows: [],
+  qualitativeRows: [],
+  notes: [{ label: '', observation: r.score.observation?.trim() || '' }],
+});
+
 export const buildTestScoreBlocks = (
   tests: TestData,
   index: CatalogIndex,
@@ -209,6 +221,8 @@ export const buildTestScoreBlocks = (
 ): TestScoreBlock[] =>
   resolveScores(tests, index).flatMap((test) => {
     if (test.subtests.length === 0) return [];
+    // Free observations: one card per note, titled by the title the practitioner typed (#143).
+    if (test.isFreeObservations) return test.subtests.map((r) => freeObservationBlock(test.testId, r));
     const mode = modes[test.testId] ?? DEFAULT_SCORE_DISPLAY_MODE;
     const block: TestScoreBlock = {
       testId: test.testId,
@@ -248,6 +262,21 @@ export const buildTestScoreBlocks = (
   });
 
 // ─── Section layout ─────────────────────────────────────────────────────────
+
+/** Height of an A4 sheet in CSS px (297 mm at 96 dpi). */
+export const A4_HEIGHT_PX = (297 * 96) / 25.4;
+
+/**
+ * Preview: offsets (px from the top of a preview page) where an A4 sheet ends,
+ * for a page taller than one sheet. The PDF flows such a page over several
+ * sheets; the preview marks these ends in the margin, never across the text (#136).
+ */
+export const sheetEnds = (pageHeight: number, sheetHeight = A4_HEIGHT_PX): number[] => {
+  const ends: number[] = [];
+  // 1 px of tolerance: a page of exactly one sheet has no end to mark.
+  for (let y = sheetHeight; y < pageHeight - 1; y += sheetHeight) ends.push(y);
+  return ends;
+};
 
 /** Placeholder id of the annexes block (scores) in the page layout. */
 export const ANNEXES_ID = 'annexes';

@@ -41,14 +41,18 @@ import {
   computeRadarData,
   moveSectionInPages,
   readingGuide,
+  sheetEnds,
 } from '../../../utils/reportData';
 import { ZONE_META, type ScoreZone } from '../../../utils/scoring';
 import { sectionToHtml } from '../../../utils/reportContent';
+import { assessmentDateOrToday, patientAtAssessmentDate } from '../../../utils/patient';
 import { type ReportTheme, formatBirthDate, formatReportDate, resolveReportTheme } from '../../../utils/reportTheme';
 import { TipTapEditor } from '../shared/TipTapEditor';
 
 interface Props {
   patient: Patient;
+  /** Date of the assessment (passation), ISO; absent = today. Age and date of the first page (#153). */
+  assessmentDate?: string;
   sections: ReportSection[];
   tests: TestData;
   /** Section ids per page (see buildDefaultPages); the last page usually holds the annexes. */
@@ -475,12 +479,19 @@ const ScoreBlockCard: React.FC<{ block: TestScoreBlock; theme: ReportTheme; onMo
         )}
       </div>
       <div className="p-6 space-y-6">
-        {block.notes.map((note, i) => (
-          <div key={i} className="border border-stone-100 rounded-lg p-4">
-            <h4 className="font-semibold text-sm text-stone-700 mb-2">{note.label}</h4>
-            <p className="text-sm text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
-          </div>
-        ))}
+        {block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <p key={i} className="text-sm text-stone-600 whitespace-pre-wrap">
+              {note.observation || '-'}
+            </p>
+          ))}
+        {!block.isFreeObservations &&
+          block.notes.map((note, i) => (
+            <div key={i} className="border border-stone-100 rounded-lg p-4">
+              <h4 className="font-semibold text-sm text-stone-700 mb-2">{note.label}</h4>
+              <p className="text-sm text-stone-600 whitespace-pre-wrap">{note.observation || '-'}</p>
+            </div>
+          ))}
         {block.rows.length > 0 && (
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -603,8 +614,9 @@ const AnnexesBlock: React.FC<{
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
-const PatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
+const PatientBlock: React.FC<{ patient: Patient; dateLabel: string; theme: ReportTheme; align: 'left' | 'right' | 'center' }> = ({
   patient,
+  dateLabel,
   theme,
   align,
 }) => {
@@ -615,6 +627,7 @@ const PatientBlock: React.FC<{ patient: Patient; theme: ReportTheme; align: 'lef
       </h2>
       {patient.dob && <p className="text-sm text-stone-600 font-medium">Né(e) le {formatBirthDate(patient.dob)}</p>}
       {patient.age && <p className="text-sm text-stone-500">{patient.age}</p>}
+      <p className="text-sm text-stone-500 italic mt-1">Bilan du {dateLabel}</p>
     </>
   );
   if (theme.patientBlockStyle === 'minimal')
@@ -679,12 +692,17 @@ const PractitionerBlock: React.FC<{ branding?: BrandingConfig; theme: ReportThem
   );
 };
 
-const ReportHeader: React.FC<{ patient: Patient; branding?: BrandingConfig; theme: ReportTheme }> = ({ patient, branding, theme }) => {
+const ReportHeader: React.FC<{ patient: Patient; dateLabel: string; branding?: BrandingConfig; theme: ReportTheme }> = ({
+  patient,
+  dateLabel,
+  branding,
+  theme,
+}) => {
   if (theme.headerTemplate === 'corporate') {
     return (
       <header className="flex justify-between items-start mb-12 border-b-2 border-stone-100 pb-8">
         <div className="w-1/3 pt-4">
-          <PatientBlock patient={patient} theme={theme} align="left" />
+          <PatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="left" />
         </div>
         <div className="w-1/2">
           <PractitionerBlock branding={branding} theme={theme} alignEnd />
@@ -697,7 +715,7 @@ const ReportHeader: React.FC<{ patient: Patient; branding?: BrandingConfig; them
       <header className="flex flex-col items-center text-center mb-12 border-b-2 border-stone-100 pb-8 gap-6">
         <PractitionerBlock branding={branding} theme={theme} />
         <div className="w-2/3 border-t border-stone-100 pt-6">
-          <PatientBlock patient={patient} theme={theme} align="center" />
+          <PatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="center" />
         </div>
       </header>
     );
@@ -708,16 +726,54 @@ const ReportHeader: React.FC<{ patient: Patient; branding?: BrandingConfig; them
         <PractitionerBlock branding={branding} theme={theme} />
       </div>
       <div className="w-1/3 pt-2">
-        <PatientBlock patient={patient} theme={theme} align="right" />
+        <PatientBlock patient={patient} dateLabel={dateLabel} theme={theme} align="right" />
       </div>
     </header>
+  );
+};
+
+// ─── Page ───────────────────────────────────────────────────────────────────
+
+/**
+ * One preview page. A page taller than an A4 sheet flows over several sheets in
+ * the PDF: the sheet ends are marked in the margin, outside the text (#136).
+ */
+const PreviewPage: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [ends, setEnds] = useState<number[]>([]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const next = sheetEnds(el.offsetHeight);
+      setEnds((prev) => (prev.length === next.length && prev.every((y, i) => Math.abs(y - next[i]) < 1) ? prev : next));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="page-a4">
+      {children}
+      {ends.map((y) => (
+        <div
+          key={y}
+          className="absolute left-full ml-3 -translate-y-1/2 no-print pointer-events-none flex items-center gap-1 text-[10px] leading-tight text-stone-400 whitespace-nowrap"
+          style={{ top: y }}
+          title="Le PDF passe ici à la page suivante"
+        >
+          <span className="w-3 border-t border-stone-300" />
+          fin de page A4
+        </div>
+      ))}
+    </div>
   );
 };
 
 // ─── Report ─────────────────────────────────────────────────────────────────
 
 export const ReportView: React.FC<Props> = ({
-  patient,
+  patient: storedPatient,
+  assessmentDate,
   sections,
   tests,
   pages,
@@ -737,6 +793,8 @@ export const ReportView: React.FC<Props> = ({
   }, [ensureCatalogLoaded]);
 
   const theme = useMemo(() => resolveReportTheme(branding), [branding]);
+  const patient = useMemo(() => patientAtAssessmentDate(storedPatient, assessmentDate), [storedPatient, assessmentDate]);
+  const dateLabel = formatReportDate(assessmentDateOrToday(assessmentDate));
   const sectionById = useMemo(() => new Map(sections.map((s) => [s.id, s])), [sections]);
   const titleCss: React.CSSProperties = { fontFamily: theme.headingFont, color: theme.primary };
 
@@ -753,11 +811,10 @@ export const ReportView: React.FC<Props> = ({
   return (
     <div id="printable-report" className="w-full flex flex-col items-center gap-8 no-scrollbar">
       {pages.map((pageSections, pageIdx) => (
-        <div key={pageIdx} className="page-a4">
+        <PreviewPage key={pageIdx}>
           {pageIdx === 0 && (
             <>
-              <ReportHeader patient={patient} branding={branding} theme={theme} />
-              <div className="mb-8 text-sm text-stone-500 italic text-right">Fait le {formatReportDate()}</div>
+              <ReportHeader patient={patient} dateLabel={dateLabel} branding={branding} theme={theme} />
               <h1
                 className="text-center font-bold text-3xl mb-12"
                 style={
@@ -823,7 +880,7 @@ export const ReportView: React.FC<Props> = ({
               </div>
             )}
           </div>
-        </div>
+        </PreviewPage>
       ))}
 
       {onUpdateSection && onPagesChange && (

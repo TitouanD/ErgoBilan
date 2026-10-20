@@ -24,7 +24,7 @@ interface Props {
 
 export const HistoricalPatientForm: React.FC<Props> = ({ data, updateData, onNext, onPatientCreated }) => {
   const toast = useToast();
-  const { historicalDate, setHistoricalDate, ensurePatient } = useAssessment();
+  const { assessmentDate, setAssessmentDate, ensurePatient } = useAssessment();
   const [isSaving, setIsSaving] = useState(false);
 
   const handleNext = async () => {
@@ -32,7 +32,7 @@ export const HistoricalPatientForm: React.FC<Props> = ({ data, updateData, onNex
       toast.error('Prénom, nom et date de naissance sont obligatoires.');
       return;
     }
-    if (!historicalDate) {
+    if (!assessmentDate) {
       toast.error("Veuillez indiquer la date du bilan d'origine.");
       return;
     }
@@ -51,7 +51,7 @@ export const HistoricalPatientForm: React.FC<Props> = ({ data, updateData, onNex
     }
   };
 
-  const isReady = isPatientCreationReady(data) && !!historicalDate;
+  const isReady = isPatientCreationReady(data) && !!assessmentDate;
 
   return (
     <div className="max-w-2xl mx-auto pb-20 animate-in fade-in duration-500">
@@ -85,8 +85,8 @@ export const HistoricalPatientForm: React.FC<Props> = ({ data, updateData, onNex
             </label>
             <input
               type="date"
-              value={historicalDate ? historicalDate.slice(0, 10) : ''}
-              onChange={(e) => setHistoricalDate(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              value={assessmentDate ? assessmentDate.slice(0, 10) : ''}
+              onChange={(e) => setAssessmentDate(e.target.value ? new Date(e.target.value).toISOString() : '')}
               max={new Date().toISOString().slice(0, 10)}
               className="w-full max-w-xs rounded-xl border border-[var(--border-color)] bg-[var(--app-bg)] px-4 py-2.5 text-sm font-medium text-[var(--text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/30"
             />
