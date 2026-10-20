@@ -232,6 +232,20 @@ describe('report data', () => {
     ]);
   });
 
+  it('shows each test in the unit typed at the scores step until the practitioner picks another one (#139)', () => {
+    const tests = {
+      mabc: { dext: { value: '7', unit: 'NS' as const } },
+      dtvp: { copy: { value: '30', unit: '%' as const } },
+      bells: { omis: { value: '-1', unit: 'ET' as const } },
+    };
+    expect(buildTestScoreBlocks(tests, index).map((b) => [b.testId, b.mode, b.rows[0].display])).toEqual([
+      ['mabc', 'NS', '7 NS'],
+      ['dtvp', '%', '30 %'],
+      ['bells', 'ET', '-1 ET'],
+    ]);
+    expect(buildTestScoreBlocks(tests, index, { mabc: 'ET' })[0].mode).toBe('ET');
+  });
+
   it('has no evolution column outside a re-evaluation', () => {
     const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
     expect(block.showEvolution).toBe(false);
