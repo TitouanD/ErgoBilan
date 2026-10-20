@@ -24,7 +24,7 @@ export const RETIRED_SUBTEST_NAMES: Readonly<Record<string, string>> = {
   tihm__shift: 'Shift (translation linéaire digitale)',
   tihm__rotation: 'Rotation simple',
 
-  // 20261020150000_catalogue_douteux.sql (#90)
+  // 20261020200000_catalogue_douteux.sql (#90)
   'ozeretzki__decoupage-cercle': 'Temps de découpage, main dominante (secondes)',
   'ozeretzki__temps-main-non-dominante': 'Temps de découpage, main non dominante (secondes)',
   'ozeretzki__decoupage-qualite': 'Qualité de découpage',
