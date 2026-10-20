@@ -64,6 +64,13 @@ describe('parseScenario', () => {
     expect(scenarioOf('?scenario=accueil&essai=refuse')).toMatchObject({ welcome: { trialDenied: true } });
   });
 
+  it('opens the parent portal form, without writing anything (#152)', async () => {
+    expect(scenarioOf('?scenario=portail')).toMatchObject({ name: 'portail', profile: { id: 'leo' } });
+    expect(scenarioOf('?scenario=portail&patient=lina')).toMatchObject({ profile: { id: 'lina' } });
+    expect(await runScenario(scenarioOf('?scenario=portail'), deps())).toEqual({ open: null, missing: [] });
+    expect((await StorageService.loadPatientListPage({ limit: 100 })).files).toHaveLength(0);
+  });
+
   it('rejects an unknown scenario, step or patient', () => {
     expect(parseScenario('?scenario=nope')).toMatchObject({ ok: false });
     expect(parseScenario('?scenario=reeval&etape=5')).toMatchObject({ ok: false });

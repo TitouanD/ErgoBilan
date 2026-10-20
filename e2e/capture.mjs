@@ -7,6 +7,7 @@
  *
  * Options: --tablette (1024×768), --portable (1366×768), else 1440×900; --plein (whole page),
  * --clic <selector> (repeatable, clicked in order before the screenshot),
+ * --defiler <px> (scrolls the page down before the screenshot: sticky bands),
  * --pdf (after the screenshot, clicks « Télécharger PDF » and saves the PDF
  * next to it: the scenario must be on the export step),
  * --out <dir> (default .captures/<date>), --port <n> (default 3100).
@@ -34,7 +35,7 @@ import { mintTestSession } from './testSession.mjs';
 const args = process.argv.slice(2);
 const targets = [];
 const clicks = [];
-const opts = { tablet: false, laptop: false, full: false, pdf: false, out: '', port: 3100 };
+const opts = { tablet: false, laptop: false, full: false, pdf: false, out: '', port: 3100, scroll: 0 };
 for (let i = 0; i < args.length; i += 1) {
   const a = args[i];
   if (a === '--tablette') opts.tablet = true;
@@ -44,6 +45,7 @@ for (let i = 0; i < args.length; i += 1) {
   else if (a === '--clic') clicks.push(args[(i += 1)]);
   else if (a === '--out') opts.out = args[(i += 1)];
   else if (a === '--port') opts.port = Number(args[(i += 1)]);
+  else if (a === '--defiler') opts.scroll = Number(args[(i += 1)]);
   else {
     const query = a.replace(/^[/?]+/, '');
     // A bare name is a scenario: `initial-scores` = `scenario=initial-scores`.
@@ -52,7 +54,7 @@ for (let i = 0; i < args.length; i += 1) {
 }
 if (targets.length === 0) {
   console.error(
-    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette|--portable] [--plein] [--clic <sélecteur>] [--pdf] [--out <dossier>]',
+    'Usage : npm run capture -- "scenario=initial&etape=2" [--tablette|--portable] [--plein] [--clic <sélecteur>] [--defiler <px>] [--pdf] [--out <dossier>]',
   );
   process.exit(1);
 }
@@ -145,6 +147,7 @@ try {
         console.error(`✗ ${target} : clic impossible sur ${selector}`);
       }
     }
+    if (opts.scroll) await page.evaluate((y) => window.scrollTo(0, y), opts.scroll);
     await page.addStyleTag({ content: '[data-devtools]{display:none!important}' });
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(600);

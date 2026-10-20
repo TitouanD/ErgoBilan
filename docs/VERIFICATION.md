@@ -30,14 +30,15 @@ Pour ajouter un profil, il suffit d'ajouter une entrée à `FICTIVE_PROFILES`. L
 
 Avec `npm run dev`, connecté et déverrouillé, on ouvre `http://localhost:3000/?scenario=…`.
 
-| Lien                                 | Écran                                                                                              |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `?scenario=dashboard`                | Tableau de bord : un patient par statut (voir plus bas)                                            |
-| `?scenario=initial&etape=1` à `5`    | Bilan initial : Dossier, Tests, Diagnostic, Validation, Visualisation                              |
-| `?scenario=reeval&etape=1` à `4`     | Réévaluation (le bilan de référence est créé, 6 mois avant) : Tests, Évolution, Validation, Export |
-| `?scenario=historique&etape=1` à `3` | Import d'un bilan antérieur : Dossier, Scores, Rapport                                             |
-| `?scenario=abonnement`               | Tableau de bord avec la modale « Votre abonnement » ouverte                                        |
-| `?scenario=accueil`                  | Accueil après l'inscription, dernière étape (`&essai=refuse` : essai refusé, #113)                 |
+| Lien                                 | Écran                                                                                               |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `?scenario=dashboard`                | Tableau de bord : un patient par statut (voir plus bas)                                             |
+| `?scenario=initial&etape=1` à `5`    | Bilan initial : Dossier, Tests, Diagnostic, Validation, Visualisation                               |
+| `?scenario=reeval&etape=1` à `4`     | Réévaluation (le bilan de référence est créé, 6 mois avant) : Tests, Évolution, Validation, Export  |
+| `?scenario=historique&etape=1` à `3` | Import d'un bilan antérieur : Dossier, Scores, Rapport                                              |
+| `?scenario=abonnement`               | Tableau de bord avec la modale « Votre abonnement » ouverte                                         |
+| `?scenario=accueil`                  | Accueil après l'inscription, dernière étape (`&essai=refuse` : essai refusé, #113)                  |
+| `?scenario=portail`                  | Questionnaire du portail famille, pré-rempli avec le profil (`&patient=`), rien n'est envoyé (#152) |
 
 Les raccourcis `initial-dossier`, `initial-scores`, `initial-diagnostic`, `initial-validation`, `initial-visualisation`, `reeval-scores`, `reeval-evolution`, `reeval-validation` et `reeval-export` sont aussi acceptés.
 
@@ -74,7 +75,7 @@ npm run capture -- reeval-export "scenario=initial&etape=5&tests=nepsy-2" --pdf
 - Un nom seul vaut `scenario=<nom>`. Chaque argument donne une capture.
 - Le script démarre son propre Vite sur le checkout courant (port 3100) : un worktree est donc capturé tel quel.
 - Il ouvre une session neuve du compte de test et tape le PIN, puis ouvre chaque scénario et prend une capture dans `.captures/<date>/` (ignoré par git), ou dans `--out`.
-- `--tablette` capture en 1024×768 et `--portable` en 1366×768 (PC portable courant), au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
+- `--tablette` capture en 1024×768 et `--portable` en 1366×768 (PC portable courant), au lieu de 1440×900. `--plein` capture toute la page. `--clic <sélecteur>` (répétable) clique avant la capture, par exemple pour ouvrir une modale ou un menu. `--defiler <px>` fait défiler la page avant la capture (bandeaux collants). On ne remplit jamais de formulaire au navigateur : les données viennent du scénario.
 - `--pdf` télécharge en plus le PDF (bouton « Télécharger PDF ») à côté de la capture : le scénario doit être sur l'étape d'export (`initial&etape=5`, `reeval&etape=4`). Le PDF est produit à part (`@react-pdf`, `PdfDocument.tsx`) et ne ressemble pas toujours à l'aperçu : on le lit lui-même. Un test long (`&tests=nepsy-2`) éprouve la pagination.
 - Les erreurs de la page (console, exceptions) sont affichées avec chaque capture.
 - Le navigateur est Microsoft Edge, déjà installé avec Windows, piloté par `playwright-core` : aucun téléchargement. Son profil est vidé à chaque exécution, donc les patients fictifs n'arrivent jamais dans le navigateur de Titouan.
