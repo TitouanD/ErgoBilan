@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calculateAge, patientAtAssessmentDate, summarizePatientIdentity } from './patient';
+import { calculateAge, familyQuestionnaireProgress, patientAtAssessmentDate, summarizePatientIdentity } from './patient';
+import type { Patient } from '../types';
 
 describe('calculateAge', () => {
   it('counts completed months, not calendar months', () => {
@@ -47,5 +48,13 @@ describe('patientAtAssessmentDate (#153)', () => {
   it('replaces the age saved at the writing date by the age at the passation', () => {
     const patient = { firstName: 'A', lastName: 'B', dob: '2018-03-20', age: '8 ans 6 mois' };
     expect(patientAtAssessmentDate(patient, '2026-08-25T00:00:00.000Z').age).toBe('8 ans 5 mois');
+  });
+});
+
+describe('familyQuestionnaireProgress (#152)', () => {
+  it('compte les repères remplis sur 13', () => {
+    expect(familyQuestionnaireProgress({} as Patient)).toBe(0);
+    expect(familyQuestionnaireProgress({ firstName: 'Léo', lastName: 'FICTIF', reason: 'Écriture' } as Patient)).toBe(15);
+    expect(familyQuestionnaireProgress({ firstName: 'Léo', reason: 'Écriture' } as Patient)).toBe(8);
   });
 });

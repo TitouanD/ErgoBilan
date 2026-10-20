@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState } from 'react';
 import type { Patient, Sibling, ParamedicalTracking } from '../../types';
 import { calculateAge } from '../../utils/patient';
 import { DebouncedInput, DebouncedTextarea } from './DebouncedControls';
@@ -198,30 +198,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
     goals: false,
   });
 
-  const [progress, setProgress] = useState(0);
-
-  // Calcul progression
-  useEffect(() => {
-    if (mode === 'family') {
-      let filled = 0;
-      const total = 13;
-      if (data.lastName && data.firstName) filled++;
-      if (data.parent1Name || data.parent2Name || data.parentNames) filled++;
-      if (data.guardMode) filled++;
-      if (data.school && data.classLevel) filled++;
-      if (data.prescribingDoctor || (data.medicalTracking?.length ?? 0) > 0) filled++;
-      if (data.motorDevelopmentTags || data.walkingAge || data.developmentMotor) filled++;
-      if (data.clothingButtons || data.eatingHabits) filled++;
-      if (data.reason) filled++;
-      if ((data.goals?.length ?? 0) > 0) filled++;
-      if (data.sensory || data.sleepStatus) filled++;
-      if (data.writingPain || data.writingIssues) filled++;
-      if (data.continence || data.dressing) filled++;
-      if (data.emotionalGlobalTags || data.emotionalReactionTags || data.emotionalNotes || data.emotionalRegulation) filled++;
-
-      setProgress(Math.round((filled / total) * 100));
-    }
-  }, [data, mode]);
+  // Sticky band above the sections: the portal header (with the progress, #152) in family mode, the app header otherwise.
+  const stickyTop = () => (mode === 'family' ? (document.querySelector('header')?.getBoundingClientRect().bottom ?? 80) : 80);
 
   const toggleSection = (id: SectionKey, forceState?: boolean) => {
     setOpenSections((prev) => {
@@ -262,7 +240,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
       const el = document.getElementById(`section-${id}`);
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      if (top < 80) window.scrollTo({ top: top + window.scrollY - 80, behavior: 'smooth' });
+      const offset = stickyTop();
+      if (top < offset) window.scrollTo({ top: top + window.scrollY - offset, behavior: 'smooth' });
     }, 50);
   };
 
@@ -276,7 +255,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
         setTimeout(() => {
           const el = document.getElementById(`section-${nextId}`);
           if (el) {
-            const top = el.getBoundingClientRect().top + window.scrollY - 80;
+            const top = el.getBoundingClientRect().top + window.scrollY - stickyTop();
             window.scrollTo({ top, behavior: 'smooth' });
           }
         }, 100);
@@ -636,18 +615,6 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
 
   return (
     <div className="space-y-6 pb-20" onClick={handleRadioReclick}>
-      {mode === 'family' && (
-        <div className="sticky top-20 z-30 bg-[var(--app-bg)] pt-4 pb-4 border-b border-[var(--border-color)] mb-6">
-          <div className="flex justify-between text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2">
-            <span>Progression</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="h-2 bg-[var(--progress-bg)] rounded-full overflow-hidden">
-            <div className="h-full bg-[var(--primary)] transition-all duration-500" style={{ width: `${progress}%` }}></div>
-          </div>
-        </div>
-      )}
-
       {SECTIONS_CONFIG.map((section) => {
         const isOpen = openSections[section.id];
         const isAdministrativeSection = ['identity', 'parents', 'medical', 'reason'].includes(section.id);
