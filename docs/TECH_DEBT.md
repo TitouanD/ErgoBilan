@@ -90,6 +90,7 @@ Reste à faire :
 
 - fusionner #107 dans `main` rapidement : d'ici là, une inscription en production voit 0 crédit ;
 - #111 (robustesse : double abonnement, `invoice.paid` tardif, client Stripe en double, crédits du mois) : appliquer `20261013100000_stripe_robustesse.sql`, **puis** déployer `billing` et `stripe-webhook` (elles passent `p_user_id` et `p_previous`, inconnus avant la migration) ;
+- remboursement ou litige d'un achat à l'unité (accord du 2026-10-20) : migration `20261020150000_remboursement_credits.sql` appliquée et `stripe-webhook` v7 déployée le 2026-10-20 ; reste à ajouter `charge.refunded` et `charge.dispute.created` aux événements du point de terminaison du webhook dans Stripe (Titouan) ;
 - régénérer `supabase/schema.sql` ;
 - passage de Stripe du mode test (bac à sable) à la production (le 2026-10-13, #110 réserve le paiement de test aux admins et à `STRIPE_TEST_ALLOWED_EMAILS` ; en réel, poser `VITE_PAYMENT_OPEN=true` sur la production) : prix aux mêmes clés de recherche (`formule_solo`, `unite_sans_formule`), point de terminaison du webhook, portail client, clés de production, informations publiques (URL des CGV, exigée par la case à cocher de Checkout).
 

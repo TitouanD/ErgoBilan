@@ -12,6 +12,10 @@
  * The account is found by its Stripe customer, or else by the user_id that the billing
  * function sets on the subscription and the checkout session (#111).
  * - checkout.session.completed (unit purchase) : billing_add_credits adds the quantity.
+ * - charge.refunded, charge.dispute.created : when the charge paid a unit purchase (found by its
+ *   Checkout session), billing_remove_credits takes back the share of the credits that the
+ *   refunded + disputed amount pays for, never below 0. Subscription charges are left alone:
+ *   a Solo plan ends through its subscription events (#107).
  *
  * No JWT (`verify_jwt = false`): the request is authenticated by its Stripe signature.
  * Every RPC is idempotent (billing_events): a 5xx makes Stripe retry, a 2xx never does.
@@ -24,7 +28,9 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@23.0.0';
 import { captureEdgeException, captureEdgeMessage } from '../_shared/sentry.ts';
 import {
+  creditsToReverse,
   dedupKey,
+  describeCreditPurchase,
   describeSubscription,
   isPaymentAllowed,
   parseEmailList,
@@ -74,6 +80,12 @@ const otherBillingSubscription = async (ended: SubscriptionState): Promise<Subsc
   return null;
 };
 
+/** Number of credits bought by a unit purchase Checkout session. */
+const purchasedQuantity = async (sessionId: string): Promise<number> => {
+  const items = await stripe!.checkout.sessions.listLineItems(sessionId, { limit: 100 });
+  return items.data.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+};
+
 const reply = (status: number, body: Record<string, unknown>) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -117,13 +129,32 @@ Deno.serve(async (req: Request) => {
     if (action.kind === 'credits') {
       const refused = await refuseTestEvent(action.customerId, action.userId);
       if (refused) return refused;
-      const items = await stripe.checkout.sessions.listLineItems(action.sessionId, { limit: 100 });
-      const quantity = items.data.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
       rpc = await admin.rpc('billing_add_credits', {
         p_event_id: key,
         p_customer_id: action.customerId,
-        p_quantity: quantity,
+        p_quantity: await purchasedQuantity(action.sessionId),
         p_user_id: action.userId,
+      });
+    } else if (action.kind === 'reversal') {
+      // The charge is re-read: amount_refunded is cumulative, whatever the order of the events.
+      const charge = await stripe.charges.retrieve(action.chargeId);
+      const paymentIntent = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
+      if (!paymentIntent) return reply(200, { result: 'ignored', reason: 'NO_PAYMENT_INTENT' });
+      const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntent, limit: 1 });
+      const session = sessions.data[0];
+      const purchase = session ? describeCreditPurchase(session as unknown as Record<string, unknown>) : null;
+      // A subscription invoice or any other payment: no purchased credits to take back.
+      if (!purchase) return reply(200, { result: 'ignored', reason: 'NOT_A_CREDIT_PURCHASE' });
+      const refused = await refuseTestEvent(purchase.customerId, purchase.userId);
+      if (refused) return refused;
+      const reversed = charge.amount_refunded + (action.disputedAmount ?? 0);
+      const count = creditsToReverse(await purchasedQuantity(purchase.sessionId), charge.amount, reversed);
+      if (count === 0) return reply(200, { result: 'ignored', reason: 'NO_CREDIT_TO_REVERSE' });
+      rpc = await admin.rpc('billing_remove_credits', {
+        p_event_id: key,
+        p_customer_id: purchase.customerId,
+        p_count: count,
+        p_user_id: purchase.userId,
       });
     } else {
       const subscription = await stripe.subscriptions.retrieve(action.subscriptionId, { expand: ['items.data.price'] });
