@@ -8,6 +8,7 @@ import { markdownToHtml, sectionToHtml } from './reportContent';
 import {
   buildDefaultPages,
   buildTestScoreBlocks,
+  sheetEnds,
   computeDotChart,
   computeRadarData,
   moveSectionInPages,
@@ -214,6 +215,23 @@ describe('report data', () => {
     expect(inEt.rows[0].evolution?.text).toBe('+0.67 ET');
   });
 
+  it('shows each free observation as its own card, titled by the title typed, with the whole text (#143)', () => {
+    const text = 'Premier paragraphe.\n\nDeuxième paragraphe.';
+    const blocks = buildTestScoreBlocks(
+      {
+        custom_observations: {
+          custom_1: { customLabel: "Observation de l'écriture", observation: text },
+          custom_2: { observation: 'Autre note.' },
+        },
+      },
+      index,
+    );
+    expect(blocks.map((b) => [b.testName, b.isFreeObservations, b.notes])).toEqual([
+      ["Observation de l'écriture", true, [{ label: '', observation: text }]],
+      ['Observation libre', true, [{ label: '', observation: 'Autre note.' }]],
+    ]);
+  });
+
   it('has no evolution column outside a re-evaluation', () => {
     const [block] = buildTestScoreBlocks({ mabc: { dext: { value: '9', unit: 'NS' } } }, index);
     expect(block.showEvolution).toBe(false);
@@ -255,6 +273,13 @@ describe('report data', () => {
       ['conclusion', 'recommandations_reev'],
       ['annexes'],
     ]);
+  });
+
+  it('marks where each A4 sheet ends in a preview page taller than one sheet (#136)', () => {
+    expect(sheetEnds(1122)).toEqual([]);
+    expect(sheetEnds(1123, 1122)).toEqual([]);
+    expect(sheetEnds(1500, 1000)).toEqual([1000]);
+    expect(sheetEnds(3200, 1000)).toEqual([1000, 2000, 3000]);
   });
 
   it('moves sections without mutating and reconciles layouts', () => {
