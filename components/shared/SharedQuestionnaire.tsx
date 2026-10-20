@@ -335,9 +335,9 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const addMedicalTracking = () => {
     const newItem: ParamedicalTracking = {
       id: crypto.randomUUID(),
-      type: 'Orthophoniste',
+      type: '',
       name: '',
-      profession: 'Orthophoniste',
+      profession: '',
       frequency: '',
       since: '',
       assessmentDate: '',
@@ -349,6 +349,8 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
   const updateMedicalTracking = (idx: number, field: keyof ParamedicalTracking, val: any) => {
     const newTracking = [...(data.medicalTracking || [])];
     newTracking[idx] = { ...newTracking[idx], [field]: val };
+    // `type` is the legacy profession, still read as a fallback: keep it in step so a cleared profession stays empty.
+    if (field === 'profession') newTracking[idx].type = val;
     onChange({ medicalTracking: newTracking });
   };
   const removeMedicalTracking = (idx: number) => {
@@ -1524,7 +1526,7 @@ export const SharedQuestionnaire: React.FC<Props> = ({ data, onChange, mode }) =
                                   <label className={labelClass}>Profession</label>
                                   <DebouncedInput
                                     placeholder="Profession"
-                                    value={track.profession || (track.type === 'Autre' ? '' : track.type)}
+                                    value={track.profession ?? (track.type === 'Autre' ? '' : track.type)}
                                     onChange={(v) => updateMedicalTracking(idx, 'profession', v)}
                                     className={inputClass}
                                   />
